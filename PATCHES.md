@@ -1,4 +1,4 @@
-# Live patches
+# Patches
 
 The actual `WarmPool` Durable Object (assignment tracking, pool scaling,
 `getSandboxStub`, `configure`) is **not** in this repo — it's compiled into the
@@ -7,16 +7,21 @@ in [cloudflare/sandbox-sdk](https://github.com/cloudflare/sandbox-sdk)).
 `src/index.ts` here is just the thin wrapper upstream ships in
 `bridge/worker/src/index.ts`.
 
-Two behavioural changes have been applied directly to the deployed Worker
-bundle (via a script-level GET → patch → PUT round trip against the Cloudflare
-API, not a `wrangler deploy` from this repo — there is no working build
-pipeline here, this file is a record of what's actually live). If this Worker
-is ever redeployed from a real `wrangler deploy` / fresh `@cloudflare/sandbox`
-install, these two patches need to be reapplied by hand (e.g. via
-`patch-package`) or they will silently disappear.
+Two behavioural changes are applied on top of that package via
+[`patch-package`](https://www.npmjs.com/package/patch-package):
+`patches/@cloudflare+sandbox+0.12.9.patch`, reapplied automatically by the
+`postinstall` script. Any `wrangler deploy` from this repo therefore carries
+both patches. **If the `@cloudflare/sandbox` version is bumped, the patch must
+be regenerated against the new version** (`npx patch-package @cloudflare/sandbox`)
+or `postinstall` will fail loudly — do not skip it, or both fixes silently
+disappear from the deployed bundle.
 
-Deployed script: `cloudflare-sandbox-bridge-2` (Cloudflare account
-`map-platform`, worker name differs from this repo's `name` field).
+These same two changes were originally applied by hand to the live
+`cloudflare-sandbox-bridge-2` bundle (a script-level GET → patch → PUT round
+trip against the Cloudflare API, before this repo had a build pipeline). That
+Worker — the production EU deployment behind `eu-sandbox.ai.ingka.com` — is
+**not** managed by this repo; the patch file here is the reproducible
+equivalent for the region deployments defined in `wrangler.*.jsonc`.
 
 ## 1. Configurable sandbox placement (`getSandboxStub`)
 

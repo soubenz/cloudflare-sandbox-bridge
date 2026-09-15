@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "cloudflare-sandbox-bridge",
+  "name": "map-sandbox-bridge-apac",
   "main": "src/index.ts",
   "compatibility_date": "2025-05-06",
   "compatibility_flags": ["nodejs_compat"],
@@ -22,14 +22,14 @@
   "containers": [
     {
       "class_name": "Sandbox",
-      // Replace with a custom Dockerfile path if you need extra tooling
-      // (e.g. git, Python, Node.js) in the sandbox container.
-      "image": "./Dockerfile",
+      // Pre-built image already pushed to Cloudflare's registry — no Docker
+      // or build step needed at deploy time.
+      "image": "registry.cloudflare.com/ac51d64c9b0b1b77b0bc834f635eafa4/cloudflare-sandbox-bridge-2-sandbox@sha256:d8511ef836cce3f4d841667db732025a2ecb32abbaf0d05e0c8be383ebbae6b3",
       // "standard-1" (4 vCPU / 8 GiB RAM) suits production workloads; drop to
       // "lite" to minimise cost when getting started.
       "instance_type": "standard-1",
-      // Live value as of 2026-09-14 (raised from the template default of 3).
-      "max_instances": 625
+      // Starting scale for this fresh APAC deployment — raise once validated.
+      "max_instances": 100
     }
   ],
   "durable_objects": {
@@ -71,7 +71,6 @@
   "vars": {
     "SANDBOX_TRANSPORT": "rpc",
     // Target number of pre-warmed containers (0 = disabled, no surprise bills).
-    // Live value: 1.
     "WARM_POOL_TARGET": "1",
     // How often the pool alarm checks health and replenishes containers (ms).
     "WARM_POOL_REFRESH_INTERVAL": "10000",
@@ -81,10 +80,9 @@
     // errors). Note the effective warm ceiling is max_instances minus any
     // assigned containers, so warmTarget cannot equal max_instances while
     // sandboxes are in use.
-    // Live value: 500. See PATCHES.md — without the patch documented there,
-    // raising or lowering this after the pool has already learned a ceiling
-    // has no effect.
-    "WARM_POOL_MAX_INSTANCES": "500",
+    // Starting scale for this fresh APAC deployment — see PATCHES.md for why
+    // raising or lowering this only takes effect with the configure() patch.
+    "WARM_POOL_MAX_INSTANCES": "100",
     // Number of containers the pool starts in parallel per scale-up batch.
     // Higher fills the pool faster; too high risks the platform throttling a
     // cold-start stampede. Clamped to [1, 20]. Default 5.
@@ -94,7 +92,7 @@
     // hint (best-effort, not a hard guarantee): wnam, enam, weur, eeur, apac,
     // apac-ne, apac-se, oc, sam, afr, me. Omit to fall back to
     // nearest-to-request placement.
-    "SANDBOX_LOCATION_HINT": "weur"
+    "SANDBOX_LOCATION_HINT": "apac"
   },
   "preview_urls": false
 }

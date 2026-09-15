@@ -4,11 +4,15 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "deploy": "wrangler deploy"
+    "postinstall": "patch-package",
+    "deploy:eu": "wrangler deploy -c wrangler.eu.jsonc",
+    "deploy:usa": "wrangler deploy -c wrangler.usa.jsonc",
+    "deploy:apac": "wrangler deploy -c wrangler.apac.jsonc"
   },
   "devDependencies": {
     "@cloudflare/sandbox": "*",
-    "@cloudflare/workers-types": "^4.20251126.0",
+    "@cloudflare/workers-types": "^5.20260911.1",
+    "patch-package": "^8.0.1",
     "typescript": "^5.9.3",
     "wrangler": "^4.102.0"
   }
