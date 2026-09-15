@@ -1,0 +1,15 @@
+{
+  "name": "cloudflare-sandbox-bridge",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/sandbox": "*",
+    "@cloudflare/workers-types": "^4.20251126.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.102.0"
+  }
+}
