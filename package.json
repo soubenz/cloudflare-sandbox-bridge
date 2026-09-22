@@ -1,19 +1,41 @@
 {
-  "name": "cloudflare-sandbox-bridge",
-  "version": "0.0.1",
-  "type": "module",
+  "name": "opalix-sandbox",
+  "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "postinstall": "patch-package",
-    "deploy:eu": "wrangler deploy -c wrangler.eu.jsonc",
-    "deploy:usa": "wrangler deploy -c wrangler.usa.jsonc",
-    "deploy:apac": "wrangler deploy -c wrangler.apac.jsonc"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --containers-rollout=immediate",
+    "deploy:staging": "wrangler deploy --env staging --containers-rollout=immediate",
+    "types": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
+    "opalix": "tsx cli/src/index.ts",
+    "d1:migrate": "wrangler d1 execute opalix --file=./migrations/0001_init.sql",
+    "d1:migrate:staging": "wrangler d1 execute opalix --env staging --file=./migrations/0001_init.sql",
+    "lab:publish": "tsx cli/src/index.ts labs publish",
+    "typecheck:cli": "tsc --noEmit -p cli/tsconfig.json",
+    "typecheck:all": "npm run typecheck && npm run typecheck:cli"
+  },
+  "dependencies": {
+    "hono": "^4.12.26",
+    "zod": "^3.24.1",
+    "ulid": "^2.3.0"
   },
   "devDependencies": {
-    "@cloudflare/sandbox": "*",
+    "@cloudflare/sandbox": "next",
+    "@cloudflare/vitest-pool-workers": "^0.9.5",
     "@cloudflare/workers-types": "^5.20260911.1",
-    "patch-package": "^8.0.1",
+    "@types/node": "^22.10.5",
+    "@types/ws": "^8.5.13",
+    "commander": "^13.0.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.9.3",
-    "wrangler": "^4.102.0"
+    "vitest": "^2.1.8",
+    "wrangler": "^4.102.0",
+    "ws": "^8.18.0",
+    "yaml": "^2.6.1"
   }
 }

@@ -1,0 +1,111 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "opalix-sandbox",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true, "head_sampling_rate": 0.2 }
+  },
+  // One container class per lab family. Each family gets its own Dockerfile,
+  // its own warm pool, and scales independently (spike risk R1).
+  "containers": [
+    {
+      "class_name": "AgentLab",
+      "image": "./images/agent/Dockerfile",
+      "instance_type": "standard-1",
+      "max_instances": 20
+    },
+    {
+      "class_name": "GatewayLab",
+      "image": "./images/gateway/Dockerfile",
+      "instance_type": "standard-1",
+      "max_instances": 20
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "class_name": "AgentLab", "name": "AGENT_LAB" },
+      { "class_name": "GatewayLab", "name": "GATEWAY_LAB" },
+      { "class_name": "Pool", "name": "POOL" },
+      { "class_name": "Session", "name": "SESSION" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["AgentLab", "GatewayLab", "Pool", "Session"]
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "BACKUP_BUCKET", "bucket_name": "opalix-backups" },
+    { "binding": "LABS_BUCKET", "bucket_name": "opalix-labs" }
+  ],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "opalix", "database_id": "REPLACE_WITH_D1_ID" }
+  ],
+  "vars": {
+    // R2-backed backups need these even though BACKUP_BUCKET is already bound;
+    // the SDK's createBackup() resolves account/bucket name independently of
+    // the binding for presigned-URL mode. See docs/api.md.
+    "BACKUP_BUCKET_NAME": "opalix-backups",
+    "CLOUDFLARE_ACCOUNT_ID": "REPLACE_WITH_ACCOUNT_ID",
+    "LOCATION_HINT": "weur",
+    "PUBLIC_BASE_URL": "https://labs-api.opalix.ai",
+    "POOL_TARGET_AGENT": "1",
+    "POOL_TARGET_GATEWAY": "1",
+    "LLM_HOST": "llm.opalix.ai",
+    "MIRROR_HOST": "mirror.opalix.ai"
+  },
+  // Secrets (wrangler secret put): SANDBOX_API_KEY, SESSION_TOKEN_SECRET,
+  // R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, LLM_WORKER_KEY.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "preview_urls": false,
+  "env": {
+    "staging": {
+      "name": "opalix-sandbox-staging",
+      "containers": [
+        {
+          "class_name": "AgentLab",
+          "image": "./images/agent/Dockerfile",
+          "instance_type": "standard-1",
+          "max_instances": 5
+        },
+        {
+          "class_name": "GatewayLab",
+          "image": "./images/gateway/Dockerfile",
+          "instance_type": "standard-1",
+          "max_instances": 5
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "class_name": "AgentLab", "name": "AGENT_LAB" },
+          { "class_name": "GatewayLab", "name": "GATEWAY_LAB" },
+          { "class_name": "Pool", "name": "POOL" },
+          { "class_name": "Session", "name": "SESSION" }
+        ]
+      },
+      "r2_buckets": [
+        { "binding": "BACKUP_BUCKET", "bucket_name": "opalix-backups-staging" },
+        { "binding": "LABS_BUCKET", "bucket_name": "opalix-labs-staging" }
+      ],
+      "d1_databases": [
+        { "binding": "DB", "database_name": "opalix-staging", "database_id": "REPLACE_WITH_STAGING_D1_ID" }
+      ],
+      "vars": {
+        "BACKUP_BUCKET_NAME": "opalix-backups-staging",
+        "CLOUDFLARE_ACCOUNT_ID": "REPLACE_WITH_ACCOUNT_ID",
+        "LOCATION_HINT": "weur",
+        "PUBLIC_BASE_URL": "https://labs-api-staging.opalix.ai",
+        "POOL_TARGET_AGENT": "0",
+        "POOL_TARGET_GATEWAY": "0",
+        "LLM_HOST": "llm-staging.opalix.ai",
+        "MIRROR_HOST": "mirror.opalix.ai"
+      }
+    }
+  }
+}

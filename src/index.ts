@@ -1,36 +1,24 @@
-/**
- * cloudflare-sandbox-bridge — Cloudflare Sandbox Worker
- *
- * This is a thin wrapper around the bridge from @cloudflare/sandbox/bridge.
- * All API routes, pool management, and authentication are handled by the bridge.
- *
- * To upgrade: bump the @cloudflare/sandbox version in package.json.
- *
- * Two behavioural patches are applied on top of the upstream bridge via
- * patches/@cloudflare+sandbox+*.patch (see that file and README.md for why):
- *   1. WarmPool.getSandboxStub() honours a SANDBOX_LOCATION_HINT var to steer
- *      where sandbox containers are placed (upstream has no placement control).
- *   2. WarmPool.configure() resets the learned maxInstances ceiling whenever
- *      WARM_POOL_MAX_INSTANCES changes, instead of only ever ratcheting down.
- */
+import { createRouter } from './router';
+import type { Env } from './env';
+import { poolTarget } from './families/registry';
+import { poolStub } from './do/pool';
 
-import { bridge } from '@cloudflare/sandbox/bridge';
+// Re-export every Durable Object class so wrangler can wire up bindings.
+export { AgentLab } from './families/agent-lab';
+export { GatewayLab } from './families/gateway-lab';
+export { Pool } from './do/pool';
+export { Session } from './do/session';
 
-// Re-export Sandbox so Wrangler can wire up the Durable Object binding.
-export { Sandbox } from '@cloudflare/sandbox';
+const app = createRouter();
 
-// Re-export WarmPool so Wrangler can wire up its Durable Object binding.
-export { WarmPool } from '@cloudflare/sandbox/bridge';
+export default {
+  fetch: app.fetch,
 
-export default bridge({
-	async fetch(_request: Request, _env: Env, _ctx: ExecutionContext): Promise<Response> {
-		// Application-specific fetch handling (runs after bridge routes).
-		// Return custom responses here, or remove this handler to let the
-		// bridge return 404 for non-API routes.
-		return new Response('OK');
-	},
-
-	async scheduled(_controller: ScheduledController, _env: Env, _ctx: ExecutionContext): Promise<void> {
-		// Application-specific scheduled logic (runs after pool priming).
-	}
-});
+  /** Safety-net pool kick, every 5 minutes: ensures each family's Pool DO has its config initialized and its alarm loop running, even if it was never primed via the API. */
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    for (const family of ['agent', 'gateway'] as const) {
+      const stub = poolStub(env, family);
+      ctx.waitUntil(stub.initConfig(family, poolTarget(env, family)).then(() => stub.prime()));
+    }
+  },
+};

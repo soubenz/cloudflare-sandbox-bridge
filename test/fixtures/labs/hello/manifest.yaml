@@ -1,0 +1,37 @@
+# Trivial lab used only to exercise the sandbox API end to end (spike,
+# integration tests, and `opalix labs test`). Not a real Opalix lab.
+slug: hello
+version: 1.0.0
+title: "Hello, sandbox"
+type: build
+family: agent
+timeout_minutes: 60
+idle_minutes: 10
+env:
+  GREETING: "hello from opalix"
+services:
+  - name: echo
+    argv: ["python3", "-m", "http.server", "8000"]
+    cwd: /workspace
+    port: 8000
+    healthcheck:
+      type: tcp
+      timeout_s: 15
+    ui: false
+    depends_on: []
+pressure:
+  - id: burst
+    at_minutes: 1
+    argv: ["/opt/lab/pressure/burst.sh"]
+    title: "A burst arrives"
+    message: "Something changed. Check the workspace."
+checks:
+  - name: greeting-file-exists
+    script: greeting.sh
+    timeout_s: 10
+    weight: 1
+hints:
+  - after_minutes: 2
+    text: "Write the value of $GREETING to /workspace/greeting.txt"
+egress:
+  allow: []
