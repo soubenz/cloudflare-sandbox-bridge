@@ -50,7 +50,7 @@
     // the SDK's createBackup() resolves account/bucket name independently of
     // the binding for presigned-URL mode. See docs/api.md.
     "BACKUP_BUCKET_NAME": "opalix-backups",
-    "CLOUDFLARE_ACCOUNT_ID": "REPLACE_WITH_ACCOUNT_ID",
+    "CLOUDFLARE_ACCOUNT_ID": "8f5baf938da8f184c5431050d65eef08",
     "LOCATION_HINT": "weur",
     "PUBLIC_BASE_URL": "https://labs-api.opalix.ai",
     "POOL_TARGET_AGENT": "1",
@@ -98,7 +98,7 @@
       ],
       "vars": {
         "BACKUP_BUCKET_NAME": "opalix-backups-staging",
-        "CLOUDFLARE_ACCOUNT_ID": "REPLACE_WITH_ACCOUNT_ID",
+        "CLOUDFLARE_ACCOUNT_ID": "8f5baf938da8f184c5431050d65eef08",
         "LOCATION_HINT": "weur",
         "PUBLIC_BASE_URL": "https://labs-api-staging.opalix.ai",
         "POOL_TARGET_AGENT": "0",
