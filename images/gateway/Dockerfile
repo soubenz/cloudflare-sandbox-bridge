@@ -7,13 +7,16 @@
 # correction (a guessed "0.13.0-next" tag never existed).
 FROM docker.io/cloudflare/sandbox:next
 
+# musl: the Grafana .deb below depends on it — see images/agent/Dockerfile's
+# comment for why it's installed here, before apt's lists are dropped,
+# rather than relying on the Grafana RUN layer's own dependency fallback.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates sudo python3 python3-pip \
+    curl ca-certificates sudo python3 python3-pip musl \
     && rm -rf /var/lib/apt/lists/*
 
 ARG GRAFANA_VERSION=11.4.0
 RUN curl -fsSL "https://dl.grafana.com/oss/release/grafana_${GRAFANA_VERSION}_amd64.deb" -o /tmp/grafana.deb \
-    && (dpkg -i /tmp/grafana.deb || apt-get install -f -y) \
+    && dpkg -i /tmp/grafana.deb \
     && rm -f /tmp/grafana.deb
 
 ARG PROMETHEUS_VERSION=2.55.1
