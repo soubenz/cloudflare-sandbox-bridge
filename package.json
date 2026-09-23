@@ -8,7 +8,7 @@
     "deploy": "wrangler deploy --containers-rollout=immediate",
     "deploy:staging": "wrangler deploy --env staging --containers-rollout=immediate",
     "types": "wrangler types",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run types && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run -c vitest.integration.config.ts",
