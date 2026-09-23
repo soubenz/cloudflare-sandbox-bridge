@@ -25,7 +25,11 @@ RUN curl -fsSL "https://github.com/prometheus/prometheus/releases/download/v${PR
     && mv /opt/prometheus-${PROMETHEUS_VERSION}.linux-amd64 /opt/prometheus \
     && rm -f /tmp/prom.tgz
 
-RUN pip3 install --no-cache-dir --break-system-packages "litellm[proxy]" locust
+# --break-system-packages does not exist on this base image's pip3
+# (22.0.2, from Ubuntu 22.04's python3-pip) -- that flag only exists on
+# pip 23.0.1+ / newer Ubuntu releases that enforce PEP 668. Confirmed by a
+# real CI build failure (23 Sep 2026, "no such option: --break-system-packages").
+RUN pip3 install --no-cache-dir "litellm[proxy]" locust
 
 RUN useradd -m -s /bin/bash learner \
     && mkdir -p /workspace /opt/lab \
