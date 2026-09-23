@@ -18,6 +18,8 @@ export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?
   const runId = newId();
   const dir = `/run/opalix/checks-${runId}`;
 
+  await rt.touchInput();
+
   const checksToRun = only ? manifest.checks.filter((c) => only.includes(c.name)) : manifest.checks;
   const run: ChecksRun = { run_id: runId, started_at: Date.now(), results: [] };
   await rt.putLastChecks(run);

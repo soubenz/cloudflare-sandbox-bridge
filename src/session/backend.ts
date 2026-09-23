@@ -53,6 +53,8 @@ export interface Backend {
   containerFetch(request: Request, port: number): Promise<Response>;
   createBackup(options: BackupOptions): Promise<DirectoryBackup>;
   restoreBackup(backup: DirectoryBackup): Promise<{ success: boolean }>;
+  /** Container-wide default env for every later exec(). Set once per start/resume/recover, before any service launches. */
+  setEnvVars(vars: Record<string, string>): Promise<void>;
   setAllowedHosts(hosts: string[]): Promise<void>;
   destroy(): Promise<void>;
 }
@@ -130,6 +132,9 @@ export function cloudflareBackend(env: Env, family: Family, sandboxId: string): 
     },
     restoreBackup(backup) {
       return withRetry(() => sb.restoreBackup(backup));
+    },
+    async setEnvVars(vars) {
+      await withRetry(() => sb.setEnvVars(vars));
     },
     async setAllowedHosts(hosts) {
       await withRetry(() => sb.setAllowedHosts(hosts));

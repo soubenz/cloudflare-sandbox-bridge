@@ -1,6 +1,7 @@
 import type { LabManifest, ServiceSpec } from '../labs/manifest';
 import type { SessionRuntime, ServiceRuntime, ServiceHealth } from './state';
 import { emitEvent } from './events';
+import { ApiError } from '../lib/errors';
 
 /** Kahn's algorithm over `depends_on`. manifest.ts already validated every dependency name resolves. */
 export function topoOrder(services: ServiceSpec[]): ServiceSpec[] {
@@ -99,7 +100,7 @@ export async function startAllServices(rt: SessionRuntime, manifest: LabManifest
 export async function restartService(rt: SessionRuntime, name: string): Promise<ServiceRuntime> {
   const services = await rt.services();
   const existing = services[name];
-  if (!existing) throw new Error(`unknown service "${name}"`);
+  if (!existing) throw ApiError.notFound('unknown_service', `unknown service "${name}"`);
   const backend = rt.backend();
 
   if (existing.process_id) {

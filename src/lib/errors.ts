@@ -11,7 +11,12 @@ export class ApiError extends Error {
 
   constructor(status: number, code: string, message: string, details?: unknown) {
     super(message);
-    this.name = 'ApiError';
+    // The name is the wire format. Workers RPC preserves a thrown error's
+    // `name` and `message` across the Durable Object boundary but drops the
+    // class and any custom properties, so status and code have to ride in
+    // the name — otherwise every 404/409/413 raised inside the Session DO
+    // reaches the client as a generic 500. fromSdkError() parses it back.
+    this.name = `ApiError:${status}:${code}`;
     this.status = status;
     this.code = code;
     this.details = details;
@@ -58,6 +63,13 @@ export function fromSdkError(err: unknown): ApiError {
   if (err instanceof ApiError) return err;
   const name = (err as { name?: string } | undefined)?.name;
   const message = err instanceof Error ? err.message : String(err);
+
+  // An ApiError that crossed a DO RPC boundary: same error, flattened.
+  if (name?.startsWith('ApiError:')) {
+    const [, status, code] = name.split(':');
+    return new ApiError(Number(status) || 500, code || 'internal_error', message);
+  }
+
   switch (name) {
     case 'ContainerUnavailableError': {
       const retryAfterMs = (err as { retryAfterMs?: number }).retryAfterMs;
@@ -66,10 +78,23 @@ export function fromSdkError(err: unknown): ApiError {
     case 'StaleProcessHandleError':
     case 'StaleTerminalHandleError':
       return ApiError.conflict('session_recovering', 'The container was replaced; recovering the session.');
+    case 'FileNotFoundError':
+    case 'BackupNotFoundError':
+    case 'ContextNotFoundError':
+    case 'CommandNotFoundError':
+      return ApiError.notFound('not_found', message);
+    case 'FileTooLargeError':
+      return ApiError.payloadTooLarge(message);
+    case 'FileExistsError':
+      return ApiError.conflict('file_exists', message);
     case 'OperationInterruptedError':
     case 'RPCTransportError':
       return new ApiError(503, 'sdk_transient', message);
     default:
-      return ApiError.internal(message);
+      // Carry the original error's class name. The streaming paths
+      // (terminal, SSE, proxy) cannot be reproduced locally without
+      // Docker, so a bare 500 message is often not enough to tell which
+      // of several SDK throw sites fired.
+      return ApiError.internal(message, name ? { error_name: name } : undefined);
   }
 }

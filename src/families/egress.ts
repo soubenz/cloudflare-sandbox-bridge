@@ -19,6 +19,15 @@ export const MIRROR_HOST = 'mirror.opalix.ai';
 export const BUNDLES_HOST = 'bundles.opalix.internal';
 
 /**
+ * The hosts every lab gets. `setAllowedHosts()` REPLACES the runtime list
+ * rather than extending it (and this SDK version has no add-one call), so
+ * any per-lab allowlist must be unioned with this or a lab that declares
+ * one extra host loses the LLM worker, the package mirror and the bundle
+ * server. See session/lifecycle.ts applyEgressAllowlist.
+ */
+export const BASE_ALLOWED_HOSTS = [LLM_HOST, MIRROR_HOST, BUNDLES_HOST];
+
+/**
  * Every outbound call to the LLM Worker gets the real credential injected
  * here, in the Worker, so the container never holds `LLM_WORKER_KEY`. The
  * container sets `X-Opalix-Session` and `X-Opalix-Session-Token` from

@@ -3,8 +3,9 @@ import type { LabManifest } from '../labs/manifest';
 import { renderManifest } from '../labs/manifest';
 import type { SessionRuntime, SessionMeta, SnapshotEntry } from './state';
 import { emitEvent, hasActiveEventClients } from './events';
+import { BASE_ALLOWED_HOSTS } from '../families/egress';
 import { scheduleTimer, cancelTimer, popDueTimers, rearmAlarm } from './timers';
-import { hydrateWorkspaceFiles, hydratePressureScripts, writeSessionEnv } from './hydrate';
+import { hydrateWorkspaceFiles, hydratePressureScripts, applySessionEnv } from './hydrate';
 import { startAllServices, relaunchAllServices, healthCheckAll, allServicesGone } from './services';
 import { firePressureEvent } from './pressure';
 import { tickMetrics } from './metrics';
@@ -77,14 +78,10 @@ async function runStart(rt: SessionRuntime): Promise<void> {
 
   await hydrateWorkspaceFiles(rt, meta.lab_slug, meta.lab_version);
   await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
-  if (manifest.egress.allow.length > 0) {
-    await rt.backend().setAllowedHosts(manifest.egress.allow).catch((err) =>
-      emitEvent(rt, 'alert', { kind: 'set_allowed_hosts_failed', error: String(err) })
-    );
-  }
+  await applyEgressAllowlist(rt, manifest);
 
   const llmToken = await mintLlmToken(rt.env, rt.sessionId);
-  await writeSessionEnv(rt, {
+  await applySessionEnv(rt, {
     OPALIX_SESSION_ID: rt.sessionId,
     OPALIX_SESSION_TOKEN: llmToken,
     OPALIX_BASE_URL: baseUrl,
@@ -226,7 +223,7 @@ export async function recover(rt: SessionRuntime, reason: string): Promise<void>
   }
 
   const llmToken = await mintLlmToken(rt.env, rt.sessionId);
-  await writeSessionEnv(rt, {
+  await applySessionEnv(rt, {
     OPALIX_SESSION_ID: rt.sessionId,
     OPALIX_SESSION_TOKEN: llmToken,
     OPALIX_BASE_URL: rt.env.PUBLIC_BASE_URL,
@@ -234,6 +231,7 @@ export async function recover(rt: SessionRuntime, reason: string): Promise<void>
     ...manifest.env,
   });
 
+  await applyEgressAllowlist(rt, manifest);
   await relaunchAllServices(rt);
   await resetTerminal(rt);
 
@@ -290,13 +288,14 @@ async function runResume(rt: SessionRuntime): Promise<void> {
   await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
 
   const llmToken = await mintLlmToken(rt.env, rt.sessionId);
-  await writeSessionEnv(rt, {
+  await applySessionEnv(rt, {
     OPALIX_SESSION_ID: rt.sessionId,
     OPALIX_SESSION_TOKEN: llmToken,
     OPALIX_BASE_URL: rt.env.PUBLIC_BASE_URL,
     LLM_BASE_URL: `http://${rt.env.LLM_HOST}`,
     ...manifest.env,
   });
+  await applyEgressAllowlist(rt, manifest);
   await startAllServices(rt, manifest);
   await rt.putTerminal(undefined);
 
@@ -362,4 +361,18 @@ async function runCleanup(rt: SessionRuntime): Promise<void> {
   await rt.putServices({});
   await rt.putTerminal(undefined);
   await rt.putPressureStatus({});
+}
+
+/**
+ * Per-lab egress hosts are a union with the family's base list, never a
+ * replacement — see families/egress.ts. Re-applied on resume and recover
+ * because both run on a freshly claimed sandbox that carries none of the
+ * previous container's runtime overrides.
+ */
+async function applyEgressAllowlist(rt: SessionRuntime, manifest: LabManifest): Promise<void> {
+  const hosts = [...new Set([...BASE_ALLOWED_HOSTS, ...manifest.egress.allow])];
+  await rt
+    .backend()
+    .setAllowedHosts(hosts)
+    .catch((err) => emitEvent(rt, 'alert', { kind: 'set_allowed_hosts_failed', error: String(err) }));
 }

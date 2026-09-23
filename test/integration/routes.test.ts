@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import WebSocket from 'ws';
 import { OpalixClient } from '../../cli/src/client';
+import { readSse } from './helpers';
 
 /**
  * Tier 2 of the test plan: the routes the lifecycle smoke test never
@@ -177,64 +178,3 @@ describeIfConfigured('sandbox API routes', () => {
     }, 60_000);
   });
 });
-
-interface SseEvent {
-  id: string;
-  event: string;
-  data: string;
-}
-
-/** Reads up to `want` events from an SSE stream, giving up after `timeoutMs`. */
-async function readSse(
-  url: string,
-  want: number,
-  timeoutMs: number,
-  headers: Record<string, string> = {}
-): Promise<SseEvent[]> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  const events: SseEvent[] = [];
-  try {
-    const res = await fetch(url, { headers: { accept: 'text/event-stream', ...headers }, signal: ctrl.signal });
-    if (!res.ok || !res.body) throw new Error(`SSE ${res.status}`);
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    while (events.length < want) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      let split: number;
-      while ((split = buf.indexOf('\n\n')) !== -1) {
-        const block = buf.slice(0, split);
-        buf = buf.slice(split + 2);
-        const parsed = parseSseBlock(block);
-        if (parsed) events.push(parsed);
-      }
-    }
-    await reader.cancel().catch(() => {});
-  } catch (err) {
-    if (!(err instanceof Error && err.name === 'AbortError')) throw err;
-  } finally {
-    clearTimeout(timer);
-    ctrl.abort();
-  }
-  return events;
-}
-
-function parseSseBlock(block: string): SseEvent | undefined {
-  const out: SseEvent = { id: '', event: 'message', data: '' };
-  let sawField = false;
-  for (const line of block.split('\n')) {
-    if (line.startsWith(':') || line.trim() === '') continue;
-    const idx = line.indexOf(':');
-    const field = idx === -1 ? line : line.slice(0, idx);
-    const value = idx === -1 ? '' : line.slice(idx + 1).trimStart();
-    if (field === 'id') out.id = value;
-    else if (field === 'event') out.event = value;
-    else if (field === 'data') out.data += value;
-    else continue;
-    sawField = true;
-  }
-  return sawField ? out : undefined;
-}

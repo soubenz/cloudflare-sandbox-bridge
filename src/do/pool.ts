@@ -216,7 +216,7 @@ export class Pool extends DurableObject<Env> {
           startMs += r.value.ready_at - r.value.created_at;
         } else {
           const name = (r.reason as { name?: string } | undefined)?.name;
-          if (name === 'container_unavailable' || name === 'ApiError') capacityHit = true;
+          if (name === 'container_unavailable' || name?.startsWith('ApiError')) capacityHit = true;
         }
       }
       const updatedStats = (await this.ctx.storage.get<PoolStats>('stats')) ?? defaultStats();

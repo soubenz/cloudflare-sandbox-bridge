@@ -1,0 +1,42 @@
+# Test fixture for Tier 3 (time behaviors). Not a real Opalix lab.
+# idle_minutes is the schema minimum so the idle-timeout path is
+# observable in a test run rather than in ten minutes.
+slug: fragile
+version: 1.0.0
+title: "Fragile (container-restart fixture)"
+type: build
+family: agent
+timeout_minutes: 60
+idle_minutes: 30
+env:
+  GREETING: "hello from opalix"
+services:
+  - name: echo
+    argv:
+      [
+        "python3", "-c",
+        "import http.server,socketserver\nclass H(http.server.SimpleHTTPRequestHandler):\n def do_GET(self):\n  self.path='/index.html'\n  return super().do_GET()\nsocketserver.TCPServer(('0.0.0.0',8000),H).serve_forever()",
+      ]
+    cwd: /workspace
+    port: 8000
+    healthcheck:
+      type: tcp
+      timeout_s: 15
+    ui: true
+    depends_on: []
+pressure:
+  - id: kill
+    at_minutes: 1
+    argv: ["/opt/lab/pressure/kill-container.sh"]
+    title: "The container dies"
+    message: "The process supervisor was killed."
+checks:
+  - name: greeting-file-exists
+    script: greeting.sh
+    timeout_s: 10
+    weight: 1
+hints:
+  - after_minutes: 1
+    text: "Write the value of $GREETING to /workspace/greeting.txt"
+egress:
+  allow: []
