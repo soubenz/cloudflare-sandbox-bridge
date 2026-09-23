@@ -29,13 +29,13 @@ export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?
     const sequential = checksToRun.filter((c) => !c.parallel);
 
     for (const check of sequential) {
-      const result = await runOneCheck(rt, backend, dir, check);
+      const result = await runOneCheck(rt, backend, dir, check, manifest.env);
       run.results.push(result);
       await rt.putLastChecks(run);
       emitEvent(rt, 'check.result', result);
     }
     if (parallel.length > 0) {
-      const results = await Promise.all(parallel.map((check) => runOneCheck(rt, backend, dir, check)));
+      const results = await Promise.all(parallel.map((check) => runOneCheck(rt, backend, dir, check, manifest.env)));
       for (const result of results) {
         run.results.push(result);
         emitEvent(rt, 'check.result', result);
@@ -78,14 +78,17 @@ async function runOneCheck(
   rt: SessionRuntime,
   backend: ReturnType<SessionRuntime['backend']>,
   dir: string,
-  check: CheckSpec
+  check: CheckSpec,
+  labEnv: Record<string, string>
 ): Promise<CheckResultEntry> {
   const started = Date.now();
   const scriptPath = `${dir}/checks/${check.script}`;
   try {
+    // Check scripts see the lab's declared env, same as the learner does:
+    // a grader asserting on configured behaviour needs the configuration.
     const proc = await backend.exec(['bash', scriptPath], {
       cwd: '/workspace',
-      env: { OPALIX_CHECK_NAME: check.name },
+      env: { ...labEnv, OPALIX_CHECK_NAME: check.name },
       timeout: check.timeout_s * 1000,
     });
     const out = await proc.output({ encoding: 'utf8', timeout: check.timeout_s * 1000 });

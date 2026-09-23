@@ -8,15 +8,20 @@ import { OpalixClient } from '../../cli/src/client';
  * scripts); this is the automated form of the manual walkthrough in
  * docs/spike.md.
  *
- * Requires: BASE_URL, OPALIX_KEY env vars, and the "hello" fixture lab
- * already published (`npm run opalix -- labs publish test/fixtures/labs/hello`).
+ * Requires: OPALIX_URL, OPALIX_KEY env vars (the same pair the CLI reads),
+ * and the "hello" fixture lab already published
+ * (`npm run opalix -- labs publish test/fixtures/labs/hello`).
+ *
+ * Not BASE_URL: Vite defines `import.meta.env.BASE_URL` from its `base`
+ * option, and vitest backs `import.meta.env` with `process.env`, so a
+ * BASE_URL exported by the shell is overwritten with "/" inside a test.
  */
-const BASE_URL = process.env.BASE_URL;
+const OPALIX_URL = process.env.OPALIX_URL;
 const OPALIX_KEY = process.env.OPALIX_KEY;
-const describeIfConfigured = BASE_URL && OPALIX_KEY ? describe : describe.skip;
+const describeIfConfigured = OPALIX_URL && OPALIX_KEY ? describe : describe.skip;
 
 describeIfConfigured('sandbox API smoke test', () => {
-  const service = new OpalixClient({ baseUrl: BASE_URL!, serviceKey: OPALIX_KEY });
+  const service = new OpalixClient({ baseUrl: OPALIX_URL!, serviceKey: OPALIX_KEY });
   let sessionId: string;
   let session: OpalixClient;
 
@@ -29,7 +34,7 @@ describeIfConfigured('sandbox API smoke test', () => {
     const started = await service.startSession('hello', `it-${Date.now()}`);
     expect(started.state).toBe('starting');
     sessionId = started.id;
-    session = new OpalixClient({ baseUrl: BASE_URL!, sessionToken: started.token });
+    session = new OpalixClient({ baseUrl: OPALIX_URL!, sessionToken: started.token });
 
     const deadline = Date.now() + 60_000;
     let state = started.state;
