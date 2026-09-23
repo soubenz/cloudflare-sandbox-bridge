@@ -9,6 +9,15 @@ export { GatewayLab } from './families/gateway-lab';
 export { Pool } from './do/pool';
 export { Session } from './do/session';
 
+// Required by @cloudflare/containers whenever a Sandbox subclass sets
+// `enableInternet`/`allowedHosts`/`outboundByHost` (both AgentLab and
+// GatewayLab do): it looks up this export via `ctx.exports.ContainerProxy`
+// to route outbound interception. Omitting it fails every container start
+// with "ctx.exports.ContainerProxy is undefined" — found only by actually
+// starting a session against the real deployment; nothing in the SDK docs
+// consulted while planning this flagged the requirement.
+export { ContainerProxy } from '@cloudflare/containers';
+
 const app = createRouter();
 
 export default {

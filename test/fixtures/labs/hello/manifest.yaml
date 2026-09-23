@@ -10,12 +10,21 @@ idle_minutes: 10
 env:
   GREETING: "hello from opalix"
 services:
+  # A bare `http.server` has no concept of a URL prefix, and the service
+  # proxy (src/session/proxy.ts) deliberately forwards the incoming path
+  # unchanged — real services (Grafana, LiteLLM) handle their own prefix
+  # via config (GF_SERVER_ROOT_URL, SERVER_ROOT_PATH). This fixture has no
+  # such config, so it always serves index.html regardless of path instead.
   - name: echo
-    argv: ["python3", "-m", "http.server", "8000"]
+    argv:
+      [
+        "python3", "-c",
+        "import http.server,socketserver\nclass H(http.server.SimpleHTTPRequestHandler):\n def do_GET(self):\n  self.path='/index.html'\n  return super().do_GET()\nsocketserver.TCPServer(('0.0.0.0',8000),H).serve_forever()",
+      ]
     cwd: /workspace
     port: 8000
     healthcheck:
-      type: http
+      type: tcp
       timeout_s: 15
     ui: true
     depends_on: []
