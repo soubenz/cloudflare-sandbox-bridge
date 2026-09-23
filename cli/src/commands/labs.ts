@@ -39,10 +39,16 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
       if (!existsSync(manifestPath)) throw new Error(`No manifest.yaml in ${dir}`);
       const manifestJson = parseYaml(readFileSync(manifestPath, 'utf8'));
 
-      // workspace.tgz gets everything a learner should see: workspace/ plus brief.md/hints.md at the lab root.
+      // workspace.tgz gets everything a learner should see, laid out exactly as
+      // it should land at /workspace in the container: the *contents* of the
+      // lab's workspace/ directory at the archive root (not nested under a
+      // "workspace/" entry — hydrate.ts extracts this archive directly into
+      // /workspace, so a nested folder here would land as /workspace/workspace/...),
+      // plus brief.md/hints.md as siblings so the learner sees them alongside
+      // their own files.
       const workspaceStaging = mkdtempSync(join(tmpdir(), 'opalix-ws-'));
       try {
-        execFileSync('sh', ['-c', `mkdir -p '${workspaceStaging}/workspace' && cp -r '${dir}'/workspace/* '${workspaceStaging}/workspace/' 2>/dev/null; true`]);
+        execFileSync('sh', ['-c', `mkdir -p '${workspaceStaging}' && cp -r '${dir}'/workspace/* '${workspaceStaging}/' 2>/dev/null; true`]);
         for (const f of ['brief.md', 'hints.md']) {
           if (existsSync(join(dir, f))) execFileSync('cp', [join(dir, f), join(workspaceStaging, f)]);
         }

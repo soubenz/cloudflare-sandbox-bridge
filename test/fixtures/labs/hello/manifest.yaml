@@ -15,9 +15,9 @@ services:
     cwd: /workspace
     port: 8000
     healthcheck:
-      type: tcp
+      type: http
       timeout_s: 15
-    ui: false
+    ui: true
     depends_on: []
 pressure:
   - id: burst

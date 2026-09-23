@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Opalix — hello, sandbox</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 640px; margin: 4rem auto; padding: 0 1.5rem; color: #1a1a1a; }
+  h1 { font-size: 1.5rem; }
+  code { background: #f0f0f0; padding: 0.15rem 0.4rem; border-radius: 4px; }
+  ul { line-height: 1.8; }
+</style>
+</head>
+<body>
+  <h1>This is a real Opalix lab container.</h1>
+  <p>This page is served by <code>python3 -m http.server</code>, running inside a Cloudflare Container claimed for this session, proxied through the Opalix sandbox Worker to your browser.</p>
+  <p>The task for this lab: write the value of the <code>GREETING</code> environment variable to <code>/workspace/greeting.txt</code>.</p>
+  <ul>
+    <li>Attach a terminal with the CLI: <code>opalix session attach</code></li>
+    <li>Run the checker: <code>opalix session check</code></li>
+  </ul>
+</body>
+</html>
