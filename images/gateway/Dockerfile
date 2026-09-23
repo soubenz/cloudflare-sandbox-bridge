@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1
 # Gateway lab family: LiteLLM + Grafana + Prometheus + a load-generation tool.
-FROM docker.io/cloudflare/sandbox:0.13.0-next
+#
+# `next` is the floating preview tag matching package.json's
+# @cloudflare/sandbox dependency ("next") — see images/agent/Dockerfile's
+# comment for why this floats rather than pins, and the same 23 Sep 2026
+# correction (a guessed "0.13.0-next" tag never existed).
+FROM docker.io/cloudflare/sandbox:next
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates sudo python3 python3-pip \

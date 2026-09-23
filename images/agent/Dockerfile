@@ -1,9 +1,15 @@
 # syntax=docker/dockerfile:1
 # Agent lab family: Python agent runtime + LiteLLM + Grafana.
-# Base image tag must match the @cloudflare/sandbox npm version installed
-# (this repo pins "next" -> keep this in sync with `npm ls @cloudflare/sandbox`;
-# the exact matching tag is confirmed in the Phase 0 spike, see docs/spike.md).
-FROM docker.io/cloudflare/sandbox:0.13.0-next-python
+#
+# `next-python` is the floating preview tag, matching package.json's
+# @cloudflare/sandbox dependency (also "next", not a pinned version) — the
+# two float together so they can't drift apart silently. Confirmed to exist
+# on Docker Hub (docker.io/cloudflare/sandbox tags) on 23 Sep 2026; an
+# earlier guess at a pinned "0.13.0-next-python" tag was wrong (never
+# published — real pinned preview tags look like "0.13.0-next.776.1-python").
+# Before GA, switch both this and package.json's dependency to matching
+# exact pinned versions for a reproducible build.
+FROM docker.io/cloudflare/sandbox:next-python
 
 # --- System packages ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
