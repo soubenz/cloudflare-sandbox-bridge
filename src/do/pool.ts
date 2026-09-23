@@ -55,23 +55,44 @@ const defaultStats = (): PoolStats => ({
  * alarm loop that pings, refills, and reaps.
  */
 export class Pool extends DurableObject<Env> {
+  /**
+   * Called by the cron safety kick (index.ts's `scheduled()`). Always
+   * ensures the alarm loop is running, even if `getConfig()`'s lazy
+   * initialization (target 0, no alarm) already created the config row
+   * because something queried this Pool before the cron's first tick —
+   * relying on "was this the first-ever call" to decide whether to arm the
+   * alarm would leave the pool permanently unrefilled in that ordering.
+   */
   async initConfig(family: Family, target: number): Promise<void> {
     const existing = await this.ctx.storage.get<PoolConfig>('config');
-    if (existing) {
-      if (existing.target !== target) {
-        await this.ctx.storage.put<PoolConfig>('config', { ...existing, target });
-      }
-      return;
+    if (!existing) {
+      await this.ctx.storage.put<PoolConfig>('config', { family, target, batch: 3, ping_every_s: 240 });
+      await this.ctx.storage.put<PoolStats>('stats', defaultStats());
+    } else if (existing.target !== target) {
+      await this.ctx.storage.put<PoolConfig>('config', { ...existing, target });
     }
-    await this.ctx.storage.put<PoolConfig>('config', { family, target, batch: 3, ping_every_s: 240 });
-    await this.ctx.storage.put<PoolStats>('stats', defaultStats());
     await this.scheduleAlarm();
   }
 
+  /**
+   * Lazily initializes with target 0 if the cron's `initConfig` hasn't run
+   * yet (e.g. in the first few minutes after a fresh deploy, or if the
+   * cron trigger is ever removed). `stats()`/`claim()`/`prime()` all go
+   * through this, so a Pool DO queried before its first cron tick reports
+   * "empty, no target" instead of a 500 — the cron's next real
+   * `initConfig` call still updates the target normally.
+   */
   private async getConfig(): Promise<PoolConfig> {
     const config = await this.ctx.storage.get<PoolConfig>('config');
-    if (!config) throw new Error('Pool not initialized; call initConfig first');
-    return config;
+    if (config) return config;
+    const family = this.ctx.id.name;
+    if (!family || !isFamily(family)) {
+      throw new Error('Pool DO must be addressed via idFromName(family)');
+    }
+    const fresh: PoolConfig = { family, target: 0, batch: 3, ping_every_s: 240 };
+    await this.ctx.storage.put<PoolConfig>('config', fresh);
+    await this.ctx.storage.put<PoolStats>('stats', defaultStats());
+    return fresh;
   }
 
   private async getWarm(): Promise<WarmEntry[]> {
