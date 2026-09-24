@@ -6,8 +6,10 @@ import { ApiError } from '../lib/errors';
 /** Kahn's algorithm over `depends_on`. manifest.ts already validated every dependency name resolves. */
 export function topoOrder(services: ServiceSpec[]): ServiceSpec[] {
   const byName = new Map(services.map((s) => [s.name, s]));
-  const indegree = new Map(services.map((s) => [s.name, 0]));
-  for (const s of services) for (const dep of s.depends_on) indegree.set(s.name, (indegree.get(s.name) ?? 0) + 1);
+  // Deduplicated: a repeated dependency would raise indegree twice but only
+  // ever be decremented once, reporting a dependency cycle that isn't there.
+  const deps = new Map(services.map((s) => [s.name, [...new Set(s.depends_on)]]));
+  const indegree = new Map(services.map((s) => [s.name, deps.get(s.name)!.length]));
 
   const ready = services.filter((s) => (indegree.get(s.name) ?? 0) === 0).map((s) => s.name);
   const order: ServiceSpec[] = [];
@@ -19,7 +21,7 @@ export function topoOrder(services: ServiceSpec[]): ServiceSpec[] {
     const spec = byName.get(name)!;
     order.push(spec);
     for (const s of services) {
-      if (s.depends_on.includes(name)) {
+      if (deps.get(s.name)!.includes(name)) {
         const next = (indegree.get(s.name) ?? 0) - 1;
         indegree.set(s.name, next);
         if (next === 0 && remaining.has(s.name)) ready.push(s.name);

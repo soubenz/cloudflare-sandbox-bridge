@@ -131,11 +131,18 @@ export function renderManifest(manifest: LabManifest, sessionId: string, baseUrl
       argv: svc.argv.map((a) => renderStr(a, svc.name)),
       cwd: renderStr(svc.cwd, svc.name),
       env: mapValues(svc.env, (v) => renderStr(v, svc.name)),
+      healthcheck: svc.healthcheck
+        ? { ...svc.healthcheck, path: svc.healthcheck.path ? renderStr(svc.healthcheck.path, svc.name) : svc.healthcheck.path }
+        : svc.healthcheck,
     })),
     pressure: manifest.pressure.map((p) => ({
       ...p,
       argv: p.argv.map((a) => renderStr(a, '')),
+      title: renderStr(p.title, ''),
+      message: renderStr(p.message, ''),
     })),
+    hints: manifest.hints.map((h) => ({ ...h, text: renderStr(h.text, '') })),
+    egress: { ...manifest.egress, allow: manifest.egress.allow.map((h) => renderStr(h, '')) },
   };
 }
 

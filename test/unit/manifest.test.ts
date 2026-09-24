@@ -88,6 +88,33 @@ describe('renderManifest', () => {
     expect(rendered.services[0]!.argv).toEqual(['run', '--prefix', '/sessions/sess-1/services/gw']);
     expect(rendered.services[0]!.env.SID).toBe('sess-1');
   });
+
+  it('templates pressure copy, hints, egress hosts and healthcheck paths', () => {
+    // These are author-facing strings; an un-rendered one reaches the
+    // learner as a literal {{session.base_url}} or silently matches no host.
+    const rendered = renderManifest(
+      parseManifest(
+        baseManifest({
+          services: [
+            { name: 'svc', argv: ['x'], port: 8000, healthcheck: { type: 'http', path: '{{service.prefix}}/health' } },
+          ],
+          pressure: [
+            { id: 'p', at_minutes: 1, argv: ['x'], title: 'At {{session.id}}', message: 'See {{session.base_url}}' },
+          ],
+          hints: [{ after_minutes: 1, text: 'Open {{session.base_url}}' }],
+          egress: { allow: ['{{llm.host}}'] },
+        })
+      ),
+      'sess-1',
+      'https://api.example.com',
+      'llm.example.com'
+    );
+    expect(rendered.pressure[0]!.title).toBe('At sess-1');
+    expect(rendered.pressure[0]!.message).toBe('See https://api.example.com');
+    expect(rendered.hints[0]!.text).toBe('Open https://api.example.com');
+    expect(rendered.egress.allow).toEqual(['llm.example.com']);
+    expect(rendered.services[0]!.healthcheck!.path).toBe('/sessions/sess-1/services/svc/health');
+  });
 });
 
 describe('topoOrder', () => {
@@ -109,5 +136,19 @@ describe('topoOrder', () => {
   it('returns a single service unchanged', () => {
     const manifest = parseManifest(baseManifest());
     expect(topoOrder(manifest.services).map((s) => s.name)).toEqual(['svc']);
+  });
+
+  it('tolerates a dependency listed twice', () => {
+    // A duplicate used to raise indegree twice and be decremented once,
+    // reporting a dependency cycle that does not exist.
+    const manifest = parseManifest(
+      baseManifest({
+        services: [
+          { name: 'b', argv: ['x'], depends_on: ['a', 'a'] },
+          { name: 'a', argv: ['x'] },
+        ],
+      })
+    );
+    expect(topoOrder(manifest.services).map((s) => s.name)).toEqual(['a', 'b']);
   });
 });
