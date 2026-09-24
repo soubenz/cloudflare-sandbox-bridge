@@ -49,7 +49,11 @@ describe('egress fence wiring', () => {
     expect(src).toMatch(/^\s{2}allowedHosts = BASE_ALLOWED_HOSTS;$/m);
     expect(src).not.toMatch(/static\s+enableInternet/);
     expect(src).not.toMatch(/static\s+allowedHosts/);
-    // This one must stay static.
-    expect(src).toMatch(/static outboundByHost/);
+    // outboundByHost must be ASSIGNED, never declared as a static field:
+    // a static field is installed with defineProperty and shadows
+    // Container's inherited setter instead of invoking it, leaving the
+    // handler registry empty.
+    expect(src).not.toMatch(/static\s+outboundByHost/);
+    expect(src).toMatch(new RegExp(`^${cls}\\.outboundByHost = \\{$`, 'm'));
   });
 });
