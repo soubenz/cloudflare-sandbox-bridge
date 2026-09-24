@@ -347,3 +347,68 @@ so every sample above ran against Worker version `72dd6649`. Note that
 `02efad1` changes `src/session/lifecycle.ts` alarm dispatch — both land
 after these numbers were taken, so section 5 in particular should be
 re-confirmed on the next deployed version.
+
+## AI Gateway + Workers AI (24 Sep 2026)
+
+Measured against a real gateway (`opalix`, cache TTL 86400, logging on),
+because the docs were ambiguous on the first question and silent on the
+third. Every figure below is from a live call, not a reading.
+
+### Auth: `Authorization`, not `cf-aig-authorization`
+
+The docs describe `cf-aig-authorization` as the gateway credential and warn
+that using `Authorization` is the top cause of 401s. For **Workers AI models
+through the OpenAI-compatible endpoint that is backwards**:
+
+| Headers sent | Result |
+|---|---|
+| `cf-aig-authorization` only | **401** Authentication error |
+| `Authorization` only | **200** |
+| both | 200 |
+| neither | 401 |
+
+`cf-aig-authorization` applies to gateways with *authenticated gateway* mode
+turned on, which ours is not. So `llmOutbound`'s existing
+`Authorization: Bearer` injection is already right, and the change this was
+about to make would have broken every Real-mode lab. If authenticated
+gateway mode is ever enabled, both headers will be needed.
+
+### Cache: a real determinism guarantee, with a warm-up
+
+An identical request returns a byte-identical cached response and
+`cf-aig-cache-status: HIT`. That is what Real-mode graders rest on, since
+`temperature: 0` promises nothing on batched fp8 inference.
+
+| Path | Call 1 | Call 2 | Call 3 |
+|---|---|---|---|
+| gateway default TTL | MISS | **HIT** | — |
+| explicit `cf-aig-cache-key` + `cf-aig-cache-ttl` | MISS | **MISS** | **HIT** |
+
+The explicit-key path needed **two** repeats before it hit, sequentially,
+with no concurrency involved. So a grader must not assert `HIT` on the first
+repeat after warming: pre-warm at publish time, and treat a MISS as a retry
+rather than a failure.
+
+### Logs: usable, and quick enough
+
+`GET /accounts/{acct}/ai-gateway/gateways/opalix/logs/{cf-aig-log-id}`,
+polled from the id in the response header:
+
+```
+visible after 2s
+{"model":"@cf/meta/llama-3.1-8b-instruct-fp8","cached":false,"success":true,
+ "status_code":200,"tokens_in":25,"tokens_out":13,
+ "cost":0.00000752536245714873,"duration":1423}
+```
+
+Ingestion latency is undocumented; measured at ~2 s here. Graders that read
+tokens, cost or duration (P1-02, P1-07, P3-03) must poll that id with
+backoff rather than read once.
+
+Cost is an estimate and a cache hit always records `cost: 0`, so grade
+"cost went down", never an exact figure.
+
+### What this fixes in the plan
+
+Section 21 said to change `llmOutbound` to `cf-aig-authorization`. That is
+wrong and the spike is why it was run first.
