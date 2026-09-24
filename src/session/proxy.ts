@@ -37,13 +37,23 @@ export async function proxyService(rt: SessionRuntime, request: Request, service
   const upstream = await backend.containerFetch(forwarded, service.spec.port);
 
   if (hadToken) {
-    // First hit with ?token=...: redirect to the clean URL and set a
-    // session cookie scoped to this session's service paths so subsequent
-    // asset/API requests from the service's own UI don't need the query
-    // param (which some UIs strip or mangle when building their own links).
+    // First hit with ?token=...: set a session cookie scoped to this
+    // session's service paths, so the service's own links and assets do
+    // not need the query param (which some UIs strip or mangle when
+    // building their own URLs).
+    //
+    // Partitioned (CHIPS) because the console embeds this in an iframe
+    // from a different origin, which makes it a third-party cookie —
+    // blocked by default in current browsers without it. Partitioned
+    // gives the embed its own jar keyed to the embedding site, which is
+    // exactly the intent: the cookie is only ever meant for this session
+    // inside this page.
     const token = new URL(request.url).searchParams.get('token')!;
     const headers = new Headers(upstream.headers);
-    headers.append('Set-Cookie', `opx_s_${sessionId}=${token}; Path=/sessions/${sessionId}/; HttpOnly; Secure; SameSite=None`);
+    headers.append(
+      'Set-Cookie',
+      `opx_s_${sessionId}=${token}; Path=/sessions/${sessionId}/; HttpOnly; Secure; SameSite=None; Partitioned`
+    );
     return new Response(upstream.body, { status: upstream.status, headers });
   }
 

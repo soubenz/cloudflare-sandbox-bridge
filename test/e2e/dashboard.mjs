@@ -146,23 +146,29 @@ try {
   // --- service UI through the path proxy --------------------------------
   const serviceTab = page.locator('#serviceTabs .tab').first();
   if (await serviceTab.count()) {
+    // Assert on the network, not on contentDocument: the iframe is
+    // cross-origin so the document is unreachable from here, and treating
+    // that as success would pass even when the frame failed to load.
+    const serviceResponse = page.waitForResponse(
+      (r) => r.url().includes('/services/') && r.request().resourceType() !== 'preflight',
+      { timeout: 30_000 }
+    );
     await serviceTab.click();
-    const frameOk = await page
-      .waitForFunction(
-        () => {
-          const f = document.getElementById('serviceFrame');
-          try {
-            return Boolean(f?.contentDocument?.body?.innerText?.length);
-          } catch {
-            return true; // cross-origin but loaded
-          }
-        },
-        null,
-        { timeout: 30_000 }
-      )
-      .then(() => true)
-      .catch(() => false);
-    record('service UI loads in the iframe', frameOk);
+    let status = 0;
+    let body = '';
+    try {
+      const res = await serviceResponse;
+      status = res.status();
+      body = await res.text().catch(() => '');
+    } catch {
+      /* no response at all */
+    }
+    record('service UI loads in the iframe', status === 200, `HTTP ${status}`);
+    record(
+      'service UI renders the lab page',
+      body.includes('real Opalix lab container'),
+      body.slice(0, 60).replace(/\s+/g, ' ')
+    );
     await shot(page, 'service');
   } else {
     record('service UI loads in the iframe', false, 'no service tab rendered');
