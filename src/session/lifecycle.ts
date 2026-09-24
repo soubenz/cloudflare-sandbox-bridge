@@ -380,6 +380,10 @@ async function runCleanup(rt: SessionRuntime): Promise<void> {
  * previous container's runtime overrides.
  */
 async function applyEgressAllowlist(rt: SessionRuntime, manifest: LabManifest): Promise<void> {
+  // Nothing to add means the container's static allowlist is already
+  // right; skip it rather than spend a retrying container call (which can
+  // block a start for tens of seconds) to set the value it already has.
+  if (manifest.egress.allow.length === 0) return;
   const hosts = [...new Set([...BASE_ALLOWED_HOSTS, ...manifest.egress.allow])];
   await rt
     .backend()

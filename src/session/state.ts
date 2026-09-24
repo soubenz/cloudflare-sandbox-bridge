@@ -106,6 +106,7 @@ const KEYS = {
   snapshots: 'snapshots',
   checksLast: 'checks:last',
   cost: 'cost',
+  sessionEnv: 'session_env',
 } as const;
 
 /**
@@ -171,6 +172,20 @@ export class SessionRuntime {
   }
   async putServices(services: Record<string, ServiceRuntime>): Promise<void> {
     await this.storage.put(KEYS.services, services);
+  }
+
+  /**
+   * The rendered session environment. Kept in DO storage, not only pushed
+   * to the container: the SDK's setEnvVars() writes an in-memory field on
+   * the Sandbox DO that it never restores after an eviction, so anything
+   * exec'd later (a service restart, a pressure script) would otherwise
+   * launch with none of the lab's declared env.
+   */
+  async sessionEnv(): Promise<Record<string, string>> {
+    return (await this.storage.get<Record<string, string>>(KEYS.sessionEnv)) ?? {};
+  }
+  async putSessionEnv(vars: Record<string, string>): Promise<void> {
+    await this.storage.put(KEYS.sessionEnv, vars);
   }
 
   async terminal(): Promise<TerminalRuntime | undefined> {

@@ -216,7 +216,10 @@ export class Pool extends DurableObject<Env> {
           startMs += r.value.ready_at - r.value.created_at;
         } else {
           const name = (r.reason as { name?: string } | undefined)?.name;
-          if (name === 'container_unavailable' || name?.startsWith('ApiError')) capacityHit = true;
+          // Only a genuine capacity signal backs the pool off. Matching
+          // any ApiError hid permanent failures (a bad image, a 500)
+          // behind a 5-minute "try again later".
+          if (name === 'ApiError:503:container_unavailable') capacityHit = true;
         }
       }
       const updatedStats = (await this.ctx.storage.get<PoolStats>('stats')) ?? defaultStats();

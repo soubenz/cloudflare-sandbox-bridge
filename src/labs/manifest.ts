@@ -13,7 +13,13 @@ const serviceSchema = z.object({
   name: z.string().min(1).max(40),
   argv: z.array(z.string()).min(1),
   cwd: z.string().default('/workspace'),
-  env: z.record(z.string()).default({}),
+  // Shell identifiers only: the session env is written to a file that
+  // every login shell sources, so `MY-KEY` would break shell startup and a
+  // key containing a backtick or $( ) would execute.
+  env: z.record(z.string()).default({}).refine(
+    (env) => Object.keys(env).every((k) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k)),
+    { message: 'env keys must be shell identifiers: letters, digits and underscore, not starting with a digit' }
+  ),
   port: z.number().int().positive().max(65535).optional(),
   healthcheck: healthcheckSchema.optional(),
   /** Whether this service has a browsable UI to proxy at /sessions/{id}/services/{name}/. */
@@ -54,7 +60,13 @@ export const labManifestSchema = z.object({
   family: z.enum(['agent', 'gateway']),
   timeout_minutes: z.number().int().min(60).max(120),
   idle_minutes: z.number().int().min(1).max(60).default(10),
-  env: z.record(z.string()).default({}),
+  // Shell identifiers only: the session env is written to a file that
+  // every login shell sources, so `MY-KEY` would break shell startup and a
+  // key containing a backtick or $( ) would execute.
+  env: z.record(z.string()).default({}).refine(
+    (env) => Object.keys(env).every((k) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k)),
+    { message: 'env keys must be shell identifiers: letters, digits and underscore, not starting with a digit' }
+  ),
   services: z.array(serviceSchema).min(1),
   pressure: z.array(pressureEventSchema).default([]),
   checks: z.array(checkSchema).min(1),

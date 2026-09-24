@@ -44,7 +44,12 @@ export function topoOrder(services: ServiceSpec[]): ServiceSpec[] {
  */
 export async function startService(rt: SessionRuntime, spec: ServiceSpec): Promise<ServiceRuntime> {
   const backend = rt.backend();
-  const proc = await backend.exec(spec.argv, { cwd: spec.cwd, env: spec.env });
+  // Explicitly, not via the container-wide default: that default is an
+  // in-memory field on the Sandbox DO which does not survive an eviction,
+  // so a service restarted an hour into a session would come back without
+  // the lab's declared env. Service-level env wins over session-level.
+  const env = { ...(await rt.sessionEnv()), ...spec.env };
+  const proc = await backend.exec(spec.argv, { cwd: spec.cwd, env });
   const runtime: ServiceRuntime = {
     spec,
     process_id: proc.id,

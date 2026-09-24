@@ -12,7 +12,11 @@ import { emitEvent } from './events';
 export async function firePressureEvent(rt: SessionRuntime, event: PressureEvent): Promise<void> {
   const status = await rt.pressureStatus();
   try {
-    const proc = await rt.backend().exec(event.argv, { cwd: '/opt/lab', timeout: 30_000 });
+    const proc = await rt.backend().exec(event.argv, {
+      cwd: '/opt/lab',
+      env: await rt.sessionEnv(),
+      timeout: 30_000,
+    });
     const out = await proc.output();
     if (out.exitCode !== 0) {
       status[event.id] = { status: 'failed', fired_at: Date.now() };

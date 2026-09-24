@@ -79,12 +79,16 @@ async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Reques
   // literal JSON in the learner's terminal. The cursors they carry are
   // what makes re-attach after a drop or a container restart resume where
   // the output left off, so they are recorded as they go by.
+  // A `chunk` frame is immediately followed by its binary frame, so the
+  // cursor must be recorded synchronously here — parking it behind a
+  // promise would let the binary frame arrive first and pair each chunk's
+  // bytes with the previous chunk's cursor.
   let pendingCursor: string | undefined;
   upstream.addEventListener('message', (event) => {
     if (typeof event.data === 'string') {
-      void recordTerminalCursor(rt, event.data).then((cursor) => {
-        if (cursor) pendingCursor = cursor;
-      });
+      const control = parseControlFrame(event.data);
+      if (control?.type === 'chunk') pendingCursor = control.cursor;
+      else if (control?.cursor) void persistCursor(rt, control.cursor);
       return;
     }
     broadcastToClients(rt, event.data);
@@ -118,18 +122,12 @@ function broadcastToClients(rt: SessionRuntime, data: ArrayBuffer): void {
   }
 }
 
-/** Returns the cursor a PTY control frame carries, if it has one. */
-async function recordTerminalCursor(rt: SessionRuntime, frame: string): Promise<string | undefined> {
+function parseControlFrame(frame: string): { type?: string; cursor?: string } | undefined {
   try {
-    const msg = JSON.parse(frame) as { type?: string; cursor?: string };
-    if (msg.type === 'chunk') return msg.cursor;
-    if ((msg.type === 'ready' || msg.type === 'truncated' || msg.type === 'exit') && msg.cursor) {
-      await persistCursor(rt, msg.cursor);
-    }
+    return JSON.parse(frame) as { type?: string; cursor?: string };
   } catch {
-    // Not a control frame we understand; nothing to record.
+    return undefined;
   }
-  return undefined;
 }
 
 async function persistCursor(rt: SessionRuntime, cursor: string): Promise<void> {
@@ -159,20 +157,21 @@ export async function handleClientMessage(rt: SessionRuntime, message: ArrayBuff
 }
 
 async function handleControlMessage(rt: SessionRuntime, body: string): Promise<void> {
+  const msg = parseControlFrame(body) as { type?: string; cols?: number; rows?: number } | undefined;
+  if (!msg || msg.type !== 'resize' || !msg.cols || !msg.rows) return;
   try {
-    const msg = JSON.parse(body) as { type?: string; cols?: number; rows?: number };
-    if (msg.type === 'resize' && msg.cols && msg.rows) {
-      // Re-fetch the handle rather than reusing rt.upstreamTerminalHandle:
-      // it wraps an RPC stub bound to the I/O context of the upgrade
-      // request, and this runs later, from the webSocketMessage hook.
-      const term = await rt.terminal();
-      if (!term) return;
-      const handle = await rt.backend().getTerminal(term.id);
-      await handle?.resize(msg.cols, msg.rows);
-      await rt.putTerminal({ ...term, cols: msg.cols, rows: msg.rows });
-    }
-  } catch {
-    // Ignore malformed control frames.
+    // Re-fetch the handle rather than reusing rt.upstreamTerminalHandle:
+    // it wraps an RPC stub bound to the I/O context of the upgrade
+    // request, and this runs later, from the webSocketMessage hook.
+    const term = await rt.terminal();
+    if (!term) return;
+    const handle = await rt.backend().getTerminal(term.id);
+    await handle?.resize(msg.cols, msg.rows);
+    await rt.putTerminal({ ...term, cols: msg.cols, rows: msg.rows });
+  } catch (err) {
+    // Left unreported, a failed resize leaves the stored cols/rows stale
+    // and a later re-attach rebuilds the PTY at the wrong size.
+    emitEvent(rt, 'alert', { kind: 'terminal_resize_failed', error: String(err) });
   }
 }
 
