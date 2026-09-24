@@ -111,15 +111,6 @@ export class Session extends DurableObject<Env> {
 
   // --- fetch: terminal WS, events SSE, service proxy ---
 
-  /**
-   * True for a WebSocket handshake over either HTTP version. HTTP/1.1
-   * sends `Upgrade: websocket`; HTTP/2 uses extended CONNECT (RFC 8441)
-   * and carries no Upgrade header, keeping only Sec-WebSocket-Version.
-   * Browsers negotiate HTTP/2 with Cloudflare, so checking Upgrade alone
-   * fails exactly where it matters.
-   */
-
-
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const parts = url.pathname.split('/').filter(Boolean); // ["sessions", ":id", ...]
@@ -168,6 +159,13 @@ export class Session extends DurableObject<Env> {
   }
 }
 
+/**
+ * True for a WebSocket handshake over either HTTP version. HTTP/1.1 sends
+ * `Upgrade: websocket`; HTTP/2 uses extended CONNECT (RFC 8441), which
+ * carries no Upgrade header and keeps only Sec-WebSocket-Version. Browsers
+ * negotiate HTTP/2 with Cloudflare, so checking Upgrade alone fails exactly
+ * where it matters.
+ */
 function isWebSocketRequest(request: Request): boolean {
   return (
     request.headers.get('Upgrade')?.toLowerCase() === 'websocket' ||
