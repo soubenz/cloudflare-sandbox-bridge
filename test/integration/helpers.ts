@@ -106,8 +106,12 @@ export function parseSseBlock(block: string): SseEvent | undefined {
  * there is deliberately no debug exec endpoint — so the egress tests use
  * it to probe the container's own network view.
  *
- * The end marker is written split (`__DO""NE__`) so that the shell's echo
- * of the typed command does not itself match the marker we scan for.
+ * Output is bracketed by two markers so the caller gets only what the
+ * command printed: the PTY echoes the typed line back, and an assertion
+ * over the raw stream cannot tell the echoed text from real output — a
+ * `curl -w %{http_code}` probe looks identical either way. Both markers
+ * are written split (`__STA""RT__`) so the echoed command line does not
+ * itself match what we scan for.
  */
 export async function execViaTerminal(
   terminalUrl: string,
@@ -138,7 +142,7 @@ export async function execViaTerminal(
     await new Promise((r) => setTimeout(r, 1500));
     buf = '';
     // Binary: the PTY takes raw bytes; a text frame is read as a control message.
-    ws.send(Buffer.from(`${command}; echo __DO""NE__$?\n`));
+    ws.send(Buffer.from(`echo __STA""RT__; ${command}; echo __DO""NE__$?\n`));
 
     const deadline = Date.now() + timeoutMs;
     const marker = /__DONE__(\d+)/;
@@ -147,7 +151,9 @@ export async function execViaTerminal(
     }
     const m = buf.match(marker);
     if (!m) throw new Error(`command did not finish within ${timeoutMs}ms: ${command}\n--- got ---\n${buf}`);
-    return { output: buf.slice(0, buf.indexOf(m[0])), exitCode: Number(m[1]) };
+    const started = buf.lastIndexOf('__START__', buf.indexOf(m[0]));
+    const from = started === -1 ? 0 : started + '__START__'.length;
+    return { output: buf.slice(from, buf.indexOf(m[0])), exitCode: Number(m[1]) };
   } finally {
     ws.close();
   }

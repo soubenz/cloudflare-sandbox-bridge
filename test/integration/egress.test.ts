@@ -40,37 +40,28 @@ describeIfConfigured('egress fence', () => {
     // the request out, and the Worker-side handler intercepted it.
     const { output } = await execViaTerminal(
       terminalUrl,
-      'curl -s -o /tmp/probe.tgz -w "%{http_code}" http://bundles.opalix.internal/labs/hello/1.0.0/workspace.tgz && file -b /tmp/probe.tgz'
+      'curl -s -m 20 -o /tmp/probe.tgz -w "HTTPCODE=%{http_code}" http://bundles.opalix.internal/labs/hello/1.0.0/workspace.tgz; echo; file -b /tmp/probe.tgz'
     );
-    expect(output).toContain('200');
+    expect(output).toContain('HTTPCODE=200');
     expect(output.toLowerCase()).toContain('gzip');
   }, 120_000);
 
-  it('refuses an arbitrary host', async () => {
-    const { output, exitCode } = await execViaTerminal(
-      terminalUrl,
-      'curl -s -m 10 -o /dev/null -w "%{http_code}" http://example.com/'
-    );
-    // Either curl fails outright or it gets a non-2xx; what must not
-    // happen is a 200 from the real example.com.
-    expect(output).not.toContain('200');
-    if (exitCode === 0) expect(output.trim()).not.toMatch(/^2\d\d$/);
-  }, 120_000);
-
-  it('refuses a raw IP, bypassing DNS', async () => {
+  // A host outside allowedHosts is rejected by ContainerProxy with 520;
+  // if the fence is off entirely the origin answers normally instead.
+  // Asserting the exact code matters: an earlier version of this test
+  // looked for the substring "200" anywhere in the stream and could not
+  // distinguish a real response from the shell's echo of the command.
+  it.each([
+    ['an arbitrary host', '-s', 'http://example.com/'],
+    ['a raw IP, bypassing DNS', '-s', 'http://1.1.1.1/'],
+    ['https to a denied host', '-sk', 'https://example.com/'],
+  ])('refuses %s', async (_label, flags, url) => {
     const { output } = await execViaTerminal(
       terminalUrl,
-      'curl -s -m 10 -o /dev/null -w "%{http_code}" http://1.1.1.1/'
+      `curl ${flags} -m 15 -o /dev/null -w "HTTPCODE=%{http_code}" ${url}`
     );
-    expect(output).not.toContain('200');
-  }, 120_000);
-
-  it('refuses https to a denied host', async () => {
-    const { output } = await execViaTerminal(
-      terminalUrl,
-      'curl -sk -m 10 -o /dev/null -w "%{http_code}" https://example.com/'
-    );
-    expect(output).not.toContain('200');
+    expect(output).not.toContain('HTTPCODE=200');
+    expect(output).toMatch(/HTTPCODE=(520|000)/);
   }, 120_000);
 
   it('never exposes platform credentials to the container', async () => {
