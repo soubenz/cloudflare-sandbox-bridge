@@ -142,6 +142,10 @@ export class OpalixClient {
     return this.request(`/pools/${family}/prime`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target }) });
   }
 
+  drainPool(family: string): Promise<{ ok: boolean }> {
+    return this.request(`/pools/${family}/drain`, { method: 'POST' });
+  }
+
   eventsUrl(sessionId: string): string {
     const url = new URL(`${this.opts.baseUrl}/sessions/${sessionId}/events`);
     if (this.opts.sessionToken) url.searchParams.set('token', this.opts.sessionToken);

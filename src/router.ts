@@ -75,6 +75,17 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     return c.json({ ok: true });
   });
 
+  // prime() only ever grows the pool — its alarm acts when target - warm
+  // is positive — so lowering the target strands the surplus, and a warm
+  // standard-1 container left running is real money.
+  app.post('/pools/:family/drain', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const family = c.req.param('family');
+    if (!isFamily(family)) throw ApiError.notFound('unknown_family', `No family "${family}"`);
+    await poolStub(c.env, family).drain();
+    return c.json({ ok: true });
+  });
+
   // --- Sessions ---
 
   app.post('/sessions', async (c) => {

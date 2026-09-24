@@ -67,9 +67,14 @@ async function runStart(rt: SessionRuntime): Promise<void> {
   const meta = await rt.requireMeta();
   const rawManifest = await rt.requireManifest();
 
-  const claim = await poolStub(rt.env, meta.family).claim(rt.sessionId);
-  await rt.patchMeta({ sandbox_id: claim.sandbox_id });
-  await rt.bindBackend(meta.family, claim.sandbox_id);
+  // The `start` timer is deliberately retryable: if the DO is evicted
+  // mid-start the alarm runs this again. Claiming unconditionally would
+  // then take a second container and overwrite the id of the first, which
+  // end() would never destroy — it would sit in the pool's `claimed` map
+  // until the 3-hour reap. Reuse the claim we already hold.
+  const sandboxId = meta.sandbox_id ?? (await poolStub(rt.env, meta.family).claim(rt.sessionId)).sandbox_id;
+  if (meta.sandbox_id !== sandboxId) await rt.patchMeta({ sandbox_id: sandboxId });
+  await rt.bindBackend(meta.family, sandboxId);
   await rt.backend().ensureRunning();
 
   const baseUrl = rt.env.PUBLIC_BASE_URL;
@@ -289,9 +294,14 @@ async function runResume(rt: SessionRuntime): Promise<void> {
   const latest = snapshots[0];
   if (!latest) throw new Error('resume fired with no snapshot');
 
-  const claim = await poolStub(rt.env, meta.family).claim(rt.sessionId);
-  await rt.patchMeta({ sandbox_id: claim.sandbox_id });
-  await rt.bindBackend(meta.family, claim.sandbox_id);
+  // The `start` timer is deliberately retryable: if the DO is evicted
+  // mid-start the alarm runs this again. Claiming unconditionally would
+  // then take a second container and overwrite the id of the first, which
+  // end() would never destroy — it would sit in the pool's `claimed` map
+  // until the 3-hour reap. Reuse the claim we already hold.
+  const sandboxId = meta.sandbox_id ?? (await poolStub(rt.env, meta.family).claim(rt.sessionId)).sandbox_id;
+  if (meta.sandbox_id !== sandboxId) await rt.patchMeta({ sandbox_id: sandboxId });
+  await rt.bindBackend(meta.family, sandboxId);
   await rt.backend().ensureRunning();
 
   await rt.backend().restoreBackup({ id: latest.backup_id, dir: latest.dir });
