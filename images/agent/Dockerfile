@@ -17,7 +17,13 @@ FROM docker.io/cloudflare/sandbox:next-python
 # has it satisfied. A real CI build (23 Sep 2026) showed that without this,
 # `dpkg -i`'s `apt-get install -f -y` fallback removes Grafana instead of
 # fetching musl, once apt's lists had already been dropped in this layer.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Retried: the Ubuntu mirrors serve an index mid-sync often enough that a
+# plain `apt-get update` fails the whole build with "File has unexpected
+# size", and every deploy rebuilds these images.
+RUN for attempt in 1 2 3; do \
+      apt-get update -o Acquire::Retries=3 && break || { echo "apt-get update failed (attempt $attempt)"; sleep 10; }; \
+    done \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
     curl ca-certificates sudo musl tmux \
     && rm -rf /var/lib/apt/lists/*
 

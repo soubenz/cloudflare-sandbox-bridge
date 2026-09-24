@@ -10,7 +10,13 @@ FROM docker.io/cloudflare/sandbox:next
 # musl: the Grafana .deb below depends on it — see images/agent/Dockerfile's
 # comment for why it's installed here, before apt's lists are dropped,
 # rather than relying on the Grafana RUN layer's own dependency fallback.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Retried: the Ubuntu mirrors serve an index mid-sync often enough that a
+# plain `apt-get update` fails the whole build with "File has unexpected
+# size", and every deploy rebuilds these images.
+RUN for attempt in 1 2 3; do \
+      apt-get update -o Acquire::Retries=3 && break || { echo "apt-get update failed (attempt $attempt)"; sleep 10; }; \
+    done \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
     curl ca-certificates sudo python3 python3-pip musl tmux \
     && rm -rf /var/lib/apt/lists/*
 
