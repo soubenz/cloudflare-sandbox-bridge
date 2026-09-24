@@ -2,6 +2,9 @@ import { test as base, expect, type Page } from '@playwright/test';
 
 export const API = process.env.OPALIX_URL || 'https://opalix-sandbox.soubenz94.workers.dev';
 
+/** The lab every spec is written against: its files, services and checks. */
+export const LAB = 'hello';
+
 /**
  * A running lab session, shared by every spec in the run.
  *
@@ -100,11 +103,23 @@ export async function startOrResume(page: Page): Promise<string> {
 
   if (!resumed) {
     await page.waitForSelector('.lab', { timeout: 30_000 });
-    await page.locator('.lab', { hasText: 'hello' }).first().locator('button').click();
+    // By slug, exactly. `hasText: 'hello'` is a substring match, and the
+    // catalogue also publishes `gateway-hello`, whose row sorts first — so
+    // the suite silently started the gateway smoke lab and then failed
+    // every spec that named a file, a service or a check of the hello lab.
+    await page.locator(`.lab[data-slug="${LAB}"]`).locator('button').click();
     await page.waitForSelector('#workspace:not([hidden])', { timeout: 30_000 });
   }
 
   await expect(page.locator('#statePill')).toHaveText('running', { timeout: 120_000 });
+  // The API rejoins whatever session this address already has, whatever lab
+  // it is running. Every spec below asserts on the hello lab's files,
+  // services and checks, so say plainly that we are in the wrong lab rather
+  // than reporting it eight times over as eight unrelated product faults.
+  await expect(
+    page.locator('#sessionLab'),
+    `resumed a session running a different lab; end it before running this suite`
+  ).toHaveText(LAB, { timeout: 30_000 });
   sharedSession = await page.evaluate(() => localStorage.getItem('opalix.session'));
   return (await page.locator('#sessionId').textContent()) ?? '';
 }

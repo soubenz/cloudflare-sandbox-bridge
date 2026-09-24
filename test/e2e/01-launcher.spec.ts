@@ -1,4 +1,4 @@
-import { test, expect, openConsole, API } from './fixtures';
+import { test, expect, openConsole, API, LAB } from './fixtures';
 
 test.describe('lab launcher', () => {
   test('lists published labs without a service key', async ({ page }) => {
@@ -18,7 +18,11 @@ test.describe('lab launcher', () => {
 
   test('offers the hello fixture lab', async ({ page }) => {
     await openConsole(page);
-    await expect(page.locator('.lab', { hasText: 'hello' }).first()).toBeVisible();
+    // By slug: `hasText: 'hello'` also matches the gateway-hello row, so
+    // this passed while the hello lab was missing entirely.
+    const lab = page.locator(`.lab[data-slug="${LAB}"]`);
+    await expect(lab).toBeVisible();
+    await expect(lab.locator('.lab-sub')).toHaveText(new RegExp(`^${LAB}@`));
   });
 
   test('surfaces an unreachable API instead of hanging', async ({ page }) => {

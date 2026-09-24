@@ -61,6 +61,12 @@ async function loadLabs() {
     for (const lab of labs) {
       const row = document.createElement('div');
       row.className = 'lab';
+      // The slug is the lab's identity. It is rendered inside .lab-sub as
+      // prose, where "hello" is also a substring of "gateway-hello", so
+      // carry it as an attribute too: that is what lets anything selecting
+      // a row — a test, a deep link — name one lab rather than a family of
+      // labs whose names happen to overlap.
+      row.dataset.slug = lab.slug;
       row.innerHTML = `
         <div class="lab-meta">
           <div class="lab-title"></div>
@@ -175,7 +181,31 @@ function handleEvent(type, tone, data) {
   }
   if (type === 'hint') renderHint(data);
   if (type === 'check.finished' || type === 'check.result') refreshChecks();
-  if (type === 'container.restarted') refreshFiles();
+  if (type === 'container.restarted') onContainerRestarted();
+}
+
+/**
+ * A replaced container is a new machine, and the API tells us so before it
+ * has finished making it one: `container.restarted` is emitted first, and
+ * only then does the session restore a snapshot or re-hydrate the lab
+ * files, relaunch the services and reset the terminal, ending with
+ * `session.state: running`.
+ *
+ * Refreshing the file list on `container.restarted` therefore listed a
+ * workspace that was about to be wiped and rewritten, and `runningHandled`
+ * then swallowed the `running` that followed — so the console showed an
+ * empty workspace and a dead terminal for the rest of the session, with a
+ * Reconnect button as the only way out. Re-arm instead, and let the
+ * running handshake run again once the container is actually ready.
+ */
+function onContainerRestarted() {
+  runningHandled = false;
+  // The relay dropped the old terminal with the container it belonged to,
+  // so this socket is gone whether or not it has noticed yet.
+  state.terminal?.dispose();
+  state.terminal = null;
+  setTerminalStatus('closed', 'the container was replaced; reconnecting');
+  pollUntilRunning();
 }
 
 function summarize(type, data) {
@@ -217,18 +247,27 @@ function addEvent(tone, what, detail) {
   $('eventCount').textContent = `${++state.eventCount}`;
 }
 
+// A restart can start a second poll while the first is still sleeping, and
+// two loops racing the same session is how a terminal gets attached twice.
+let polling = false;
 async function pollUntilRunning() {
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline && state.session) {
-    try {
-      const status = await api.status(state.session.id, state.session.token);
-      setStatePill(status.meta.state);
-      if (status.meta.state === 'running') return onRunning(status);
-      if (status.meta.state === 'ended') return onEnded(status.meta.end_reason);
-    } catch {
-      /* transient; the poll retries */
+  if (polling) return;
+  polling = true;
+  try {
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline && state.session) {
+      try {
+        const status = await api.status(state.session.id, state.session.token);
+        setStatePill(status.meta.state);
+        if (status.meta.state === 'running') return await onRunning(status);
+        if (status.meta.state === 'ended') return onEnded(status.meta.end_reason);
+      } catch {
+        /* transient; the poll retries */
+      }
+      await sleep(1500);
     }
-    await sleep(1500);
+  } finally {
+    polling = false;
   }
 }
 
