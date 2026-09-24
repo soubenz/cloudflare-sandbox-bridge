@@ -124,9 +124,15 @@ export class Session extends DurableObject<Env> {
           // HTTP/2 there is no `Upgrade` header at all (h2 forbids it),
           // so gating on that alone rejected every browser handshake
           // while Node clients, which speak HTTP/1.1, worked.
+          // Worth naming the likely cause: `Upgrade` and `Connection` are
+          // hop-by-hop headers, so an intermediary that re-issues the
+          // request rather than tunnelling it drops them, and the client
+          // sees a failure it did nothing to cause.
           throw ApiError.badRequest(
             'not_a_websocket',
-            `The terminal route needs a WebSocket handshake (method ${request.method}, headers: ${[...request.headers.keys()].join(',')})`
+            `The terminal route needs a WebSocket handshake carrying "Upgrade: websocket". ` +
+              `Got method ${request.method} with headers: ${[...request.headers.keys()].join(',')}. ` +
+              `If the client did send it, a proxy in between has stripped it.`
           );
         }
         return openTerminalSocket(this.rt, request);
@@ -160,16 +166,13 @@ export class Session extends DurableObject<Env> {
 }
 
 /**
- * True for a WebSocket handshake over either HTTP version. HTTP/1.1 sends
- * `Upgrade: websocket`; HTTP/2 uses extended CONNECT (RFC 8441), which
- * carries no Upgrade header and keeps only Sec-WebSocket-Version. Browsers
- * negotiate HTTP/2 with Cloudflare, so checking Upgrade alone fails exactly
- * where it matters.
+ * `Upgrade: websocket` and nothing else, because that is the condition the
+ * Workers runtime itself enforces: returning a WebSocket in response to a
+ * request without that header fails with "Worker tried to return a
+ * WebSocket in a response to a request which did not contain the header
+ * Upgrade: websocket". Accepting a request on any weaker signal cannot
+ * succeed — it only turns a clear rejection into that opaque 500.
  */
 function isWebSocketRequest(request: Request): boolean {
-  return (
-    request.headers.get('Upgrade')?.toLowerCase() === 'websocket' ||
-    request.headers.has('Sec-WebSocket-Version') ||
-    request.method === 'CONNECT'
-  );
+  return request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
 }
