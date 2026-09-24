@@ -91,16 +91,20 @@ async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Reques
     });
   }
 
-  // Hand the SDK the browser's real upgrade request, exactly as the SDK's
-  // own bridge does. A synthetic one carrying only `Upgrade: websocket`
-  // fails: the Sandbox DO takes its WebSocket branch only when BOTH
-  // `Upgrade` and `Connection: Upgrade` are present, and otherwise falls
-  // through to containerFetch(), which rejects /ws/terminal on the control
-  // port outright with "Terminal connection is not authorized". The URL
-  // here is irrelevant — the SDK rewrites it to /ws/terminal itself — and
-  // the real request additionally carries the Sec-WebSocket-* headers the
-  // container's own handshake expects.
-  const connectResp = await terminal.connect(originRequest, { cursor: existingRef?.cursor });
+  // The SDK's terminal.connect() insists on seeing `Upgrade: websocket`
+  // on the request it is handed, and the Sandbox DO additionally requires
+  // `Connection: Upgrade` before it will take its WebSocket branch. Over
+  // HTTP/2 the browser's handshake carries neither — a WebSocket there is
+  // extended CONNECT (RFC 8441) — so the incoming request cannot simply be
+  // passed through. Use it when it already looks like an HTTP/1.1
+  // handshake, and otherwise hand over a stand-in carrying both headers.
+  // The URL does not matter either way: the SDK rewrites it to
+  // /ws/terminal itself.
+  const upgradeRequest =
+    originRequest.headers.get('Upgrade')?.toLowerCase() === 'websocket'
+      ? originRequest
+      : syntheticUpgradeRequest();
+  const connectResp = await terminal.connect(upgradeRequest, { cursor: existingRef?.cursor });
   const upstream = connectResp.webSocket;
   if (!upstream) throw new Error('terminal.connect() did not return a WebSocket');
   upstream.accept();
