@@ -6,8 +6,8 @@ import { LLM_HOST, MIRROR_HOST } from '../../src/families/egress';
 /**
  * families/egress.ts documents that LLM_HOST/MIRROR_HOST must be literal
  * strings kept in sync with wrangler.jsonc's vars by hand, because the
- * Sandbox subclass's static `allowedHosts`/`outboundByHost` can't read
- * `env` at module-load time. This test is that sync check.
+ * Sandbox subclass's `allowedHosts`/`outboundByHost` can't read `env` at
+ * module-load time. This test is that sync check.
  */
 function readWranglerVars(): Record<string, string> {
   const raw = readFileSync(join(__dirname, '../../wrangler.jsonc'), 'utf8');
@@ -31,5 +31,25 @@ describe('egress hostname constants stay in sync with wrangler.jsonc', () => {
 
   it('MIRROR_HOST matches the production wrangler.jsonc var', () => {
     expect(MIRROR_HOST).toBe(vars.MIRROR_HOST);
+  });
+});
+
+describe('egress fence wiring', () => {
+  // @cloudflare/containers reads `this.enableInternet` and
+  // `this.allowedHosts` — instance fields. Declaring either as `static` is
+  // silently ignored, which is exactly what happened: the fence looked
+  // correct in the source and the container had unrestricted internet.
+  // Only `outboundByHost` is genuinely static (registry-backed).
+  it.each(['AgentLab', 'GatewayLab'])('%s declares the egress fields as instance fields', (cls) => {
+    const src = readFileSync(
+      join(__dirname, `../../src/families/${cls === 'AgentLab' ? 'agent' : 'gateway'}-lab.ts`),
+      'utf8'
+    );
+    expect(src).toMatch(/^\s{2}enableInternet = false;$/m);
+    expect(src).toMatch(/^\s{2}allowedHosts = BASE_ALLOWED_HOSTS;$/m);
+    expect(src).not.toMatch(/static\s+enableInternet/);
+    expect(src).not.toMatch(/static\s+allowedHosts/);
+    // This one must stay static.
+    expect(src).toMatch(/static outboundByHost/);
   });
 });
