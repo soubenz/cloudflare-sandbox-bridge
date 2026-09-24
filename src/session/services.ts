@@ -82,14 +82,20 @@ async function tailLogs(proc: { logs: (opts: { replay: boolean }) => Promise<Rea
   try {
     const stream = await proc.logs({ replay: true });
     const reader = stream.getReader();
-    const chunks: unknown[] = [];
+    const decoder = new TextDecoder();
+    let text = '';
     for (let i = 0; i < 50; i++) {
       const { done, value } = await reader.read();
       if (done) break;
-      chunks.push(value);
+      // Chunks are Uint8Arrays. JSON.stringify renders one as
+      // {"0":103,"1":114,...}, so the old tail was 1 KB of the *digits* of
+      // a byte array — the one field meant to explain a failed start, and
+      // it explained nothing.
+      text += typeof value === 'string' ? value : decoder.decode(value as Uint8Array, { stream: true });
     }
+    text += decoder.decode();
     await reader.cancel().catch(() => {});
-    return JSON.stringify(chunks).slice(-1024);
+    return text.slice(-1024);
   } catch {
     return '';
   }
@@ -192,7 +198,27 @@ async function probeService(proc: SandboxProcess, runtime: ServiceRuntime): Prom
   }
 }
 
-/** True if every service process the Session DO started is gone — the health alarm's signal to call lifecycle.recover. */
+/**
+ * True if the container appears to have been replaced under a running
+ * session — the health alarm's signal to call lifecycle.recover.
+ *
+ * A null process handle is a hint, not proof. The SDK implements
+ * `getProcess` as `runExisting({ kind: "current" })`, which does not wake
+ * the container and returns null for *every* id whenever the runtime is
+ * absent or has re-incarnated. So "all handles are null" really means "this
+ * is not the same runtime any more", which is not the same claim as "the
+ * processes died" — and it was observed firing while Prometheus was healthy
+ * and answering its port, both before and immediately after.
+ *
+ * That mattered because recover() re-hydrates the lab bundle over
+ * /workspace when there is no snapshot, so a false positive silently threw
+ * away everything the learner had done.
+ *
+ * A port that answers is proof of life and outranks a null handle, so
+ * corroborate before declaring a restart. The probe goes through
+ * containerFetch rather than a process handle precisely because every
+ * handle is null in the case being tested.
+ */
 export async function allServicesGone(rt: SessionRuntime): Promise<boolean> {
   const services = await rt.services();
   const names = Object.keys(services);
@@ -203,5 +229,30 @@ export async function allServicesGone(rt: SessionRuntime): Promise<boolean> {
     const proc = await backend.getProcess(runtime.process_id);
     if (proc) return false;
   }
-  return true;
+  return !(await anyServicePortAnswers(rt));
+}
+
+/**
+ * Whether any service's port still answers. Deliberately generous about
+ * what counts: any HTTP response at all, including a 404 or a 500, proves
+ * something is listening, which is the only question here.
+ */
+async function anyServicePortAnswers(rt: SessionRuntime): Promise<boolean> {
+  const services = await rt.services();
+  const backend = rt.backend();
+  for (const runtime of Object.values(services)) {
+    const { port, healthcheck } = runtime.spec;
+    if (port === undefined) continue;
+    try {
+      const probe = new Request(`http://127.0.0.1:${port}${healthcheck?.path ?? '/'}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(HEALTH_PROBE_TIMEOUT_MS),
+      });
+      await backend.containerFetch(probe, port);
+      return true;
+    } catch {
+      /* this port is not answering; try the next service */
+    }
+  }
+  return false;
 }

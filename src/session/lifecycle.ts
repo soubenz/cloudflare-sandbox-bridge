@@ -280,6 +280,18 @@ export async function recover(rt: SessionRuntime, reason: string): Promise<void>
   if (snapshots[0]) {
     await rt.backend().restoreBackup({ id: snapshots[0].backup_id, dir: snapshots[0].dir });
     await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
+  } else if (await workspaceSurvived(rt)) {
+    // The container was replaced, but /workspace still has files in it, so
+    // the filesystem did not go with it — re-hydrating here would overwrite
+    // the learner's work with the published bundle and call it recovery.
+    // Second line of defence behind allServicesGone's port probe: a restart
+    // that lost nothing must not be "recovered" into one that lost
+    // everything.
+    emitEvent(rt, 'alert', {
+      kind: 'recover_workspace_kept',
+      message: 'Container was replaced but the workspace survived; leaving your files untouched.',
+    });
+    await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
   } else {
     emitEvent(rt, 'alert', { kind: 'recover_no_snapshot', message: 'No snapshot to restore; progress since session start was lost.' });
     await hydrateWorkspaceFiles(rt, meta.lab_slug, meta.lab_version);
@@ -301,6 +313,21 @@ export async function recover(rt: SessionRuntime, reason: string): Promise<void>
 
   await rt.patchMeta({ state: 'running' });
   emitEvent(rt, 'session.state', { state: 'running', recovered: true });
+}
+
+/**
+ * Whether /workspace still holds files. Fails closed: if the listing itself
+ * errors we cannot claim the work survived, so we report false and let the
+ * caller re-hydrate, which is the behaviour that at least leaves a usable
+ * lab.
+ */
+async function workspaceSurvived(rt: SessionRuntime): Promise<boolean> {
+  try {
+    const listed = await rt.backend().listFiles('/workspace');
+    return (listed.files?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
 }
 
 /** `POST /sessions/{id}/snapshot` and the automatic snapshot taken on expiry/idle/user end. */
