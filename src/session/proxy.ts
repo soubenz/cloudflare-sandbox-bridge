@@ -42,7 +42,7 @@ export async function proxyService(rt: SessionRuntime, request: Request, service
   forwarded.headers.set('X-Forwarded-Prefix', `/sessions/${sessionId}/services/${serviceName}`);
   forwarded.headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
 
-  const upstream = await backend.containerFetch(forwarded, service.spec.port);
+  const upstream = await unframed(await backend.containerFetch(forwarded, service.spec.port));
 
   if (hadToken) {
     // First hit with ?token=...: set a session cookie scoped to this
@@ -66,4 +66,40 @@ export async function proxyService(rt: SessionRuntime, request: Request, service
   }
 
   return upstream;
+}
+
+/**
+ * Strips the headers that stop a service UI being embedded in the console.
+ *
+ * The console shows every `ui: true` service in an iframe, and plenty of
+ * real software refuses to be framed by default — Grafana ships
+ * `allow_embedding = false`, which sends `X-Frame-Options: deny`, so its
+ * tab rendered as "refused to connect" with nothing to explain why.
+ *
+ * Stripping here rather than only configuring each image, because a lab
+ * may run any service and we do not control most of them. The header is
+ * defending against a page the learner did not choose to load; this proxy
+ * already required a session token to reach the service at all, and the
+ * only frame it can end up in is the console that minted that token.
+ *
+ * CSP is rewritten rather than dropped: `frame-ancestors` is the directive
+ * that blocks embedding, and the rest of a service's policy is its own
+ * business.
+ */
+async function unframed(upstream: Response): Promise<Response> {
+  const csp = upstream.headers.get('content-security-policy');
+  if (!upstream.headers.has('x-frame-options') && !csp?.includes('frame-ancestors')) return upstream;
+
+  const headers = new Headers(upstream.headers);
+  headers.delete('x-frame-options');
+  if (csp) {
+    const kept = csp
+      .split(';')
+      .filter((directive) => !directive.trim().toLowerCase().startsWith('frame-ancestors'))
+      .join(';')
+      .trim();
+    if (kept) headers.set('content-security-policy', kept);
+    else headers.delete('content-security-policy');
+  }
+  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
 }

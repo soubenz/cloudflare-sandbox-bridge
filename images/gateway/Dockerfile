@@ -63,9 +63,11 @@ RUN curl -fsSL "https://dl.grafana.com/oss/release/grafana_${GRAFANA_VERSION}_am
 RUN sed -i -E \
       -e 's/^;?[[:space:]]*http_port[[:space:]]*=.*/http_port = 3001/' \
       -e '/^\[plugins\]/a preinstall_disabled = true' \
+          -e '/^\[security\]/a allow_embedding = true' \
       /etc/grafana/grafana.ini \
     && grep -qx 'http_port = 3001' /etc/grafana/grafana.ini \
-    && grep -qx 'preinstall_disabled = true' /etc/grafana/grafana.ini
+    && grep -qx 'preinstall_disabled = true' /etc/grafana/grafana.ini \
+      && grep -qx 'allow_embedding = true' /etc/grafana/grafana.ini
 ENV GF_PLUGINS_PREINSTALL_DISABLED=true
 
 ARG PROMETHEUS_VERSION=2.55.1
