@@ -35,6 +35,15 @@ interface PoolStats {
 
 const REFILL_INTERVAL_MS = 30_000;
 const CLAIMED_REAP_MS = 3 * 60 * 60 * 1000; // 3h: a session that never released is treated as orphaned
+/**
+ * A warm container keeps running the image it was started from, so after a
+ * deploy that rebuilds an image the pool hands new sessions the old one —
+ * silently, since nothing about a warm claim says which image it is. The
+ * ping loop would otherwise keep such a container alive indefinitely.
+ * Recycling warm containers past this age bounds how long a stale image can
+ * be served without needing the pool to know the deployed version.
+ */
+const MAX_WARM_AGE_MS = 30 * 60 * 1000;
 
 const defaultStats = (): PoolStats => ({
   claims: 0,
@@ -176,10 +185,15 @@ export class Pool extends DurableObject<Env> {
     const now = Date.now();
     const stats = (await this.ctx.storage.get<PoolStats>('stats')) ?? defaultStats();
 
-    // 1. Ping warm containers older than ping_every_s; drop and destroy failures.
+    // 1. Ping warm containers older than ping_every_s; drop and destroy
+    //    failures, and recycle any that have outlived MAX_WARM_AGE_MS.
     let warm = await this.getWarm();
     const stillWarm: WarmEntry[] = [];
     for (const w of warm) {
+      if (now - w.created_at > MAX_WARM_AGE_MS) {
+        void cloudflareBackend(this.env, config.family, w.sandbox_id).destroy().catch(() => {});
+        continue;
+      }
       if (now - w.last_ping_at < config.ping_every_s * 1000) {
         stillWarm.push(w);
         continue;
