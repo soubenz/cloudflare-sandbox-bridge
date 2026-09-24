@@ -158,6 +158,50 @@ body {
 .editor-mount .cm-editor.cm-focused { outline: none; }
 .editor-empty { padding: 16px; }
 
+/* ---------- boot modal ---------- */
+.modal {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(14, 17, 22, 0.86);
+}
+.modal-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 28px 32px; max-width: 420px; text-align: center;
+}
+.modal-card h2 { font-size: 16px; margin: 14px 0 4px; }
+.spinner {
+  width: 26px; height: 26px; margin: 0 auto;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+/* Respect a reduced-motion preference: the steps below still report progress. */
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; border-top-color: var(--accent); } }
+
+.boot-steps { list-style: none; margin: 18px 0 8px; padding: 0; text-align: left; }
+.boot-steps li {
+  font-size: 12px; font-family: var(--mono); color: var(--ink-muted);
+  padding: 3px 0 3px 22px; position: relative;
+}
+.boot-steps li::before { content: '○'; position: absolute; left: 4px; }
+.boot-steps li[data-done]::before { content: '●'; color: var(--good); }
+.boot-steps li[data-done] { color: var(--ink-2); }
+
+/* ---------- brief ---------- */
+.brief { padding: 22px 28px; overflow-y: auto; max-width: 760px; line-height: 1.65; }
+.brief h2 { font-size: 18px; margin: 0 0 10px; }
+.brief h3 { font-size: 15px; margin: 22px 0 6px; }
+.brief h4, .brief h5 { font-size: 13px; margin: 18px 0 4px; color: var(--ink-2); }
+.brief p, .brief li { color: var(--ink-2); }
+.brief code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--ink); }
+.brief pre {
+  background: #0b0e13; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 14px; overflow-x: auto;
+}
+.brief pre code { background: none; padding: 0; font-size: 12px; line-height: 1.5; }
+.brief a { color: var(--accent); }
+.brief ul, .brief ol { padding-left: 22px; }
+
 /* ---------- events ---------- */
 .events { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; font-size: 12px; }
 .events li { padding: 6px 8px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: baseline; }
@@ -168,6 +212,20 @@ body {
 .ev-warn .what { color: var(--warn); }
 .ev-bad .what { color: var(--bad); }
 .ev-info .what { color: var(--accent); }
+
+/* ---------- learner notices ---------- */
+/*
+ * Same list mechanics as the operator event log, but read as prose: a
+ * pressure event is something the learner has to act on, not a row of
+ * telemetry, so the type and payload are dropped and the title carries the
+ * weight.
+ */
+#noticeList li { align-items: baseline; }
+.notice-title { color: var(--ink); font-weight: 600; }
+.notice-body { color: var(--ink-2); }
+
+/* The operator's raw log sits inside a scrolling panel rather than a pane. */
+.ops .events { max-height: 340px; border: 1px solid var(--border); border-radius: var(--radius); margin-top: 8px; }
 
 /* ---------- checks ---------- */
 .check { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 12px; }

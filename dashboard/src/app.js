@@ -114,9 +114,15 @@ function enterSession() {
   $('hintsPanel').innerHTML = '<p class="muted small">Hints unlock on a timer.</p>';
   $('fileList').innerHTML = '';
   $('serviceTabs').innerHTML = '';
+  $('noticeList').innerHTML = '';
+  $('noticeEmpty').hidden = false;
   $('editorPath').textContent = 'No file open';
   $('btnSaveFile').disabled = true;
-  showView('terminal');
+  $('briefBody').innerHTML = '<p class="muted">Loading the brief…</p>';
+  // The task, not an empty terminal: a learner arriving at a lab should be
+  // looking at what they have been asked to do.
+  showView('brief');
+  showBoot('Claiming a container…');
 
   $('launcher').hidden = true;
   $('workspace').hidden = false;
@@ -170,6 +176,8 @@ function openEventStream() {
 
 function handleEvent(type, tone, data) {
   addEvent(tone, type, summarize(type, data));
+  noticeFor(type, tone, data);
+  bootProgress(type, data);
 
   if (type === 'session.state') {
     setStatePill(data.state);
@@ -234,6 +242,52 @@ function summarize(type, data) {
   }
 }
 
+/**
+ * The learner's side of the event stream.
+ *
+ * The raw log is operations telemetry — state transitions, check progress,
+ * metrics, cost — and reading it is not part of doing a lab. But some of
+ * what arrives on the same stream *is* the lab: a pressure event is the
+ * thing the learner is supposed to react to, and a hint is content they
+ * were promised. Those are shown here as prose, with the event type and
+ * timestamp left in the operator view where they belong.
+ */
+const LEARNER_NOTICES = {
+  pressure: (d) => [d.title, d.message],
+  hint: (d) => ['Hint', d.text],
+  'session.expiring': (d) => ['Session ending soon', `About ${Math.round((d?.in_ms ?? 300000) / 60000)} minutes left.`],
+  'session.idle_warning': () => ['Still there?', 'This session ends soon if nothing happens.'],
+  'container.restarted': () => ['Container replaced', 'Your lab is being rebuilt; the terminal will reconnect.'],
+  alert: (d) => ['Something went wrong', d.message ?? d.error ?? d.kind],
+};
+
+function noticeFor(type, tone, data) {
+  // A service going unhealthy is the whole point of a break-fix lab, so it
+  // is lab content. A service going healthy again is the reassurance that
+  // matches it. Anything else about services is noise.
+  if (type === 'service.health' && data?.health) {
+    const bad = data.health !== 'healthy';
+    return addNotice(bad ? 'bad' : 'good', `${data.service} is ${data.health}`, '');
+  }
+  const build = LEARNER_NOTICES[type];
+  if (!build) return;
+  const [title, detail] = build(data ?? {});
+  addNotice(tone, title, detail);
+}
+
+function addNotice(tone, title, detail) {
+  const li = document.createElement('li');
+  li.className = `ev-${tone}`;
+  li.innerHTML = `<span class="when"></span><span class="detail"><strong class="notice-title"></strong> <span class="notice-body"></span></span>`;
+  li.querySelector('.when').textContent = new Date().toLocaleTimeString([], { hour12: false });
+  li.querySelector('.notice-title').textContent = title;
+  li.querySelector('.notice-body').textContent = detail ?? '';
+  const list = $('noticeList');
+  list.prepend(li);
+  while (list.children.length > 100) list.lastElementChild.remove();
+  $('noticeEmpty').hidden = true;
+}
+
 function addEvent(tone, what, detail) {
   const li = document.createElement('li');
   li.className = `ev-${tone}`;
@@ -276,6 +330,7 @@ async function onRunning(status) {
   if (runningHandled) return;
   runningHandled = true;
 
+  bootStep('services', 'Attaching the terminal…');
   if (!state.terminal) {
     state.terminal = attachTerminal({
       container: $('term'),
@@ -291,6 +346,130 @@ async function onRunning(status) {
   startExpiryTimer();
   renderServiceTabs();
   refreshFiles();
+  loadBrief();
+  bootStep('terminal');
+  hideBoot();
+}
+
+/**
+ * The lab's brief, which is the only place the learner is told what the
+ * task is. It ships inside workspace.tgz and lands at /workspace/brief.md,
+ * so it is read the same way as any other workspace file rather than
+ * needing a route of its own.
+ */
+async function loadBrief() {
+  const body = $('briefBody');
+  try {
+    const { content } = await api.readFile(state.session.id, state.session.token, 'brief.md');
+    body.innerHTML = renderMarkdown(content);
+  } catch {
+    body.innerHTML =
+      '<p class="muted">This lab ships no <code>brief.md</code>, so there is nothing to show here. ' +
+      'Check the workspace files and the hints panel.</p>';
+  }
+}
+
+/**
+ * Enough Markdown for a lab brief, and no more. Everything is escaped
+ * first and only a fixed set of constructs is then re-introduced, so lab
+ * content — which comes from a bundle, not from us — cannot inject markup
+ * into the console.
+ */
+export function renderMarkdown(src) {
+  const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const blocks = [];
+  // Fenced code first, so nothing inside a fence is treated as markup.
+  const fenced = esc(src).replace(/```[\w-]*\n([\s\S]*?)```/g, (_m, code) => {
+    blocks.push(`<pre><code>${code.replace(/\n$/, '')}</code></pre>`);
+    return `\u0000${blocks.length - 1}\u0000`;
+  });
+
+  const inline = (t) =>
+    t
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
+      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+  const html = [];
+  let list = null;
+  for (const raw of fenced.split('\n')) {
+    const line = raw.trimEnd();
+    const placeholder = line.match(/^\u0000(\d+)\u0000$/);
+    if (placeholder) {
+      if (list) { html.push(`</${list}>`); list = null; }
+      html.push(blocks[Number(placeholder[1])]);
+      continue;
+    }
+    const heading = line.match(/^(#{1,4})\s+(.*)$/);
+    if (heading) {
+      if (list) { html.push(`</${list}>`); list = null; }
+      const level = Math.min(heading[1].length + 1, 5);
+      html.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+      continue;
+    }
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+    const numbered = line.match(/^\s*\d+\.\s+(.*)$/);
+    if (bullet || numbered) {
+      const want = bullet ? 'ul' : 'ol';
+      if (list && list !== want) { html.push(`</${list}>`); list = null; }
+      if (!list) { html.push(`<${want}>`); list = want; }
+      html.push(`<li>${inline((bullet ?? numbered)[1])}</li>`);
+      continue;
+    }
+    if (list) { html.push(`</${list}>`); list = null; }
+    if (line.trim()) html.push(`<p>${inline(line)}</p>`);
+  }
+  if (list) html.push(`</${list}>`);
+  return html.join('\n');
+}
+
+/**
+ * The start sequence already announces itself on the event stream, so the
+ * modal follows those rather than inventing its own timeline — what it
+ * shows is what the session is actually doing.
+ */
+function bootProgress(type, data) {
+  if (type === 'session.state' && data?.state === 'starting') bootStep('container', 'Unpacking the workspace…');
+  if (type === 'service.health') bootStep('workspace', `Starting ${data?.service ?? 'services'}…`);
+  if (type === 'session.state' && data?.state === 'running') {
+    bootStep('workspace');
+    bootStep('services', 'Attaching the terminal…');
+  }
+  if (type === 'alert' && data?.kind?.startsWith?.('start')) bootFailed(data.message ?? data.kind);
+  if (type === 'session.state' && data?.state === 'ended') bootFailed(`Session ended: ${data.reason ?? 'unknown'}`);
+}
+
+// ------------------------------------------------------------- boot modal
+
+/**
+ * A start claims a container, unpacks the workspace, launches every service
+ * and waits on each healthcheck — measured at 2.5s warm and up to 30s cold.
+ * Without this the console just sat there looking broken.
+ */
+function showBoot(detail) {
+  $('bootError').hidden = true;
+  $('bootDetail').textContent = detail;
+  for (const li of $('bootSteps').children) li.removeAttribute('data-done');
+  $('bootModal').hidden = false;
+}
+
+function bootStep(step, detail) {
+  if ($('bootModal').hidden) return;
+  const li = $('bootSteps').querySelector(`[data-step="${step}"]`);
+  if (li) li.setAttribute('data-done', '1');
+  if (detail) $('bootDetail').textContent = detail;
+}
+
+function bootFailed(message) {
+  if ($('bootModal').hidden) return;
+  $('bootError').textContent = message;
+  $('bootError').hidden = false;
+  $('bootDetail').textContent = 'The lab did not start.';
+}
+
+function hideBoot() {
+  $('bootModal').hidden = true;
 }
 
 function onEnded(reason) {
@@ -654,12 +833,23 @@ $('btnSnapshot').addEventListener('click', async () => {
 
 $('btnEnd').addEventListener('click', async () => {
   if (!confirm('End this session? The container is destroyed.')) return;
+  const btn = $('btnEnd');
+  btn.disabled = true;
   try {
     await api.end(state.session.id, state.session.token, false);
   } catch (err) {
+    // Say so, but still go home: the container is gone or was never there,
+    // and leaving a dead workspace on screen helps nobody.
     addEvent('bad', 'end', err.message);
+    addNotice('bad', 'Could not end cleanly', err.message);
   }
+  // Ending is a deliberate act with an obvious next step, so take it —
+  // rather than parking the learner in a dead workspace behind one more
+  // button. A session that ends *on its own* (idle, expiry, error) still
+  // stops here and explains itself, because being teleported away from
+  // your work without being told why is worse than an extra click.
   onEnded('user');
+  backToLabs();
 });
 
 $('btnBackToLabs').addEventListener('click', backToLabs);

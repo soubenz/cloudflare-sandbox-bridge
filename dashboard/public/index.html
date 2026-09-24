@@ -10,6 +10,23 @@
 </head>
 <body>
 
+<!-- Shown from the moment a lab is launched until it is actually usable. -->
+<div class="modal" id="bootModal" hidden>
+  <div class="modal-card">
+    <div class="spinner" aria-hidden="true"></div>
+    <h2 id="bootTitle">Starting your lab</h2>
+    <p class="muted small" id="bootDetail">Claiming a container…</p>
+    <ol class="boot-steps" id="bootSteps">
+      <li data-step="container">Container</li>
+      <li data-step="workspace">Workspace files</li>
+      <li data-step="services">Services</li>
+      <li data-step="terminal">Terminal</li>
+    </ol>
+    <p class="small muted">This usually takes a few seconds. A cold start can take up to 30.</p>
+    <p class="error small" id="bootError" hidden></p>
+  </div>
+</div>
+
 <header class="bar">
   <div class="brand">▣ <strong>Opalix</strong> <span class="muted">lab console</span></div>
 
@@ -66,13 +83,18 @@
 
   <section class="pane pane-center">
     <nav class="tabs" id="centerTabs">
-      <button class="tab tab-active" data-view="terminal">Terminal</button>
+      <button class="tab tab-active" data-view="brief">Brief</button>
+      <button class="tab" data-view="terminal">Terminal</button>
       <button class="tab" data-view="editor">Editor</button>
       <span class="tab-spacer"></span>
       <span id="serviceTabs"></span>
     </nav>
 
-    <div class="view view-active" id="viewTerminal">
+    <div class="view view-active" id="viewBrief">
+      <article class="brief" id="briefBody"><p class="muted">Loading the brief…</p></article>
+    </div>
+
+    <div class="view" id="viewTerminal">
       <div id="term"></div>
       <div class="term-status" id="termStatus" hidden>
         <p id="termStatusText">Terminal disconnected.</p>
@@ -97,8 +119,9 @@
 
   <aside class="pane pane-right">
     <section class="block block-grow">
-      <h2>Events <span class="small muted" id="eventCount"></span></h2>
-      <ol class="events" id="eventList"></ol>
+      <h2>Lab activity</h2>
+      <ol class="events" id="noticeList"></ol>
+      <p class="muted small" id="noticeEmpty">Nothing yet. Pressure events, hints and warnings appear here.</p>
     </section>
   </aside>
 </main>
@@ -122,6 +145,16 @@
       <button id="btnSaveKey" class="btn btn-tiny">Use key</button>
       <span class="small muted" id="opsKeyStatus"></span>
     </div>
+  </div>
+
+  <div class="ops-auth">
+    <h2 class="small muted">Event stream <span id="eventCount"></span></h2>
+    <p class="muted small">
+      Every event the session emits, including the telemetry a learner has no
+      use for — metrics, cost, check progress, state transitions. Only the
+      lab-facing ones reach the learner's activity panel.
+    </p>
+    <ol class="events" id="eventList"></ol>
   </div>
 </section>
 
