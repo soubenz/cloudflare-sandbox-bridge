@@ -14,7 +14,7 @@ import { terminalUrl } from './api.js';
  */
 const CONTROL_PREFIX = '\x01';
 
-export function attachTerminal({ container, sessionId, token, onNotice }) {
+export function attachTerminal({ container, sessionId, token, onNotice, onStatus }) {
   const term = new Terminal({
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     fontSize: 13,
@@ -33,6 +33,7 @@ export function attachTerminal({ container, sessionId, token, onNotice }) {
 
   ws.onopen = () => {
     open = true;
+    onStatus?.('open');
     sendResize();
     term.focus();
   };
@@ -53,9 +54,16 @@ export function attachTerminal({ container, sessionId, token, onNotice }) {
     term.write(new Uint8Array(event.data));
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     open = false;
+    // A blank black rectangle reads as a broken app. Say what happened.
+    onStatus?.('closed', event.reason || `closed (${event.code})`);
     onNotice?.('Terminal disconnected.');
+  };
+
+  ws.onerror = () => {
+    open = false;
+    onStatus?.('closed', 'could not connect');
   };
 
   term.onData((data) => {

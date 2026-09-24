@@ -26,6 +26,17 @@ test.describe('the terminal', () => {
     expect(echoed).toBe(true);
   });
 
+  test('says why it is blank when it cannot connect', async ({ session }) => {
+    // A black rectangle reads as a broken app; the panel is the difference
+    // between "disconnected" and "this thing is broken and I do not know why".
+    test.skip(!WEBSOCKETS_BLOCKED, 'only reachable where the handshake cannot complete');
+
+    await session.locator('.tab[data-view="terminal"]').click();
+    await expect(session.locator('#termStatus')).toBeVisible({ timeout: 30_000 });
+    await expect(session.locator('#termStatusText')).toHaveText(/disconnected/i);
+    await expect(session.locator('#btnReconnectTerm')).toBeVisible();
+  });
+
   test('renders an xterm viewport sized to its pane', async ({ session }) => {
     await session.locator('.tab[data-view="terminal"]').click();
     const screen = session.locator('.xterm-screen');

@@ -144,6 +144,12 @@ body {
 .view { display: none; flex: 1; min-height: 0; }
 .view-active { display: flex; flex-direction: column; }
 #term { flex: 1; min-height: 0; padding: 8px; background: #0b0e13; }
+#viewTerminal { position: relative; }
+.term-status {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px;
+  background: rgba(11, 14, 19, 0.92); color: var(--ink-2); font-size: 13px;
+}
 #serviceFrame { flex: 1; border: 0; background: #fff; width: 100%; }
 
 .editor-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); }

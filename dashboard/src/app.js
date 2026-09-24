@@ -189,6 +189,8 @@ function summarize(type, data) {
       return `${data.title} — ${data.message}`;
     case 'hint':
       return data.text;
+    case 'check.started':
+      return `${data.total} check${data.total === 1 ? '' : 's'} running`;
     case 'check.result':
       return `${data.name}: ${data.pass ? 'pass' : 'fail'}`;
     case 'check.finished':
@@ -241,6 +243,7 @@ async function onRunning(status) {
       sessionId: state.session.id,
       token: state.session.token,
       onNotice: (text) => addEvent('warn', 'terminal', text),
+      onStatus: setTerminalStatus,
     });
   }
 
@@ -276,6 +279,32 @@ function backToLabs() {
   $('launcher').hidden = false;
   $('expiryTimer').textContent = '';
   loadLabs();
+}
+
+/** Shows why the terminal is blank, instead of leaving a black rectangle. */
+function setTerminalStatus(status, detail) {
+  const panel = $('termStatus');
+  if (status === 'open') {
+    panel.hidden = true;
+    return;
+  }
+  $('termStatusText').textContent = detail ? `Terminal disconnected — ${detail}.` : 'Terminal disconnected.';
+  panel.hidden = false;
+}
+
+function reconnectTerminal() {
+  state.terminal?.dispose();
+  state.terminal = null;
+  $('termStatus').hidden = true;
+  if (state.session) {
+    state.terminal = attachTerminal({
+      container: $('term'),
+      sessionId: state.session.id,
+      token: state.session.token,
+      onNotice: (text) => addEvent('warn', 'terminal', text),
+      onStatus: setTerminalStatus,
+    });
+  }
 }
 
 function setStatePill(value) {
@@ -344,6 +373,8 @@ function renderHint(data) {
 
 async function refreshFiles() {
   if (!state.session) return;
+  const list = $('fileList');
+  if (!list.children.length) list.innerHTML = '<li class="muted">loading…</li>';
   try {
     const result = await api.listFiles(state.session.id, state.session.token);
     const entries = normalizeFiles(result);
@@ -612,6 +643,7 @@ $('btnSaveKey').addEventListener('click', () => {
 
 $('btnRefreshFiles').addEventListener('click', refreshFiles);
 $('btnNewFile').addEventListener('click', newFile);
+$('btnReconnectTerm').addEventListener('click', reconnectTerminal);
 $('btnSaveFile').addEventListener('click', saveFile);
 
 for (const tab of document.querySelectorAll('.tab[data-view]')) {

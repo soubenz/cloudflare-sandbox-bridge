@@ -59,7 +59,7 @@
         <button id="btnNewFile" class="btn btn-tiny" title="Create a file in /workspace">+ New</button>
         <button id="btnRefreshFiles" class="btn btn-tiny" title="Reload the file list">↻</button>
       </h2>
-      <ul class="files" id="fileList"></ul>
+      <ul class="files" id="fileList"><li class="muted">loading…</li></ul>
       <p class="error small" id="fileError" hidden></p>
     </section>
   </aside>
@@ -72,7 +72,13 @@
       <span id="serviceTabs"></span>
     </nav>
 
-    <div class="view view-active" id="viewTerminal"><div id="term"></div></div>
+    <div class="view view-active" id="viewTerminal">
+      <div id="term"></div>
+      <div class="term-status" id="termStatus" hidden>
+        <p id="termStatusText">Terminal disconnected.</p>
+        <button id="btnReconnectTerm" class="btn btn-tiny">Reconnect</button>
+      </div>
+    </div>
 
     <div class="view" id="viewEditor">
       <div class="editor-head">
