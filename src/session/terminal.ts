@@ -57,9 +57,16 @@ async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Reques
     });
   }
 
-  const upgradeUrl = new URL('/internal/terminal', originRequest.url);
-  const upgradeRequest = new Request(upgradeUrl, { headers: { Upgrade: 'websocket' } });
-  const connectResp = await terminal.connect(upgradeRequest, { cursor: existingRef?.cursor });
+  // Hand the SDK the browser's real upgrade request, exactly as the SDK's
+  // own bridge does. A synthetic one carrying only `Upgrade: websocket`
+  // fails: the Sandbox DO takes its WebSocket branch only when BOTH
+  // `Upgrade` and `Connection: Upgrade` are present, and otherwise falls
+  // through to containerFetch(), which rejects /ws/terminal on the control
+  // port outright with "Terminal connection is not authorized". The URL
+  // here is irrelevant — the SDK rewrites it to /ws/terminal itself — and
+  // the real request additionally carries the Sec-WebSocket-* headers the
+  // container's own handshake expects.
+  const connectResp = await terminal.connect(originRequest, { cursor: existingRef?.cursor });
   const upstream = connectResp.webSocket;
   if (!upstream) throw new Error('terminal.connect() did not return a WebSocket');
   upstream.accept();
@@ -111,10 +118,15 @@ export async function handleClientMessage(rt: SessionRuntime, message: ArrayBuff
 async function handleControlMessage(rt: SessionRuntime, body: string): Promise<void> {
   try {
     const msg = JSON.parse(body) as { type?: string; cols?: number; rows?: number };
-    if (msg.type === 'resize' && msg.cols && msg.rows && rt.upstreamTerminalHandle) {
-      await rt.upstreamTerminalHandle.resize(msg.cols, msg.rows);
+    if (msg.type === 'resize' && msg.cols && msg.rows) {
+      // Re-fetch the handle rather than reusing rt.upstreamTerminalHandle:
+      // it wraps an RPC stub bound to the I/O context of the upgrade
+      // request, and this runs later, from the webSocketMessage hook.
       const term = await rt.terminal();
-      if (term) await rt.putTerminal({ ...term, cols: msg.cols, rows: msg.rows });
+      if (!term) return;
+      const handle = await rt.backend().getTerminal(term.id);
+      await handle?.resize(msg.cols, msg.rows);
+      await rt.putTerminal({ ...term, cols: msg.cols, rows: msg.rows });
     }
   } catch {
     // Ignore malformed control frames.
