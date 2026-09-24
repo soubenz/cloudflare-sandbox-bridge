@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run -c vitest.integration.config.ts",
+    "test:e2e": "node test/e2e/dashboard.mjs",
     "opalix": "tsx cli/src/index.ts",
     "d1:migrate": "wrangler d1 execute opalix --file=./migrations/0001_init.sql",
     "d1:migrate:staging": "wrangler d1 execute opalix --env staging --file=./migrations/0001_init.sql",
@@ -23,8 +24,8 @@
   },
   "dependencies": {
     "hono": "^4.12.26",
-    "zod": "^3.24.1",
-    "ulid": "^2.3.0"
+    "ulid": "^2.3.0",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "@cloudflare/sandbox": "next",
@@ -33,6 +34,7 @@
     "@types/node": "^22.10.5",
     "@types/ws": "^8.5.13",
     "commander": "^13.0.0",
+    "playwright": "^1.63.0",
     "tsx": "^4.19.2",
     "typescript": "^5.9.3",
     "vitest": "^2.1.8",
