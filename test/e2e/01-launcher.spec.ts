@@ -12,8 +12,22 @@ test.describe('lab launcher', () => {
     await openConsole(page);
     await page.waitForSelector('.lab');
     const sub = await page.locator('.lab .lab-sub').first().textContent();
-    // e.g. "hello@1.0.0 · agent · build"
-    expect(sub).toMatch(/^[a-z0-9-]+@\d+\.\d+\.\d+ · (agent|gateway) · (build|break-fix|scale)$/);
+    // e.g. "hello@1.0.0 · agent · build · intro · 60 min" — difficulty and
+    // duration are optional in the manifest, so they are matched as such
+    // rather than pinned, but slug, version, family and type always lead.
+    expect(sub).toMatch(
+      /^[a-z0-9-]+@\d+\.\d+\.\d+ · (agent|gateway) · (build|break-fix|scale)( · (intro|core|advanced))?( · \d+ min)?$/
+    );
+  });
+
+  test('gives a learner enough to choose a lab without starting one', async ({ page }) => {
+    // The card used to carry only a title and taxonomy words, which say
+    // nothing about what you would actually do. A learner should not have
+    // to spend a container to find that out.
+    await openConsole(page);
+    const lab = page.locator(`.lab[data-slug="${LAB}"]`);
+    await expect(lab.locator('.lab-summary')).not.toBeEmpty();
+    await expect(lab.locator('.lab-objectives li').first()).toBeVisible();
   });
 
   test('offers the hello fixture lab', async ({ page }) => {
