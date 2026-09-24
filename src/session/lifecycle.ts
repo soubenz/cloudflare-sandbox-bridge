@@ -67,9 +67,17 @@ async function runStart(rt: SessionRuntime): Promise<void> {
   const meta = await rt.requireMeta();
   const rawManifest = await rt.requireManifest();
 
-  const claim = await poolStub(rt.env, meta.family).claim(rt.sessionId);
-  await rt.patchMeta({ sandbox_id: claim.sandbox_id });
-  await rt.bindBackend(meta.family, claim.sandbox_id);
+  // A redelivered `start` alarm re-enters here (the platform retries
+  // `alarm()` when it throws), so only claim when this session doesn't
+  // already hold a sandbox — otherwise the first claim's id is overwritten
+  // here and its container is never destroyed by `end()`. `Pool.claim` is
+  // idempotent per session too; this just avoids the round trip.
+  let sandboxId = meta.sandbox_id;
+  if (!sandboxId) {
+    sandboxId = (await poolStub(rt.env, meta.family).claim(rt.sessionId)).sandbox_id;
+    await rt.patchMeta({ sandbox_id: sandboxId });
+  }
+  await rt.bindBackend(meta.family, sandboxId);
   await rt.backend().ensureRunning();
 
   const baseUrl = rt.env.PUBLIC_BASE_URL;

@@ -169,12 +169,60 @@ describeIfConfigured('sandbox API routes', () => {
   });
 
   describe('pool', () => {
+    type PoolStats = { warm: number; claimed: number; config: { target: number }; stats: Record<string, number> };
+    const poolStats = () => service.poolStats('agent') as Promise<PoolStats>;
+
+    /** Polls until `warm` settles on `want`; the alarm loop reconciles asynchronously. */
+    async function waitForWarm(want: number, timeoutMs = 180_000): Promise<PoolStats> {
+      const deadline = Date.now() + timeoutMs;
+      let last = await poolStats();
+      while (Date.now() < deadline) {
+        if (last.warm === want) return last;
+        await new Promise((r) => setTimeout(r, 3000));
+        last = await poolStats();
+      }
+      throw new Error(`pool warm stayed at ${last.warm}, never reached ${want}`);
+    }
+
     it('reports stats and accepts a prime', async () => {
-      const stats = (await service.poolStats('agent')) as { warm?: unknown[]; stats?: unknown };
+      const stats = await poolStats();
       expect(stats).toBeTruthy();
       await service.primePool('agent', 1);
-      const after = (await service.poolStats('agent')) as Record<string, unknown>;
+      const after = await poolStats();
       expect(after).toBeTruthy();
+    }, 60_000);
+
+    it('rejects a target that is not a non-negative integer', async () => {
+      await expect(service.primePool('agent', -1)).rejects.toThrow(/400/);
+      await expect(service.primePool('agent', 1.5)).rejects.toThrow(/400/);
+    }, 30_000);
+
+    /**
+     * The regression from the Tier 5 run on 2026-09-24: priming 2 -> 1 left
+     * `warm: 2` for ever, because `alarm()` only ever refilled. Costs one
+     * extra standard-1 container for the length of the test, so it is the
+     * only pool test that starts anything.
+     */
+    it('destroys the surplus when the target is lowered', async () => {
+      const original = (await poolStats()).config.target;
+      try {
+        await service.primePool('agent', 2);
+        await waitForWarm(2);
+
+        await service.primePool('agent', 1);
+        const shrunk = await waitForWarm(1);
+        expect(shrunk.config.target).toBe(1);
+      } finally {
+        await service.primePool('agent', original).catch(() => {});
+      }
+    }, 300_000);
+
+    it('drain empties the warm list without moving the target', async () => {
+      const before = await poolStats();
+      await service.drainPool('agent');
+      const after = await poolStats();
+      expect(after.warm).toBe(0);
+      expect(after.config.target).toBe(before.config.target);
     }, 60_000);
   });
 });

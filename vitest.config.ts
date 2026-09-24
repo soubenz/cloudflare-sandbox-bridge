@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 /**
@@ -12,6 +13,14 @@ import { defineConfig } from 'vitest/config';
  * against `wrangler dev` or staging instead. See docs/spike.md.
  */
 export default defineConfig({
+  resolve: {
+    alias: {
+      // `cloudflare:workers` only resolves inside workerd, so anything that
+      // extends DurableObject (src/do/pool.ts) is unimportable here without
+      // this. The stand-in supplies the ctx/env constructor and nothing else.
+      'cloudflare:workers': fileURLToPath(new URL('./test/fakes/cloudflare-workers.ts', import.meta.url)),
+    },
+  },
   test: {
     include: ['test/unit/**/*.test.ts'],
   },

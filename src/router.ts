@@ -71,7 +71,23 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     const family = c.req.param('family');
     if (!isFamily(family)) throw ApiError.notFound('unknown_family', `No family "${family}"`);
     const body = await c.req.json<{ target?: number }>().catch(() => ({}) as { target?: number });
+    // Lowering the target now destroys the surplus, so a bad number here
+    // costs containers rather than just being ignored — reject it.
+    if (body.target !== undefined && (!Number.isInteger(body.target) || body.target < 0)) {
+      throw ApiError.badRequest('bad_target', 'target must be a non-negative integer');
+    }
     await poolStub(c.env, family).prime(body.target);
+    return c.json({ ok: true });
+  });
+
+  // Destroys every warm container right now without touching the target, so
+  // the alarm loop refills afterwards. To shrink a pool for good, lower the
+  // target via /prime (and POOL_TARGET_*, which the 5-minute cron re-applies).
+  app.post('/pools/:family/drain', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const family = c.req.param('family');
+    if (!isFamily(family)) throw ApiError.notFound('unknown_family', `No family "${family}"`);
+    await poolStub(c.env, family).drain();
     return c.json({ ok: true });
   });
 

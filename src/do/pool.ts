@@ -14,6 +14,8 @@ interface WarmEntry {
 interface ClaimedEntry {
   session_id: string;
   claimed_at: number;
+  /** Whether this sandbox came off the warm list. Absent on entries written before claims were made idempotent. */
+  warm?: boolean;
 }
 
 interface PoolConfig {
@@ -112,18 +114,34 @@ export class Pool extends DurableObject<Env> {
     await this.ctx.storage.put('stats', { ...stats, ...patch });
   }
 
-  /** Pops a warm sandbox for `sessionId`, or mints a cold id for the Session DO to start itself. */
+  /**
+   * Pops a warm sandbox for `sessionId`, or mints a cold id for the Session
+   * DO to start itself.
+   *
+   * Idempotent per session: if `sessionId` already holds a claim, the same
+   * sandbox id is replayed instead of a second container being taken. A
+   * single `POST /sessions` can reach here twice — the Session DO's `start`
+   * alarm is redelivered when `runStart()` throws before its state commits,
+   * and a DO RPC whose response is lost is retried against a Pool that
+   * already ran it. Without this, the Session DO keeps only the second
+   * sandbox id in `meta.sandbox_id`, so its `end()` never destroys the
+   * first one and it sits in `claimed` burning money until the 3h reap.
+   * Measured on 2026-09-24: one session moved `claims` 22 -> 24.
+   */
   async claim(sessionId: string): Promise<{ sandbox_id: string; warm: boolean }> {
     const config = await this.getConfig();
     const warm = await this.getWarm();
     const claimed = await this.getClaimed();
     const stats = (await this.ctx.storage.get<PoolStats>('stats')) ?? defaultStats();
 
+    const held = Object.entries(claimed).find(([, e]) => e.session_id === sessionId);
+    if (held) return { sandbox_id: held[0], warm: held[1].warm ?? false };
+
     const entry = warm.shift();
     await this.setWarm(warm);
 
     const sandboxId = entry ? entry.sandbox_id : `${config.family}-${newId()}`;
-    claimed[sandboxId] = { session_id: sessionId, claimed_at: Date.now() };
+    claimed[sandboxId] = { session_id: sessionId, claimed_at: Date.now(), warm: Boolean(entry) };
     await this.setClaimed(claimed);
     await this.bumpStats({
       claims: stats.claims + 1,
@@ -151,9 +169,17 @@ export class Pool extends DurableObject<Env> {
     return { warm: warm.length, claimed: Object.keys(claimed).length, config, stats: stats ?? defaultStats() };
   }
 
+  /**
+   * Sets a new target (if given) and reconciles immediately. `alarm()` moves
+   * the pool in both directions, so lowering the target here destroys the
+   * surplus rather than leaving it pinged alive forever.
+   */
   async prime(target?: number): Promise<void> {
     const config = await this.getConfig();
-    if (target !== undefined) await this.ctx.storage.put<PoolConfig>('config', { ...config, target });
+    if (target !== undefined) {
+      const next = Math.max(0, Math.floor(target));
+      await this.ctx.storage.put<PoolConfig>('config', { ...config, target: next });
+    }
     await this.alarm();
   }
 
@@ -194,9 +220,22 @@ export class Pool extends DurableObject<Env> {
     }
     warm = stillWarm;
 
-    // 2. Refill toward target, unless in a capacity backoff window.
-    const deficit = config.target - warm.length;
-    if (deficit > 0 && stats.capacity_backoff_until < now) {
+    // 2. Reconcile toward target in both directions. Refilling is skipped
+    //    during a capacity backoff window; shrinking never is, since giving
+    //    containers back is exactly what we want while capacity is tight.
+    const target = Math.max(0, config.target);
+    const deficit = target - warm.length;
+    if (deficit < 0) {
+      // Surplus, i.e. the target was lowered (by `prime`, or by the 5-minute
+      // cron re-applying POOL_TARGET_*). Destroy from the tail so the oldest
+      // warm entries — the ones the next claim will hand out — are kept.
+      // Without this the ping loop in step 1 keeps paid containers alive
+      // for ever: observed on 2026-09-24, a pool primed 2 -> 1 stayed at
+      // warm: 2 indefinitely.
+      const surplus = warm.splice(target);
+      await this.setWarm(warm);
+      await Promise.allSettled(surplus.map((w) => cloudflareBackend(this.env, config.family, w.sandbox_id).destroy()));
+    } else if (deficit > 0 && stats.capacity_backoff_until < now) {
       const toStart = Math.min(deficit, config.batch);
       const results = await Promise.allSettled(
         Array.from({ length: toStart }, async () => {

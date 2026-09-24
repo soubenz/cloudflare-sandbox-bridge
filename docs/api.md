@@ -25,7 +25,8 @@ Two credential kinds:
 | GET | `/labs/:slug` | service | current version + manifest |
 | POST | `/labs/publish` | service | multipart: `manifest`, `workspace`, `private` files |
 | GET | `/pools`, `/pools/:family` | service | warm pool stats |
-| POST | `/pools/:family/prime` | service | `{ target? }` |
+| POST | `/pools/:family/prime` | service | `{ target? }` — non-negative integer; the pool reconciles in both directions, so lowering it destroys the surplus |
+| POST | `/pools/:family/drain` | service | destroys every warm container now; the target is untouched, so the pool refills |
 | POST | `/sessions` | service | `{ lab, user_id }` → `202 { id, state, token, urls }` |
 | GET | `/sessions/:id` | session | status, services, snapshots, last checks |
 | GET/PUT/DELETE | `/sessions/:id/files/:path` | session | under `/workspace`; PUT capped at 2 MiB |

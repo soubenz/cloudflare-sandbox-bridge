@@ -16,4 +16,11 @@ export function registerPoolCommands(program: Command, getClient: () => OpalixCl
     .action(async (family: string, opts: { target?: number }) => {
       console.log(await getClient().primePool(family, opts.target));
     });
+
+  pool
+    .command('drain <family>')
+    .description('destroy every warm container now (the target is left alone, so the pool refills)')
+    .action(async (family: string) => {
+      console.log(await getClient().drainPool(family));
+    });
 }
