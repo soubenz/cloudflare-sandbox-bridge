@@ -1,4 +1,4 @@
-import { test, expect, consoleErrorsFor, upgradeHeaderStripped } from './fixtures';
+import { test, expect, consoleErrorsFor, socketErrorsFor, upgradeHeaderStripped } from './fixtures';
 
 test.describe('the terminal', () => {
   test('attaches and echoes what the learner types', async ({ session }) => {
@@ -24,7 +24,7 @@ test.describe('the terminal', () => {
     // Only skip on the specific evidence of a stripped handshake: a
     // genuinely broken terminal must still fail.
     test.skip(
-      !echoed && upgradeHeaderStripped(consoleErrorsFor(session)),
+      !echoed && upgradeHeaderStripped([...consoleErrorsFor(session), ...socketErrorsFor(session)]),
       'the network between here and the API strips the WebSocket Upgrade header'
     );
     expect(echoed).toBe(true);

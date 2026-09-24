@@ -113,10 +113,11 @@ function enterSession() {
   showView('terminal');
 
   $('launcher').hidden = true;
-  $('ops').hidden = true;
   $('workspace').hidden = false;
   $('sessionBar').hidden = false;
-  $('btnOps').setAttribute('aria-pressed', 'false');
+  // Deliberately does not touch the operator panel: resuming is async, and
+  // forcing it closed here slammed it shut under anyone who opened it
+  // while the console was still booting.
 
   $('sessionLab').textContent = state.session.lab;
   $('sessionId').textContent = state.session.id;
@@ -580,20 +581,25 @@ resumeOrShowLabs();
  * leaving a dead workspace on screen.
  */
 async function resumeOrShowLabs() {
-  const saved = rememberedSession();
-  if (!saved?.id || !saved?.token) return loadLabs();
-
   try {
+    const saved = rememberedSession();
+    if (!saved?.id || !saved?.token) return await loadLabs();
+
     const status = await api.status(saved.id, saved.token);
     if (status.meta.state === 'ended') {
       forgetSession();
-      return loadLabs();
+      return await loadLabs();
     }
     state.session = saved;
     enterSession();
   } catch {
     forgetSession();
-    loadLabs();
+    await loadLabs();
+  } finally {
+    // Says the console has finished deciding between resuming a session
+    // and showing the picker. Anything that races that decision — a test,
+    // or a person clicking straight away — can wait for it.
+    document.body.dataset.booted = '1';
   }
 }
 

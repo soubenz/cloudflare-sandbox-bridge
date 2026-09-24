@@ -22,13 +22,28 @@ type Fixtures = {
 
 export const test = base.extend<Fixtures>({
   session: async ({ page }, use) => {
-    const errors = collectConsoleErrors(page);
-    consoleErrorsByPage.set(page, errors);
+    consoleErrorsByPage.set(page, collectConsoleErrors(page));
+    socketErrorsByPage.set(page, collectSocketErrors(page));
     await openConsole(page);
     await startOrResume(page);
     await use(page);
   },
 });
+
+/** WebSocket handshake failures, which never reach the console log. */
+const socketErrorsByPage = new WeakMap<Page, string[]>();
+
+function collectSocketErrors(page: Page): string[] {
+  const errors: string[] = [];
+  page.on('websocket', (ws) => {
+    ws.on('socketerror', (err) => errors.push(`${ws.url()} :: ${err}`));
+  });
+  return errors;
+}
+
+export function socketErrorsFor(page: Page): string[] {
+  return socketErrorsByPage.get(page) ?? [];
+}
 
 /**
  * Console errors are collected from before the first navigation, because
@@ -58,6 +73,11 @@ export async function openConsole(page: Page): Promise<void> {
     [API, sharedSession] as const
   );
   await page.reload({ waitUntil: 'domcontentloaded' });
+  // The console decides between resuming a session and showing the picker
+  // asynchronously. Waiting for that decision keeps every spec from racing
+  // it — and a spec that raced it is how the operator panel was found
+  // being slammed shut by a late resume.
+  await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
 }
 
 /** The session every spec shares, as the console stores it. */
@@ -73,10 +93,10 @@ export function clearSharedSession(): void {
  * session is real money, and the API fences how many can be live at once.
  */
 export async function startOrResume(page: Page): Promise<string> {
-  const resumed = await page
-    .waitForSelector('#workspace:not([hidden])', { timeout: 10_000 })
-    .then(() => true)
-    .catch(() => false);
+  // openConsole already waited for the boot decision, so this reads the
+  // settled state rather than guessing at it with a timeout — guessing is
+  // what made a slow resume start a second container.
+  const resumed = await page.locator('#workspace').isVisible();
 
   if (!resumed) {
     await page.waitForSelector('.lab', { timeout: 30_000 });
@@ -98,8 +118,11 @@ export async function startOrResume(page: Page): Promise<string> {
  * but only on that specific evidence, so a genuinely broken terminal still
  * reports as broken.
  */
-export function upgradeHeaderStripped(consoleErrors: string[]): boolean {
-  return consoleErrors.some((e) => /WebSocket handshake: Unexpected response code: 500/.test(e));
+export function upgradeHeaderStripped(errors: string[]): boolean {
+  // The Worker answers a handshake it cannot upgrade with a 500 carrying
+  // "did not contain the header Upgrade: websocket". Any other failure —
+  // a 4xx, a close, a timeout — is not this, and must still fail the test.
+  return errors.some((e) => /Unexpected response code: 500/.test(e));
 }
 
 /** Collects browser console errors for the life of a page. */
