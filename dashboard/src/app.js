@@ -808,8 +808,14 @@ function showView(view, tabEl) {
   for (const el of document.querySelectorAll('.view')) el.classList.remove('view-active');
   for (const el of document.querySelectorAll('.tab')) el.classList.remove('tab-active');
 
-  const map = { terminal: 'viewTerminal', editor: 'viewEditor', service: 'viewService' };
-  $(map[view]).classList.add('view-active');
+  // Every tab's `data-view` must have an entry here. Adding the Brief tab
+  // without one made `$(undefined)` null and threw on `.classList`, which
+  // enterSession swallowed into the launcher's error line — so no lab could
+  // be started at all. Fail loudly instead of dereferencing null.
+  const map = { brief: 'viewBrief', terminal: 'viewTerminal', editor: 'viewEditor', service: 'viewService' };
+  const target = map[view] && $(map[view]);
+  if (!target) throw new Error(`showView: no view registered for "${view}"`);
+  target.classList.add('view-active');
   (tabEl ?? document.querySelector(`.tab[data-view="${view}"]`))?.classList.add('tab-active');
   if (view === 'terminal') state.terminal?.refit();
 }
