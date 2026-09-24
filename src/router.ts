@@ -5,6 +5,7 @@ import { loadCurrentManifest, loadCatalogue, publishLab } from './labs/bundle';
 import { parseManifest } from './labs/manifest';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
+import { workspacePath } from './lib/paths';
 import { insertSession } from './session/d1';
 import { poolStub } from './do/pool';
 import { newId } from './lib/ids';
@@ -137,7 +138,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     const id = c.req.param('id');
     await requireBrowserAuth(c.req.raw, c.env, id);
     const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
-    const result = await stub.readFile(`/workspace/${c.req.param('path')}`);
+    const result = await stub.readFile(workspacePath(c.req.param('path')));
     return c.json(result);
   });
 
@@ -147,14 +148,16 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     const body = await c.req.text();
     if (body.length > 2 * 1024 * 1024) throw ApiError.payloadTooLarge('File exceeds 2 MiB write limit');
     const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
-    await stub.writeFile(`/workspace/${c.req.param('path')}`, body);
+    await stub.writeFile(workspacePath(c.req.param('path')), body);
     return c.json({ ok: true });
   });
 
   app.get('/sessions/:id/files', async (c) => {
     const id = c.req.param('id');
     await requireBrowserAuth(c.req.raw, c.env, id);
-    const path = c.req.query('path') ?? '/workspace';
+    // The query value went straight to listFiles, so listing outside the
+    // workspace needed no encoding trick at all.
+    const path = workspacePath(c.req.query('path') ?? '/workspace');
     const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
     return c.json(await stub.listFiles(path));
   });
@@ -163,7 +166,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     const id = c.req.param('id');
     await requireBrowserAuth(c.req.raw, c.env, id);
     const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
-    await stub.deleteFile(`/workspace/${c.req.param('path')}`);
+    await stub.deleteFile(workspacePath(c.req.param('path')));
     return c.json({ ok: true });
   });
 
