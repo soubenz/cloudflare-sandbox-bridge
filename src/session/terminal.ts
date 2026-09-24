@@ -32,6 +32,19 @@ export async function openTerminalSocket(rt: SessionRuntime, request: Request): 
   return new Response(null, { status: 101, webSocket: client });
 }
 
+/**
+ * A stand-in upgrade request for reconnects, where the browser's original
+ * request is long gone (this runs from the webSocketMessage hook). Both
+ * headers are required: the Sandbox DO takes its WebSocket branch only
+ * when `Connection: Upgrade` is present too, and otherwise rejects the
+ * request outright. The URL is irrelevant — the SDK rewrites it.
+ */
+function syntheticUpgradeRequest(): Request {
+  return new Request('http://do/internal/terminal', {
+    headers: { Upgrade: 'websocket', Connection: 'Upgrade' },
+  });
+}
+
 async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Request): Promise<void> {
   if (rt.upstreamTerminalSocket && rt.upstreamTerminalSocket.readyState === WebSocket.READY_STATE_OPEN) return;
 
@@ -155,6 +168,18 @@ export async function handleClientMessage(rt: SessionRuntime, message: ArrayBuff
     }
   }
 
+  // The upstream can drop under a still-attached client (the Sandbox DO is
+  // evicted, or the PTY connection times out). Without this the socket is
+  // simply gone and every keystroke is discarded in silence — the learner
+  // sees a terminal that has stopped responding for no stated reason.
+  if (rt.upstreamTerminalSocket?.readyState !== WebSocket.READY_STATE_OPEN) {
+    try {
+      await ensureUpstreamConnected(rt, syntheticUpgradeRequest());
+    } catch (err) {
+      emitEvent(rt, 'alert', { kind: 'terminal_reconnect_failed', error: String(err) });
+      return;
+    }
+  }
   if (rt.upstreamTerminalSocket?.readyState === WebSocket.READY_STATE_OPEN) {
     rt.upstreamTerminalSocket.send(message);
   }
