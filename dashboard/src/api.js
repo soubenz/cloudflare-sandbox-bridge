@@ -18,6 +18,37 @@ export function setApiBase(url) {
   localStorage.setItem(API_KEY_STORAGE, url.replace(/\/$/, ''));
 }
 
+const CLIENT_ID_STORAGE = 'opalix.clientId';
+
+/**
+ * A stable id for this browser, so the API can hand back the session we
+ * already have instead of starting another container.
+ *
+ * The dev start route used to identify a caller by IP address. Any proxy or
+ * mobile network rotates that, and when it did the rejoin missed and a
+ * second container started — four leaked in one afternoon. This survives
+ * the address changing.
+ *
+ * It is self-issued, so it is identity and not authorisation: the API still
+ * caps how many live sessions one address may hold. Falls back to a
+ * per-page value when storage is unavailable (private mode, blocked
+ * cookies), which is no worse than the behaviour it replaces.
+ */
+let memoryClientId = null;
+export function clientId() {
+  try {
+    let id = localStorage.getItem(CLIENT_ID_STORAGE);
+    if (!id) {
+      id = crypto.randomUUID().replace(/-/g, '');
+      localStorage.setItem(CLIENT_ID_STORAGE, id);
+    }
+    return id;
+  } catch {
+    memoryClientId ??= crypto.randomUUID().replace(/-/g, '');
+    return memoryClientId;
+  }
+}
+
 async function request(path, { method = 'GET', body, token, serviceKey, raw } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -49,8 +80,12 @@ async function request(path, { method = 'GET', body, token, serviceKey, raw } = 
 export const api = {
   labs: () => request('/labs'),
 
-  /** The dev-open start route: no key, fenced to one live session per address. */
-  startSession: (lab) => request('/dev/sessions', { method: 'POST', body: { lab } }),
+  /**
+   * The dev-open start route: no key. Identified by this browser's client
+   * id so a reload rejoins rather than starting a second container; the
+   * API caps how many live sessions one address may hold.
+   */
+  startSession: (lab) => request('/dev/sessions', { method: 'POST', body: { lab, client_id: clientId() } }),
 
   status: (id, token) => request(`/sessions/${id}`, { token }),
   end: (id, token, snapshot = false) =>

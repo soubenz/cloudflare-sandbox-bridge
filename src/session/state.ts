@@ -21,6 +21,12 @@ export interface SessionMeta {
   ended_at?: number;
   end_reason?: EndReason;
   resumed_count: number;
+  /**
+   * Hash of the address that opened the session, for the dev route's
+   * per-address cap. Never shown, never reversed, and absent for sessions
+   * started with the service key.
+   */
+  ip_hash?: string;
 }
 
 export type ServiceHealth = 'unknown' | 'healthy' | 'unhealthy';

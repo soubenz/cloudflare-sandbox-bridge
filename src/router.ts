@@ -112,19 +112,36 @@ export function createRouter(): Hono<{ Bindings: Env }> {
    */
   app.post('/dev/sessions', async (c) => {
     if (c.env.DEV_OPEN_SESSIONS !== '1') throw ApiError.notFound('not_found', 'Not found');
-    const body = await c.req.json<{ lab?: string }>().catch(() => ({}) as { lab?: string });
+    type DevStart = { lab?: string; client_id?: string };
+    const body = await c.req.json<DevStart>().catch((): DevStart => ({}));
     if (!body.lab) throw ApiError.badRequest('missing_fields', 'lab is required');
-    const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
-    const userId = `dev-${await shortHash(ip)}`;
 
-    // Rejoining beats a 409. One address gets one container, so a reload, a
-    // second tab, or anyone else behind the same NAT would otherwise hit a
-    // wall they cannot clear. Handing back the session they already have is
-    // both what someone reloading expects and what keeps the fence usable.
+    const ipHash = await shortHash(c.req.header('CF-Connecting-IP') ?? 'unknown');
+
+    // Identity comes from the client, not the address. Deriving it from the
+    // IP meant a rotating address — any proxy, any mobile network, this
+    // project's own CI — could not rejoin its session and started another
+    // container instead; four leaked in one afternoon that way. A client id
+    // survives the address changing, which is the whole point.
+    const clientId = typeof body.client_id === 'string' ? body.client_id.slice(0, 64) : '';
+    const userId = /^[A-Za-z0-9_-]{8,64}$/.test(clientId)
+      ? `dev-c-${await shortHash(clientId)}`
+      : `dev-${ipHash}`;
+
+    // Rejoining beats a 409: a reload or a second tab should land back in
+    // the session it already has rather than on a wall it cannot clear.
     const existing = await activeSessionFor(c.env, userId);
     if (existing) return c.json(await rejoinSession(c.env, existing), 200);
 
-    return c.json(await createSession(c.env, body.lab, userId), 202);
+    // A client id is self-issued, so it cannot also be the rate limit — that
+    // is what the address is still good for. Without this cap, anyone could
+    // mint ids in a loop and spawn containers without limit.
+    const live = await activeSessionsForIp(c.env, ipHash);
+    if (live >= DEV_SESSIONS_PER_IP) {
+      throw ApiError.conflict('too_many_sessions', `This address already has ${live} live sessions; end one first`);
+    }
+
+    return c.json(await createSession(c.env, body.lab, userId, ipHash), 202);
   });
 
   app.get('/sessions/:id', async (c) => {
@@ -266,7 +283,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
 }
 
 /** Shared by POST /sessions and the dev endpoint; the only difference between them is who may call. */
-async function createSession(env: Env, lab: string, userId: string) {
+async function createSession(env: Env, lab: string, userId: string, ipHash?: string) {
   const { version, manifest } = await loadCurrentManifest(env, lab);
   if (!isFamily(manifest.family)) throw ApiError.internal(`lab "${lab}" has an unknown family "${manifest.family}"`);
 
@@ -282,6 +299,7 @@ async function createSession(env: Env, lab: string, userId: string) {
     state: 'starting',
     created_at: Date.now(),
     resumed_count: 0,
+    ip_hash: ipHash,
   }).catch((err) => {
     throw ApiError.conflict('active_session_exists', 'This user already has an active session', { cause: String(err) });
   });
@@ -295,6 +313,24 @@ async function createSession(env: Env, lab: string, userId: string) {
     token,
     urls: sessionUrls(env, sessionId, manifest.services.filter((s) => s.ui).map((s) => s.name)),
   };
+}
+
+/**
+ * How many containers one address may hold at once through the dev route.
+ * Two rather than one: a second tab, or a colleague behind the same NAT,
+ * is ordinary and should not be a wall.
+ */
+const DEV_SESSIONS_PER_IP = 2;
+
+/** How many live sessions this address is currently holding. */
+async function activeSessionsForIp(env: Env, ipHash: string): Promise<number> {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM sessions
+     WHERE ip_hash = ? AND state IN ('starting','running','recovering','resuming')`
+  )
+    .bind(ipHash)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 /** The one live session this user already has, if any. */

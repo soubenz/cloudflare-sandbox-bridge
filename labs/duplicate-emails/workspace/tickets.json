@@ -1,0 +1,48 @@
+{
+  "queue": "support-inbound",
+  "generated_at": "2026-09-24T08:02:00Z",
+  "tickets": [
+    {
+      "id": "T-1041",
+      "customer": "Ada Okonkwo",
+      "email": "ada.okonkwo@northwind.example",
+      "subject": "Charged twice for the September invoice",
+      "message": "Our card was charged 249.00 twice on 3 September, both with the same invoice number. Can you check whether one of those is a duplicate?"
+    },
+    {
+      "id": "T-1042",
+      "customer": "Grace Vandermeer",
+      "email": "grace.vandermeer@lumenworks.example",
+      "subject": "Cannot log in after the password reset",
+      "message": "I reset my password this morning and now the login page just reloads. No error message. Tried two browsers."
+    },
+    {
+      "id": "T-1043",
+      "customer": "Tomas Lindqvist",
+      "email": "tomas.lindqvist@bergstrom.example",
+      "subject": "Billing address on our invoices is wrong",
+      "message": "We moved offices in July and the invoices still show the old address. Where do I change it so it applies to the next invoice?"
+    },
+    {
+      "id": "T-1044",
+      "customer": "Katherine Amaya",
+      "email": "katherine.amaya@fieldnote.example",
+      "subject": "API has been returning 429 since Tuesday",
+      "message": "Our nightly export started getting 429 on about one call in five since Tuesday. We have not changed our request volume."
+    },
+    {
+      "id": "T-1045",
+      "customer": "Priya Raghunathan",
+      "email": "priya.raghunathan@sable.example",
+      "subject": "Please cancel our subscription at renewal",
+      "message": "We are not renewing in October. Please make sure the card is not charged again and confirm in writing."
+    },
+    {
+      "id": "T-1046",
+      "customer": "Joel Bartik",
+      "email": "joel.bartik@quaymetrics.example",
+      "subject": "CSV export is missing the last column",
+      "message": "The CSV export drops the final column (status) since last week. The web table still shows it."
+    }
+  ]
+}

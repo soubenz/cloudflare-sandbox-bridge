@@ -69,11 +69,12 @@ export function consoleErrorsFor(page: Page): string[] {
 export async function openConsole(page: Page): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.evaluate(
-    ([api, session]) => {
+    ([api, session, client]) => {
       localStorage.setItem('opalix.apiBase', api as string);
+      localStorage.setItem('opalix.clientId', client as string);
       if (session) localStorage.setItem('opalix.session', session as string);
     },
-    [API, sharedSession] as const
+    [API, sharedSession, CLIENT_ID] as const
   );
   await page.reload({ waitUntil: 'domcontentloaded' });
   // The console decides between resuming a session and showing the picker
@@ -82,6 +83,21 @@ export async function openConsole(page: Page): Promise<void> {
   // being slammed shut by a late resume.
   await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
 }
+
+/**
+ * One client identity for the whole run.
+ *
+ * Playwright gives each test a fresh context, so the console's own id would
+ * be regenerated per spec and the API would start a container for each. The
+ * API identifies a dev caller by this id — it used to use the client's IP,
+ * which rotates behind this environment's proxy and leaked four containers
+ * in an afternoon — so pinning it here is what makes a run cost one
+ * container rather than one per file.
+ *
+ * Per run, not a constant: two runs at once should not fight over one
+ * session, and a run that leaks is then traceable to itself.
+ */
+const CLIENT_ID = process.env.OPALIX_E2E_CLIENT_ID ?? `e2e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
 /** The session every spec shares, as the console stores it. */
 let sharedSession: string | null = null;

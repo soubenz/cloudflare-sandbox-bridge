@@ -14,8 +14,8 @@ import type { SessionMeta, SnapshotEntry, ChecksRun } from './state';
  */
 export async function insertSession(env: Env, meta: SessionMeta): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO sessions (id, user_id, lab_slug, lab_version, family, state, sandbox_id, created_at, started_at, expires_at, ended_at, end_reason, resumed_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO sessions (id, user_id, lab_slug, lab_version, family, state, sandbox_id, created_at, started_at, expires_at, ended_at, end_reason, resumed_count, ip_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       meta.id,
@@ -30,7 +30,8 @@ export async function insertSession(env: Env, meta: SessionMeta): Promise<void> 
       meta.expires_at ?? null,
       meta.ended_at ?? null,
       meta.end_reason ?? null,
-      meta.resumed_count
+      meta.resumed_count,
+      meta.ip_hash ?? null
     )
     .run();
 }

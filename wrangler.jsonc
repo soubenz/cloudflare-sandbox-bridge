@@ -43,7 +43,7 @@
     { "binding": "LABS_BUCKET", "bucket_name": "opalix-labs" }
   ],
   "d1_databases": [
-    { "binding": "DB", "database_name": "opalix", "database_id": "8af8d509-ceea-49b0-8ac5-b615a8907c54" }
+    { "binding": "DB", "database_name": "opalix", "database_id": "8af8d509-ceea-49b0-8ac5-b615a8907c54", "migrations_dir": "./migrations" }
   ],
   "vars": {
     // R2-backed backups need these even though BACKUP_BUCKET is already bound;
@@ -110,7 +110,7 @@
         { "binding": "LABS_BUCKET", "bucket_name": "opalix-labs-staging" }
       ],
       "d1_databases": [
-        { "binding": "DB", "database_name": "opalix-staging", "database_id": "REPLACE_WITH_STAGING_D1_ID" }
+        { "binding": "DB", "database_name": "opalix-staging", "database_id": "REPLACE_WITH_STAGING_D1_ID", "migrations_dir": "./migrations" }
       ],
       "vars": {
         "BACKUP_BUCKET_NAME": "opalix-backups-staging",

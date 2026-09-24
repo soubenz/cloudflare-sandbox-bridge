@@ -18,8 +18,8 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "opalix": "tsx cli/src/index.ts",
-    "d1:migrate": "wrangler d1 execute opalix --file=./migrations/0001_init.sql",
-    "d1:migrate:staging": "wrangler d1 execute opalix --env staging --file=./migrations/0001_init.sql",
+    "d1:migrate": "wrangler d1 migrations apply opalix --remote",
+    "d1:migrate:staging": "wrangler d1 migrations apply opalix --env staging --remote",
     "lab:publish": "tsx cli/src/index.ts labs publish",
     "typecheck:cli": "tsc --noEmit -p cli/tsconfig.json",
     "typecheck:all": "npm run typecheck && npm run typecheck:cli"
