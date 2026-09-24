@@ -7,13 +7,32 @@ import { tmpdir } from 'node:os';
 import { parse as parseYaml } from 'yaml';
 import { OpalixClient } from '../client';
 
+/**
+ * Never publish build droppings from the author's machine.
+ *
+ * `workspace/` is extracted verbatim into the learner's container, so a
+ * stale `.pyc` left by whoever last ran the lab locally would ship to every
+ * learner and shadow the `.py` source a break-fix lab asks them to edit.
+ * `.gitignore` stops them being committed; this stops them being published
+ * from a working tree regardless. Snapshots already exclude `__pycache__`
+ * (see session/lifecycle.ts) — this closes the same hole on the way in.
+ */
+export const TAR_EXCLUDES = [
+  '--exclude=__pycache__',
+  '--exclude=*.pyc',
+  '--exclude=*.pyo',
+  '--exclude=.DS_Store',
+  '--exclude=.pytest_cache',
+  '--exclude=.ruff_cache',
+];
+
 function buildTgz(sourceDir: string, subdirs: string[]): Buffer {
   const staging = mkdtempSync(join(tmpdir(), 'opalix-publish-'));
   try {
     const present = subdirs.filter((d) => existsSync(join(sourceDir, d)));
     if (present.length === 0) return Buffer.alloc(0);
     const out = join(staging, 'bundle.tgz');
-    execFileSync('tar', ['czf', out, '-C', sourceDir, ...present]);
+    execFileSync('tar', ['czf', out, ...TAR_EXCLUDES, '-C', sourceDir, ...present]);
     return execFileSync('cat', [out]);
   } finally {
     rmSync(staging, { recursive: true, force: true });
@@ -52,7 +71,7 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
         for (const f of ['brief.md', 'hints.md']) {
           if (existsSync(join(dir, f))) execFileSync('cp', [join(dir, f), join(workspaceStaging, f)]);
         }
-        const workspaceTgz = execFileSync('tar', ['czf', '-', '-C', workspaceStaging, '.']);
+        const workspaceTgz = execFileSync('tar', ['czf', '-', ...TAR_EXCLUDES, '-C', workspaceStaging, '.']);
         const privateTgz = buildTgz(dir, ['checks', 'pressure']);
 
         const form = new FormData();

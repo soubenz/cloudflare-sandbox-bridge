@@ -179,10 +179,28 @@ read them ahead of time.
 
 ```sh
 npm run opalix -- labs publish path/to/<slug>
-npm run opalix -- labs test <slug>
+npm run opalix -- labs test path/to/<slug>
 ```
 
-`labs test` starts a session, and is meant to also apply `solution/` and
-verify all checks pass, then start fresh and verify the checks fail as
-designed — the apply-solution half is not yet automated (see the TODO in
-`cli/src/commands/labs.ts`); today it only exercises the fresh-session path.
+Both take the lab **directory**, not the slug. `solution/` is never
+published, so it exists only in your own lab directory — a slug alone could
+never find it.
+
+`labs test` runs the whole loop and is the acceptance gate for a lab:
+
+1. starts a session and waits for it to be running;
+2. runs the checks on the untouched workspace, where **at least one must
+   fail** — a lab whose checks all pass before the learner does anything has
+   no task in it, and `labs test` reports that as a failure of the lab;
+3. uploads every file under `solution/` into `/workspace`;
+4. runs the checks again, where **every one must pass**;
+5. ends the session in a `finally`, so a failure anywhere does not leave a
+   container running.
+
+It exits non-zero on any of those, and on a lab with no `solution/` — in
+which case it says plainly that the pass case was not verified rather than
+reporting success.
+
+Worth running once with a deliberately bad solution too: a grader that
+passes a fix which trades one bug for another (deleting the retries to stop
+duplicate sends, say) is not yet a grader.

@@ -16,3 +16,9 @@ playwright-report/
 
 # Built by dashboard/build.mjs on deploy; not a source artifact.
 dashboard/public/dist/
+
+# Python bytecode. `labs/` holds Python lab content, and workspace/ is packed
+# verbatim into the learner's container — shipping a previous author's stale
+# .pyc files would shadow the .py sources a break-fix lab asks them to edit.
+__pycache__/
+*.pyc

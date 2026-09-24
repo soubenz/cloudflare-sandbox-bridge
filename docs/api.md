@@ -24,14 +24,17 @@ Two credential kinds:
 Every route that accepts a session token also accepts the service key, so a
 service caller can reach the whole session surface without minting a token.
 
-Token lifetime does **not** currently track the session. `POST /sessions`
-and `POST /sessions/{id}/resume` both mint a token with `exp` one hour from
-the moment of minting, regardless of `manifest.timeout_minutes`. A lab with
-`timeout_minutes` above 60 therefore outlives its own token, and the client
-gets `401 unauthorized` partway through with no route to refresh it short of
-a resume. Only the `POST /dev/sessions` rejoin path mints against the
-session's real `expires_at` (plus 10 minutes), which is what the comment on
-`mintSessionToken` in `src/auth.ts` describes for all of them.
+Token lifetime tracks the session. Every mint goes through
+`sessionTokenExp` in `src/auth.ts`, which is the session's expiry plus ten
+minutes of grace, so a token outlives the session it belongs to rather than
+the other way round. `POST /sessions` derives that expiry from the
+manifest's `timeout_minutes`, because `expires_at` is not set until the
+session reaches `running`.
+
+This was not always true: both mints previously used a flat hour, so a lab
+with `timeout_minutes` above 60 handed its client a token that died
+mid-session with no refresh route. Labs up to the schema maximum of 120
+minutes are usable now.
 
 ## Routes
 
