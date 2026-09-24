@@ -133,11 +133,30 @@ export function parseManifest(json: unknown): LabManifest {
   // which this schema never sees, so whether it exists can only be found
   // out when the checks run in the container.
   const serviceNames = new Set(manifest.services.map((s) => s.name));
+  const portOwners = new Map<number, string>();
   for (const svc of manifest.services) {
     for (const dep of svc.depends_on) {
       if (!serviceNames.has(dep)) {
         throw new Error(`service "${svc.name}" depends_on unknown service "${dep}"`);
       }
+    }
+    // Two services on one port is the same class of mistake as a reserved
+    // port: the second one binds, dies with "address already in use", and
+    // reads as a crashing service rather than as a manifest that asked for
+    // the impossible.
+    if (svc.port !== undefined) {
+      const owner = portOwners.get(svc.port);
+      if (owner !== undefined) {
+        throw new Error(`services "${owner}" and "${svc.name}" both declare port ${svc.port}`);
+      }
+      portOwners.set(svc.port, svc.name);
+    }
+    // `ui: true` promises a browsable surface at
+    // /sessions/{id}/services/{name}/, and the proxy has nowhere to send a
+    // request without a port — it answers 400 at request time. Say so at
+    // publish time, where the author can still fix it.
+    if (svc.ui && svc.port === undefined) {
+      throw new Error(`service "${svc.name}" is marked ui: true but declares no port to proxy`);
     }
   }
   return manifest;

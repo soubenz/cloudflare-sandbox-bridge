@@ -179,3 +179,45 @@ describe('topoOrder', () => {
     expect(topoOrder(manifest.services).map((s) => s.name)).toEqual(['a', 'b']);
   });
 });
+
+describe('services: cross-field rules', () => {
+  const base = {
+    slug: 'x-lab',
+    version: '1.0.0',
+    title: 'X',
+    type: 'build',
+    family: 'agent',
+    timeout_minutes: 60,
+    checks: [{ name: 'c', script: 'c.sh' }],
+  };
+
+  it('rejects two services declaring the same port', () => {
+    expect(() =>
+      parseManifest({
+        ...base,
+        services: [
+          { name: 'a', argv: ['a'], port: 8080 },
+          { name: 'b', argv: ['b'], port: 8080 },
+        ],
+      })
+    ).toThrow(/both declare port 8080/);
+  });
+
+  it('allows two services when only one declares a port', () => {
+    expect(() =>
+      parseManifest({
+        ...base,
+        services: [
+          { name: 'a', argv: ['a'], port: 8080 },
+          { name: 'b', argv: ['b'] },
+        ],
+      })
+    ).not.toThrow();
+  });
+
+  it('rejects ui: true with no port, which the proxy can only 400 on', () => {
+    expect(() =>
+      parseManifest({ ...base, services: [{ name: 'a', argv: ['a'], ui: true }] })
+    ).toThrow(/marked ui: true but declares no port/);
+  });
+});

@@ -61,6 +61,8 @@ export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?
   return run;
 }
 
+const STAGE_TIMEOUT_MS = 60_000;
+
 async function stageCheckScripts(rt: SessionRuntime, dir: string): Promise<void> {
   const meta = await rt.requireMeta();
   const obj = await rt.env.LABS_BUCKET.get(privateKey(meta.lab_slug, meta.lab_version));
@@ -72,7 +74,9 @@ async function stageCheckScripts(rt: SessionRuntime, dir: string): Promise<void>
     '-c',
     `mkdir -m 700 -p ${dir} && tar xzf /tmp/opalix-checks-stage.tgz -C ${dir} --no-same-owner --wildcards 'checks/*' 2>/dev/null; chown -R root:root ${dir}; chmod 700 ${dir}; rm -f /tmp/opalix-checks-stage.tgz`,
   ]);
-  const out = await proc.output();
+  // Bounded, unlike every other output() call here: a wedged tar would
+  // otherwise hang the whole check run with no deadline at all.
+  const out = await proc.output({ timeout: STAGE_TIMEOUT_MS });
   if (out.exitCode !== 0) throw new Error(`failed to stage check scripts (exit ${out.exitCode})`);
 }
 
