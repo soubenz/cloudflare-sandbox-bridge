@@ -237,6 +237,18 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     return stub.fetch(c.req.raw);
   });
 
+  // Every live session, for operations: ending a stray container needs a
+  // way to find it, and the pool only reports counts.
+  app.get('/sessions', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const result = await c.env.DB.prepare(
+      `SELECT id, user_id, lab_slug, state, created_at FROM sessions
+       WHERE state IN ('starting','running','recovering','resuming')
+       ORDER BY created_at DESC LIMIT 200`
+    ).all();
+    return c.json(result.results);
+  });
+
   app.get('/users/:uid/sessions', async (c) => {
     requireServiceAuth(c.req.raw, c.env);
     const activeOnly = c.req.query('active') === '1';

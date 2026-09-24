@@ -3,6 +3,40 @@ import { attachTerminal } from './terminal.js';
 
 const $ = (id) => document.getElementById(id);
 
+/**
+ * The session is kept in localStorage so a reload, a closed tab or a
+ * crashed browser comes back to the lab already running rather than to the
+ * picker. Without it the only route back was starting again and hoping the
+ * API recognised the caller, which it identifies by address — not stable
+ * behind a proxy, and not stable at all for two people behind one NAT.
+ */
+const SESSION_STORAGE = 'opalix.session';
+
+function rememberSession(session) {
+  try {
+    localStorage.setItem(SESSION_STORAGE, JSON.stringify(session));
+  } catch {
+    // Private mode or blocked storage: the console still works for this tab.
+  }
+}
+
+function forgetSession() {
+  try {
+    localStorage.removeItem(SESSION_STORAGE);
+  } catch {
+    /* nothing to clean up */
+  }
+}
+
+function rememberedSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 const state = {
   session: null, // { id, token, lab, urls }
   terminal: null,
@@ -50,6 +84,7 @@ async function startSession(slug) {
   try {
     const started = await api.startSession(slug);
     state.session = { id: started.id, token: started.token, lab: slug, urls: started.urls };
+    rememberSession(state.session);
     enterSession();
   } catch (err) {
     $('launchError').textContent = err.message;
@@ -227,6 +262,7 @@ function onEnded(reason) {
 
 /** An ended session leaves a dead workspace on screen; this is the way out. */
 function backToLabs() {
+  forgetSession();
   state.session = null;
   state.terminal?.dispose();
   state.terminal = null;
@@ -536,7 +572,30 @@ $('btnChangeApi').addEventListener('click', () => {
 });
 
 $('apiLabel').textContent = apiBase();
-loadLabs();
+resumeOrShowLabs();
+
+/**
+ * On load, try the session this browser was last in. A session that has
+ * ended (or whose token has expired) falls back to the picker rather than
+ * leaving a dead workspace on screen.
+ */
+async function resumeOrShowLabs() {
+  const saved = rememberedSession();
+  if (!saved?.id || !saved?.token) return loadLabs();
+
+  try {
+    const status = await api.status(saved.id, saved.token);
+    if (status.meta.state === 'ended') {
+      forgetSession();
+      return loadLabs();
+    }
+    state.session = saved;
+    enterSession();
+  } catch {
+    forgetSession();
+    loadLabs();
+  }
+}
 
 function parse(text) {
   try {

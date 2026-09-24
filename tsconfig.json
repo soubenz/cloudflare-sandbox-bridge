@@ -16,5 +16,7 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "worker-configuration.d.ts"],
-  "exclude": ["node_modules", "cli"]
+  // test/e2e has its own tsconfig: Playwright specs need the DOM lib,
+  // which conflicts with the Workers types used everywhere else.
+  "exclude": ["node_modules", "cli", "test/e2e"]
 }
