@@ -39,7 +39,10 @@ checks:
     timeout_s: 10
     weight: 1
 hints:
-  - after_minutes: 1
+  # 0, for the same reason as the pressure event above: idle_minutes is 1
+  # here, and a timer that lands in the same tick as the idle timeout runs
+  # after the session has already ended.
+  - after_minutes: 0
     text: "Write the value of $GREETING to /workspace/greeting.txt"
 egress:
   allow: []

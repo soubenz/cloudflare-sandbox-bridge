@@ -11,6 +11,7 @@ export type EventType =
   | 'service.health'
   | 'container.restarted'
   | 'pressure'
+  | 'hint'
   | 'check.started'
   | 'check.result'
   | 'check.finished'

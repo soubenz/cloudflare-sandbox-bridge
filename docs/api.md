@@ -58,7 +58,7 @@ left off in a fresh container.
 
 `event:` names on the SSE stream: `session.state`, `session.expiring`,
 `session.idle_warning`, `service.health`, `container.restarted`, `pressure`,
-`check.started`, `check.result`, `check.finished`, `snapshot.created`,
+`hint`, `check.started`, `check.result`, `check.finished`, `snapshot.created`,
 `metrics`, `cost`, `llm.call`, `alert`. Each event carries a numeric `id:`
 (the SQL row's `seq`) usable as `Last-Event-ID` on reconnect.
 

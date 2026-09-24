@@ -52,6 +52,7 @@ export type TimerKind =
   | 'hard'
   | 'hard_warn'
   | 'pressure'
+  | 'hint'
   | 'health'
   | 'metrics'
   | 'cleanup';
@@ -59,7 +60,7 @@ export type TimerKind =
 export interface TimerEntry {
   at: number;
   kind: TimerKind;
-  ref?: string; // e.g. a pressure event id
+  ref?: string; // e.g. a pressure event id, or a hint's index
 }
 
 export interface SnapshotEntry {

@@ -106,6 +106,9 @@ async function runStart(rt: SessionRuntime): Promise<void> {
   for (const event of manifest.pressure) {
     await scheduleTimer(rt, 'pressure', now + event.at_minutes * 60_000, event.id);
   }
+  for (const [index, hint] of manifest.hints.entries()) {
+    await scheduleTimer(rt, 'hint', now + hint.after_minutes * 60_000, String(index));
+  }
   await scheduleTimer(rt, 'health', now + HEALTH_INTERVAL_IDLE_MS);
   await scheduleTimer(rt, 'metrics', now + METRICS_INTERVAL_MS);
 
@@ -167,6 +170,21 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
           const manifest = await rt.requireManifest();
           const event = manifest.pressure.find((e) => e.id === timer.ref);
           if (event) await firePressureEvent(rt, event);
+          break;
+        }
+        case 'hint': {
+          // Hints unlock on a timer and are delivered as events, so a
+          // client can surface them as they become available without
+          // holding the manifest (status() does not return it).
+          const manifest = await rt.requireManifest();
+          const hint = manifest.hints[Number(timer.ref)];
+          if (hint) {
+            emitEvent(rt, 'hint', {
+              index: Number(timer.ref),
+              after_minutes: hint.after_minutes,
+              text: hint.text,
+            });
+          }
           break;
         }
         case 'health':
@@ -336,6 +354,9 @@ async function runResume(rt: SessionRuntime): Promise<void> {
   await scheduleIdleTimers(rt, now, manifest.idle_minutes);
   for (const event of manifest.pressure) {
     await scheduleTimer(rt, 'pressure', now + event.at_minutes * 60_000, event.id);
+  }
+  for (const [index, hint] of manifest.hints.entries()) {
+    await scheduleTimer(rt, 'hint', now + hint.after_minutes * 60_000, String(index));
   }
   await scheduleTimer(rt, 'health', now + HEALTH_INTERVAL_IDLE_MS);
   await scheduleTimer(rt, 'metrics', now + METRICS_INTERVAL_MS);

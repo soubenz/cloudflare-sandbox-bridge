@@ -55,6 +55,20 @@ describeIfSlow('session timing and failure behaviors', () => {
     }
   }, 240_000);
 
+  it('unlocks a hint on its timer and delivers it on SSE', async () => {
+    const { id, session } = await startRunningSession(service, OPALIX_URL!, 'impatient');
+    try {
+      const events = await collectSse(session.eventsUrl(id), 90_000, (e) => e.event === 'hint');
+      const hint = events.find((e) => e.event === 'hint');
+      expect(hint).toBeTruthy();
+      const data = JSON.parse(hint!.data);
+      expect(data.index).toBe(0);
+      expect(data.text).toContain('GREETING');
+    } finally {
+      await session.end(id, false).catch(() => {});
+    }
+  }, 240_000);
+
   it('ends an idle session once idle_minutes elapses', async () => {
     const { id, session } = await startRunningSession(service, OPALIX_URL!, 'impatient');
     try {
