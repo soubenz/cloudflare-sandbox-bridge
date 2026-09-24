@@ -27,6 +27,10 @@ export interface Env {
   POOL_TARGET_GATEWAY: string;
   LLM_HOST: string;
   MIRROR_HOST: string;
+  /** Comma-separated origins allowed to call this API from a browser. The dashboard is its own Worker, so it is cross-origin. */
+  DASHBOARD_ORIGIN: string;
+  /** "1" opens POST /dev/sessions and the read-only catalogue/pool routes without a service key. Turn off to close them without a code change. */
+  DEV_OPEN_SESSIONS: string;
 
   // Secrets.
   SANDBOX_API_KEY: string;

@@ -1,0 +1,190 @@
+/*
+ * A console, so dark-first and monospace-heavy. Status colours are reserved
+ * for state (healthy / warning / failing) and are never used decoratively,
+ * so a colour always means the same thing wherever it appears.
+ */
+:root {
+  --bg: #0e1116;
+  --surface: #151a21;
+  --surface-2: #1b212a;
+  --border: #262d38;
+  --ink: #e6e9ef;
+  --ink-2: #aab3c0;
+  --ink-muted: #6f7b8b;
+  --accent: #5b9dd9;
+  --good: #4fb286;
+  --warn: #d4a25a;
+  --bad: #d9737a;
+  --radius: 8px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+.mono { font-family: var(--mono); }
+.small { font-size: 12px; }
+.muted { color: var(--ink-muted); }
+.error { color: var(--bad); }
+
+/* ---------- top bar ---------- */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.brand { letter-spacing: 0.2px; }
+.bar-session { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bar-actions { margin-left: auto; display: flex; gap: 8px; }
+
+.pill {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: var(--mono);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.pill[data-state="running"] { color: var(--good); border-color: color-mix(in oklab, var(--good) 40%, var(--border)); }
+.pill[data-state="starting"], .pill[data-state="resuming"], .pill[data-state="recovering"] { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 40%, var(--border)); }
+.pill[data-state="ended"] { color: var(--bad); border-color: color-mix(in oklab, var(--bad) 40%, var(--border)); }
+
+.timer { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.timer[data-urgent="1"] { color: var(--warn); }
+
+/* ---------- buttons ---------- */
+.btn {
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-danger:hover:not(:disabled) { border-color: var(--bad); color: var(--bad); }
+.btn-ghost { background: transparent; }
+.btn-ghost[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.btn-tiny { padding: 2px 8px; font-size: 12px; }
+
+/* ---------- launcher ---------- */
+.launcher { padding: 40px 24px; max-width: 760px; margin: 0 auto; }
+.launcher h1 { font-size: 20px; margin: 0 0 6px; }
+.lab-list { display: grid; gap: 10px; margin-top: 20px; }
+.lab {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.lab-meta { flex: 1; min-width: 0; }
+.lab-title { font-weight: 600; }
+.lab-sub { font-family: var(--mono); font-size: 12px; color: var(--ink-muted); }
+
+/* ---------- workspace ---------- */
+.workspace { flex: 1; display: grid; grid-template-columns: 280px 1fr 340px; min-height: 0; }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.pane-left { border-right: 1px solid var(--border); background: var(--surface); }
+.pane-right { border-left: 1px solid var(--border); background: var(--surface); }
+
+.block { padding: 12px 14px; border-bottom: 1px solid var(--border); min-height: 0; }
+.block-grow { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.block h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--ink-muted); margin: 0 0 8px; display: flex; align-items: center; gap: 8px;
+}
+
+/* ---------- files ---------- */
+.files { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+.files li {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 6px; border-radius: 4px;
+  font-family: var(--mono); font-size: 12px; cursor: pointer;
+}
+.files li:hover { background: var(--surface-2); }
+.files li[aria-selected="true"] { background: var(--surface-2); color: var(--accent); }
+.files .size { margin-left: auto; color: var(--ink-muted); font-size: 11px; }
+
+/* ---------- tabs and views ---------- */
+.tabs { display: flex; align-items: center; gap: 2px; padding: 6px 8px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.tab {
+  background: transparent; border: 1px solid transparent; color: var(--ink-2);
+  padding: 4px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
+}
+.tab:hover { color: var(--ink); }
+.tab-active { background: var(--surface-2); border-color: var(--border); color: var(--ink); }
+.tab-spacer { flex: 1; }
+
+.view { display: none; flex: 1; min-height: 0; }
+.view-active { display: flex; flex-direction: column; }
+#term { flex: 1; min-height: 0; padding: 8px; background: #0b0e13; }
+#serviceFrame { flex: 1; border: 0; background: #fff; width: 100%; }
+
+.editor-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+#editorBody {
+  flex: 1; width: 100%; resize: none; border: 0; outline: none;
+  background: #0b0e13; color: var(--ink);
+  font-family: var(--mono); font-size: 13px; line-height: 1.6; padding: 12px;
+}
+
+/* ---------- events ---------- */
+.events { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; font-size: 12px; }
+.events li { padding: 6px 8px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: baseline; }
+.events .when { font-family: var(--mono); color: var(--ink-muted); font-size: 11px; flex-shrink: 0; }
+.events .what { font-family: var(--mono); font-size: 11px; flex-shrink: 0; }
+.events .detail { color: var(--ink-2); word-break: break-word; min-width: 0; }
+.ev-good .what { color: var(--good); }
+.ev-warn .what { color: var(--warn); }
+.ev-bad .what { color: var(--bad); }
+.ev-info .what { color: var(--accent); }
+
+/* ---------- checks ---------- */
+.check { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; font-size: 12px; }
+.check-mark { font-family: var(--mono); flex-shrink: 0; }
+.check-pass .check-mark { color: var(--good); }
+.check-fail .check-mark { color: var(--bad); }
+.check-msg { color: var(--ink-2); word-break: break-word; }
+
+.hint { padding: 8px 10px; background: var(--surface-2); border-left: 2px solid var(--warn); border-radius: 4px; margin-bottom: 8px; font-size: 12px; }
+
+/* ---------- operator ---------- */
+.ops { padding: 32px 24px; max-width: 900px; margin: 0 auto; overflow-y: auto; }
+.ops h1 { font-size: 18px; margin: 0 0 6px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 20px 0; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.tile-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-muted); }
+.tile-value { font-family: var(--mono); font-size: 26px; line-height: 1.2; margin-top: 4px; }
+.tile-sub { font-size: 11px; color: var(--ink-muted); margin-top: 2px; }
+.tile-actions { display: flex; gap: 6px; margin-top: 10px; }
+
+.ops-auth { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+.row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+input[type="password"], input[type="text"] {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--ink); padding: 6px 10px; font-family: var(--mono); font-size: 12px; min-width: 280px;
+}
+
+/* ---------- footer ---------- */
+.footer { display: flex; align-items: center; gap: 8px; padding: 6px 16px; border-top: 1px solid var(--border); background: var(--surface); }
+
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+  .pane-left, .pane-right { max-height: 30vh; border: 0; border-top: 1px solid var(--border); }
+}

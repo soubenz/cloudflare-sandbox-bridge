@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "opalix-dashboard",
+  "compatibility_date": "2026-09-22",
+
+  // Assets-only Worker: there is no server side here. The dashboard talks to
+  // the sandbox API (its own Worker) directly from the browser, which is why
+  // that API carries a CORS allowlist naming this origin.
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+  }
+}

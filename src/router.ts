@@ -8,9 +8,12 @@ import { ApiError, fromSdkError } from './lib/errors';
 import { insertSession } from './session/d1';
 import { poolStub } from './do/pool';
 import { newId } from './lib/ids';
+import { corsMiddleware } from './cors';
 
 export function createRouter(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
+
+  app.use('*', corsMiddleware());
 
   app.onError((err, c) => {
     const apiErr = err instanceof ApiError ? err : fromSdkError(err);
@@ -22,12 +25,12 @@ export function createRouter(): Hono<{ Bindings: Env }> {
   // --- Labs catalogue (service auth; the app backend proxies this to learners) ---
 
   app.get('/labs', async (c) => {
-    requireServiceAuth(c.req.raw, c.env);
+    requireServiceAuthUnlessOpen(c);
     return c.json(await loadCatalogue(c.env));
   });
 
   app.get('/labs/:slug', async (c) => {
-    requireServiceAuth(c.req.raw, c.env);
+    requireServiceAuthUnlessOpen(c);
     const { version, manifest } = await loadCurrentManifest(c.env, c.req.param('slug'));
     return c.json({ version, manifest });
   });
@@ -53,14 +56,14 @@ export function createRouter(): Hono<{ Bindings: Env }> {
   // --- Pool ops (service auth) ---
 
   app.get('/pools', async (c) => {
-    requireServiceAuth(c.req.raw, c.env);
+    requireServiceAuthUnlessOpen(c);
     const families = ['agent', 'gateway'] as const;
     const stats = await Promise.all(families.map((f) => poolStub(c.env, f).stats()));
     return c.json(Object.fromEntries(families.map((f, i) => [f, stats[i]])));
   });
 
   app.get('/pools/:family', async (c) => {
-    requireServiceAuth(c.req.raw, c.env);
+    requireServiceAuthUnlessOpen(c);
     const family = c.req.param('family');
     if (!isFamily(family)) throw ApiError.notFound('unknown_family', `No family "${family}"`);
     return c.json(await poolStub(c.env, family).stats());
@@ -92,43 +95,26 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     requireServiceAuth(c.req.raw, c.env);
     const body = await c.req.json<{ lab: string; user_id: string }>();
     if (!body.lab || !body.user_id) throw ApiError.badRequest('missing_fields', 'lab and user_id are required');
+    return c.json(await createSession(c.env, body.lab, body.user_id), 202);
+  });
 
-    const { version, manifest } = await loadCurrentManifest(c.env, body.lab);
-    if (!isFamily(manifest.family)) throw ApiError.internal(`lab "${body.lab}" has an unknown family "${manifest.family}"`);
-
-    const sessionId = newId();
-    // Reserve the one-active-session-per-user slot in D1 first; a unique-index
-    // conflict here is the enforcement point, not a check-then-act race.
-    await insertSession(c.env, {
-      id: sessionId,
-      user_id: body.user_id,
-      lab_slug: manifest.slug,
-      lab_version: version,
-      family: manifest.family,
-      state: 'starting',
-      created_at: Date.now(),
-      resumed_count: 0,
-    }).catch((err) => {
-      throw ApiError.conflict('active_session_exists', 'This user already has an active session', { cause: String(err) });
-    });
-
-    const stub = c.env.SESSION.get(c.env.SESSION.idFromName(sessionId));
-    const { meta, token } = await stub.create({ userId: body.user_id, labSlug: manifest.slug, labVersion: version, family: manifest.family, manifest });
-
-    return c.json(
-      {
-        id: sessionId,
-        state: meta.state,
-        token,
-        urls: {
-          status: `${c.env.PUBLIC_BASE_URL}/sessions/${sessionId}`,
-          terminal: `${c.env.PUBLIC_BASE_URL.replace(/^http/, 'ws')}/sessions/${sessionId}/terminal`,
-          events: `${c.env.PUBLIC_BASE_URL}/sessions/${sessionId}/events`,
-          services: Object.fromEntries(manifest.services.filter((s) => s.ui).map((s) => [s.name, `${c.env.PUBLIC_BASE_URL}/sessions/${sessionId}/services/${s.name}/`])),
-        },
-      },
-      202
-    );
+  /**
+   * Unauthenticated session start for the dashboard, which is a separate
+   * Worker with no service key. Gated on DEV_OPEN_SESSIONS so it can be
+   * closed from config alone.
+   *
+   * The user id is derived from the caller's IP, which makes the existing
+   * D1 one-active-session-per-user index the rate limit: a given address
+   * gets one live container and a 409 until it ends. That is the whole of
+   * the protection here — it stops a loop from spawning containers, and
+   * nothing stops someone with many addresses.
+   */
+  app.post('/dev/sessions', async (c) => {
+    if (c.env.DEV_OPEN_SESSIONS !== '1') throw ApiError.notFound('not_found', 'Not found');
+    const body = await c.req.json<{ lab?: string }>().catch(() => ({}) as { lab?: string });
+    if (!body.lab) throw ApiError.badRequest('missing_fields', 'lab is required');
+    const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
+    return c.json(await createSession(c.env, body.lab, `dev-${await shortHash(ip)}`), 202);
   });
 
   app.get('/sessions/:id', async (c) => {
@@ -253,4 +239,55 @@ export function createRouter(): Hono<{ Bindings: Env }> {
   });
 
   return app;
+}
+
+/** Shared by POST /sessions and the dev endpoint; the only difference between them is who may call. */
+async function createSession(env: Env, lab: string, userId: string) {
+  const { version, manifest } = await loadCurrentManifest(env, lab);
+  if (!isFamily(manifest.family)) throw ApiError.internal(`lab "${lab}" has an unknown family "${manifest.family}"`);
+
+  const sessionId = newId();
+  // Reserve the one-active-session-per-user slot in D1 first; a unique-index
+  // conflict here is the enforcement point, not a check-then-act race.
+  await insertSession(env, {
+    id: sessionId,
+    user_id: userId,
+    lab_slug: manifest.slug,
+    lab_version: version,
+    family: manifest.family,
+    state: 'starting',
+    created_at: Date.now(),
+    resumed_count: 0,
+  }).catch((err) => {
+    throw ApiError.conflict('active_session_exists', 'This user already has an active session', { cause: String(err) });
+  });
+
+  const stub = env.SESSION.get(env.SESSION.idFromName(sessionId));
+  const { meta, token } = await stub.create({ userId, labSlug: manifest.slug, labVersion: version, family: manifest.family, manifest });
+
+  return {
+    id: sessionId,
+    state: meta.state,
+    token,
+    urls: {
+      status: `${env.PUBLIC_BASE_URL}/sessions/${sessionId}`,
+      terminal: `${env.PUBLIC_BASE_URL.replace(/^http/, 'ws')}/sessions/${sessionId}/terminal`,
+      events: `${env.PUBLIC_BASE_URL}/sessions/${sessionId}/events`,
+      services: Object.fromEntries(
+        manifest.services.filter((s) => s.ui).map((s) => [s.name, `${env.PUBLIC_BASE_URL}/sessions/${sessionId}/services/${s.name}/`])
+      ),
+    },
+  };
+}
+
+/** Read-only routes the dashboard needs. Still service-key-only unless the dev switch is on. */
+function requireServiceAuthUnlessOpen(c: { req: { raw: Request }; env: Env }): void {
+  if (c.env.DEV_OPEN_SESSIONS === '1') return;
+  requireServiceAuth(c.req.raw, c.env);
+}
+
+/** A short, stable, non-reversible label for an IP — used only as a D1 key, never shown. */
+async function shortHash(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return [...new Uint8Array(digest).slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }

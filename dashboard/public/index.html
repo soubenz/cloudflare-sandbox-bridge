@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opalix lab console</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▣</text></svg>">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand">▣ <strong>Opalix</strong> <span class="muted">lab console</span></div>
+
+  <div class="bar-session" id="sessionBar" hidden>
+    <span class="pill" id="statePill">—</span>
+    <span class="mono muted" id="sessionLab"></span>
+    <span class="mono muted small" id="sessionId"></span>
+    <span class="timer" id="expiryTimer" title="Time until the hard timeout"></span>
+  </div>
+
+  <div class="bar-actions">
+    <button id="btnChecks" class="btn" disabled>Run checks</button>
+    <button id="btnSnapshot" class="btn" disabled>Snapshot</button>
+    <button id="btnEnd" class="btn btn-danger" disabled>End session</button>
+    <button id="btnOps" class="btn btn-ghost" aria-pressed="false">Operator</button>
+  </div>
+</header>
+
+<!-- No session yet: pick a lab -->
+<section class="launcher" id="launcher">
+  <h1>Start a lab</h1>
+  <p class="muted">
+    Each lab runs in its own container. One live session per address — end the
+    current one before starting another.
+  </p>
+  <div id="labList" class="lab-list"><p class="muted">Loading labs…</p></div>
+  <p class="error" id="launchError" hidden></p>
+</section>
+
+<!-- Live session -->
+<main class="workspace" id="workspace" hidden>
+  <aside class="pane pane-left">
+    <section class="block">
+      <h2>Checks</h2>
+      <div id="checksPanel"><p class="muted small">Not run yet.</p></div>
+    </section>
+
+    <section class="block">
+      <h2>Hints</h2>
+      <div id="hintsPanel"><p class="muted small">Hints unlock on a timer.</p></div>
+    </section>
+
+    <section class="block block-grow">
+      <h2>Workspace <button id="btnRefreshFiles" class="btn btn-tiny" title="Reload the file list">↻</button></h2>
+      <ul class="files" id="fileList"></ul>
+    </section>
+  </aside>
+
+  <section class="pane pane-center">
+    <nav class="tabs" id="centerTabs">
+      <button class="tab tab-active" data-view="terminal">Terminal</button>
+      <button class="tab" data-view="editor">Editor</button>
+      <span class="tab-spacer"></span>
+      <span id="serviceTabs"></span>
+    </nav>
+
+    <div class="view view-active" id="viewTerminal"><div id="term"></div></div>
+
+    <div class="view" id="viewEditor">
+      <div class="editor-head">
+        <span class="mono" id="editorPath">No file open</span>
+        <button id="btnSaveFile" class="btn btn-tiny" disabled>Save</button>
+        <span class="small muted" id="editorStatus"></span>
+      </div>
+      <textarea id="editorBody" spellcheck="false" placeholder="Open a file from the workspace list."></textarea>
+    </div>
+
+    <div class="view" id="viewService">
+      <iframe id="serviceFrame" title="Service UI"></iframe>
+    </div>
+  </section>
+
+  <aside class="pane pane-right">
+    <section class="block block-grow">
+      <h2>Events <span class="small muted" id="eventCount"></span></h2>
+      <ol class="events" id="eventList"></ol>
+    </section>
+  </aside>
+</main>
+
+<!-- Operator view -->
+<section class="ops" id="ops" hidden>
+  <h1>Pools</h1>
+  <p class="muted small">
+    Warm containers are claimed instantly; a cold start pays for image
+    placement. Priming only grows a pool — draining is the only way to shrink
+    one, and it is also how a rebuilt image reaches new sessions.
+  </p>
+  <div class="tiles" id="poolTiles"></div>
+
+  <div class="ops-auth">
+    <label for="opsKey" class="small">
+      Service key — required for prime and drain. Kept in this tab only.
+    </label>
+    <div class="row">
+      <input id="opsKey" type="password" placeholder="SANDBOX_API_KEY" autocomplete="off">
+      <button id="btnSaveKey" class="btn btn-tiny">Use key</button>
+      <span class="small muted" id="opsKeyStatus"></span>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <span class="small muted">API <span class="mono" id="apiLabel"></span></span>
+  <button class="btn btn-tiny btn-ghost" id="btnChangeApi">change</button>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
