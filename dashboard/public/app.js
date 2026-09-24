@@ -393,8 +393,9 @@ async function refreshPools() {
 }
 
 function poolTile(family, pool) {
-  const warm = pool.warm?.length ?? 0;
-  const claimed = Object.keys(pool.claimed ?? {}).length;
+  // GET /pools reports warm and claimed as counts, not collections.
+  const warm = pool.warm ?? 0;
+  const claimed = pool.claimed ?? 0;
   const stats = pool.stats ?? {};
   const hitRate = stats.claims ? Math.round((stats.warm_hits / stats.claims) * 100) : null;
 

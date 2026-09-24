@@ -3,7 +3,7 @@ import type { Env } from './env';
 import { isFamily } from './families/registry';
 import { loadCurrentManifest, loadCatalogue, publishLab } from './labs/bundle';
 import { parseManifest } from './labs/manifest';
-import { requireServiceAuth, requireBrowserAuth } from './auth';
+import { requireServiceAuth, requireBrowserAuth, mintSessionToken } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
 import { insertSession } from './session/d1';
 import { poolStub } from './do/pool';
@@ -114,7 +114,16 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     const body = await c.req.json<{ lab?: string }>().catch(() => ({}) as { lab?: string });
     if (!body.lab) throw ApiError.badRequest('missing_fields', 'lab is required');
     const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
-    return c.json(await createSession(c.env, body.lab, `dev-${await shortHash(ip)}`), 202);
+    const userId = `dev-${await shortHash(ip)}`;
+
+    // Rejoining beats a 409. One address gets one container, so a reload, a
+    // second tab, or anyone else behind the same NAT would otherwise hit a
+    // wall they cannot clear. Handing back the session they already have is
+    // both what someone reloading expects and what keeps the fence usable.
+    const existing = await activeSessionFor(c.env, userId);
+    if (existing) return c.json(await rejoinSession(c.env, existing), 200);
+
+    return c.json(await createSession(c.env, body.lab, userId), 202);
   });
 
   app.get('/sessions/:id', async (c) => {
@@ -269,14 +278,46 @@ async function createSession(env: Env, lab: string, userId: string) {
     id: sessionId,
     state: meta.state,
     token,
-    urls: {
-      status: `${env.PUBLIC_BASE_URL}/sessions/${sessionId}`,
-      terminal: `${env.PUBLIC_BASE_URL.replace(/^http/, 'ws')}/sessions/${sessionId}/terminal`,
-      events: `${env.PUBLIC_BASE_URL}/sessions/${sessionId}/events`,
-      services: Object.fromEntries(
-        manifest.services.filter((s) => s.ui).map((s) => [s.name, `${env.PUBLIC_BASE_URL}/sessions/${sessionId}/services/${s.name}/`])
-      ),
-    },
+    urls: sessionUrls(env, sessionId, manifest.services.filter((s) => s.ui).map((s) => s.name)),
+  };
+}
+
+/** The one live session this user already has, if any. */
+async function activeSessionFor(env: Env, userId: string): Promise<{ id: string; lab_slug: string; lab_version: string } | null> {
+  const row = await env.DB.prepare(
+    `SELECT id, lab_slug, lab_version FROM sessions
+     WHERE user_id = ? AND state IN ('starting','running','recovering','resuming')
+     ORDER BY created_at DESC LIMIT 1`
+  )
+    .bind(userId)
+    .first<{ id: string; lab_slug: string; lab_version: string }>();
+  return row ?? null;
+}
+
+/** Same response shape as a fresh start, with a newly minted token for the session already running. */
+async function rejoinSession(env: Env, row: { id: string; lab_slug: string; lab_version: string }) {
+  const stub = env.SESSION.get(env.SESSION.idFromName(row.id));
+  const status = await stub.status();
+  const token = await mintSessionToken(env, {
+    sid: row.id,
+    uid: status.meta.user_id,
+    exp: Math.floor(((status.meta.expires_at ?? Date.now() + 60 * 60_000) + 10 * 60_000) / 1000),
+  });
+  return {
+    id: row.id,
+    state: status.meta.state,
+    token,
+    rejoined: true,
+    urls: sessionUrls(env, row.id, Object.entries(status.services).filter(([, s]) => s.spec.ui).map(([name]) => name)),
+  };
+}
+
+function sessionUrls(env: Env, sessionId: string, uiServices: string[]) {
+  return {
+    status: `${env.PUBLIC_BASE_URL}/sessions/${sessionId}`,
+    terminal: `${env.PUBLIC_BASE_URL.replace(/^http/, 'ws')}/sessions/${sessionId}/terminal`,
+    events: `${env.PUBLIC_BASE_URL}/sessions/${sessionId}/events`,
+    services: Object.fromEntries(uiServices.map((name) => [name, `${env.PUBLIC_BASE_URL}/sessions/${sessionId}/services/${name}/`])),
   };
 }
 
