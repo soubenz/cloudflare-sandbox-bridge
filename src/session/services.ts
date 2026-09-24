@@ -2,6 +2,9 @@ import type { LabManifest, ServiceSpec } from '../labs/manifest';
 import type { SessionRuntime, ServiceRuntime, ServiceHealth } from './state';
 import { emitEvent } from './events';
 import { ApiError } from '../lib/errors';
+import type { SandboxProcess } from '@cloudflare/sandbox';
+
+const HEALTH_PROBE_TIMEOUT_MS = 3_000;
 
 /** Kahn's algorithm over `depends_on`. manifest.ts already validated every dependency name resolves. */
 export function topoOrder(services: ServiceSpec[]): ServiceSpec[] {
@@ -138,20 +141,44 @@ export async function relaunchAllServices(rt: SessionRuntime): Promise<void> {
   }
 }
 
-/** Polled by the health alarm. Re-checks each service's port without restarting it; a container-restart detection (all pids gone) is lifecycle.recover's job, not this function's. */
+/**
+ * Polled by the health alarm. Re-runs each service's declared healthcheck
+ * against its port, rather than only asking whether the process still
+ * exists: a service that binds its port and then wedges — accepting TCP
+ * but failing its HTTP healthcheck — keeps a live pid, and would
+ * otherwise read `healthy` for the whole session while the learner sees a
+ * broken system. Detecting a container restart (all pids gone) is
+ * lifecycle.recover's job, not this function's.
+ */
 export async function healthCheckAll(rt: SessionRuntime): Promise<void> {
   const services = await rt.services();
   const backend = rt.backend();
   for (const [name, runtime] of Object.entries(services)) {
     if (!runtime.process_id) continue;
     const proc = await backend.getProcess(runtime.process_id);
-    const health: ServiceHealth = proc ? runtime.health : 'unhealthy';
+    const health: ServiceHealth = proc ? await probeService(proc, runtime) : 'unhealthy';
     if (health !== runtime.health) {
       services[name] = { ...runtime, health, last_health_at: Date.now() };
       emitEvent(rt, 'service.health', { service: name, health });
     }
   }
   await rt.putServices(services);
+}
+
+/** A short probe: this runs on every health tick, so it must not stall the alarm. */
+async function probeService(proc: SandboxProcess, runtime: ServiceRuntime): Promise<ServiceHealth> {
+  const { port, healthcheck } = runtime.spec;
+  if (port === undefined) return runtime.health;
+  try {
+    await proc.waitForPort(port, {
+      mode: healthcheck?.type ?? 'tcp',
+      path: healthcheck?.path,
+      timeout: HEALTH_PROBE_TIMEOUT_MS,
+    });
+    return 'healthy';
+  } catch {
+    return 'unhealthy';
+  }
 }
 
 /** True if every service process the Session DO started is gone — the health alarm's signal to call lifecycle.recover. */
