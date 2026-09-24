@@ -35,12 +35,17 @@ test.describe('the operator view', () => {
     await expect(page.locator('#opsKeyStatus')).toHaveText(/service key/i);
   });
 
-  test('toggles back to the launcher', async ({ page }) => {
+  test('toggles back to whatever it was showing', async ({ page }) => {
     await openConsole(page);
+    // Either the picker or a running session, depending on whether this
+    // run has started one yet; the panel must restore what it covered.
+    const cameFromWorkspace = await page.locator('#workspace').isVisible();
+
     await page.locator('#btnOps').click();
     await expect(page.locator('#ops')).toBeVisible();
+
     await page.locator('#btnOps').click();
     await expect(page.locator('#ops')).toBeHidden();
-    await expect(page.locator('#launcher')).toBeVisible();
+    await expect(page.locator(cameFromWorkspace ? '#workspace' : '#launcher')).toBeVisible();
   });
 });

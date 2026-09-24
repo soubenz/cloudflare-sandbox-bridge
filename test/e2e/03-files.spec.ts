@@ -33,6 +33,29 @@ test.describe('the workspace', () => {
     await expect(session.locator('#editorBody')).toHaveValue(marker, { timeout: 30_000 });
   });
 
+  test('creates a new file, which is how a lab task gets done', async ({ session }) => {
+    // The hello lab asks for /workspace/greeting.txt, which no lab ships.
+    // Without this the console could only edit what was already there and
+    // the lab could not be finished in a browser at all.
+    const name = `created-${Date.now()}.txt`;
+    session.once('dialog', (d) => d.accept(name));
+    await session.locator('#btnNewFile').click();
+
+    await expect(session.locator('#fileList li', { hasText: name })).toBeVisible({ timeout: 30_000 });
+    await expect(session.locator('#editorPath')).toHaveText(name);
+
+    // And it is writable straight away, not just listed.
+    await session.locator('#editorBody').fill('written into a file the console made');
+    await session.locator('#btnSaveFile').click();
+    await expect(session.locator('#editorStatus')).toHaveText('saved', { timeout: 30_000 });
+  });
+
+  test('refuses a path that escapes the workspace', async ({ session }) => {
+    session.once('dialog', (d) => d.accept('../../etc/passwd'));
+    await session.locator('#btnNewFile').click();
+    await expect(session.locator('#fileError')).toBeVisible({ timeout: 10_000 });
+  });
+
   test('refreshes the listing on demand', async ({ session }) => {
     await session.locator('#btnRefreshFiles').click();
     await expect(session.locator('#fileList li').first()).toBeVisible();

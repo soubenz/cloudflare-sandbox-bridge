@@ -54,8 +54,13 @@
     </section>
 
     <section class="block block-grow">
-      <h2>Workspace <button id="btnRefreshFiles" class="btn btn-tiny" title="Reload the file list">↻</button></h2>
+      <h2>
+        Workspace
+        <button id="btnNewFile" class="btn btn-tiny" title="Create a file in /workspace">+ New</button>
+        <button id="btnRefreshFiles" class="btn btn-tiny" title="Reload the file list">↻</button>
+      </h2>
       <ul class="files" id="fileList"></ul>
+      <p class="error small" id="fileError" hidden></p>
     </section>
   </aside>
 

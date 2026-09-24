@@ -394,6 +394,38 @@ async function openFile(name) {
   }
 }
 
+/**
+ * Creates an empty file in /workspace and opens it. Without this the
+ * console could only edit files a lab already shipped — and the first
+ * fixture lab's whole task is to produce a file that does not exist yet,
+ * so the lab was unsolvable from the browser.
+ */
+async function newFile() {
+  const name = prompt('New file in /workspace');
+  if (!name) return;
+
+  const clean = name.trim().replace(/^\/+/, '');
+  if (!clean || clean.includes('..')) {
+    showFileError('Give a name inside /workspace, without "..".');
+    return;
+  }
+
+  try {
+    await api.writeFile(state.session.id, state.session.token, clean, '');
+    await refreshFiles();
+    await openFile(clean);
+  } catch (err) {
+    showFileError(err.message);
+  }
+}
+
+function showFileError(message) {
+  const el = $('fileError');
+  el.textContent = message;
+  el.hidden = false;
+  setTimeout(() => (el.hidden = true), 6000);
+}
+
 async function saveFile() {
   if (!state.openFile) return;
   $('btnSaveFile').disabled = true;
@@ -558,6 +590,7 @@ $('btnSaveKey').addEventListener('click', () => {
 });
 
 $('btnRefreshFiles').addEventListener('click', refreshFiles);
+$('btnNewFile').addEventListener('click', newFile);
 $('btnSaveFile').addEventListener('click', saveFile);
 
 for (const tab of document.querySelectorAll('.tab[data-view]')) {

@@ -110,20 +110,20 @@ export async function startOrResume(page: Page): Promise<string> {
 }
 
 /**
- * True when the network between here and the API strips the WebSocket
- * handshake headers. `Upgrade` and `Connection` are hop-by-hop, so a proxy
- * that re-issues rather than tunnels the request drops them and the Worker
- * then refuses to return a WebSocket at all. That is a property of the
- * network, not of the console, so terminal specs skip rather than fail —
- * but only on that specific evidence, so a genuinely broken terminal still
- * reports as broken.
+ * Whether this network can carry a WebSocket to the API at all.
+ *
+ * `Upgrade` and `Connection` are hop-by-hop headers, so a proxy that
+ * re-issues rather than tunnels a request drops them, and the Worker then
+ * refuses to return a WebSocket. Node's ws client ignores HTTPS_PROXY and
+ * connects directly, which is why the API's own suite is unaffected.
+ *
+ * This is an explicit opt-out rather than something inferred from an error
+ * string: two earlier attempts to sniff it matched the wrong text and
+ * reported an environment limit as a product failure, and the failure mode
+ * of guessing wrong in the other direction — quietly excusing a genuinely
+ * broken terminal — is worse. Set it knowingly, per environment.
  */
-export function upgradeHeaderStripped(errors: string[]): boolean {
-  // The Worker answers a handshake it cannot upgrade with a 500 carrying
-  // "did not contain the header Upgrade: websocket". Any other failure —
-  // a 4xx, a close, a timeout — is not this, and must still fail the test.
-  return errors.some((e) => /Unexpected response code: 500/.test(e));
-}
+export const WEBSOCKETS_BLOCKED = process.env.OPALIX_E2E_NO_WEBSOCKETS === '1';
 
 /** Collects browser console errors for the life of a page. */
 export function collectConsoleErrors(page: Page): string[] {
