@@ -56,6 +56,16 @@ jobs:
       # The build output reports manifest bytes, not image size, so the
       # only way to answer "how big is the agent image" (a spike question,
       # and what drives cold-start time) is to ask Docker afterwards.
-      - name: Report image sizes
+      # Size alone does not say what to cut. The per-layer breakdown does,
+      # and it answers the question that decides the approach: how much of
+      # the image is the base we cannot change.
+      - name: Report image sizes and layers
         if: always()
-        run: docker image ls --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' | head -20
+        run: |
+          docker image ls --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' | head -20
+          for img in $(docker image ls --format '{{.Repository}}:{{.Tag}}' | grep opalix-sandbox | head -2); do
+            echo "=== $img ==="
+            docker history --no-trunc --format '{{.Size}}\t{{.CreatedBy}}' "$img" | head -25
+          done
+          echo "=== base image ==="
+          docker image ls --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' | grep -i sandbox | head -5
