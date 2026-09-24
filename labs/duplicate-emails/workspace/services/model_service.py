@@ -34,7 +34,7 @@ _state = {"requests": [], "seen": {}}
 
 REPLY = """Hi {first_name},
 
-Thanks for getting in touch about "{subject}".
+{opening} "{subject}".
 
 I've read through what you sent and passed the details to the team that
 owns this area. Ticket {ticket_id} is with them now and you'll have an
@@ -44,6 +44,19 @@ If anything changes before then, reply to this message and it will be
 attached to the same ticket.
 
 - Opalix Support"""
+
+# A real model does not return the same bytes twice for the same prompt, and
+# this stub should not pretend otherwise: it rotates its opening line per
+# call. The wording is incidental -- what matters is that the drafted body
+# is NOT stable across attempts, so anything derived from it (a hash of the
+# text, say) is a different value on a retry. Which ticket a reply belongs
+# to is stable; what the model said about it is not.
+OPENINGS = [
+    "Thanks for getting in touch about",
+    "Thank you for writing in about",
+    "Thanks for flagging",
+    "Thanks for letting us know about",
+]
 
 
 def _route(path):
@@ -60,7 +73,12 @@ def _field(prompt, label, default=""):
 
 
 def complete(payload):
-    """Returns (status, body). Deterministic in the ticket, not the clock."""
+    """Returns (status, body).
+
+    Which ticket a reply is for is deterministic; the wording is not. See
+    OPENINGS above -- a retry of the same ticket gets a differently worded
+    draft, exactly as a real model would produce.
+    """
     messages = payload.get("messages") or []
     prompt = "\n".join(str(m.get("content", "")) for m in messages)
 
@@ -86,6 +104,7 @@ def complete(payload):
 
     text = REPLY.format(
         first_name=customer.split(" ")[0],
+        opening=OPENINGS[(nth - 1) % len(OPENINGS)],
         subject=subject,
         ticket_id=ticket_id,
     )

@@ -1,0 +1,117 @@
+# P1-01 in the lab catalogue: the first lab a learner meets, and free tier.
+#
+# Break-fix, titled by symptom rather than by the concept being taught. The
+# planted bug is one line in workspace/agent/mailer.py; the docstring above
+# it confidently explains why retrying is safe, which is the misdirection.
+#
+# There is deliberately no hints.md: everything in workspace/ is readable
+# from minute zero, so a hints file is not gated at all. The staged hints
+# below are, and they are the only hints this lab ships.
+slug: duplicate-emails
+version: 1.0.0
+title: "Customers are getting the same reply twice"
+type: break-fix
+family: agent
+difficulty: core
+summary: >-
+  A support agent answers tickets, and some customers get the same reply two
+  or three times. Retries are involved. Deleting them is not the fix.
+objectives:
+  - "Tell an at-least-once delivery path from an exactly-once one"
+  - "Make a retried side effect safe without giving up the retry"
+  - "Prove a fix from what the receiving service recorded, not from the agent's own logs"
+# The work is 30-45 minutes; 60 is the schema minimum and keeps the
+# container bill honest for a free lab.
+timeout_minutes: 60
+idle_minutes: 10
+
+env:
+  MAIL_URL: "http://127.0.0.1:8025"
+  MODEL_URL: "http://127.0.0.1:8788"
+  MAIL_PORT: "8025"
+  MODEL_PORT: "8788"
+  TICKET_QUEUE: "/workspace/tickets.json"
+  FROM_ADDRESS: "support@opalix.example"
+  MAIL_TIMEOUT_S: "2"
+  MODEL_TIMEOUT_S: "5"
+  MAX_ATTEMPTS: "3"
+  RETRY_BASE_DELAY_S: "0.5"
+  # The faults, fixed per ticket so every run of the graders sees the same
+  # failures. The mail service records a delivery and *then* fails, which is
+  # the real shape of a duplicate send: the message went out, the caller
+  # never heard so.
+  #   T-1041 is the customer complaining about being charged twice.
+  MAIL_FAULT_504_TICKETS: "T-1041"
+  MAIL_FAULT_SLOW_TICKETS: "T-1044"
+  MAIL_FAULT_SLOW_SECONDS: "3.0"
+  #  retries-still-happen needs a model failure too, or it has nothing to
+  #  prove the retry on and fails the lab rather than the learner.
+  MODEL_FAULT_503_TICKETS: "T-1043"
+
+services:
+  # The mailbox is the diagnostic: it shows what was actually delivered,
+  # with the idempotency key each request carried. A learner who only reads
+  # the agent's own stdout will believe it sent one message per ticket.
+  - name: mailbox
+    argv: ["python3", "/workspace/services/mail_service.py"]
+    cwd: /workspace
+    port: 8025
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: []
+  - name: model
+    argv: ["python3", "/workspace/services/model_service.py"]
+    cwd: /workspace
+    port: 8788
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: []
+
+pressure:
+  - id: burst
+    at_minutes: 8
+    argv: ["/opt/lab/pressure/burst.sh"]
+    title: "Monday morning hits the queue"
+    message: >-
+      Six more tickets just landed. If the duplicates are not fixed yet,
+      this is about to make them louder.
+
+checks:
+  - name: one-email-per-ticket
+    script: one-email-per-ticket.sh
+    timeout_s: 180
+    weight: 2
+  - name: every-ticket-answered
+    script: every-ticket-answered.sh
+    timeout_s: 180
+    weight: 1
+  # The anti-cheat. Deleting the retry loop stops the duplicates by dropping
+  # work instead, which is a worse bug that is harder to see.
+  - name: retries-still-happen
+    script: retries-still-happen.sh
+    timeout_s: 180
+    weight: 2
+
+hints:
+  - after_minutes: 8
+    text: >-
+      Open the mailbox tab and compare it with what the agent printed. The
+      agent's own log is not evidence of what was delivered.
+  - after_minutes: 16
+    text: >-
+      Look at the Idempotency-Key column in the mailbox. Every row has one.
+      Ask whether two attempts at the same ticket share it.
+  - after_minutes: 26
+    text: >-
+      The mail API deduplicates on that key, so the key has to be the same
+      every time the same reply is sent -- including across a retry, and
+      including after the drafted text changes.
+
+egress:
+  allow: []
