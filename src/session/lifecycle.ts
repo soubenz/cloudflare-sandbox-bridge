@@ -120,6 +120,16 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
   const due = await popDueTimers(rt, Date.now());
   for (const timer of due) {
     try {
+      // More than one timer can come due in the same tick, and one of them
+      // may end the session (idle or hard expiry destroys the container).
+      // Anything still queued behind it would then run against a container
+      // that no longer exists, so stop as soon as the session is over.
+      // `resume` and `cleanup` are the two that are meant to run on an
+      // ended session.
+      if (timer.kind !== 'cleanup' && timer.kind !== 'resume' && (await rt.requireMeta()).state === 'ended') {
+        continue;
+      }
+
       switch (timer.kind) {
         case 'start':
           await runStart(rt);

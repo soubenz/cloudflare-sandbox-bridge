@@ -1,6 +1,9 @@
 # Test fixture for Tier 3 (time behaviors). Not a real Opalix lab.
 # idle_minutes is the schema minimum so the idle-timeout path is
-# observable in a test run rather than in ten minutes.
+# observable in a test run rather than in ten minutes. The pressure event
+# fires at 0 so it cannot land in the same alarm tick as the idle timeout —
+# when it did, idle ended the session and destroyed the container first,
+# and the pressure exec then failed against a container that was gone.
 slug: impatient
 version: 1.0.0
 title: "Impatient (idle-timeout fixture)"
@@ -26,7 +29,7 @@ services:
     depends_on: []
 pressure:
   - id: burst
-    at_minutes: 1
+    at_minutes: 0
     argv: ["/opt/lab/pressure/burst.sh"]
     title: "A burst arrives"
     message: "Something changed. Check the workspace."

@@ -71,13 +71,27 @@ async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Reques
   if (!upstream) throw new Error('terminal.connect() did not return a WebSocket');
   upstream.accept();
 
+  // The container's PTY speaks its own framing: JSON text frames for
+  // control (`ready`, `chunk`, `truncated`, `error`, `exit`), each `chunk`
+  // immediately followed by one binary frame carrying that many bytes of
+  // output. Our clients get raw bytes instead, so the control frames are
+  // consumed here rather than forwarded — passing them through would put
+  // literal JSON in the learner's terminal. The cursors they carry are
+  // what makes re-attach after a drop or a container restart resume where
+  // the output left off, so they are recorded as they go by.
+  let pendingCursor: string | undefined;
   upstream.addEventListener('message', (event) => {
-    for (const client of rt.ctx.getWebSockets('terminal')) {
-      try {
-        client.send(event.data as string | ArrayBuffer);
-      } catch {
-        // Client socket closing/closed; webSocketClose will clean it up.
-      }
+    if (typeof event.data === 'string') {
+      void recordTerminalCursor(rt, event.data).then((cursor) => {
+        if (cursor) pendingCursor = cursor;
+      });
+      return;
+    }
+    broadcastToClients(rt, event.data);
+    if (pendingCursor) {
+      const cursor = pendingCursor;
+      pendingCursor = undefined;
+      void persistCursor(rt, cursor);
     }
   });
   upstream.addEventListener('close', () => {
@@ -92,6 +106,35 @@ async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Reques
 
   rt.upstreamTerminalSocket = upstream;
   rt.upstreamTerminalHandle = terminal;
+}
+
+function broadcastToClients(rt: SessionRuntime, data: ArrayBuffer): void {
+  for (const client of rt.ctx.getWebSockets('terminal')) {
+    try {
+      client.send(data);
+    } catch {
+      // Client socket closing/closed; webSocketClose will clean it up.
+    }
+  }
+}
+
+/** Returns the cursor a PTY control frame carries, if it has one. */
+async function recordTerminalCursor(rt: SessionRuntime, frame: string): Promise<string | undefined> {
+  try {
+    const msg = JSON.parse(frame) as { type?: string; cursor?: string };
+    if (msg.type === 'chunk') return msg.cursor;
+    if ((msg.type === 'ready' || msg.type === 'truncated' || msg.type === 'exit') && msg.cursor) {
+      await persistCursor(rt, msg.cursor);
+    }
+  } catch {
+    // Not a control frame we understand; nothing to record.
+  }
+  return undefined;
+}
+
+async function persistCursor(rt: SessionRuntime, cursor: string): Promise<void> {
+  const term = await rt.terminal();
+  if (term && term.cursor !== cursor) await rt.putTerminal({ ...term, cursor });
 }
 
 /** Called from the Session DO's `webSocketMessage` hibernation hook. */

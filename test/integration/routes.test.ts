@@ -57,7 +57,7 @@ describeIfConfigured('sandbox API routes', () => {
 
       // \x01 prefix marks a control frame (resize); everything else is raw PTY bytes.
       ws.send(`\x01${JSON.stringify({ type: 'resize', cols: 100, rows: 40 })}`);
-      ws.send('echo opalix-terminal-ok\n');
+      ws.send(Buffer.from('echo opalix-terminal-ok\n'));
 
       const deadline = Date.now() + 20_000;
       while (Date.now() < deadline && !chunks.join('').includes('opalix-terminal-ok')) {

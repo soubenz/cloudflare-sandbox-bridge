@@ -136,7 +136,8 @@ export async function execViaTerminal(
     // Let the prompt settle before typing, or the first keystrokes are lost.
     await new Promise((r) => setTimeout(r, 1500));
     buf = '';
-    ws.send(`${command}; echo __DO""NE__$?\n`);
+    // Binary: the PTY takes raw bytes; a text frame is read as a control message.
+    ws.send(Buffer.from(`${command}; echo __DO""NE__$?\n`));
 
     const deadline = Date.now() + timeoutMs;
     const marker = /__DONE__(\d+)/;

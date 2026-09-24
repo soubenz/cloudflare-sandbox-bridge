@@ -42,8 +42,8 @@ describeIfSlow('session timing and failure behaviors', () => {
   it('fires the pressure event and lands it on SSE with the authored copy', async () => {
     const { id, session } = await startRunningSession(service, OPALIX_URL!, 'impatient');
     try {
-      // at_minutes: 1, so allow the alarm a generous margin past T+60s.
-      const events = await collectSse(session.eventsUrl(id), 150_000, (e) => e.event === 'pressure');
+      // at_minutes: 0 — it fires as soon as the start sequence arms the timers.
+      const events = await collectSse(session.eventsUrl(id), 90_000, (e) => e.event === 'pressure');
       const pressure = events.find((e) => e.event === 'pressure');
       expect(pressure).toBeTruthy();
       const data = JSON.parse(pressure!.data);
