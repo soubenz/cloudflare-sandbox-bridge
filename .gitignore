@@ -8,3 +8,8 @@ worker-configuration.d.ts
 
 # Screenshots and report from the browser e2e run; regenerated on every run.
 test/e2e/shots/
+
+# Playwright run artifacts (traces, screenshots, error context) — regenerated
+# on every run and large.
+test-results/
+playwright-report/
