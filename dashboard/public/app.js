@@ -61,6 +61,22 @@ async function startSession(slug) {
 // ---------------------------------------------------------------- session
 
 function enterSession() {
+  // Per-session, not per-page: without resetting these, starting a second
+  // lab without a reload leaves the old session's panels on screen and
+  // never attaches a terminal to the new one.
+  runningHandled = false;
+  state.expiresAt = null;
+  state.openFile = null;
+  $('eventList').innerHTML = '';
+  $('checksPanel').innerHTML = '<p class="muted small">Not run yet.</p>';
+  $('hintsPanel').innerHTML = '<p class="muted small">Hints unlock on a timer.</p>';
+  $('fileList').innerHTML = '';
+  $('serviceTabs').innerHTML = '';
+  $('editorBody').value = '';
+  $('editorPath').textContent = 'No file open';
+  $('btnSaveFile').disabled = true;
+  showView('terminal');
+
   $('launcher').hidden = true;
   $('ops').hidden = true;
   $('workspace').hidden = false;
@@ -206,6 +222,23 @@ function onEnded(reason) {
   state.terminal?.dispose();
   state.terminal = null;
   state.events?.close();
+  $('btnBackToLabs').hidden = false;
+}
+
+/** An ended session leaves a dead workspace on screen; this is the way out. */
+function backToLabs() {
+  state.session = null;
+  state.terminal?.dispose();
+  state.terminal = null;
+  state.events?.close();
+  $('btnBackToLabs').hidden = true;
+  $('sessionBar').hidden = true;
+  $('workspace').hidden = true;
+  $('ops').hidden = true;
+  $('btnOps').setAttribute('aria-pressed', 'false');
+  $('launcher').hidden = false;
+  $('expiryTimer').textContent = '';
+  loadLabs();
 }
 
 function setStatePill(value) {
@@ -468,6 +501,8 @@ $('btnEnd').addEventListener('click', async () => {
   }
   onEnded('user');
 });
+
+$('btnBackToLabs').addEventListener('click', backToLabs);
 
 $('btnOps').addEventListener('click', () => {
   const showing = $('ops').hidden;
