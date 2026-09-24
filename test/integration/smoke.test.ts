@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { OpalixClient } from '../../cli/src/client';
+import type { SessionCreateResponse } from '../../cli/src/client';
 
 /**
  * Exercises the full session lifecycle against a live Worker — `wrangler
@@ -28,6 +29,8 @@ describeIfConfigured('sandbox API smoke test', () => {
   const service = new OpalixClient({ baseUrl: OPALIX_URL!, serviceKey: OPALIX_KEY });
   let sessionId: string;
   let session: OpalixClient;
+  let token: string;
+  let urls: SessionCreateResponse['urls'];
 
   beforeAll(async () => {
     const health = await service.health();
@@ -38,6 +41,8 @@ describeIfConfigured('sandbox API smoke test', () => {
     const started = await service.startSession('hello', `it-${Date.now()}`);
     expect(started.state).toBe('starting');
     sessionId = started.id;
+    token = started.token;
+    urls = started.urls;
     session = new OpalixClient({ baseUrl: OPALIX_URL!, sessionToken: started.token });
 
     const deadline = Date.now() + 60_000;
@@ -48,6 +53,17 @@ describeIfConfigured('sandbox API smoke test', () => {
     }
     expect(state).toBe('running');
   }, 90_000);
+
+  it('hands back URLs that actually resolve', async () => {
+    // Every other test builds its own URLs from OPALIX_URL, so nothing
+    // exercised `urls` from the create response. PUBLIC_BASE_URL pointed
+    // at a host with no DNS for the life of this deployment and no test
+    // noticed.
+    const res = await fetch(`${urls.status}?token=${encodeURIComponent(token)}`);
+    expect(res.status).toBe(200);
+    expect(urls.terminal).toMatch(/^wss:\/\//);
+    expect(urls.events).toMatch(/^https:\/\//);
+  }, 30_000);
 
   it('writes a file and reads it back', async () => {
     await session.writeFile(sessionId, 'greeting.txt', 'hello from opalix');

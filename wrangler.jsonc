@@ -52,7 +52,14 @@
     "BACKUP_BUCKET_NAME": "opalix-backups",
     "CLOUDFLARE_ACCOUNT_ID": "8f5baf938da8f184c5431050d65eef08",
     "LOCATION_HINT": "weur",
-    "PUBLIC_BASE_URL": "https://labs-api.opalix.ai",
+    // Every URL handed back to a client is built from this — urls.status,
+    // urls.terminal, urls.events, urls.services, and {{session.base_url}}
+    // in lab manifests. It must be a host that actually serves this
+    // Worker: labs-api.opalix.ai is the intended custom domain but has no
+    // DNS and no route here yet, so pointing at it handed clients URLs
+    // that resolve nowhere. Change this in the same commit that attaches
+    // the custom domain, not before.
+    "PUBLIC_BASE_URL": "https://opalix-sandbox.soubenz94.workers.dev",
     "POOL_TARGET_AGENT": "1",
     "POOL_TARGET_GATEWAY": "1",
     "LLM_HOST": "llm.opalix.ai",
