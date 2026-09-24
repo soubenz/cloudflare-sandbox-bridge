@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Opalix lab console</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▣</text></svg>">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+<link rel="stylesheet" href="./dist/xterm.css">
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -80,7 +80,8 @@
         <button id="btnSaveFile" class="btn btn-tiny" disabled>Save</button>
         <span class="small muted" id="editorStatus"></span>
       </div>
-      <textarea id="editorBody" spellcheck="false" placeholder="Open a file from the workspace list."></textarea>
+      <div id="editorMount" class="editor-mount"></div>
+      <p class="muted small editor-empty" id="editorEmpty">Open a file from the workspace list, or create one.</p>
     </div>
 
     <div class="view" id="viewService">
@@ -123,8 +124,6 @@
   <button class="btn btn-tiny btn-ghost" id="btnChangeApi">change</button>
 </footer>
 
-<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
-<script type="module" src="./app.js"></script>
+<script type="module" src="./dist/app.js"></script>
 </body>
 </html>

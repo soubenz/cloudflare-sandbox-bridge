@@ -44,6 +44,7 @@ const state = {
   expiresAt: null,
   eventCount: 0,
   openFile: null,
+  editor: null,
   serviceKey: sessionStorage.getItem('opalix.serviceKey') || '',
 };
 
@@ -107,7 +108,6 @@ function enterSession() {
   $('hintsPanel').innerHTML = '<p class="muted small">Hints unlock on a timer.</p>';
   $('fileList').innerHTML = '';
   $('serviceTabs').innerHTML = '';
-  $('editorBody').value = '';
   $('editorPath').textContent = 'No file open';
   $('btnSaveFile').disabled = true;
   showView('terminal');
@@ -377,12 +377,33 @@ function normalizeFiles(result) {
     .sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name));
 }
 
+/** Created on first use: a session that never opens a file loads no editor. */
+async function ensureEditor() {
+  if (state.editor) return state.editor;
+  try {
+    // Imported here, not at the top: CodeMirror is the single largest
+    // thing the console can load, and a session that never opens a file
+    // has no use for it.
+    const { createEditor } = await import('./editor.js');
+    state.editor = await createEditor($('editorMount'), {
+      onChange: () => {
+        $('editorStatus').textContent = 'unsaved';
+      },
+    });
+    $('editorEmpty').hidden = true;
+  } catch (err) {
+    $('editorStatus').textContent = `editor failed to load: ${err.message}`;
+  }
+  return state.editor;
+}
+
 async function openFile(name) {
   try {
     const result = await api.readFile(state.session.id, state.session.token, name);
+    const editor = await ensureEditor();
     state.openFile = name;
     $('editorPath').textContent = name;
-    $('editorBody').value = result.content ?? '';
+    await editor?.load(result.content ?? '', name);
     $('btnSaveFile').disabled = false;
     $('editorStatus').textContent = '';
     showView('editor');
@@ -431,7 +452,7 @@ async function saveFile() {
   $('btnSaveFile').disabled = true;
   $('editorStatus').textContent = 'saving…';
   try {
-    await api.writeFile(state.session.id, state.session.token, state.openFile, $('editorBody').value);
+    await api.writeFile(state.session.id, state.session.token, state.openFile, state.editor?.value() ?? '');
     $('editorStatus').textContent = 'saved';
     refreshFiles();
   } catch (err) {

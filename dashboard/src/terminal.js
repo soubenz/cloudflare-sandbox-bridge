@@ -1,3 +1,5 @@
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
 import { terminalUrl } from './api.js';
 
 /**
@@ -13,13 +15,13 @@ import { terminalUrl } from './api.js';
 const CONTROL_PREFIX = '\x01';
 
 export function attachTerminal({ container, sessionId, token, onNotice }) {
-  const term = new window.Terminal({
+  const term = new Terminal({
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     fontSize: 13,
     cursorBlink: true,
     theme: { background: '#0b0e13', foreground: '#e6e9ef', cursor: '#5b9dd9' },
   });
-  const fit = new window.FitAddon.FitAddon();
+  const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(container);
   fit.fit();

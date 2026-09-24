@@ -45,6 +45,9 @@ jobs:
 
       # The dashboard is its own Worker (assets only, no server side). It
       # deploys after the API so a new UI never talks to an older API.
+      - name: Build dashboard
+        run: npm run build:dashboard
+
       - name: Deploy dashboard
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

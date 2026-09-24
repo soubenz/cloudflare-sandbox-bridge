@@ -13,3 +13,6 @@ test/e2e/shots/
 # on every run and large.
 test-results/
 playwright-report/
+
+# Built by dashboard/build.mjs on deploy; not a source artifact.
+dashboard/public/dist/
