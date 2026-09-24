@@ -85,9 +85,12 @@ export function parseManifest(json: unknown): LabManifest {
     throw new Error(`Invalid lab manifest: ${result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
   }
   const manifest = result.data;
-  // Every services[].depends_on and every checks[].script referencing a
-  // service name must resolve within this manifest — catches typos at
-  // publish time instead of at session start inside a container.
+  // Every services[].depends_on must name a service declared in this same
+  // manifest — catches typos at publish time instead of at session start
+  // inside a container. checks[].script is deliberately NOT validated here:
+  // it is a path relative to checks/ inside the lab's private tarball,
+  // which this schema never sees, so whether it exists can only be found
+  // out when the checks run in the container.
   const serviceNames = new Set(manifest.services.map((s) => s.name));
   for (const svc of manifest.services) {
     for (const dep of svc.depends_on) {

@@ -34,14 +34,27 @@ function base64urlToString(s: string): string {
  * Mints a short-lived session token for browser-facing endpoints (terminal,
  * events, service proxy). The token carries no secret data — it just proves
  * the holder was handed it by `POST /sessions`, so those routes never need
- * the service key. `exp` should be `expires_at + 10 minutes` so a session
- * that is about to hard-timeout doesn't lock its own browser client out
- * mid-check.
+ * the service key. `exp` must be `expires_at + 10 minutes` (compute it with
+ * `sessionTokenExp` below) so a session that is about to hard-timeout
+ * doesn't lock its own browser client out mid-check.
  */
 export async function mintSessionToken(env: Env, payload: SessionTokenPayload): Promise<string> {
   const body = base64url(new TextEncoder().encode(JSON.stringify(payload)));
   const sig = await hmac(env.SESSION_TOKEN_SECRET, body);
   return `${body}.${sig}`;
+}
+
+/** How far a session token outlives the session it belongs to. */
+export const SESSION_TOKEN_GRACE_MS = 10 * 60_000;
+
+/**
+ * `exp` (unix seconds) for a token belonging to a session that hard-expires
+ * at `expiresAtMs`. Always mint against the session's own lifetime, never a
+ * fixed budget: `timeout_minutes` goes up to 120, and there is no refresh
+ * route, so a flat hour would 401 a long lab's client mid-session.
+ */
+export function sessionTokenExp(expiresAtMs: number): number {
+  return Math.floor((expiresAtMs + SESSION_TOKEN_GRACE_MS) / 1000);
 }
 
 export async function verifySessionToken(env: Env, token: string): Promise<SessionTokenPayload> {

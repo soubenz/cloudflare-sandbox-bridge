@@ -1,0 +1,89 @@
+# Gateway-family smoke lab. Exists to exercise the gateway image end to end
+# (Prometheus + Grafana boot, the service proxy, checks) the way
+# test/fixtures/labs/hello does for the agent family. Not a real Opalix lab.
+#
+# Two things here are not obvious and are load-bearing:
+#
+#  1. Grafana listens on 3001, NOT its default 3000. Port 3000 inside the
+#     container is the @cloudflare/sandbox control plane; the SDK refuses it
+#     (`validatePort`: "1024-65535, excluding 3000") and grafana-server dies
+#     with "bind: address already in use" if left on the default.
+#  2. The service proxy forwards the request path unchanged, so every
+#     service must serve under /sessions/{id}/services/{name}/. That moves
+#     the service's WHOLE http surface, including the endpoints the
+#     container itself calls. Workspace files are never templated (only
+#     manifest strings are), so prometheus.yml carries a __PREFIX__
+#     placeholder that the service's own argv substitutes at start.
+slug: gateway-hello
+version: 1.0.0
+title: "Gateway image smoke test"
+type: scale
+family: gateway
+timeout_minutes: 60
+idle_minutes: 10
+env:
+  # Prefixed, because Prometheus only answers under its route prefix —
+  # http://127.0.0.1:9090/-/ready is a 404 in this lab.
+  PROM_URL: "http://127.0.0.1:9090/sessions/{{session.id}}/services/prometheus"
+  GRAFANA_URL: "http://127.0.0.1:3001/sessions/{{session.id}}/services/grafana"
+services:
+  - name: prometheus
+    argv:
+      [
+        "sh", "-c",
+        "sed 's#__PREFIX__#{{service.prefix}}#' /workspace/prometheus.yml > /tmp/prometheus.yml && exec /opt/prometheus/prometheus --config.file=/tmp/prometheus.yml --storage.tsdb.path=/tmp/prom-data --web.listen-address=0.0.0.0:9090 --web.external-url={{session.base_url}}{{service.prefix}}/",
+      ]
+    cwd: /workspace
+    port: 9090
+    healthcheck:
+      type: http
+      path: "{{service.prefix}}/-/healthy"
+      timeout_s: 60
+    ui: true
+    depends_on: []
+  - name: grafana
+    argv:
+      ["/usr/sbin/grafana-server", "--homepath=/usr/share/grafana", "--config=/etc/grafana/grafana.ini"]
+    cwd: /usr/share/grafana
+    env:
+      GF_SERVER_HTTP_PORT: "3001"
+      GF_SERVER_ROOT_URL: "{{session.base_url}}{{service.prefix}}/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Grafana 11.4 background-installs bundled apps from grafana.com on
+      # first boot; egress is denied here, so it retries and logs errors.
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PATHS_DATA: /var/lib/grafana
+      GF_PATHS_LOGS: /var/log/grafana
+      GF_PATHS_PLUGINS: /var/lib/grafana/plugins
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    port: 3001
+    healthcheck:
+      type: http
+      path: "{{service.prefix}}/api/health"
+      timeout_s: 90
+    ui: true
+    depends_on: [prometheus]
+pressure: []
+checks:
+  - name: prometheus-serving
+    script: prometheus.sh
+    timeout_s: 30
+    weight: 1
+  - name: grafana-serving
+    script: grafana.sh
+    timeout_s: 30
+    weight: 1
+  - name: gateway-tooling-present
+    script: tooling.sh
+    timeout_s: 30
+    weight: 1
+hints:
+  - after_minutes: 2
+    text: "Both services answer only under this session's /services/<name>/ path prefix, inside the container as well as outside."
+egress:
+  allow: []

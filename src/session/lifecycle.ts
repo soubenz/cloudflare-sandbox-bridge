@@ -11,9 +11,20 @@ import { firePressureEvent } from './pressure';
 import { tickMetrics } from './metrics';
 import { resetTerminal } from './terminal';
 import { updateSession, insertSnapshot, bestEffort } from './d1';
-import { mintSessionToken, mintLlmToken } from '../auth';
+import { mintSessionToken, mintLlmToken, sessionTokenExp } from '../auth';
 import { ApiError } from '../lib/errors';
-import { poolStub } from '../do/pool';
+
+/**
+ * Imported lazily for the same reason state.ts defers backend.ts: do/pool.ts
+ * extends `DurableObject` from the `cloudflare:workers` virtual module,
+ * unresolvable under the plain-Node unit test pool (see vitest.config.ts).
+ * Keeping it off the module's top level is what lets the unit suite load
+ * lifecycle.ts at all; nothing it exercises claims a container.
+ */
+async function pool(rt: SessionRuntime, family: Family) {
+  const { poolStub } = await import('../do/pool');
+  return poolStub(rt.env, family);
+}
 
 const IDLE_WARN_BEFORE_MS = 2 * 60_000;
 const HARD_WARN_BEFORE_MS = 5 * 60_000;
@@ -58,7 +69,15 @@ export async function createSession(rt: SessionRuntime, input: CreateSessionInpu
   // id) before calling create() — that INSERT is what enforces the
   // one-active-session-per-user unique index. From here on we only UPDATE.
 
-  const token = await mintSessionToken(rt.env, { sid: meta.id, uid: meta.user_id, exp: Math.floor(now / 1000) + 3600 });
+  // The token has to outlive the session itself (there is no refresh
+  // route), and `expires_at` does not exist yet — runStart sets it when the
+  // session reaches `running`. Derive the same budget runStart will use
+  // from the manifest, so a 120-minute lab gets a 120-minute token.
+  const token = await mintSessionToken(rt.env, {
+    sid: meta.id,
+    uid: meta.user_id,
+    exp: sessionTokenExp(now + input.manifest.timeout_minutes * 60_000),
+  });
   return { meta, token };
 }
 
@@ -72,7 +91,7 @@ async function runStart(rt: SessionRuntime): Promise<void> {
   // then take a second container and overwrite the id of the first, which
   // end() would never destroy — it would sit in the pool's `claimed` map
   // until the 3-hour reap. Reuse the claim we already hold.
-  const sandboxId = meta.sandbox_id ?? (await poolStub(rt.env, meta.family).claim(rt.sessionId)).sandbox_id;
+  const sandboxId = meta.sandbox_id ?? (await (await pool(rt, meta.family)).claim(rt.sessionId)).sandbox_id;
   if (meta.sandbox_id !== sandboxId) await rt.patchMeta({ sandbox_id: sandboxId });
   await rt.bindBackend(meta.family, sandboxId);
   await rt.backend().ensureRunning();
@@ -149,9 +168,21 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
           await endSession(rt, 'expired');
           break;
         case 'idle_warn': {
+          // Mirrors the `idle` branch below: `touchInput()` only moves
+          // `last_input_at`, so a timer armed at start is stale for any
+          // session that has seen input since. Either the session really is
+          // about to be idle-killed, or we re-arm for the time that would
+          // now be true.
           const meta = await rt.requireMeta();
-          const idleFor = Date.now() - (meta.last_input_at ?? meta.started_at ?? Date.now());
-          if (idleFor >= 0) emitEvent(rt, 'session.idle_warning', { idle_ms: idleFor });
+          const manifest = await rt.requireManifest();
+          const lastInput = meta.last_input_at ?? meta.started_at ?? 0;
+          const idleMs = Date.now() - lastInput;
+          const warnAfterMs = manifest.idle_minutes * 60_000 - IDLE_WARN_BEFORE_MS;
+          if (idleMs >= warnAfterMs) {
+            emitEvent(rt, 'session.idle_warning', { idle_ms: idleMs });
+          } else {
+            await scheduleTimer(rt, 'idle_warn', lastInput + warnAfterMs);
+          }
           break;
         }
         case 'idle': {
@@ -297,11 +328,20 @@ export async function requestResume(rt: SessionRuntime): Promise<{ meta: Session
   const snapshots = await rt.snapshots();
   if (snapshots.length === 0) throw ApiError.conflict('no_snapshot', 'No snapshot to resume from');
 
+  const now = Date.now();
   const next = await rt.patchMeta({ state: 'resuming' });
-  await scheduleTimer(rt, 'resume', Date.now());
+  await scheduleTimer(rt, 'resume', now);
   emitEvent(rt, 'session.state', { state: 'resuming' });
 
-  const token = await mintSessionToken(rt.env, { sid: rt.sessionId, uid: meta.user_id, exp: Math.floor(Date.now() / 1000) + 3600 });
+  // A resume grants a fresh full timeout budget (runResume sets
+  // `expires_at` to now + timeout_minutes), so the token has to cover that
+  // whole new window, not a flat hour.
+  const manifest = await rt.requireManifest();
+  const token = await mintSessionToken(rt.env, {
+    sid: rt.sessionId,
+    uid: meta.user_id,
+    exp: sessionTokenExp(now + manifest.timeout_minutes * 60_000),
+  });
   return { meta: next, token };
 }
 
@@ -317,7 +357,7 @@ async function runResume(rt: SessionRuntime): Promise<void> {
   // then take a second container and overwrite the id of the first, which
   // end() would never destroy — it would sit in the pool's `claimed` map
   // until the 3-hour reap. Reuse the claim we already hold.
-  const sandboxId = meta.sandbox_id ?? (await poolStub(rt.env, meta.family).claim(rt.sessionId)).sandbox_id;
+  const sandboxId = meta.sandbox_id ?? (await (await pool(rt, meta.family)).claim(rt.sessionId)).sandbox_id;
   if (meta.sandbox_id !== sandboxId) await rt.patchMeta({ sandbox_id: sandboxId });
   await rt.bindBackend(meta.family, sandboxId);
   await rt.backend().ensureRunning();
@@ -378,7 +418,7 @@ export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reas
 
   if (meta.sandbox_id) {
     await rt.backend().destroy().catch(() => {});
-    await poolStub(rt.env, meta.family).release(meta.sandbox_id).catch(() => {});
+    await (await pool(rt, meta.family)).release(meta.sandbox_id).catch(() => {});
   }
   rt.upstreamTerminalSocket?.close();
   rt.upstreamTerminalSocket = undefined;

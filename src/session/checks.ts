@@ -95,13 +95,11 @@ async function runOneCheck(
     });
     const out = await proc.output({ encoding: 'utf8', timeout: check.timeout_s * 1000 });
     const duration_ms = Date.now() - started;
-    const pass = out.exitCode === 0 && !out.timedOut;
-    const parsed = parseCheckOutput(out.stdout);
-    const message = parsed?.message ?? lastNonEmptyLine(out.stdout) ?? (pass ? 'ok' : 'failed');
+    const { pass, message } = summarizeCheckOutput(out);
     return {
       name: check.name,
-      pass: parsed?.pass ?? pass,
-      message: pass ? message : `${message}\n${out.stderr.slice(-1024)}`.trim(),
+      pass,
+      message,
       duration_ms,
       exit_code: out.exitCode,
       timed_out: out.timedOut,
@@ -118,6 +116,26 @@ async function runOneCheck(
       weight: check.weight,
     };
   }
+}
+
+/**
+ * Turns one check process's output into the pass/message pair we report.
+ * A script's JSON result line wins over its exit status, so the stderr tail
+ * is appended on the *reported* verdict — a script that prints
+ * `{"pass": true, ...}` and still exits non-zero must not hand the learner
+ * a green check with an error dump stapled to it.
+ */
+export function summarizeCheckOutput(out: {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  timedOut: boolean;
+}): { pass: boolean; message: string } {
+  const exitPass = out.exitCode === 0 && !out.timedOut;
+  const parsed = parseCheckOutput(out.stdout);
+  const pass = parsed?.pass ?? exitPass;
+  const message = parsed?.message ?? lastNonEmptyLine(out.stdout) ?? (pass ? 'ok' : 'failed');
+  return { pass, message: pass ? message : `${message}\n${out.stderr.slice(-1024)}`.trim() };
 }
 
 export function parseCheckOutput(stdout: string): { pass: boolean; message: string } | undefined {

@@ -1,1 +1,0 @@
-echo -n "$GREETING" > /workspace/greeting.txt
