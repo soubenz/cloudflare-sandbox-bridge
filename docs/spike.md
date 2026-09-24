@@ -189,7 +189,39 @@ that happens after the claim.
 
 The final state after cleanup is `warm: 1, claimed: 0, target: 1`.
 
-## 4. Image sizes — NOT MEASURED
+## 4. Image sizes — MEASURED (24 Sep 2026, deploy run #18)
+
+A `docker image ls` step was added to the Deploy workflow, because the
+build output reports manifest bytes rather than image size. From run
+`35991933396`:
+
+| Image | Size |
+|---|---|
+| `opalix-sandbox-agentlab:924ededd` | **2.16 GB** |
+| `opalix-sandbox-gatewaylab:924ededd` | **2.16 GB** |
+
+For comparison, the base `cloudflare/sandbox:next-python` is about 329 MB
+compressed. Grafana, LiteLLM, Prometheus and the Python toolchain account
+for the rest.
+
+**This is the most likely explanation for the cold-start spread measured
+in section 1** (3.5 s to 21.4 s on identical work, with the pool's own
+container start averaging 2.3 s): a 2.16 GB image has to be present on
+the machine placing the container, and whether it is decides which end of
+that range a learner gets. Two things follow. A warm pool is not a
+nice-to-have at this size — it is the difference between "instant" and
+twenty seconds. And image size is worth attacking directly: separating
+Grafana and Prometheus into their own family image, or dropping unused
+Python extras, would cut both the spread and the placement cost.
+
+Both families being byte-identical in size to three significant figures
+is worth a second look; they install different things (Grafana + LiteLLM
+versus Prometheus + locust + Grafana), so equal sizes suggest the base
+layers dominate so heavily that the difference rounds away.
+
+### Original note, kept for the record — why this was hard to get
+
+
 
 **The CI build logs do not report image sizes.** Checked the full log
 archive for the most recent successful `Deploy` run on `main`
