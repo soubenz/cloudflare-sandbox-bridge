@@ -1,4 +1,6 @@
-import type { SessionRuntime } from './state';
+import type { Terminal } from '@cloudflare/sandbox';
+import type { SessionRuntime, TerminalRuntime } from './state';
+import type { Backend } from './backend';
 import { emitEvent } from './events';
 import { ApiError } from '../lib/errors';
 
@@ -66,12 +68,57 @@ function syntheticUpgradeRequest(): Request {
   });
 }
 
-async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Request): Promise<void> {
+/**
+ * A stored terminal id is not evidence that the PTY behind it still runs.
+ * `getTerminal()` resolves a handle from the container's terminal
+ * registry, and that registry keeps a terminal after its process is gone —
+ * `TerminalSnapshot.status` is `'running' | 'exited' | 'error'` precisely
+ * so a caller can tell the difference, and `exit`/`error` are carried on
+ * the snapshot for exactly that reason. Reusing an `exited` one is silent
+ * failure, not a visible one: `connect()` still upgrades (the PTY server
+ * happily hands back a socket for a terminal it no longer runs), so the
+ * relay holds an OPEN upstream that never emits a byte and never fires
+ * `close`. Every keystroke is written into it and dropped, and because the
+ * socket never closes, neither `terminal_upstream_closed` nor the
+ * reconnect in `handleClientMessage` ever triggers — the learner just gets
+ * a dead panel with no error.
+ *
+ * So the handle is only reused once its snapshot says `running`. Anything
+ * else — a null handle, a non-running status, a throw (the terminal was
+ * reaped, or the handle is stale against a newer runtime incarnation) —
+ * fails closed and returns null, and the caller builds a fresh terminal.
+ * That is safe to do liberally because `TERMINAL_ARGV` runs
+ * `tmux new-session -A -s opalix`: a new PTY re-attaches to the learner's
+ * existing tmux session rather than starting a second shell, so cwd,
+ * environment and scrollback survive. The cost of an unnecessary new
+ * terminal is one redrawn screen; the cost of reusing a dead one is the
+ * terminal for the rest of the session.
+ */
+async function liveTerminal(backend: Backend, ref: TerminalRuntime | undefined): Promise<Terminal | null> {
+  if (!ref) return null;
+  try {
+    const handle = await backend.getTerminal(ref.id);
+    if (!handle) return null;
+    const snapshot = await handle.getSnapshot();
+    return snapshot?.status === 'running' ? handle : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Exported for test/unit/terminal.test.ts: this is where "which PTY does
+ * this attach land on" is decided, and that decision is the difference
+ * between a re-attach and a terminal the learner never gets back. The
+ * enclosing `openTerminalSocket` can only run inside the Workers runtime
+ * (WebSocketPair, a 101 Response), so the unit suite drives this instead.
+ */
+export async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Request): Promise<void> {
   if (rt.upstreamTerminalSocket && rt.upstreamTerminalSocket.readyState === WebSocket.READY_STATE_OPEN) return;
 
   const backend = rt.backend();
   const existingRef = await rt.terminal();
-  const handle = existingRef ? await backend.getTerminal(existingRef.id) : null;
+  const handle = await liveTerminal(backend, existingRef);
   const terminal =
     handle ??
     (await backend.createTerminal({
@@ -81,7 +128,7 @@ async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Reques
       rows: existingRef?.rows ?? 30,
     }));
 
-  if (!existingRef || !handle) {
+  if (!handle) {
     await rt.putTerminal({
       id: terminal.id,
       argv: [...TERMINAL_ARGV],
@@ -101,7 +148,12 @@ async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Reques
     originRequest.headers.get('Upgrade')?.toLowerCase() === 'websocket'
       ? originRequest
       : syntheticUpgradeRequest();
-  const connectResp = await terminal.connect(upgradeRequest, { cursor: existingRef?.cursor });
+  // A cursor names a position in one terminal's output stream, so it only
+  // means anything when that same terminal is being resumed. Replaying a
+  // dead terminal's cursor against a freshly created one asks the PTY
+  // server to resume from an offset that stream never had — the stored
+  // ref is dropped above for the same reason.
+  const connectResp = await terminal.connect(upgradeRequest, handle ? { cursor: existingRef?.cursor } : {});
   const upstream = connectResp.webSocket;
   if (!upstream) throw new Error('terminal.connect() did not return a WebSocket');
   upstream.accept();
