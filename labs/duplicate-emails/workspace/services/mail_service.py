@@ -23,7 +23,6 @@ change the running service.
 
 import json
 import os
-import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -235,7 +234,14 @@ class Handler(BaseHTTPRequestHandler):
         if delay:
             # The message is already delivered; only the confirmation is late.
             time.sleep(delay)
-        self._send(status, body)
+        try:
+            self._send(status, body)
+        except (BrokenPipeError, ConnectionResetError):
+            # The caller gave up waiting and closed the socket. That is the
+            # whole point of the slow fault, so it is not an error here --
+            # and letting the traceback print would put a red herring in the
+            # mailbox log of a lab about not trusting what the caller heard.
+            pass
 
 
 def main():

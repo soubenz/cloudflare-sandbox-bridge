@@ -72,6 +72,22 @@ def _field(prompt, label, default=""):
     return match.group(1).strip() if match else default
 
 
+def _ticket_id(prompt):
+    """Finds which ticket this call is about.
+
+    Deliberately not tied to the prompt's layout. Which tickets fail is
+    keyed to the ticket id, and the labelled `Ticket ID:` line only exists
+    because agent/llm.py happens to write one today. A learner who
+    reformats that prompt is not making the bug worse, and should not
+    silently turn the failures off and be told their retries are missing.
+    So: match the id anywhere in the text, and fall back to the label.
+    """
+    match = re.search(r"\bT-\d+\b", prompt)
+    if match:
+        return match.group(0)
+    return _field(prompt, "Ticket ID", "unknown")
+
+
 def complete(payload):
     """Returns (status, body).
 
@@ -82,7 +98,7 @@ def complete(payload):
     messages = payload.get("messages") or []
     prompt = "\n".join(str(m.get("content", "")) for m in messages)
 
-    ticket_id = _field(prompt, "Ticket ID", "unknown")
+    ticket_id = _ticket_id(prompt)
     customer = _field(prompt, "Customer", "there")
     subject = _field(prompt, "Subject", "your message")
 

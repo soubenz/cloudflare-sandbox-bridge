@@ -69,15 +69,33 @@ async function stageCheckScripts(rt: SessionRuntime, dir: string): Promise<void>
   if (!obj) throw new Error(`private bundle missing for ${meta.lab_slug}@${meta.lab_version}`);
   const backend = rt.backend();
   await backend.writeFile('/tmp/opalix-checks-stage.tgz', obj.body);
+  // tar's stderr was discarded and its status was thrown away by the
+  // trailing `rm`, so the exit check below could never see a failed
+  // extraction: every grader would instead die with a bare "no such file"
+  // and nothing would say why. Keep tar's status, keep its stderr, and
+  // clean up either way.
   const proc = await backend.exec([
     'sh',
     '-c',
-    `mkdir -m 700 -p ${dir} && tar xzf /tmp/opalix-checks-stage.tgz -C ${dir} --no-same-owner --wildcards 'checks/*' 2>/dev/null; chown -R root:root ${dir}; chmod 700 ${dir}; rm -f /tmp/opalix-checks-stage.tgz`,
+    `mkdir -m 700 -p ${dir} || exit 1
+tar xzf /tmp/opalix-checks-stage.tgz -C ${dir} --no-same-owner --wildcards 'checks/*'
+status=$?
+rm -f /tmp/opalix-checks-stage.tgz
+chown -R root:root ${dir}
+chmod 700 ${dir}
+exit $status`,
   ]);
   // Bounded, unlike every other output() call here: a wedged tar would
-  // otherwise hang the whole check run with no deadline at all.
-  const out = await proc.output({ timeout: STAGE_TIMEOUT_MS });
-  if (out.exitCode !== 0) throw new Error(`failed to stage check scripts (exit ${out.exitCode})`);
+  // otherwise hang the whole check run with no deadline at all. utf8 so the
+  // failure message below is text rather than a byte array.
+  const out = await proc.output({ encoding: 'utf8', timeout: STAGE_TIMEOUT_MS });
+  if (out.exitCode !== 0) {
+    const why = (out.stderr || out.stdout || '').trim().slice(-400);
+    throw new Error(
+      `failed to stage check scripts (exit ${out.exitCode})${why ? `: ${why}` : ''}. ` +
+        `The lab's private bundle must contain a checks/ directory.`
+    );
+  }
 }
 
 async function runOneCheck(

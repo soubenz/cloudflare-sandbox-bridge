@@ -20,7 +20,6 @@ import json
 import os
 import subprocess
 import sys
-import urllib.error
 import urllib.request
 
 WORKSPACE = os.environ.get("OPALIX_WORKSPACE", "/workspace")
