@@ -111,13 +111,33 @@ export class Session extends DurableObject<Env> {
 
   // --- fetch: terminal WS, events SSE, service proxy ---
 
+  /**
+   * True for a WebSocket handshake over either HTTP version. HTTP/1.1
+   * sends `Upgrade: websocket`; HTTP/2 uses extended CONNECT (RFC 8441)
+   * and carries no Upgrade header, keeping only Sec-WebSocket-Version.
+   * Browsers negotiate HTTP/2 with Cloudflare, so checking Upgrade alone
+   * fails exactly where it matters.
+   */
+
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const parts = url.pathname.split('/').filter(Boolean); // ["sessions", ":id", ...]
     const rest = parts.slice(2);
 
     try {
-      if (rest[0] === 'terminal' && request.headers.get('Upgrade')?.toLowerCase() === 'websocket') {
+      if (rest[0] === 'terminal') {
+        if (!isWebSocketRequest(request)) {
+          // Named explicitly rather than falling through to a bare 404,
+          // which is what this did and which said nothing useful: over
+          // HTTP/2 there is no `Upgrade` header at all (h2 forbids it),
+          // so gating on that alone rejected every browser handshake
+          // while Node clients, which speak HTTP/1.1, worked.
+          throw ApiError.badRequest(
+            'not_a_websocket',
+            `The terminal route needs a WebSocket handshake (method ${request.method}, headers: ${[...request.headers.keys()].join(',')})`
+          );
+        }
         return openTerminalSocket(this.rt, request);
       }
       if (rest[0] === 'events') {
@@ -146,4 +166,12 @@ export class Session extends DurableObject<Env> {
   async webSocketError(_ws: WebSocket, _error: unknown): Promise<void> {
     handleClientClose(this.rt);
   }
+}
+
+function isWebSocketRequest(request: Request): boolean {
+  return (
+    request.headers.get('Upgrade')?.toLowerCase() === 'websocket' ||
+    request.headers.has('Sec-WebSocket-Version') ||
+    request.method === 'CONNECT'
+  );
 }
