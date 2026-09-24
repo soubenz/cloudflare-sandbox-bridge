@@ -13,7 +13,15 @@ export async function proxyService(rt: SessionRuntime, request: Request, service
   const services = await rt.services();
   const service = services[serviceName];
   if (!service) throw ApiError.notFound('unknown_service', `No service "${serviceName}" in this lab`);
-  if (!service.spec.port) throw ApiError.badRequest('no_ui', `Service "${serviceName}" has no proxyable port`);
+  if (!service.spec.port) throw ApiError.badRequest('no_port', `Service "${serviceName}" has no proxyable port`);
+  // `ui` decides what is reachable, not just what is advertised. It only
+  // filtered the URL map before, so any service with a port was proxyable
+  // by whoever held the session token — a lab that runs an admin API or a
+  // metrics endpoint on a port it never meant to expose exposed it anyway.
+  // The manifest default is false, so a lab opts a service in explicitly.
+  if (!service.spec.ui) {
+    throw new ApiError(403, 'not_exposed', `Service "${serviceName}" is not exposed (set ui: true in the manifest to proxy it)`);
+  }
   if (service.health === 'unhealthy') {
     throw new ApiError(502, 'service_down', `Service "${serviceName}" is currently unhealthy`, { health: service.health });
   }
