@@ -116,6 +116,7 @@ export async function execViaTerminal(
 ): Promise<{ output: string; exitCode: number }> {
   const { default: WebSocket } = await import('ws');
   const ws = new WebSocket(terminalUrl);
+  ws.binaryType = 'nodebuffer'; // otherwise frames arrive as Blob and stringify to [object Blob]
   let buf = '';
   try {
     await new Promise<void>((resolve, reject) => {

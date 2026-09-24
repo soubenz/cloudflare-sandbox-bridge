@@ -70,6 +70,10 @@ async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Reques
   const upstream = connectResp.webSocket;
   if (!upstream) throw new Error('terminal.connect() did not return a WebSocket');
   upstream.accept();
+  // Binary frames arrive as Blob by default, and WebSocket.send() coerces a
+  // Blob to the string "[object Blob]" — so every byte of terminal output
+  // reached the client as that literal text.
+  upstream.binaryType = 'arraybuffer';
 
   // The container's PTY speaks its own framing: JSON text frames for
   // control (`ready`, `chunk`, `truncated`, `error`, `exit`), each `chunk`

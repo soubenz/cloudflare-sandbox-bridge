@@ -47,6 +47,7 @@ describeIfConfigured('sandbox API routes', () => {
   describe('terminal websocket', () => {
     it('attaches, echoes input, and accepts a resize', async () => {
       const ws = new WebSocket(session.terminalUrl(sessionId));
+      ws.binaryType = 'nodebuffer'; // otherwise frames arrive as Blob and stringify to [object Blob]
       const chunks: string[] = [];
       await new Promise<void>((resolve, reject) => {
         ws.once('open', () => resolve());
