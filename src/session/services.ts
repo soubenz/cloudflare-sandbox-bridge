@@ -137,8 +137,14 @@ export async function restartService(rt: SessionRuntime, name: string): Promise<
 /** Re-launches every service from its stored spec after a container restart. Process/pid ids from the old container are stale by definition. */
 export async function relaunchAllServices(rt: SessionRuntime): Promise<void> {
   const services = await rt.services();
-  for (const [name, existing] of Object.entries(services)) {
-    const runtime = await startService(rt, existing.spec);
+  // Dependency order, same as a cold start. Iterating the stored object
+  // relied on JS insertion order surviving a DO storage round-trip, so
+  // the ordering guarantee quietly disappeared exactly when it matters
+  // most — rebuilding every service after a container restart.
+  for (const spec of topoOrder(Object.values(services).map((s) => s.spec))) {
+    const name = spec.name;
+    const existing = services[name]!;
+    const runtime = await startService(rt, spec);
     runtime.restarts = existing.restarts;
     services[name] = runtime;
     await rt.putServices(services);

@@ -42,3 +42,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npx wrangler deploy --containers-rollout=immediate --env=""
+
+      # The build output reports manifest bytes, not image size, so the
+      # only way to answer "how big is the agent image" (a spike question,
+      # and what drives cold-start time) is to ask Docker afterwards.
+      - name: Report image sizes
+        if: always()
+        run: docker image ls --format '{{.Repository}}:{{.Tag}}\t{{.Size}}' | head -20
