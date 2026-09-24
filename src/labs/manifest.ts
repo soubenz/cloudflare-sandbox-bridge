@@ -3,6 +3,47 @@ import { z } from 'zod';
 const slugPattern = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 const versionPattern = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 
+/**
+ * A service port has to satisfy the sandbox SDK's own rule, not just the
+ * 1-65535 of TCP. `validatePort` in
+ * node_modules/@cloudflare/sandbox/dist/sandbox-cmlgGVYX.js documents it as:
+ *
+ *   - Range: 1024-65535 (privileged ports require root, which containers don't have)
+ *   - Reserved: 3000 (sandbox control plane)
+ *
+ * and every SDK entry point that takes a port (connect(), containerFetch(),
+ * constructPreviewURL(), the tunnel service) throws SandboxSecurityError
+ * "Invalid port number: N. Must be 1024-65535, excluding 3000 (sandbox
+ * control plane)." when it fails. Validating the wider range here only moved
+ * the failure from publish time to session start, where it is far more
+ * expensive to diagnose: port 3000 in particular does not even fail as a
+ * rejected port, the service binds against the control plane and dies with
+ * "address already in use", which reads as a crashing service rather than
+ * an invalid manifest.
+ */
+export const MIN_SERVICE_PORT = 1024;
+export const MAX_SERVICE_PORT = 65535;
+export const SANDBOX_CONTROL_PLANE_PORT = 3000;
+
+const servicePortSchema = z
+  .number()
+  .int()
+  .superRefine((port, ctx) => {
+    if (port === SANDBOX_CONTROL_PLANE_PORT) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `port ${SANDBOX_CONTROL_PLANE_PORT} is reserved for the sandbox control plane; pick another port in ${MIN_SERVICE_PORT}-${MAX_SERVICE_PORT}`,
+      });
+      return;
+    }
+    if (port < MIN_SERVICE_PORT || port > MAX_SERVICE_PORT) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `port must be ${MIN_SERVICE_PORT}-${MAX_SERVICE_PORT}: ports below ${MIN_SERVICE_PORT} are privileged and unavailable to the container, which does not run as root`,
+      });
+    }
+  });
+
 const healthcheckSchema = z.object({
   type: z.enum(['http', 'tcp']).default('tcp'),
   path: z.string().default('/'),
@@ -20,7 +61,7 @@ const serviceSchema = z.object({
     (env) => Object.keys(env).every((k) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k)),
     { message: 'env keys must be shell identifiers: letters, digits and underscore, not starting with a digit' }
   ),
-  port: z.number().int().positive().max(65535).optional(),
+  port: servicePortSchema.optional(),
   healthcheck: healthcheckSchema.optional(),
   /** Whether this service has a browsable UI to proxy at /sessions/{id}/services/{name}/. */
   ui: z.boolean().default(false),

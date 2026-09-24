@@ -106,16 +106,45 @@ async function runOneCheck(
       weight: check.weight,
     };
   } catch (err) {
+    const { timed_out, message } = classifyCheckError(err, check.timeout_s);
     return {
       name: check.name,
       pass: false,
-      message: `check errored: ${String(err)}`,
+      message,
       duration_ms: Date.now() - started,
       exit_code: -1,
-      timed_out: false,
+      timed_out,
       weight: check.weight,
     };
   }
+}
+
+/**
+ * Classifies an error thrown while running one check as "the check ran out
+ * of time" or "the check broke". `proc.output({ timeout })` does not return
+ * a result with `timedOut: true` when it overruns — it *throws* the SDK's
+ * ProcessWaitTimeoutError, so the timeout lands in runOneCheck's catch and
+ * used to be reported as `timed_out: false`, erasing the one field that
+ * tells a lab author their checker is merely slow.
+ *
+ * Matched by `name`, not `instanceof`: Workers RPC preserves a thrown
+ * error's `name` and `message` across the DO boundary but drops the class
+ * (the same constraint fromSdkError in src/lib/errors.ts works around), so
+ * an `err instanceof ProcessWaitTimeoutError` test would be false exactly
+ * where it matters. `output()` is the only wait runOneCheck performs, and
+ * ProcessWaitTimeoutError is the only timeout it raises.
+ */
+const CHECK_TIMEOUT_ERROR_NAMES = new Set(['ProcessWaitTimeoutError']);
+
+export function classifyCheckError(err: unknown, timeoutS: number): { timed_out: boolean; message: string } {
+  const name = (err as { name?: string } | undefined)?.name;
+  if (name !== undefined && CHECK_TIMEOUT_ERROR_NAMES.has(name)) {
+    // Deliberately not the SDK's wording ("Process output did not complete
+    // within 60000ms"): the author configured timeout_s, and that is the
+    // number they can change.
+    return { timed_out: true, message: `check exceeded its timeout_s of ${timeoutS}s` };
+  }
+  return { timed_out: false, message: `check errored: ${String(err)}` };
 }
 
 /**

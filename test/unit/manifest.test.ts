@@ -39,6 +39,33 @@ describe('parseManifest', () => {
     expect(() => parseManifest(bad)).toThrow(/unknown service/);
   });
 
+  // The SDK's validatePort accepts 1024-65535 excluding 3000, and every SDK
+  // entry point that takes a port throws SandboxSecurityError otherwise, so
+  // a manifest that passes publish with port 80/443/3000 only fails later,
+  // at session start, inside a container.
+  describe('services[].port', () => {
+    const withPort = (port: number) => baseManifest({ services: [{ name: 'svc', argv: ['x'], port }] });
+
+    it('rejects privileged ports the container cannot bind', () => {
+      expect(() => parseManifest(withPort(80))).toThrow(/privileged/);
+      expect(() => parseManifest(withPort(443))).toThrow(/1024-65535/);
+    });
+
+    it('rejects port 3000 and names the sandbox control plane', () => {
+      expect(() => parseManifest(withPort(3000))).toThrow(/sandbox control plane/);
+    });
+
+    it('accepts the boundaries of the SDK-allowed range', () => {
+      expect(parseManifest(withPort(1024)).services[0]!.port).toBe(1024);
+      expect(parseManifest(withPort(65535)).services[0]!.port).toBe(65535);
+    });
+
+    it('still rejects ports above the range and non-integers', () => {
+      expect(() => parseManifest(withPort(65536))).toThrow(/1024-65535/);
+      expect(() => parseManifest(withPort(8080.5))).toThrow();
+    });
+  });
+
   it('accepts a valid depends_on chain', () => {
     const good = baseManifest({
       services: [

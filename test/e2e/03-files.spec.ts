@@ -2,7 +2,11 @@ import { test, expect } from './fixtures';
 
 test.describe('the workspace', () => {
   test('lists the lab files with sizes', async ({ session }) => {
-    const files = session.locator('#fileList li');
+    // Wait for a named file row, not for any <li>: the list renders
+    // `loading…`, `empty` and error placeholders as list items too, so
+    // "an item appeared" is satisfied before a single file has been
+    // listed — and the reads below then find no .name at all.
+    const files = session.locator('#fileList li:has(.name)');
     await expect(files.first()).toBeVisible({ timeout: 30_000 });
     const names = await session.locator('#fileList .name').allTextContents();
     expect(names.join(' ')).toContain('README.md');

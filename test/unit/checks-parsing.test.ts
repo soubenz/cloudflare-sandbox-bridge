@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCheckOutput, lastNonEmptyLine, summarizeCheckOutput } from '../../src/session/checks';
+import { parseCheckOutput, lastNonEmptyLine, summarizeCheckOutput, classifyCheckError } from '../../src/session/checks';
 
 describe('parseCheckOutput', () => {
   it('parses a JSON result line', () => {
@@ -66,5 +66,47 @@ describe('summarizeCheckOutput', () => {
 
   it('treats a timeout as a failure even on exit 0', () => {
     expect(summarizeCheckOutput({ stdout: '', stderr: '', exitCode: 0, timedOut: true }).pass).toBe(false);
+  });
+});
+
+describe('classifyCheckError', () => {
+  /**
+   * What actually reaches runOneCheck's catch when `proc.output({ timeout })`
+   * overruns: the SDK's ProcessWaitTimeoutError, flattened by Workers RPC to
+   * an error carrying only `name` and `message` (the class is gone, so
+   * `instanceof` is not available to the catch).
+   */
+  function rpcFlattenedTimeout(timeoutMs: number): Error {
+    const err = new Error(`Process output did not complete within ${timeoutMs}ms`);
+    err.name = 'ProcessWaitTimeoutError';
+    return err;
+  }
+
+  it('reports a check that overran its timeout as timed out', () => {
+    const result = classifyCheckError(rpcFlattenedTimeout(60_000), 60);
+    expect(result.timed_out).toBe(true);
+  });
+
+  it('blames timeout_s rather than repeating the SDK wording', () => {
+    const result = classifyCheckError(rpcFlattenedTimeout(60_000), 60);
+    expect(result.message).toContain('timeout_s');
+    expect(result.message).toContain('60');
+    expect(result.message).not.toContain('Process output did not complete');
+  });
+
+  it('leaves a genuinely broken check reported as an error, not a timeout', () => {
+    const result = classifyCheckError(new Error('bash: no such file or directory'), 30);
+    expect(result.timed_out).toBe(false);
+    expect(result.message).toBe('check errored: Error: bash: no such file or directory');
+  });
+
+  it('does not mistake another SDK error for a timeout', () => {
+    const err = new Error('The container was replaced');
+    err.name = 'StaleProcessHandleError';
+    expect(classifyCheckError(err, 30).timed_out).toBe(false);
+  });
+
+  it('handles a non-Error throw', () => {
+    expect(classifyCheckError('boom', 30)).toEqual({ timed_out: false, message: 'check errored: boom' });
   });
 });
