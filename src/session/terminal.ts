@@ -5,6 +5,27 @@ import { ApiError } from '../lib/errors';
 const CONTROL_PREFIX = 0x01;
 
 /**
+ * The learner's shell runs inside a named tmux session, not directly under
+ * the PTY. The container's PTY server kills its shell when the websocket
+ * goes away — a closed tab, a Durable Object eviction — so without this a
+ * re-attach lands in a fresh shell with the cwd reset, exported variables
+ * gone and any long-running command killed. `new-session -A` attaches to
+ * the existing session or creates it, so re-attaching resumes exactly
+ * where the learner left off. Declared once: this argv is both what we
+ * create the terminal with and what we store for relaunch after a
+ * container restart, and the two must not drift.
+ */
+const TERMINAL_ARGV = [
+  'su',
+  '-l',
+  'learner',
+  '-s',
+  '/bin/bash',
+  '-c',
+  'exec tmux -f /etc/opalix-tmux.conf new-session -A -s opalix -c /workspace',
+] as const;
+
+/**
  * DO-mediated terminal relay (plan section 4.1). The browser/CLI attaches
  * to a hibernatable client WebSocket the DO accepts via
  * `ctx.acceptWebSocket`; the DO separately holds one upstream WebSocket to
@@ -54,7 +75,7 @@ async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Reques
   const terminal =
     handle ??
     (await backend.createTerminal({
-      command: ['su', '-l', 'learner', '-s', '/bin/bash'],
+      command: [...TERMINAL_ARGV],
       cwd: '/workspace',
       cols: existingRef?.cols ?? 120,
       rows: existingRef?.rows ?? 30,
@@ -63,7 +84,7 @@ async function ensureUpstreamConnected(rt: SessionRuntime, originRequest: Reques
   if (!existingRef || !handle) {
     await rt.putTerminal({
       id: terminal.id,
-      argv: ['su', '-l', 'learner', '-s', '/bin/bash'],
+      argv: [...TERMINAL_ARGV],
       cwd: '/workspace',
       cols: existingRef?.cols ?? 120,
       rows: existingRef?.rows ?? 30,

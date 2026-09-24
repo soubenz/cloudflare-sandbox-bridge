@@ -18,8 +18,16 @@ FROM docker.io/cloudflare/sandbox:next-python
 # `dpkg -i`'s `apt-get install -f -y` fallback removes Grafana instead of
 # fetching musl, once apt's lists had already been dropped in this layer.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates sudo musl \
+    curl ca-certificates sudo musl tmux \
     && rm -rf /var/lib/apt/lists/*
+
+# The learner's shell runs inside tmux so it survives the PTY connection
+# dropping (a closed browser tab, a Durable Object eviction): the container's
+# PTY server kills its shell when the websocket goes away, but tmux keeps
+# the session, its cwd, its environment and any running process.
+# Presented as a plain terminal — no status bar, and a deep scrollback.
+RUN printf 'set -g status off\nset -g history-limit 10000\nset -g mouse on\n' > /etc/opalix-tmux.conf
+
 
 # --- Grafana (OSS) ---
 ARG GRAFANA_VERSION=11.4.0

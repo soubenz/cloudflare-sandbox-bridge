@@ -11,8 +11,16 @@ FROM docker.io/cloudflare/sandbox:next
 # comment for why it's installed here, before apt's lists are dropped,
 # rather than relying on the Grafana RUN layer's own dependency fallback.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates sudo python3 python3-pip musl \
+    curl ca-certificates sudo python3 python3-pip musl tmux \
     && rm -rf /var/lib/apt/lists/*
+
+# The learner's shell runs inside tmux so it survives the PTY connection
+# dropping (a closed browser tab, a Durable Object eviction): the container's
+# PTY server kills its shell when the websocket goes away, but tmux keeps
+# the session, its cwd, its environment and any running process.
+# Presented as a plain terminal — no status bar, and a deep scrollback.
+RUN printf 'set -g status off\nset -g history-limit 10000\nset -g mouse on\n' > /etc/opalix-tmux.conf
+
 
 ARG GRAFANA_VERSION=11.4.0
 RUN curl -fsSL "https://dl.grafana.com/oss/release/grafana_${GRAFANA_VERSION}_amd64.deb" -o /tmp/grafana.deb \
