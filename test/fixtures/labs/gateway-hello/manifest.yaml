@@ -4,10 +4,15 @@
 #
 # Two things here are not obvious and are load-bearing:
 #
-#  1. Grafana listens on 3001, NOT its default 3000. Port 3000 inside the
-#     container is the @cloudflare/sandbox control plane; the SDK refuses it
-#     (`validatePort`: "1024-65535, excluding 3000") and grafana-server dies
-#     with "bind: address already in use" if left on the default.
+#  1. Grafana listens on 3001, NOT upstream Grafana's default 3000. Port 3000
+#     inside the container is the @cloudflare/sandbox control plane; the SDK
+#     refuses it (`validatePort`: "1024-65535, excluding 3000") and
+#     grafana-server would die with "bind: address already in use". The
+#     gateway image already bakes http_port = 3001 into /etc/grafana/grafana.ini
+#     (see images/gateway/Dockerfile), so this manifest only has to declare
+#     the port it reaches Grafana on -- no GF_SERVER_HTTP_PORT override here.
+#     Setting one would still work (env beats the ini) but would be a second
+#     place to keep in sync.
 #  2. The service proxy forwards the request path unchanged, so every
 #     service must serve under /sessions/{id}/services/{name}/. That moves
 #     the service's WHOLE http surface, including the endpoints the
@@ -46,7 +51,6 @@ services:
       ["/usr/sbin/grafana-server", "--homepath=/usr/share/grafana", "--config=/etc/grafana/grafana.ini"]
     cwd: /usr/share/grafana
     env:
-      GF_SERVER_HTTP_PORT: "3001"
       GF_SERVER_ROOT_URL: "{{session.base_url}}{{service.prefix}}/"
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_AUTH_ANONYMOUS_ENABLED: "true"
@@ -54,9 +58,8 @@ services:
       GF_AUTH_BASIC_ENABLED: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
-      # Grafana 11.4 background-installs bundled apps from grafana.com on
-      # first boot; egress is denied here, so it retries and logs errors.
-      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      # No GF_PLUGINS_PREINSTALL_DISABLED either: the image disables the
+      # grafana.com plugin preinstall, which egress denies by design.
       GF_PATHS_DATA: /var/lib/grafana
       GF_PATHS_LOGS: /var/log/grafana
       GF_PATHS_PLUGINS: /var/lib/grafana/plugins
