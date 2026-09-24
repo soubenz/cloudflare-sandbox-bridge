@@ -50,6 +50,9 @@ const state = {
 
 // ---------------------------------------------------------------- launcher
 
+/** The catalogue, kept so a running session can show its lab's context. */
+const labsBySlug = new Map();
+
 async function loadLabs() {
   try {
     const labs = await api.labs();
@@ -70,11 +73,33 @@ async function loadLabs() {
       row.innerHTML = `
         <div class="lab-meta">
           <div class="lab-title"></div>
+          <p class="lab-summary"></p>
+          <ul class="lab-objectives"></ul>
           <div class="lab-sub"></div>
         </div>
         <button class="btn">Start</button>`;
       row.querySelector('.lab-title').textContent = lab.title;
-      row.querySelector('.lab-sub').textContent = `${lab.slug}@${lab.version} · ${lab.family} · ${lab.type}`;
+
+      // Enough to choose a lab without spending a container to find out what
+      // it is. The title alone never carried that — "Hello, sandbox" says
+      // nothing about what you would actually do.
+      const summary = row.querySelector('.lab-summary');
+      summary.textContent = lab.summary ?? '';
+      summary.hidden = !lab.summary;
+
+      const objectives = row.querySelector('.lab-objectives');
+      for (const objective of lab.objectives ?? []) {
+        const li = document.createElement('li');
+        li.textContent = objective;
+        objectives.append(li);
+      }
+      objectives.hidden = !(lab.objectives ?? []).length;
+
+      const facts = [`${lab.slug}@${lab.version}`, lab.family, lab.type];
+      if (lab.difficulty) facts.push(lab.difficulty);
+      if (lab.timeout_minutes) facts.push(`${lab.timeout_minutes} min`);
+      row.querySelector('.lab-sub').textContent = facts.join(' · ');
+      labsBySlug.set(lab.slug, lab);
       row.querySelector('button').addEventListener('click', () => startSession(lab.slug));
       $('labList').append(row);
     }
@@ -90,6 +115,7 @@ async function startSession(slug) {
   buttons.forEach((b) => (b.disabled = true));
   try {
     const started = await api.startSession(slug);
+    state.lab = labsBySlug.get(slug) ?? null;
     state.session = { id: started.id, token: started.token, lab: slug, urls: started.urls };
     rememberSession(state.session);
     enterSession();
@@ -359,14 +385,36 @@ async function onRunning(status) {
  */
 async function loadBrief() {
   const body = $('briefBody');
+  // A resumed session never passed through the launcher, so the catalogue
+  // has not been loaded and the lab's objectives would silently vanish on
+  // exactly the path a learner uses most — coming back to their work.
+  if (!state.lab && state.session) {
+    try {
+      const labs = await api.labs();
+      for (const lab of labs) labsBySlug.set(lab.slug, lab);
+      state.lab = labsBySlug.get(state.session.lab) ?? null;
+    } catch {
+      /* the brief is still worth showing without them */
+    }
+  }
   try {
     const { content } = await api.readFile(state.session.id, state.session.token, 'brief.md');
-    body.innerHTML = renderMarkdown(content);
+    body.innerHTML = objectivesHtml() + renderMarkdown(content);
   } catch {
     body.innerHTML =
       '<p class="muted">This lab ships no <code>brief.md</code>, so there is nothing to show here. ' +
       'Check the workspace files and the hints panel.</p>';
   }
+}
+
+/** The lab's stated objectives, above its brief. Empty when it declares none. */
+function objectivesHtml() {
+  const objectives = state.lab?.objectives ?? [];
+  if (!objectives.length) return '';
+  const items = objectives
+    .map((o) => `<li>${o.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])}</li>`)
+    .join('');
+  return `<section class="objectives"><h3>What you will practise</h3><ul>${items}</ul></section>`;
 }
 
 /**
@@ -393,21 +441,38 @@ export function renderMarkdown(src) {
 
   const html = [];
   let list = null;
+  let inTable = false;
+  let firstRow = false;
   for (const raw of fenced.split('\n')) {
     const line = raw.trimEnd();
     const placeholder = line.match(/^\u0000(\d+)\u0000$/);
     if (placeholder) {
       if (list) { html.push(`</${list}>`); list = null; }
+      if (inTable) { html.push('</table>'); inTable = false; }
       html.push(blocks[Number(placeholder[1])]);
       continue;
     }
     const heading = line.match(/^(#{1,4})\s+(.*)$/);
     if (heading) {
       if (list) { html.push(`</${list}>`); list = null; }
+      if (inTable) { html.push('</table>'); inTable = false; }
       const level = Math.min(heading[1].length + 1, 5);
       html.push(`<h${level}>${inline(heading[2])}</h${level}>`);
       continue;
     }
+    // Tables: a `| a | b |` row, optionally preceded by a `|---|---|` rule.
+    // Briefs use them for "what is running where", which resists prose.
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      if (list) { html.push(`</${list}>`); list = null; }
+      const cells = line.trim().slice(1, -1).split('|').map((c) => c.trim());
+      if (cells.every((c) => /^:?-{2,}:?$/.test(c))) continue; // the alignment rule
+      if (!inTable) { html.push('<table>'); inTable = true; firstRow = true; }
+      const tag = firstRow ? 'th' : 'td';
+      html.push(`<tr>${cells.map((c) => `<${tag}>${inline(c)}</${tag}>`).join('')}</tr>`);
+      firstRow = false;
+      continue;
+    }
+    if (inTable) { html.push('</table>'); inTable = false; }
     const bullet = line.match(/^\s*[-*]\s+(.*)$/);
     const numbered = line.match(/^\s*\d+\.\s+(.*)$/);
     if (bullet || numbered) {
@@ -421,6 +486,7 @@ export function renderMarkdown(src) {
     if (line.trim()) html.push(`<p>${inline(line)}</p>`);
   }
   if (list) html.push(`</${list}>`);
+  if (inTable) html.push('</table>');
   return html.join('\n');
 }
 

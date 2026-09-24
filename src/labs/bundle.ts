@@ -23,6 +23,11 @@ export interface LabIndexEntry {
   title: string;
   type: LabManifest['type'];
   family: LabManifest['family'];
+  /** Catalogue context, so a learner can choose without starting a container. */
+  summary?: string;
+  objectives: string[];
+  difficulty?: LabManifest['difficulty'];
+  timeout_minutes: number;
 }
 
 /** Resolves a lab's current published version and manifest. Used by POST /sessions and GET /labs/{slug}. */
@@ -79,7 +84,17 @@ async function rebuildIndex(env: Env): Promise<void> {
   for (const slug of slugs) {
     try {
       const { manifest } = await loadCurrentManifest(env, slug);
-      entries.push({ slug: manifest.slug, version: manifest.version, title: manifest.title, type: manifest.type, family: manifest.family });
+      entries.push({
+        slug: manifest.slug,
+        version: manifest.version,
+        title: manifest.title,
+        type: manifest.type,
+        family: manifest.family,
+        summary: manifest.summary,
+        objectives: manifest.objectives,
+        difficulty: manifest.difficulty,
+        timeout_minutes: manifest.timeout_minutes,
+      });
     } catch {
       // Skip a slug whose current pointer is briefly inconsistent mid-publish.
     }

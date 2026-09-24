@@ -99,6 +99,21 @@ export const labManifestSchema = z.object({
   title: z.string().min(1).max(200),
   type: z.enum(['build', 'break-fix', 'scale']),
   family: z.enum(['agent', 'gateway']),
+  /**
+   * One sentence for the launcher card: what this lab is about, before a
+   * learner has spent a container finding out. The title alone cannot
+   * carry it — "Hello, sandbox" says nothing about what you would do.
+   */
+  summary: z.string().min(1).max(280).optional(),
+  /**
+   * What a learner should be able to do afterwards. Shown at the top of the
+   * brief, so the point of the exercise is stated rather than left to be
+   * inferred from the task. Kept in the manifest rather than in brief.md
+   * because the catalogue shows them before a session exists.
+   */
+  objectives: z.array(z.string().min(1).max(200)).max(6).default([]),
+  /** Rough level, for sorting and for setting expectations on the card. */
+  difficulty: z.enum(['intro', 'core', 'advanced']).optional(),
   timeout_minutes: z.number().int().min(60).max(120),
   idle_minutes: z.number().int().min(1).max(60).default(10),
   // Shell identifiers only: the session env is written to a file that

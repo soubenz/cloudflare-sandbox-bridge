@@ -8,6 +8,11 @@ slug: impatient
 version: 1.0.0
 title: "Impatient (idle-timeout fixture)"
 type: build
+summary: "A deliberately short idle timeout, to show how a session warns you and then reclaims itself. Useful for seeing the timers before they matter."
+difficulty: intro
+objectives:
+  - "See the idle warning before a session is reclaimed"
+  - "Understand what resets the idle clock"
 family: agent
 timeout_minutes: 60
 idle_minutes: 1

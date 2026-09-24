@@ -5,6 +5,12 @@ slug: fragile
 version: 1.0.0
 title: "Fragile (container-restart fixture)"
 type: build
+summary: "The container is killed out from under you mid-session. Everything you need is rebuilt automatically — this lab is about watching that happen and knowing what survives."
+difficulty: core
+objectives:
+  - "Recognise a container restart from the lab activity panel"
+  - "Know which of your work survives a restart and which does not"
+  - "Confirm services come back in dependency order"
 family: agent
 timeout_minutes: 60
 idle_minutes: 30

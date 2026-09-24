@@ -23,6 +23,12 @@ slug: gateway-hello
 version: 1.0.0
 title: "Gateway image smoke test"
 type: scale
+summary: "Prometheus and Grafana, already wired together and proxied into this console. A guided tour of an observability stack rather than a problem to solve."
+difficulty: intro
+objectives:
+  - "Reach a service's own UI through the session proxy"
+  - "See how a service is told the path prefix it is served under"
+  - "Confirm a Prometheus target is actually being scraped"
 family: gateway
 timeout_minutes: 60
 idle_minutes: 10

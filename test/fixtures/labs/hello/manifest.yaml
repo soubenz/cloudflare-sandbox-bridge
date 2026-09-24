@@ -4,6 +4,12 @@ slug: hello
 version: 1.0.0
 title: "Hello, sandbox"
 type: build
+summary: "A five-minute smoke test: open a shell, write one file, run the grader. Start here to see how a lab works before one has stakes."
+difficulty: intro
+objectives:
+  - "Find your way around the workspace, terminal and editor"
+  - "Read a lab's environment from inside the container"
+  - "Run the grader and read what a failing check tells you"
 family: agent
 timeout_minutes: 60
 idle_minutes: 10
