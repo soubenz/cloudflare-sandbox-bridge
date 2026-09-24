@@ -169,6 +169,58 @@ describeIfConfigured('sandbox API routes', () => {
     }, 30_000);
   });
 
+  describe('cross-origin, as a browser makes them', () => {
+    // The dashboard is a separate Worker, so every one of these carries an
+    // Origin header. Nothing did before, which is how a CORS middleware
+    // that threw on immutable Durable Object response headers passed the
+    // whole suite while breaking the terminal and the event stream in a
+    // real browser.
+    const ORIGIN = 'https://opalix-dashboard.soubenz94.workers.dev';
+
+    it('answers a preflight for a session route', async () => {
+      const res = await fetch(`${OPALIX_URL}/sessions/${sessionId}`, {
+        method: 'OPTIONS',
+        headers: {
+          Origin: ORIGIN,
+          'Access-Control-Request-Method': 'GET',
+          'Access-Control-Request-Headers': 'authorization',
+        },
+      });
+      expect(res.status).toBe(204);
+      expect(res.headers.get('access-control-allow-origin')).toBe(ORIGIN);
+    });
+
+    it('allows the origin on a normal response', async () => {
+      const res = await fetch(`${OPALIX_URL}/sessions/${sessionId}`, {
+        headers: { Origin: ORIGIN, authorization: `Bearer ${token}` },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe(ORIGIN);
+    });
+
+    it('allows the origin on the SSE stream, whose response comes from the DO', async () => {
+      const ctrl = new AbortController();
+      const res = await fetch(`${OPALIX_URL}/sessions/${sessionId}/events?token=${encodeURIComponent(token)}`, {
+        headers: { Origin: ORIGIN, accept: 'text/event-stream' },
+        signal: ctrl.signal,
+      });
+      ctrl.abort();
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe(ORIGIN);
+    });
+
+    it('still upgrades the terminal when the handshake carries an Origin', async () => {
+      const ws = new WebSocket(session.terminalUrl(sessionId), { origin: ORIGIN });
+      const opened = await new Promise<boolean>((resolve) => {
+        ws.once('open', () => resolve(true));
+        ws.once('error', () => resolve(false));
+        setTimeout(() => resolve(false), 20_000);
+      });
+      ws.close();
+      expect(opened).toBe(true);
+    }, 40_000);
+  });
+
   describe('pool', () => {
     it('reports stats and accepts a prime', async () => {
       const stats = (await service.poolStats('agent')) as { warm?: unknown[]; stats?: unknown };

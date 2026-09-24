@@ -13,7 +13,7 @@
  * Screenshots land in test/e2e/shots/.
  */
 import { chromium } from 'playwright';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,9 +39,27 @@ async function shot(page, label) {
   return file;
 }
 
+/**
+ * The browsers live in a shared, pre-seeded directory whose folder carries a
+ * build number, which does not necessarily match the one this Playwright
+ * release would look for — so resolve whatever is actually on disk rather
+ * than trusting either the default lookup or a hardcoded path.
+ */
+function findChromium() {
+  if (process.env.PW_CHROME) return process.env.PW_CHROME;
+  const root = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
+  if (!existsSync(root)) return undefined;
+  for (const dir of readdirSync(root).filter((d) => d.startsWith('chromium-')).sort().reverse()) {
+    const candidate = join(root, dir, 'chrome-linux', 'chrome');
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
 const browser = await chromium.launch({
   headless: !process.argv.includes('--headed'),
-  executablePath: '/opt/pw-browsers/chromium/chrome-linux/chrome',
+  executablePath: findChromium(),
+  args: ['--no-sandbox'],
 });
 const page = await browser.newPage({ viewport: { width: 1600, height: 950 } });
 
