@@ -21,6 +21,15 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * A class that sets `display` outranks the browser's own `[hidden]` rule,
+ * so `.workspace { display: grid }` kept the whole session view rendered
+ * underneath the launcher while its hidden attribute was set. Everything
+ * the console shows and hides is a class with a display, so this has to
+ * win outright.
+ */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   height: 100vh;
