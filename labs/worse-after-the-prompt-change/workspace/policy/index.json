@@ -1,0 +1,54 @@
+{
+  "rule": "First policy whose match list has a keyword in the customer's message wins, in the order they appear below. If none matches, default_policy applies and there is no escalation. Matching is case-insensitive on whole substrings.",
+  "contract": [
+    "Every reply carries the reference of the policy that applies to it.",
+    "Every reply about something that has to leave the desk carries the escalation tag for the queue that owns it.",
+    "Every reply carries the disclosure line, once, unchanged."
+  ],
+  "disclosure": "This reply was drafted by an automated assistant and checked against policy before it was sent.",
+  "default_policy": "POL-02",
+  "policies": [
+    {
+      "id": "POL-31",
+      "title": "Suspected security problems",
+      "match": ["phishing", "vulnerability", "breach", "compromised", "someone else logged in"],
+      "escalate_to": "security"
+    },
+    {
+      "id": "POL-04",
+      "title": "Refunds, credits and chargebacks",
+      "match": ["refund", "credit note", "money back", "chargeback", "charged twice"],
+      "escalate_to": "billing"
+    },
+    {
+      "id": "POL-19",
+      "title": "Downtime, incidents and service credits",
+      "match": ["outage", "incident", "sla", "was down", "503"],
+      "escalate_to": "billing"
+    },
+    {
+      "id": "POL-11",
+      "title": "Data export, retention and deletion",
+      "match": ["delete my data", "erasure", "data export", "retention", "gdpr"],
+      "escalate_to": "privacy"
+    },
+    {
+      "id": "POL-14",
+      "title": "Failed imports and data integrity",
+      "match": ["import", "rejected rows", "validation", "csv", "catalogue feed"],
+      "escalate_to": null
+    },
+    {
+      "id": "POL-23",
+      "title": "Plans, seats and billing cycles",
+      "match": ["seats", "upgrade", "downgrade", "billing cycle", "invoice date"],
+      "escalate_to": null
+    },
+    {
+      "id": "POL-02",
+      "title": "General account questions",
+      "match": [],
+      "escalate_to": null
+    }
+  ]
+}

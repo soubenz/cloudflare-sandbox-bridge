@@ -1,0 +1,77 @@
+{
+  "note": "Twelve cases: the original five short, easy ones, plus seven more that add the policies and the shapes the starter set never exercised -- a security case, and several long, detail-heavy messages of the kind that actually break a prompt trying to save tokens.",
+  "cases": [
+    {
+      "id": "case-01",
+      "message": "How many seats does the growth plan include?",
+      "expected_policy_id": "POL-23",
+      "expected_escalate_to": null
+    },
+    {
+      "id": "case-02",
+      "message": "Can I get a refund for last month's charge?",
+      "expected_policy_id": "POL-04",
+      "expected_escalate_to": "billing"
+    },
+    {
+      "id": "case-03",
+      "message": "What is your data retention period?",
+      "expected_policy_id": "POL-11",
+      "expected_escalate_to": "privacy"
+    },
+    {
+      "id": "case-04",
+      "message": "The csv import keeps rejecting rows, can you help?",
+      "expected_policy_id": "POL-14",
+      "expected_escalate_to": null
+    },
+    {
+      "id": "case-05",
+      "message": "Just checking, what plan are we currently on?",
+      "expected_policy_id": "POL-02",
+      "expected_escalate_to": null
+    },
+    {
+      "id": "case-06",
+      "message": "Someone else logged into our account overnight from a country we don't operate in.",
+      "expected_policy_id": "POL-31",
+      "expected_escalate_to": "security"
+    },
+    {
+      "id": "case-07",
+      "message": "Your dashboard was completely unreachable for almost four hours yesterday afternoon, right in the middle of our own customer-facing peak traffic window, and the status page said everything was healthy the entire time, which does not match what our team was seeing on our end at all. We need to know whether this falls under the SLA credit terms and, if so, how the credit actually gets applied to our account.",
+      "expected_policy_id": "POL-19",
+      "expected_escalate_to": "billing"
+    },
+    {
+      "id": "case-08",
+      "message": "We were charged twice for our September subscription, and when I called last week your support line said it had already been escalated to billing, but three days ago I got a form email telling me the ticket was closed with no explanation and no credit ever appeared on our statement, so now our finance team is asking me directly why this still is not resolved.",
+      "expected_policy_id": "POL-04",
+      "expected_escalate_to": "billing"
+    },
+    {
+      "id": "case-09",
+      "message": "A former contact of ours has asked us to submit a data erasure request for their account, and we are not sure how long a data erasure normally takes to complete.",
+      "expected_policy_id": "POL-11",
+      "expected_escalate_to": "privacy"
+    },
+    {
+      "id": "case-10",
+      "message": "Our nightly catalogue import has been failing since Friday and the rejection log lists close to four hundred rows out of eleven thousand as invalid, but it does not say which validation rule each row actually broke, and nothing about the source file has changed on our end since it last ran cleanly, so we are stuck guessing at what changed and would like some way to see the per-row reasons.",
+      "expected_policy_id": "POL-14",
+      "expected_escalate_to": null
+    },
+    {
+      "id": "case-11",
+      "message": "We would like to downgrade from the growth plan back to standard before this billing cycle ends, and our finance lead wants to know precisely whether the extra seats we added disappear immediately when we make the change or only at the next renewal, since that affects what we book for this quarter versus next.",
+      "expected_policy_id": "POL-23",
+      "expected_escalate_to": null
+    },
+    {
+      "id": "case-12",
+      "message": "A customer of ours reported what they believe is a vulnerability in one of our checkout pages, and separately, out of caution, we would like to know whether anything on your platform's side could be compromised in a way that would affect us, since we are not yet sure which system the report actually concerns.",
+      "expected_policy_id": "POL-31",
+      "expected_escalate_to": "security"
+    }
+  ]
+}
