@@ -1,0 +1,54 @@
+{
+  "queue": "research-desk",
+  "generated_at": "2026-09-25T07:55:00Z",
+  "questions": [
+    {
+      "id": "Q-2201",
+      "asker": "Dana Whitfield",
+      "team": "Support",
+      "question": "A customer on the Growth plan wants to know whether the new data-residency rule applies to them. Their account was opened in March. What do I tell them?"
+    },
+    {
+      "id": "Q-2202",
+      "asker": "Ravi Menon",
+      "team": "Solutions",
+      "question": "Where do I look up an account's migration date, and is the contract start date a safe stand-in when the field is blank?"
+    },
+    {
+      "id": "Q-2203",
+      "asker": "Ines Fabre",
+      "team": "Support",
+      "question": "Two of our notes disagree about when the cutover took effect. Which one is current, and what should I quote to a customer who asks?"
+    },
+    {
+      "id": "Q-2204",
+      "asker": "Tobias Lindgren",
+      "team": "Billing",
+      "question": "If an account was migrated last week, does the older invoicing process still apply to the invoice that is already issued?"
+    },
+    {
+      "id": "Q-2205",
+      "asker": "Amara Nwosu",
+      "team": "Onboarding",
+      "question": "What is the approved wording for telling a new customer that their region is not supported yet?"
+    },
+    {
+      "id": "Q-2206",
+      "asker": "Felix Arbuthnot",
+      "team": "Revenue",
+      "question": "Which of our enterprise accounts are affected by the data-residency change, what does each of them need to be told, and by when? Include anything we have promised any of them in writing."
+    },
+    {
+      "id": "Q-2207",
+      "asker": "Leah Castellanos",
+      "team": "Support",
+      "question": "The customer has pasted their entire invoice history into the thread and wants it all explained. Can you summarise what each line means?"
+    },
+    {
+      "id": "Q-2208",
+      "asker": "Yusuf Demir",
+      "team": "Platform",
+      "question": "Work out the root cause of the intermittent checkout failures from everything in the notes, and say which change introduced it."
+    }
+  ]
+}
