@@ -412,3 +412,22 @@ Cost is an estimate and a cache hit always records `cost: 0`, so grade
 
 Section 21 said to change `llmOutbound` to `cf-aig-authorization`. That is
 wrong and the spike is why it was run first.
+
+### Proven from inside a container (25 Sep 2026)
+
+The wiring, not just the endpoint. A `hello` session, probed over the
+terminal:
+
+```
+URL=https://gateway.ai.cloudflare.com/v1/<account>/opalix/compat
+MODEL=workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8
+
+POST $LLM_BASE_URL/chat/completions   -> HTTPCODE=200, "content":"gateway-ok"
+GET  https://example.com              -> 520 (refused)
+```
+
+The container carries **no credential**: `llmOutbound` injects the token in
+the Worker. The open question this answered was whether the SDK's https
+interception and its ephemeral CA would let a plain `curl` out to the
+gateway at all — they do, with no change to the image. The egress fence is
+unaffected: everything not on the allowlist is still refused.
