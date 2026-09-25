@@ -1,0 +1,48 @@
+{
+  "queue": "policy-desk",
+  "generated_at": "2026-09-25T08:10:00Z",
+  "questions": [
+    {
+      "id": "Q-3101",
+      "asker": "Marta Oyelaran",
+      "team": "Support",
+      "question": "A customer's K2 handheld has a cracked screen in month 14 of a 24-month warranty. They are on the Pro plan. Is accidental damage covered, and if it is, do they pay anything?"
+    },
+    {
+      "id": "Q-3102",
+      "asker": "Tomas Riegel",
+      "team": "Partners",
+      "question": "A reseller is asking whether the warranty follows the unit when it changes owner, or whether it stays with the original purchaser. What do I tell them?"
+    },
+    {
+      "id": "Q-3103",
+      "asker": "Priya Raghunathan",
+      "team": "Support",
+      "question": "Last month I told a customer the battery on a K2 was covered for the full 24 months and they have just come back with my email quoted in full. Here is what I sent them: 'Thanks for getting in touch. I can confirm that the battery in your K2 handheld is covered by the standard 24-month warranty on the same terms as the rest of the unit, so if capacity drops we will replace it at no charge to you. You do not need to do anything now -- just contact us if you see the runtime fall away and we will arrange a swap. There is no charge for the replacement and no charge for the labour, and the replacement carries the remainder of your original warranty.' They are now at month 19, the runtime has halved, and our repair centre has quoted them for the battery. Was I right? If I was not, what is the wording I should have used, and what do we owe this customer now that they have that email in writing?"
+    },
+    {
+      "id": "Q-3104",
+      "asker": "Bo Lindqvist",
+      "team": "Returns",
+      "question": "A unit came back 40 days after delivery, unopened, in the original packaging. The customer wants a refund. Refund, credit, or nothing?"
+    },
+    {
+      "id": "Q-3105",
+      "asker": "Aurelie Mensah",
+      "team": "Support",
+      "question": "Which regions is the next-day on-site swap available in, and has that list changed recently? A customer in Portugal is asking and I do not want to promise something we have stopped offering."
+    },
+    {
+      "id": "Q-3106",
+      "asker": "Ferdinand Kwabena",
+      "team": "Solutions",
+      "question": "If a unit fails because of a firmware update we shipped, does that count as a manufacturing defect for warranty purposes, or as customer-caused?"
+    },
+    {
+      "id": "Q-3107",
+      "asker": "Nadia Cheng",
+      "team": "Returns",
+      "question": "A customer bought two K2 units through a marketplace listing, not from us directly, and wants a refund at day 20. They have sent us the whole thread with the marketplace seller and I will paste the part that matters: 'I ordered on the 2nd and they arrived on the 5th. On the 9th I asked the seller to take them back because the scanner does not read our labels. The seller said their own returns window is 14 days from delivery and that after that I have to go to the manufacturer. On the 19th I wrote to the seller again and they told me to contact Opalix directly because the units are still in warranty and Opalix handles all warranty and returns for marketplace orders. I have not opened the second unit at all. I would like a refund for both, or failing that a refund for the unopened one and a replacement for the other.' Whose policy applies here, ours or the marketplace seller's, what is the customer actually entitled to from us, and what do I say about the unopened unit?"
+    }
+  ]
+}

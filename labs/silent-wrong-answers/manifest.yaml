@@ -1,0 +1,218 @@
+# P1-06 in the lab catalogue: Break-fix, Observability, Real plus faults,
+# effort M. Titled by symptom rather than by the concept being taught, and
+# the slug names the symptom too -- answers that are wrong and say nothing
+# about it -- rather than the lesson, which is that a system nobody can trace
+# cannot be debugged by reading it harder.
+#
+# What makes this one different from P1-01 to P1-05: the planted bug is not
+# the whole task. The desk cannot be diagnosed at all, because nothing
+# records what happened inside a turn -- workspace/agent/trace.py writes one
+# span per turn, which says that a turn happened and never which call inside
+# it produced the answer. So the work is two halves and both are graded: make
+# the turns explicable, then use that to find and fix the cause.
+#
+# Three plausible causes are in the picture and only one of them fires:
+#
+#   1. the clause store serving stale or partial data behind a 200. It fires,
+#      for Q-3105, and workspace/agent/policy.py already handles it -- the
+#      policy service's own log shows the cached read and the fresh one after
+#      it, so a learner can rule it out from a log they already have.
+#   2. a truncated reply treated as a whole one. Nothing in the desk consults
+#      `finish_reason`, so it is a real hazard -- but DESK_TRUNCATE_QUESTIONS
+#      is empty, and the proxy's exchange log records finish_reason on every
+#      row, so this too can be ruled out from a log they already have.
+#   3. a retry that silently swaps in a weaker path. THIS is the one that
+#      fires, for Q-3103 and Q-3107. workspace/agent/rescue.py answers a
+#      `context_pressure` 503 by re-asking without the clauses, which always
+#      "works": a fluent, confident, ungrounded answer, filed with the clause
+#      ids the desk retrieved but never sent. In the exchange log it is a 503
+#      followed by a 200 -- exactly what Q-3104's ordinary overload-and-retry
+#      looks like. The proxy keeps no prompts, by design, so nothing in any
+#      existing log distinguishes them. It is findable only from a trace that
+#      records each call in the turn and what went into it.
+#
+# There is deliberately no hints.md: everything in workspace/ is readable
+# from minute zero, so a hints file is not gated at all. The staged hints
+# below are, and they are the only hints this lab ships.
+slug: silent-wrong-answers
+version: 1.0.0
+title: "It answers, but it is wrong"
+type: break-fix
+family: agent
+difficulty: advanced
+summary: >-
+  The policy desk answers confidently and is sometimes wrong. No errors, no
+  alerts, nothing unusual in any log. Nothing records what happened inside a
+  turn, so nobody can say why. Reading the answers to find the bad ones is
+  not the fix.
+objectives:
+  - "Instrument a turn so every model call and tool call is recorded against the turn it belongs to"
+  - "Tell a retry that repeats a request apart from a fallback that quietly changes it"
+  - "Attribute a wrong answer to the call that produced it from the trace, not from reading the answer"
+# The work is two halves -- instrument, then diagnose and fix -- and 60
+# minutes is not enough for both once a learner has read the desk. 90 is the
+# middle of the schema's range and leaves the container bill honest.
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  # Wiring. Each port appears twice on purpose: once as services[].port, for
+  # the healthcheck and the proxy, and once as a var the service itself
+  # reads, so either service is runnable by hand from a shell.
+  DESK_URL: "http://127.0.0.1:8871"
+  POLICY_URL: "http://127.0.0.1:8872"
+  DESK_PORT: "8871"
+  POLICY_PORT: "8872"
+  QUESTION_QUEUE: "/workspace/questions.json"
+  # The desk's tunables. Every one has a matching default in
+  # workspace/agent/config.py, so the desk also runs from a bare shell.
+  # MAX_ATTEMPTS is the policy: how many times one call may be attempted
+  # before it is not going to work.
+  MODEL_NAME: "opalix-policy-desk"
+  MODEL_TIMEOUT_S: "30"
+  POLICY_TIMEOUT_S: "5"
+  MAX_ATTEMPTS: "3"
+  RETRY_BASE_DELAY_S: "0.25"
+  # The handbook was revised last week; a clause served from before that is
+  # not the current clause. workspace/agent/policy.py consults this.
+  MAX_CLAUSE_AGE_S: "604800"
+  # What the trace store keeps for one turn. Stated in the brief, because a
+  # learner is graded against it: `the-trace-is-proportionate` reads these
+  # two numbers and so does the store's own tab.
+  MAX_SPANS_PER_TURN: "24"
+  MAX_TRACE_BYTES_PER_TURN: "4096"
+  MAX_SPAN_BYTES: "4096"
+  # Real mode. The desk never calls a provider directly: it calls the proxy
+  # in DESK_URL, which forwards to LLM_BASE_URL with the model in LLM_MODEL.
+  # Both of those are put into the session env by the platform and the
+  # container holds no credential -- the Worker injects one on the way out.
+  # `auto` means: use the gateway, and fall back to the proxy's recorded
+  # replies if a call to it cannot be made, so a session without a reachable
+  # route still runs and still grades. Nothing anywhere is graded on the
+  # model's wording, which is what makes those two paths equivalent.
+  DESK_UPSTREAM: "auto"
+  DESK_MAX_TOKENS: "420"
+  DESK_UPSTREAM_TIMEOUT_S: "25"
+  # An identical request is pinned to the gateway's cache, so re-running the
+  # graders re-reads one run's answers instead of paying for them again. The
+  # spike found the explicit-key path needs two sequential repeats before it
+  # hits, so a MISS is normal and nothing asserts on a HIT.
+  DESK_CACHE_TTL_S: "86400"
+  # The faults, fixed per question so every run of the graders sees the same
+  # refusals and the same stale read. Nothing here is random and nothing
+  # branches on the clock.
+  #
+  #   Q-3104 is an ordinary overload: its first call is refused and the next
+  #   one goes through. `answers-came-from-the-evidence` needs that to exist
+  #   -- it is the 503 that a retry is the right answer to, and it is what
+  #   the one that is not looks identical to.
+  DESK_REFUSE_ONCE_QUESTIONS: "Q-3104"
+  #   Q-3103 and Q-3107 are the two long ones -- a quoted email and a pasted
+  #   marketplace thread -- and the route refuses their first call that
+  #   carries clauses, with a 503 whose message says `context pressure`. The
+  #   next call goes through, clauses and all. The desk reads that message as
+  #   a size limit and drops the clauses instead, which is the bug. Keyed to
+  #   the first *grounded* call, so a fix that sends the same request again
+  #   always converges and the lab is passable.
+  DESK_CONTEXT_REFUSE_QUESTIONS: "Q-3103,Q-3107"
+  #   Empty on purpose. Nothing in the desk consults `finish_reason`, so a
+  #   truncated reply would be filed as an answer -- but the exchange log
+  #   records finish_reason on every row, so a learner can rule this out in a
+  #   minute. It is one of the three candidates, and it is a candidate a log
+  #   they already have can eliminate. Put a question id here to turn it on.
+  DESK_TRUNCATE_QUESTIONS: ""
+  DESK_TRUNCATE_MAX_TOKENS: "48"
+  #   Q-3105's regions note is in the cache in front of the clause store, six
+  #   weeks old and superseded. The desk notices and asks again with `fresh`.
+  #   The second candidate, and the policy service's log shows both reads --
+  #   so it can be ruled out too, and the turn it happens on is not one of
+  #   the turns that went wrong.
+  POLICY_STALE_QUESTIONS: "Q-3105"
+  POLICY_STALE_AGE_S: "3628800"
+
+services:
+  # The proxy is the diagnostic, and the trace store lives on it. Its
+  # exchange log is what a gateway gives you -- a row per call, no prompts,
+  # no question ids -- so it can say that a call happened and never which
+  # turn it belonged to. The tab puts that log next to the trace and marks
+  # every call no span names. A learner who reads only the desk's stdout, or
+  # only the reply log, sees seven answered questions and nothing wrong.
+  - name: desk
+    argv: ["python3", "/workspace/services/desk_proxy.py"]
+    cwd: /workspace
+    port: 8871
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: []
+  # The clause store and the reply log. ui: false, so the proxy refuses it --
+  # the graders read it, and from the terminal so can a learner.
+  - name: policy
+    argv: ["python3", "/workspace/services/policy_service.py"]
+    cwd: /workspace
+    port: 8872
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: []
+
+pressure:
+  - id: backlog
+    at_minutes: 12
+    argv: ["/opt/lab/pressure/backlog.sh"]
+    title: "Support has found three more of them"
+    message: >-
+      Four more questions just landed, and one of them is the Head of Support
+      asking which of last month's answers were wrong. If a turn still cannot
+      be read back, that question has no answer either.
+
+checks:
+  # The outcome: a turn that can be explained after the fact.
+  - name: every-turn-is-attributable
+    script: every-turn-is-attributable.sh
+    timeout_s: 240
+    weight: 2
+  # The strongest anti-cheat. Instrumenting without fixing passes the first
+  # check and leaves the customer with the wrong answer; fixing without
+  # instrumenting passes this one and leaves the next wrong answer just as
+  # invisible. A learner needs both.
+  - name: answers-came-from-the-evidence
+    script: answers-came-from-the-evidence.sh
+    timeout_s: 240
+    weight: 2
+  # And the other way to make a system inexplicable: record everything.
+  - name: the-trace-is-proportionate
+    script: the-trace-is-proportionate.sh
+    timeout_s: 240
+    weight: 1
+
+hints:
+  - after_minutes: 12
+    text: >-
+      Open the desk tab. It has two halves -- the calls the gateway served
+      and the trace the desk wrote for them -- and it marks every call that
+      no span names. Count the calls, then count the turns, and ask what a
+      span per turn can tell you about a turn that went wrong.
+  - after_minutes: 24
+    text: >-
+      Two of this run's calls came back 503 and the attempt after them
+      returned 200. In the exchange log those two look the same, and the
+      proxy keeps no prompts, so nothing in it can tell them apart. One of
+      them was asked the same question again. The other was asked a different
+      one.
+  - after_minutes: 39
+    text: >-
+      A retry repeats a request. Anything that sends a different request is
+      asking a different question, and the answer to a different question is
+      a wrong answer however well it reads -- there is nothing in the reply
+      that says the evidence was missing, which is why this has to be
+      recorded rather than noticed. Whatever the desk does when a call is
+      refused, the record has to say which call the filed answer came out of
+      and what went into it.
+
+egress:
+  allow: []
