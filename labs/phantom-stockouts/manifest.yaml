@@ -1,0 +1,171 @@
+# P1-03 in the lab catalogue: the third lab a learner meets, and free tier.
+#
+# Break-fix, titled by symptom rather than by the concept being taught. The
+# slug names the symptom too -- phantom stockouts, items reported sold out
+# that are sitting on the shelf -- rather than the lesson, which is that a
+# tool's output is untrusted input.
+#
+# Three planted bugs, all of them in the two files between the stock API and
+# the sentence a customer reads. workspace/agent/http.py treats any 200 as an
+# answer, because the stock API is documented as reporting trouble in the
+# body; workspace/agent/reading.py sums `on_hand` over `items`, so a body
+# with no rows in it reads as zero on the shelf rather than as "I could not
+# check"; and the same file computes the age of the data for its debug line
+# and never compares it with MAX_READING_AGE_S, so Friday's cache is read as
+# this minute's count. Each file is locally reasonable. The bug is the
+# conclusion they add up to, and the customer-facing sentence is written by a
+# stub that can only say what the reading it is handed says.
+#
+# There is deliberately no hints.md: everything in workspace/ is readable
+# from minute zero, so a hints file is not gated at all. The staged hints
+# below are, and they are the only hints this lab ships.
+slug: phantom-stockouts
+version: 1.0.0
+title: "We are telling customers we are sold out when we are not"
+type: break-fix
+family: agent
+difficulty: core
+summary: >-
+  The shopping assistant tells customers that popular items are out of stock.
+  They are on the shelf, and sales on those items are down 30% this week. The
+  stock service answers 200 either way. Telling the assistant to double-check
+  is not the fix.
+objectives:
+  - "Validate a tool response in code instead of trusting its status line"
+  - "Tell 'nothing in stock' apart from 'could not check', and answer the second one honestly"
+  - "Prove what an agent told a customer from the services' own records, not from the agent's log"
+# The work is 30-45 minutes; 60 is the schema minimum and keeps the container
+# bill honest for a free lab.
+timeout_minutes: 60
+idle_minutes: 10
+
+env:
+  INVENTORY_URL: "http://127.0.0.1:8841"
+  CHAT_URL: "http://127.0.0.1:8842"
+  INVENTORY_PORT: "8841"
+  CHAT_PORT: "8842"
+  QUESTION_QUEUE: "/workspace/questions.json"
+  # The agent's tunables. Every one has a matching default in
+  # workspace/agent/config.py, so the agent also runs from a bare shell.
+  MODEL_NAME: "opalix-shop-assistant-stub"
+  INVENTORY_TIMEOUT_S: "2"
+  CHAT_TIMEOUT_S: "5"
+  # MAX_ATTEMPTS is the policy: how many times one reading may be asked for
+  # before we are not going to get it. The graders hold the agent to it.
+  MAX_ATTEMPTS: "3"
+  RETRY_BASE_DELAY_S: "0.25"
+  # The shop's rule since the weekend: a stock figure older than fifteen
+  # minutes is not a stock figure. Nothing in the agent consults it yet.
+  MAX_READING_AGE_S: "900"
+  # The faults, fixed per SKU so every run of the graders sees the same
+  # readings. Nothing here is random and nothing here branches on the clock.
+  #
+  #   SKU-5062 and SKU-9915 hit the slow shard on their first request and are
+  #   answered properly on the next one. still-answers-on-good-data needs
+  #   that to exist, or it has nothing to prove a retry on and fails the lab
+  #   rather than the learner.
+  INVENTORY_DEGRADED_SKUS: "SKU-5062,SKU-9915"
+  INVENTORY_DEGRADED_CALLS: "1"
+  #   SKU-6810 lives on the shard that has been down since Friday: every
+  #   request for it comes back 200 with an error in the body and no items.
+  #   No number of retries produces a reading, which is the point.
+  INVENTORY_STUCK_SKUS: "SKU-6810"
+  #   SKU-8091 is missing from the index that answers: status ok, items
+  #   empty. An empty list is not a count of zero, and this is the SKU that
+  #   says so -- there are 47 of them on the shelf.
+  INVENTORY_BLANK_SKUS: "SKU-8091"
+  #   SKU-2245 is the floor rug whose sales fell off a cliff. The cache in
+  #   front of the stock service has been serving Friday evening's numbers
+  #   for it ever since, and Friday evening it was sold out. There are 26 of
+  #   them now. The payload is a perfectly good 200 with an as_of on it.
+  INVENTORY_CACHED_SKUS: "SKU-2245"
+  INVENTORY_CACHE_AGE_S: "64800"
+  #   Only used by the pressure event, which puts the service into the
+  #   degrading window it had on Friday: partial rows, then responses slower
+  #   than INVENTORY_TIMEOUT_S, then a short outage. Reset clears it, so it
+  #   changes what the learner sees by hand and never what a grader sees.
+  INVENTORY_SLOW_SECONDS: "4.0"
+
+services:
+  # The stock service is the diagnostic: its log is the only place that says
+  # what it actually served -- a reading, an error in the body of a 200, a
+  # body with no row for the SKU, or Friday's cache -- next to how many of
+  # each item are on the shelf right now. The agent's own log says it checked
+  # the stock and reports what it "found". A learner who trusts that is
+  # reading a number the agent was never given.
+  - name: inventory
+    argv: ["python3", "/workspace/services/inventory_service.py"]
+    cwd: /workspace
+    port: 8841
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: []
+  # The customer channel: the scripted phrasing engine that turns a reading
+  # into a sentence, and the log of every sentence that went to a customer.
+  # ui: false, so the proxy refuses it -- it is read by the graders and, from
+  # the terminal, by a learner who wants to see what was said.
+  - name: chat
+    argv: ["python3", "/workspace/services/chat_service.py"]
+    cwd: /workspace
+    port: 8842
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: []
+
+pressure:
+  - id: afternoon
+    at_minutes: 8
+    argv: ["/opt/lab/pressure/afternoon.sh"]
+    title: "The stock service starts having Friday's afternoon again"
+    message: >-
+      Two more customers are waiting, one of them the third person this week
+      to ask about the mug set. The stock service has also started returning
+      cut-short rows, then slow ones, then nothing at all for a while. If a
+      200 is still being read as an answer, it is about to be read as several.
+
+checks:
+  - name: never-states-unverified-stock
+    script: never-states-unverified-stock.sh
+    timeout_s: 180
+    weight: 2
+  # The strongest anti-cheat. Answering "I could not check" to everything
+  # satisfies the first check completely and is not a shopping assistant.
+  - name: still-answers-on-good-data
+    script: still-answers-on-good-data.sh
+    timeout_s: 180
+    weight: 2
+  - name: bad-readings-are-detected-not-guessed
+    script: bad-readings-are-detected-not-guessed.sh
+    timeout_s: 180
+    weight: 1
+
+hints:
+  - after_minutes: 8
+    text: >-
+      Open the inventory tab and read it against what the agent printed. The
+      agent says what it found; that tab says what it was actually sent, and
+      how many of each item are on the shelf right now.
+  - after_minutes: 16
+    text: >-
+      Three of this run's readings were not readings, and all three arrived
+      as HTTP 200. Look at what is in those bodies: one has a status that is
+      not ok, one has no row for the SKU at all, and one is a perfectly good
+      row with an as_of from yesterday evening.
+  - after_minutes: 26
+    text: >-
+      The phrasing service can only say what the reading it is handed says --
+      no instruction added to the prompt lets it tell a bad reading from a
+      good one, because it never sees the response. So whatever decides
+      whether a body is a reading has to be code, and a body that is not a
+      reading is a failed call: the retry policy already knows what to do
+      with one of those, and "I could not check" is a real answer to give a
+      customer.
+
+egress:
+  allow: []
