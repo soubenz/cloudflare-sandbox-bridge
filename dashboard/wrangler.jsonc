@@ -3,11 +3,24 @@
   "name": "opalix-dashboard",
   "compatibility_date": "2026-09-22",
 
-  // Assets-only Worker: there is no server side here. The dashboard talks to
-  // the sandbox API (its own Worker) directly from the browser, which is why
-  // that API carries a CORS allowlist naming this origin.
+  // The console has a server side now. It holds SANDBOX_API_KEY and is the
+  // only thing that may use it: the browser gets a session token and nothing
+  // more. Everything except /auth/* and /api/* is still static, but the
+  // Worker sees every request first so the password gate cannot be walked
+  // around by asking for an asset directly.
+  "main": "./dist-worker/worker.js",
   "assets": {
     "directory": "./public",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+
+  "vars": {
+    "API_BASE": "https://opalix-sandbox.soubenz94.workers.dev"
   }
+  // Secrets (wrangler secret put --config dashboard/wrangler.jsonc):
+  //   SANDBOX_API_KEY        the API's service key; never reaches the browser
+  //   CONSOLE_PASSWORD       what the login page checks
+  //   CONSOLE_COOKIE_SECRET  signs the session cookie
 }

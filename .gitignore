@@ -22,3 +22,6 @@ dashboard/public/dist/
 # .pyc files would shadow the .py sources a break-fix lab asks them to edit.
 __pycache__/
 *.pyc
+
+# Built by dashboard/build.mjs; the Worker bundle, not a source artifact.
+dashboard/dist-worker/

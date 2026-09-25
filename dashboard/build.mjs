@@ -29,6 +29,19 @@ await build({
   logLevel: 'info',
 });
 
+// The Worker's own bundle. Deliberately outside public/: anything in the
+// assets directory is served as a static file, and the server side is not a
+// static file.
+await build({
+  entryPoints: [join(here, 'src/worker.js')],
+  outfile: join(here, 'dist-worker/worker.js'),
+  bundle: true,
+  format: 'esm',
+  minify: false,
+  target: ['es2022'],
+  logLevel: 'info',
+});
+
 // xterm ships its own stylesheet; serve it rather than pulling it from a CDN.
 await mkdir(join(here, 'public/dist'), { recursive: true });
 await cp(

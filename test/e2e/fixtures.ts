@@ -67,14 +67,14 @@ export function consoleErrorsFor(page: Page): string[] {
  * held here and re-seeded.
  */
 export async function openConsole(page: Page): Promise<void> {
+  await signIn(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.evaluate(
-    ([api, session, client]) => {
+    ([api, session]) => {
       localStorage.setItem('opalix.apiBase', api as string);
-      localStorage.setItem('opalix.clientId', client as string);
       if (session) localStorage.setItem('opalix.session', session as string);
     },
-    [API, sharedSession, CLIENT_ID] as const
+    [API, sharedSession] as const
   );
   await page.reload({ waitUntil: 'domcontentloaded' });
   // The console decides between resuming a session and showing the picker
@@ -85,19 +85,25 @@ export async function openConsole(page: Page): Promise<void> {
 }
 
 /**
- * One client identity for the whole run.
- *
- * Playwright gives each test a fresh context, so the console's own id would
- * be regenerated per spec and the API would start a container for each. The
- * API identifies a dev caller by this id — it used to use the client's IP,
- * which rotates behind this environment's proxy and leaked four containers
- * in an afternoon — so pinning it here is what makes a run cost one
- * container rather than one per file.
- *
- * Per run, not a constant: two runs at once should not fight over one
- * session, and a run that leaks is then traceable to itself.
+ * The console's password, which every spec needs before it can see
+ * anything. The console gates on this because it starts real containers;
+ * there is no unauthenticated path left, for tests or anyone else.
  */
-const CLIENT_ID = process.env.OPALIX_E2E_CLIENT_ID ?? `e2e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+const CONSOLE_PASSWORD = process.env.OPALIX_CONSOLE_PASSWORD;
+
+/**
+ * Signs in once for this browser context, leaving the cookie behind.
+ *
+ * Done through the same endpoint the login page posts to, rather than by
+ * forging a cookie: a forged cookie would keep passing if the gate broke.
+ */
+export async function signIn(page: Page): Promise<void> {
+  if (!CONSOLE_PASSWORD) {
+    throw new Error('OPALIX_CONSOLE_PASSWORD is not set; the console cannot be opened without it');
+  }
+  const res = await page.request.post('/auth/login', { data: { password: CONSOLE_PASSWORD } });
+  if (!res.ok()) throw new Error(`console sign-in failed: ${res.status()} ${await res.text()}`);
+}
 
 /** The session every spec shares, as the console stores it. */
 let sharedSession: string | null = null;

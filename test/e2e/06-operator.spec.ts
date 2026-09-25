@@ -1,9 +1,25 @@
 import { test, expect, openConsole } from './fixtures';
 
+/**
+ * The pool tiles read GET /pools, which is service-key-only now that the
+ * dev switch is gone. The operator panel has always had a field for pasting
+ * that key; these tests use it rather than relying on the route being open,
+ * which is what they did before.
+ */
+const SERVICE_KEY = process.env.OPALIX_KEY;
+
+async function openOperator(page: Parameters<typeof openConsole>[0]) {
+  await openConsole(page);
+  await page.locator('#btnOps').click();
+  await page.locator('#opsKey').fill(SERVICE_KEY!);
+  await page.locator('#btnSaveKey').click();
+}
+
 test.describe('the operator view', () => {
+  test.skip(!SERVICE_KEY, 'needs OPALIX_KEY: GET /pools requires the service key');
+
   test('shows a tile per family with warm and claimed counts', async ({ page }) => {
-    await openConsole(page);
-    await page.locator('#btnOps').click();
+    await openOperator(page);
 
     const tiles = page.locator('.tile');
     await expect(tiles.first()).toBeVisible({ timeout: 30_000 });
@@ -15,8 +31,7 @@ test.describe('the operator view', () => {
   });
 
   test('names both families', async ({ page }) => {
-    await openConsole(page);
-    await page.locator('#btnOps').click();
+    await openOperator(page);
     await expect(page.locator('.tile').first()).toBeVisible({ timeout: 30_000 });
 
     const labels = await page.locator('.tile-label').allTextContents();

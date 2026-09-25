@@ -11,11 +11,12 @@ Two credential kinds:
   `POST /labs/publish`, `POST /pools/:family/prime`, `POST /pools/:family/drain`,
   `/users/*`, and `POST /sessions/{id}/events`. The read-only catalogue and
   pool routes (`GET /labs`, `GET /labs/:slug`, `GET /pools`,
-  `GET /pools/:family`) also require it, *unless* the `DEV_OPEN_SESSIONS`
-  var is `"1"`, in which case they are open to anyone — that switch is what
-  lets the dashboard Worker, which holds no service key, read them.
-- **Session token** — minted by `POST /sessions`, `POST /sessions/{id}/resume`
-  and the rejoin path of `POST /dev/sessions`. Accepted as
+  `GET /pools/:family`) require it too. **No route is open.** There was once
+  a var that opened several of them so the console could work without a
+  credential; the console now has a server side that holds the key, so the
+  var and the route it guarded are gone.
+- **Session token** — minted by `POST /sessions`, `POST /sessions/start`
+  and `POST /sessions/{id}/resume`. Accepted as
   `Authorization: Bearer <token>`, `?token=<token>` (browser links), or the
   `opx_s_{id}` cookie the service proxy sets on first use. Required on every
   other `/sessions/{id}/*` route. A session token only authenticates its own
@@ -48,7 +49,7 @@ minutes are usable now.
 | POST | `/pools/:family/prime` | service | `{ target? }` → `{ ok: true }`; only ever grows the pool |
 | POST | `/pools/:family/drain` | service | destroys every warm container; claimed ones are untouched → `{ ok: true }` |
 | POST | `/sessions` | service | `{ lab, user_id }` → `202 { id, state, token, urls }` |
-| POST | `/dev/sessions` | none² | `{ lab }` → `202` same shape, or `200 { ..., rejoined: true }` |
+| POST | `/sessions/start` | service | `{ lab, user_id }` → `202` same shape, or `200 { ..., rejoined: true }` if that user already has a live session² |
 | GET | `/sessions` | service | every live session, newest first, max 200 |
 | GET | `/sessions/:id` | session | `{ meta, services, snapshots, checks? }` |
 | GET/PUT/DELETE | `/sessions/:id/files/:path` | session | under `/workspace`; PUT capped at 2 MiB |
@@ -64,16 +65,14 @@ minutes are usable now.
 | DELETE | `/sessions/:id?snapshot=0` | session | ends the session; snapshots by default |
 | GET | `/users/:uid/sessions?active=1` | service | D1-backed history/active check; capped at 50 rows without `active=1` |
 
-¹ Service key required unless `DEV_OPEN_SESSIONS` is `"1"`, which opens the
-route to unauthenticated callers.
+¹ Service key required. Nothing opens these.
 
-² `POST /dev/sessions` returns `404 not_found` unless `DEV_OPEN_SESSIONS` is
-`"1"`. It takes no `user_id`: the user is derived from a hash of the
-caller's `CF-Connecting-IP`, so the D1 one-active-session-per-user index
-becomes the rate limit — one address gets one container. Rather than
-returning `409`, a caller that already has a live session is handed that
-session back with a fresh token and `rejoined: true` at `200`. Anyone with
-several addresses is not limited by this.
+² `POST /sessions` and `POST /sessions/start` differ only in what they do
+about a conflict. `POST /sessions` is a strict create: a second live session
+for the same `user_id` is a `409`, which is what the CLI and the integration
+suite want. `POST /sessions/start` rejoins it instead and returns a fresh
+token, which is what an interactive client wants — a reload or a second tab
+should land back where it was rather than on a wall it cannot clear.
 
 The `urls` object on a session start is
 `{ status, terminal, events, services }`, where `services` maps a service
@@ -93,14 +92,14 @@ the RPC boundary.
 
 | Status | Code | Raised by |
 |---|---|---|
-| 400 | `missing_fields` | `POST /sessions` without `lab` or `user_id`; `POST /dev/sessions` without `lab` |
+| 400 | `missing_fields` | `POST /sessions` or `POST /sessions/start` without `lab` or `user_id` |
 | 400 | `bad_publish_payload` | `POST /labs/publish` missing any of the three files |
 | 400 | `unknown_event_type` | `POST /sessions/{id}/events` with a type other than `cost`/`llm.call`/`alert` |
 | 400 | `no_port` | service proxy for a service with no `port` |
 | 400 | `not_a_websocket` | `/terminal` without an `Upgrade: websocket` header |
 | 401 | `unauthorized` | missing/invalid service key, malformed, expired or mismatched session token |
 | 403 | `not_exposed` | service proxy for a service with `ui: false` |
-| 404 | `not_found` | `POST /dev/sessions` while the dev switch is off; an unknown DO sub-route; SDK not-found errors |
+| 404 | `not_found` | an unknown DO sub-route; SDK not-found errors |
 | 404 | `lab_not_found` | no published lab with that slug |
 | 404 | `unknown_family` | a `/pools/:family` path that is not `agent` or `gateway` |
 | 404 | `unknown_service` | restart or proxy for a service not in the lab |

@@ -1,11 +1,43 @@
 import { test, expect, openConsole, API, LAB } from './fixtures';
 
 test.describe('lab launcher', () => {
-  test('lists published labs without a service key', async ({ page }) => {
+  test('lists published labs once signed in', async ({ page }) => {
     await openConsole(page);
     const labs = page.locator('.lab');
     await expect(labs.first()).toBeVisible({ timeout: 30_000 });
     expect(await labs.count()).toBeGreaterThan(0);
+  });
+
+  test('shows nothing at all without signing in', async ({ browser }) => {
+    // This test used to assert the opposite: the catalogue was readable
+    // with no credential, because the console had no server side and the
+    // API left the route open so it could work. That is the hole this
+    // replaced, so the assertion inverts with it.
+    const fresh = await browser.newContext();
+    try {
+      const page = await fresh.newPage();
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+      await expect(page.locator('input[type="password"]')).toBeVisible();
+      await expect(page.locator('.lab')).toHaveCount(0);
+
+      // And the data behind it is refused, not merely unrendered.
+      const res = await fresh.request.get('/api/labs');
+      expect(res.status()).toBe(401);
+    } finally {
+      await fresh.close();
+    }
+  });
+
+  test('refuses a wrong password', async ({ browser }) => {
+    const fresh = await browser.newContext();
+    try {
+      const res = await fresh.request.post('/auth/login', { data: { password: 'not-the-password' } });
+      expect(res.status()).toBe(401);
+      const after = await fresh.request.get('/api/labs');
+      expect(after.status()).toBe(401);
+    } finally {
+      await fresh.close();
+    }
   });
 
   test('shows each lab with its slug, version and family', async ({ page }) => {

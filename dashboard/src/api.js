@@ -18,37 +18,6 @@ export function setApiBase(url) {
   localStorage.setItem(API_KEY_STORAGE, url.replace(/\/$/, ''));
 }
 
-const CLIENT_ID_STORAGE = 'opalix.clientId';
-
-/**
- * A stable id for this browser, so the API can hand back the session we
- * already have instead of starting another container.
- *
- * The dev start route used to identify a caller by IP address. Any proxy or
- * mobile network rotates that, and when it did the rejoin missed and a
- * second container started — four leaked in one afternoon. This survives
- * the address changing.
- *
- * It is self-issued, so it is identity and not authorisation: the API still
- * caps how many live sessions one address may hold. Falls back to a
- * per-page value when storage is unavailable (private mode, blocked
- * cookies), which is no worse than the behaviour it replaces.
- */
-let memoryClientId = null;
-export function clientId() {
-  try {
-    let id = localStorage.getItem(CLIENT_ID_STORAGE);
-    if (!id) {
-      id = crypto.randomUUID().replace(/-/g, '');
-      localStorage.setItem(CLIENT_ID_STORAGE, id);
-    }
-    return id;
-  } catch {
-    memoryClientId ??= crypto.randomUUID().replace(/-/g, '');
-    return memoryClientId;
-  }
-}
-
 async function request(path, { method = 'GET', body, token, serviceKey, raw } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -77,15 +46,40 @@ async function request(path, { method = 'GET', body, token, serviceKey, raw } = 
   return type.includes('json') ? res.json() : res.text();
 }
 
+/**
+ * A call to this console's own Worker rather than to the API.
+ *
+ * Same origin, so no CORS and no credential in the browser: the cookie goes
+ * automatically and the Worker attaches the service key on the way out. A
+ * 401 here means the sign-in expired, which is worth saying plainly rather
+ * than surfacing as a parse error.
+ */
+async function sameOrigin(path, init = {}) {
+  const res = await fetch(path, init);
+  if (res.status === 401) throw new Error('401: signed out — reload to sign in again');
+  if (!res.ok) {
+    let detail = await res.text();
+    try {
+      detail = JSON.parse(detail).error?.message ?? JSON.parse(detail).error ?? detail;
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  return res.status === 204 ? undefined : res.json();
+}
+
 export const api = {
-  labs: () => request('/labs'),
+  labs: () => sameOrigin('/api/labs'),
 
   /**
-   * The dev-open start route: no key. Identified by this browser's client
-   * id so a reload rejoins rather than starting a second container; the
-   * API caps how many live sessions one address may hold.
+   * Starting a session goes through this console's own Worker, which holds
+   * the service key. The browser never sees that key, and the Worker knows
+   * who is signed in, so it supplies the user id rather than this page
+   * guessing one.
    */
-  startSession: (lab) => request('/dev/sessions', { method: 'POST', body: { lab, client_id: clientId() } }),
+  startSession: (lab) =>
+    sameOrigin('/api/start', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ lab }) }),
 
   status: (id, token) => request(`/sessions/${id}`, { token }),
   end: (id, token, snapshot = false) =>

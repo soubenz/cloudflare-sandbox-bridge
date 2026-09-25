@@ -26,12 +26,12 @@ export function createRouter(): Hono<{ Bindings: Env }> {
   // --- Labs catalogue (service auth; the app backend proxies this to learners) ---
 
   app.get('/labs', async (c) => {
-    requireServiceAuthUnlessOpen(c);
+    requireServiceAuth(c.req.raw, c.env);
     return c.json(await loadCatalogue(c.env));
   });
 
   app.get('/labs/:slug', async (c) => {
-    requireServiceAuthUnlessOpen(c);
+    requireServiceAuth(c.req.raw, c.env);
     const { version, manifest } = await loadCurrentManifest(c.env, c.req.param('slug'));
     return c.json({ version, manifest });
   });
@@ -57,14 +57,14 @@ export function createRouter(): Hono<{ Bindings: Env }> {
   // --- Pool ops (service auth) ---
 
   app.get('/pools', async (c) => {
-    requireServiceAuthUnlessOpen(c);
+    requireServiceAuth(c.req.raw, c.env);
     const families = ['agent', 'gateway'] as const;
     const stats = await Promise.all(families.map((f) => poolStub(c.env, f).stats()));
     return c.json(Object.fromEntries(families.map((f, i) => [f, stats[i]])));
   });
 
   app.get('/pools/:family', async (c) => {
-    requireServiceAuthUnlessOpen(c);
+    requireServiceAuth(c.req.raw, c.env);
     const family = c.req.param('family');
     if (!isFamily(family)) throw ApiError.notFound('unknown_family', `No family "${family}"`);
     return c.json(await poolStub(c.env, family).stats());
@@ -100,48 +100,29 @@ export function createRouter(): Hono<{ Bindings: Env }> {
   });
 
   /**
-   * Unauthenticated session start for the dashboard, which is a separate
-   * Worker with no service key. Gated on DEV_OPEN_SESSIONS so it can be
-   * closed from config alone.
+   * Rejoin-or-create, for interactive clients.
    *
-   * The user id is derived from the caller's IP, which makes the existing
-   * D1 one-active-session-per-user index the rate limit: a given address
-   * gets one live container and a 409 until it ends. That is the whole of
-   * the protection here — it stops a loop from spawning containers, and
-   * nothing stops someone with many addresses.
+   * `POST /sessions` is a strict create: a second live session for the same
+   * user is a 409, which is what the CLI and the integration suite want.
+   * A console does not: a reload, a second tab or a restored browser should
+   * land back in the session it already has rather than on a wall it cannot
+   * clear. Same service key, same `user_id`; the only difference is whether
+   * a conflict is an error or a rejoin.
+   *
+   * This replaces the old `POST /dev/sessions`, which was unauthenticated
+   * and guessed an identity from the caller's address or a self-issued id.
+   * The caller is now the dashboard Worker, which knows who its user is.
    */
-  app.post('/dev/sessions', async (c) => {
-    if (c.env.DEV_OPEN_SESSIONS !== '1') throw ApiError.notFound('not_found', 'Not found');
-    type DevStart = { lab?: string; client_id?: string };
-    const body = await c.req.json<DevStart>().catch((): DevStart => ({}));
-    if (!body.lab) throw ApiError.badRequest('missing_fields', 'lab is required');
+  app.post('/sessions/start', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    type StartBody = { lab?: string; user_id?: string };
+    const body = await c.req.json<StartBody>().catch((): StartBody => ({}));
+    if (!body.lab || !body.user_id) throw ApiError.badRequest('missing_fields', 'lab and user_id are required');
 
-    const ipHash = await shortHash(c.req.header('CF-Connecting-IP') ?? 'unknown');
-
-    // Identity comes from the client, not the address. Deriving it from the
-    // IP meant a rotating address — any proxy, any mobile network, this
-    // project's own CI — could not rejoin its session and started another
-    // container instead; four leaked in one afternoon that way. A client id
-    // survives the address changing, which is the whole point.
-    const clientId = typeof body.client_id === 'string' ? body.client_id.slice(0, 64) : '';
-    const userId = /^[A-Za-z0-9_-]{8,64}$/.test(clientId)
-      ? `dev-c-${await shortHash(clientId)}`
-      : `dev-${ipHash}`;
-
-    // Rejoining beats a 409: a reload or a second tab should land back in
-    // the session it already has rather than on a wall it cannot clear.
-    const existing = await activeSessionFor(c.env, userId);
+    const existing = await activeSessionFor(c.env, body.user_id);
     if (existing) return c.json(await rejoinSession(c.env, existing), 200);
 
-    // A client id is self-issued, so it cannot also be the rate limit — that
-    // is what the address is still good for. Without this cap, anyone could
-    // mint ids in a loop and spawn containers without limit.
-    const live = await activeSessionsForIp(c.env, ipHash);
-    if (live >= DEV_SESSIONS_PER_IP) {
-      throw ApiError.conflict('too_many_sessions', `This address already has ${live} live sessions; end one first`);
-    }
-
-    return c.json(await createSession(c.env, body.lab, userId, ipHash), 202);
+    return c.json(await createSession(c.env, body.lab, body.user_id), 202);
   });
 
   app.get('/sessions/:id', async (c) => {
@@ -315,24 +296,6 @@ async function createSession(env: Env, lab: string, userId: string, ipHash?: str
   };
 }
 
-/**
- * How many containers one address may hold at once through the dev route.
- * Two rather than one: a second tab, or a colleague behind the same NAT,
- * is ordinary and should not be a wall.
- */
-const DEV_SESSIONS_PER_IP = 2;
-
-/** How many live sessions this address is currently holding. */
-async function activeSessionsForIp(env: Env, ipHash: string): Promise<number> {
-  const row = await env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM sessions
-     WHERE ip_hash = ? AND state IN ('starting','running','recovering','resuming')`
-  )
-    .bind(ipHash)
-    .first<{ n: number }>();
-  return row?.n ?? 0;
-}
-
 /** The one live session this user already has, if any. */
 async function activeSessionFor(env: Env, userId: string): Promise<{ id: string; lab_slug: string; lab_version: string } | null> {
   const row = await env.DB.prepare(
@@ -372,14 +335,3 @@ function sessionUrls(env: Env, sessionId: string, uiServices: string[]) {
   };
 }
 
-/** Read-only routes the dashboard needs. Still service-key-only unless the dev switch is on. */
-function requireServiceAuthUnlessOpen(c: { req: { raw: Request }; env: Env }): void {
-  if (c.env.DEV_OPEN_SESSIONS === '1') return;
-  requireServiceAuth(c.req.raw, c.env);
-}
-
-/** A short, stable, non-reversible label for an IP — used only as a D1 key, never shown. */
-async function shortHash(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return [...new Uint8Array(digest).slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}

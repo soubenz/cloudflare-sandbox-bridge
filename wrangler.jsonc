@@ -67,12 +67,7 @@
     // The dashboard is its own Worker, so every browser call to this API is
     // cross-origin. Listed explicitly rather than "*": the list is visible
     // in config and changes without touching code.
-    "DASHBOARD_ORIGIN": "https://opalix-dashboard.soubenz94.workers.dev,http://localhost:8788",
-    // Opens POST /dev/sessions and the read-only catalogue/pool routes
-    // without a service key, so the dashboard can run unauthenticated.
-    // Session start is fenced to one live container per IP by the existing
-    // D1 unique index; set to "0" to close it with no code change.
-    "DEV_OPEN_SESSIONS": "1"
+    "DASHBOARD_ORIGIN": "https://opalix-dashboard.soubenz94.workers.dev,http://localhost:8788"
   },
   // Secrets (wrangler secret put): SANDBOX_API_KEY, SESSION_TOKEN_SECRET,
   // R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, LLM_WORKER_KEY.
@@ -124,12 +119,7 @@
     // The dashboard is its own Worker, so every browser call to this API is
     // cross-origin. Listed explicitly rather than "*": the list is visible
     // in config and changes without touching code.
-    "DASHBOARD_ORIGIN": "https://opalix-dashboard.soubenz94.workers.dev,http://localhost:8788",
-    // Opens POST /dev/sessions and the read-only catalogue/pool routes
-    // without a service key, so the dashboard can run unauthenticated.
-    // Session start is fenced to one live container per IP by the existing
-    // D1 unique index; set to "0" to close it with no code change.
-    "DEV_OPEN_SESSIONS": "1"
+    "DASHBOARD_ORIGIN": "https://opalix-dashboard.soubenz94.workers.dev,http://localhost:8788"
       }
     }
   }
