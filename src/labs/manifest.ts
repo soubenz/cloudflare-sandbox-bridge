@@ -11,6 +11,13 @@ const versionPattern = /^[0-9]+\.[0-9]+\.[0-9]+$/;
  *   - Range: 1024-65535 (privileged ports require root, which containers don't have)
  *   - Reserved: 3000 (sandbox control plane)
  *
+ * The SDK's stated reason for the lower bound does not match what the
+ * container actually is: lab sessions run as root — hydrate chowns
+ * /workspace and the terminal does `su -l learner`, both of which need it.
+ * The likeliest reconciliation is a missing CAP_NET_BIND_SERVICE rather
+ * than a non-root uid, but we have not proven that, so the error message
+ * states the rule and not a cause we would be guessing at.
+ *
  * and every SDK entry point that takes a port (connect(), containerFetch(),
  * constructPreviewURL(), the tunnel service) throws SandboxSecurityError
  * "Invalid port number: N. Must be 1024-65535, excluding 3000 (sandbox
@@ -39,7 +46,7 @@ const servicePortSchema = z
     if (port < MIN_SERVICE_PORT || port > MAX_SERVICE_PORT) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `port must be ${MIN_SERVICE_PORT}-${MAX_SERVICE_PORT}: ports below ${MIN_SERVICE_PORT} are privileged and unavailable to the container, which does not run as root`,
+        message: `port must be ${MIN_SERVICE_PORT}-${MAX_SERVICE_PORT}: the sandbox runtime refuses to route a privileged port`,
       });
     }
   });
