@@ -1,0 +1,168 @@
+# P3-01 in the lab catalogue: path 3, Building an AI Platform. Multi-tenant
+# budgets on a shared model gateway.
+#
+# Break-fix, titled by symptom rather than by the concept being taught. One
+# planted bug, in workspace/relay/budget.py: the ledger that is supposed to
+# hold one balance per tenant holds a single module-level scalar instead --
+# `_spent = 0` where it should be `_spent = {}`. Every other file is correct
+# and reads as a normal little relay: it estimates a call's cost before
+# forwarding it, refuses on the spot when a call would not fit, and forwards
+# what fits to the lab's own ledger in front of the real model. The bug is
+# entirely in what the balance is keyed by.
+#
+# Why the relay is not a services[] entry: a manifest service is launched as
+# root from a fixed argv, and a learner editing its file does not change the
+# running process -- exactly wrong for the code this lab asks you to fix, and
+# exactly right for the ledger, which must stay a fixed, trustworthy witness.
+# So `run_traffic.py` starts the relay itself (see relay/fleet.py) and stops
+# it again; services[] holds only the ledger.
+#
+# Real, with no fault injection. The "fault" here is not scripted: it is
+# what one tenant's own oversized, cheap-looking traffic actually costs in
+# tokens, which is why the traffic file's shapes matter and are tuned
+# on purpose (see the workloads noted below).
+#
+# There is deliberately no hints.md: everything in workspace/ is readable
+# from minute zero, so a hints file is not gated at all. The staged hints
+# below are, and they are the only hints this lab ships.
+slug: locked-out-in-credit
+version: 1.0.0
+title: "A tenant got locked out while still in credit"
+type: break-fix
+family: gateway
+difficulty: advanced
+summary: >-
+  One relay serves four tenants' calls to the same model. Three of them, all
+  well under their own budget, started getting refused the same morning a
+  fourth tenant's failing import job was hammering the relay with retries.
+  Raising the shared budget is not the fix.
+objectives:
+  - "Give each tenant its own balance, so no tenant's spending can ever be charged to another's"
+  - "Enforce a budget in the unit it is actually spent in -- tokens -- not in the number of calls that carried them"
+  - "Prove a tenant was cut off, or was not, from the ledger that recorded what actually reached the model"
+# The work is 35-50 minutes: one file, one scalar that should have been a
+# dict. 70 leaves room to read the ledger rather than guess at the traffic.
+timeout_minutes: 70
+idle_minutes: 10
+
+env:
+  # Wiring. The relay is started by `run_traffic.py`, not by the platform --
+  # see relay/fleet.py for why -- so its port is an env var like any other
+  # tunable rather than a services[] port.
+  UPSTREAM_URL: "http://127.0.0.1:8933"
+  UPSTREAM_PORT: "8933"
+  RELAY_PORT: "8934"
+  TRAFFIC_FILE: "/workspace/traffic.json"
+  # The relay's tunables. Every one has a matching default in
+  # relay/config.py, so the relay also runs from a bare shell.
+  MODEL_NAME: "tenant-relay"
+  RELAY_TIMEOUT_S: "25"
+  UPSTREAM_TIMEOUT_S: "20"
+  MAX_ATTEMPTS: "3"
+  RETRY_BASE_DELAY_S: "0.25"
+  MAX_COMPLETION_TOKENS: "120"
+  FLEET_START_TIMEOUT_S: "15"
+  # The number this lab is about: what one tenant may spend before its calls
+  # are refused. The same flat number for every tenant -- the bug has
+  # nothing to do with the number being wrong, only with what it is scoped
+  # to. At this budget, over one hour of the shipped traffic:
+  #   acct_kestrel   workload ~1,158 tokens -- comfortably inside budget
+  #   acct_wrenfield workload ~1,239 tokens -- comfortably inside budget
+  #   acct_pipit     workload ~1,210 tokens -- comfortably inside budget
+  #   acct_brambling workload ~13,813 tokens -- about 9x the budget
+  # A correct relay serves the first three in full and refuses most of the
+  # fourth's calls without touching the other three at all.
+  TENANT_BUDGET_TOKENS: "1500"
+  # Real mode. auto = call the gateway, and fall back to a fixed local reply
+  # if it cannot be reached at all -- see the note in
+  # workspace/services/upstream_service.py. Nothing here is graded on a
+  # reply, so the fallback cannot move a verdict.
+  MODEL_MODE: "auto"
+  UPSTREAM_ATTEMPTS: "2"
+  # Requests go out with an explicit cf-aig-cache-key and this TTL, so a
+  # repeated run is served from the gateway's cache, byte for byte and free.
+  # The explicit-key path needs two sequential repeats before it hits (see
+  # the AI Gateway section of docs/spike.md), so an early MISS is normal and
+  # is never treated as an error.
+  MODEL_CACHE_TTL_S: "86400"
+  # The harness's own budget for one run of the relay, nested inside each
+  # check's timeout_s below. A correct relay admits about 22 of the 30
+  # shipped calls, each a short, real model call.
+  OPALIX_AGENT_RUN_TIMEOUT_S: "150"
+
+services:
+  # The ledger is the diagnostic and the only trustworthy witness: it is the
+  # one thing in the lab that sees every call that actually reached the
+  # model, tagged by the tenant id it found in the request itself -- not by
+  # anything the relay claims about itself. A learner who reads only what
+  # `run_traffic.py` prints sees a pile of 429s and no pattern in them.
+  - name: upstream
+    argv: ["python3", "/workspace/services/upstream_service.py"]
+    cwd: /workspace
+    port: 8933
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: []
+
+pressure:
+  - id: second-wave
+    at_minutes: 10
+    argv: ["/opt/lab/pressure/second_wave.sh"]
+    title: "The import job retried itself again, and three more quiet accounts just called in"
+    message: >-
+      Whatever is going on with the noisy account's nightly job, it just
+      queued another run of itself. Three of the other accounts have also
+      each sent one more ordinary call in the meantime -- if a quiet
+      account's own spending is what should decide whether it gets served,
+      none of those three should even notice.
+
+checks:
+  - name: no-tenant-spends-past-its-own-budget
+    script: no-tenant-spends-past-its-own-budget.sh
+    timeout_s: 200
+    weight: 2
+  # The strongest anti-cheat: catches both a shared/global counter and a
+  # relay that panics and refuses every tenant once one of them goes over.
+  # Either mistake shows up here as a tenant with money left on the table.
+  - name: tenants-in-credit-are-not-collateral-damage
+    script: tenants-in-credit-are-not-collateral-damage.sh
+    timeout_s: 200
+    weight: 2
+  # And the one that stops the first two being satisfied by refusing nobody:
+  # a budget that is tracked but never enforced protects nothing.
+  - name: a-tenant-that-spent-its-allowance-is-actually-cut-off
+    script: a-tenant-that-spent-its-allowance-is-actually-cut-off.sh
+    timeout_s: 200
+    weight: 1
+
+hints:
+  - after_minutes: 10
+    text: >-
+      Open the ledger tab and read the "By tenant" table. Compare each
+      tenant's own workload against the budget line, then compare that with
+      how many of its calls actually got through. The relay's own tally in
+      the terminal cannot tell you whose account paid for what -- only the
+      ledger saw every call that reached the model.
+  - after_minutes: 20
+    text: >-
+      One tenant is genuinely over budget and some of its calls should be
+      refused. The other three are not, and none of their calls should be.
+      If a quiet tenant is losing calls too, the thing deciding "refuse" is
+      not asking "has this tenant spent its allowance" -- it is asking a
+      question that does not mention the tenant at all.
+  - after_minutes: 32
+    text: >-
+      Open relay/budget.py. There is exactly one place a tenant's spending
+      is recorded, and it is a single number, not a number per tenant. A
+      balance that does not say whose it is is not a balance, it is a
+      shared jar -- and the fix is to key it, not to make the jar bigger.
+
+egress:
+  allow: []
+  # Empty on purpose. gateway.ai.cloudflare.com is already on the base
+  # allowlist every lab gets (src/families/egress.ts), which is the only
+  # host this lab needs, and an empty list skips the runtime
+  # set_allowed_hosts call entirely.
