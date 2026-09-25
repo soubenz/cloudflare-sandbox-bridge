@@ -46,7 +46,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
-PORT = int(os.environ.get("INVENTORY_PORT", "8841"))
+PORT = int(os.environ.get("INVENTORY_PORT", "8925"))
 
 # Deterministic fault injection, all of it keyed to the SKU:
 #
@@ -103,7 +103,7 @@ _state = {
 
 def _route(path):
     """Match on the tail of the path so the service works both at
-    http://127.0.0.1:8841/api/stock and behind the session proxy at
+    http://127.0.0.1:8925/api/stock and behind the session proxy at
     /sessions/<id>/services/inventory/api/stock."""
     p = urlsplit(path).path.rstrip("/")
     for name in ROUTES:

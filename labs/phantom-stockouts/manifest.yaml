@@ -5,16 +5,18 @@
 # that are sitting on the shelf -- rather than the lesson, which is that a
 # tool's output is untrusted input.
 #
-# Three planted bugs, all of them in the two files between the stock API and
-# the sentence a customer reads. workspace/agent/http.py treats any 200 as an
-# answer, because the stock API is documented as reporting trouble in the
-# body; workspace/agent/reading.py sums `on_hand` over `items`, so a body
-# with no rows in it reads as zero on the shelf rather than as "I could not
-# check"; and the same file computes the age of the data for its debug line
-# and never compares it with MAX_READING_AGE_S, so Friday's cache is read as
-# this minute's count. Each file is locally reasonable. The bug is the
-# conclusion they add up to, and the customer-facing sentence is written by a
-# stub that can only say what the reading it is handed says.
+# The planted bug is one inference, in workspace/agent/reading.py: that a 200
+# from the stock API is a reading. It shows up three ways in that one file --
+# `status` is never looked at, `on_hand` is summed over `items` so a body with
+# no rows reads as zero on the shelf rather than as "I could not check", and
+# the age of the figures is computed for the debug line and never compared
+# with MAX_READING_AGE_S. Its consequence is in workspace/agent/inventory.py,
+# where nothing turns a body that is not a reading into the failed call the
+# retry policy already knows how to handle. Every other file is locally
+# reasonable and says something true; the bug is the conclusion they add up
+# to. The customer-facing sentence is written by a stub that can only say
+# what the reading it is handed says, which is what makes prompt-tweaking --
+# the catalogue's named red herring -- genuinely unable to help.
 #
 # There is deliberately no hints.md: everything in workspace/ is readable
 # from minute zero, so a hints file is not gated at all. The staged hints
@@ -40,10 +42,10 @@ timeout_minutes: 60
 idle_minutes: 10
 
 env:
-  INVENTORY_URL: "http://127.0.0.1:8841"
-  CHAT_URL: "http://127.0.0.1:8842"
-  INVENTORY_PORT: "8841"
-  CHAT_PORT: "8842"
+  INVENTORY_URL: "http://127.0.0.1:8925"
+  CHAT_URL: "http://127.0.0.1:8926"
+  INVENTORY_PORT: "8925"
+  CHAT_PORT: "8926"
   QUESTION_QUEUE: "/workspace/questions.json"
   # The agent's tunables. Every one has a matching default in
   # workspace/agent/config.py, so the agent also runs from a bare shell.
@@ -96,7 +98,7 @@ services:
   - name: inventory
     argv: ["python3", "/workspace/services/inventory_service.py"]
     cwd: /workspace
-    port: 8841
+    port: 8925
     healthcheck:
       type: http
       path: /healthz
@@ -110,7 +112,7 @@ services:
   - name: chat
     argv: ["python3", "/workspace/services/chat_service.py"]
     cwd: /workspace
-    port: 8842
+    port: 8926
     healthcheck:
       type: http
       path: /healthz
@@ -153,10 +155,10 @@ hints:
       how many of each item are on the shelf right now.
   - after_minutes: 16
     text: >-
-      Three of this run's readings were not readings, and all three arrived
-      as HTTP 200. Look at what is in those bodies: one has a status that is
-      not ok, one has no row for the SKU at all, and one is a perfectly good
-      row with an as_of from yesterday evening.
+      Five of this run's eight readings were not readings, and every one of
+      them arrived as HTTP 200. Look at what is in those bodies: three have a
+      status that is not ok, one has no row for the SKU at all, and one is a
+      perfectly good row with an as_of from yesterday evening.
   - after_minutes: 26
     text: >-
       The phrasing service can only say what the reading it is handed says --
