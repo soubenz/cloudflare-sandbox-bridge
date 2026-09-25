@@ -1,0 +1,175 @@
+# P2-05 in the lab catalogue: Path 2, Securing AI Agents. Scripted, effort L.
+#
+# A *build* lab, not break-fix: there is no planted one-liner to find. The
+# starting workspace is a working, unsafe code-execution tool -- it runs the
+# program in a child interpreter, with a wall-clock timeout, in a directory it
+# reuses, with this process's whole environment and no ceilings at all -- and
+# the task is to build the boundary it never had. The gap is spread over four
+# files on purpose: tool/workdir.py (one directory for every run),
+# tool/limits.py (a preexec_fn that returns None), tool/runner.py
+# (env=os.environ.copy()) and tool/child.py (nothing between the interpreter
+# starting and the program running). Each is locally reasonable; what is
+# missing is the thing none of them does.
+#
+# Titled by symptom, as house style requires, and the symptom is a sentence
+# somebody said out loud in an incident channel.
+#
+# The graders' battery of programs lives in checks/_battery.py, in the private
+# bundle. That is load-bearing: the whole lesson is that a boundary built
+# against a list of known-bad paths is the wrong shape, and a learner who could
+# read the list would build exactly that and pass.
+#
+# There is deliberately no hints.md: everything in workspace/ is readable from
+# minute zero, so a hints file is not gated at all. The staged hints below are,
+# and they are the only hints this lab ships.
+slug: code-tool-secrets
+version: 1.0.0
+title: "The code tool read the secrets file"
+type: build
+family: agent
+difficulty: advanced
+summary: >-
+  The desk's code tool was asked to read the config and it did, credentials and
+  all. Build the isolation it never had: a working directory it cannot leave, an
+  environment it inherits nothing from, real ceilings. Blocking the paths this
+  story names is not the fix.
+objectives:
+  - "Confine an untrusted program to one working directory with a rule that refuses the paths nobody thought of, not the paths somebody listed"
+  - "Decide what a child process inherits -- its environment, its directory, its resource ceilings -- at the moment it is created, because afterwards is too late"
+  - "Prove a boundary holds from what an independent service and the filesystem recorded, rather than from what the tool says about itself"
+# Building a boundary is more work than finding a bug: 60-75 minutes for
+# someone who knows the mechanism exists, and the last hint names it at 34.
+# 90 leaves room for the second half -- making the tool still work -- which is
+# where most of the real thinking is.
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  AUDITOR_URL: "http://127.0.0.1:8754"
+  VAULT_URL: "http://127.0.0.1:8755"
+  AUDITOR_PORT: "8754"
+  VAULT_PORT: "8755"
+  # The two files a program must fail to read. Named here rather than derived,
+  # so the graders and the workspace cannot drift apart.
+  AGENT_CONFIG: "/workspace/config/credentials.ini"
+  AGENT_VAULT_SEED: "/workspace/config/vault.seed.json"
+  # Where a run's working directory goes. One directory per run belongs under
+  # here; what is under here at the start is one directory for all of them.
+  TOOL_RUNS_DIR: "/workspace/runs"
+  # The tool's tunables. Every one has a matching default in
+  # workspace/tool/config.py, so the tool also runs from a bare shell. Several
+  # of them are declared and not yet enforced anywhere, which is the lab.
+  AUDITOR_TIMEOUT_S: "5"
+  TOOL_WALL_TIMEOUT_S: "6"
+  TOOL_CPU_SECONDS: "4"
+  TOOL_MEMORY_MB: "512"
+  TOOL_MAX_FILE_MB: "8"
+  TOOL_MAX_OPEN_FILES: "64"
+  TOOL_MAX_OUTPUT_CHARS: "20000"
+  # The credential that is in this container's environment, which is one of the
+  # four places a program can reach one. Same value as CANARY_ENV below, on
+  # purpose: that is how the auditor recognises it if a program prints it.
+  AGENT_API_KEY: "sk-env-4c81d0f9a7e35b26"
+  # What the auditor watches for. One variable per place a credential lives, so
+  # a flagged run really did print one -- nothing here is a pattern or a guess.
+  # CANARY_CONFIG and CANARY_SEED must match what is written in the two files
+  # under workspace/config/; CANARY_VAULT is what the vault service serves, and
+  # it reads the same variable, so those two cannot drift. The graders check
+  # all three at start-up and fail the lab, not the learner, if they have.
+  CANARY_CONFIG: "sk-live-7d19c4a2f083be61"
+  CANARY_SEED: "vseed-2f6c81d4e9037ab5"
+  CANARY_VAULT: "vlt-9b03e5c71af24d68"
+  CANARY_ENV: "sk-env-4c81d0f9a7e35b26"
+  # /etc/passwd is the file the story never mentions, and every /etc/passwd
+  # has a line with this in it. It needs no setting up, which is the point.
+  CANARY_PASSWD: ":0:0:"
+
+services:
+  # The auditor is the diagnostic: it is told about every run by the tool, and
+  # it knows the exact value of every credential in this container, so it can
+  # say what a run came away with. The tool's own account of a run is the
+  # account of the thing that allowed it; this is a second opinion from
+  # something that did not do the work.
+  - name: auditor
+    argv: ["python3", "/workspace/services/auditor_service.py"]
+    cwd: /workspace
+    port: 8754
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: []
+  # The vault is what is on the other side of the boundary. ui: false, so the
+  # session proxy refuses it and the way to read its log is to curl it -- the
+  # same way anything else would have to go and ask. It records every request
+  # it receives, and nothing legitimate ever sends it one.
+  - name: vault
+    argv: ["python3", "/workspace/services/vault_service.py"]
+    cwd: /workspace
+    port: 8755
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: []
+
+pressure:
+  - id: security-review
+    at_minutes: 10
+    argv: ["/opt/lab/pressure/security-review.sh"]
+    title: "Security has opened a review, and it has questions"
+    message: >-
+      The review wants to know what else that tool could have been asked for.
+      There is a second program in programs/ now and a list of questions in
+      INCIDENT.md. If the boundary is not there yet, the program will answer
+      them for you.
+
+checks:
+  # Eleven programs, one of which deliberately never stops, so this one gets
+  # the most time. The harness has its own smaller budget inside this.
+  - name: hostile-programs-are-refused
+    script: hostile-programs-are-refused.sh
+    timeout_s: 240
+    weight: 2
+  # The strongest anti-cheat, and the same weight as the outcome. A tool that
+  # refuses everything passes the check above without building anything at all.
+  - name: real-programs-still-run
+    script: real-programs-still-run.sh
+    timeout_s: 180
+    weight: 2
+  - name: runs-do-not-leak-into-each-other
+    script: runs-do-not-leak-into-each-other.sh
+    timeout_s: 180
+    weight: 1
+
+hints:
+  - after_minutes: 10
+    text: >-
+      Run `python3 run_tool.py programs/read_the_config.py` and then open the
+      auditor tab. The tool says the program completed, which is true and is
+      not the interesting part; the auditor says what it came away with. Then
+      `curl "$VAULT_URL/api/log"` and notice that a boundary around files would
+      not have helped at all.
+  - after_minutes: 22
+    text: >-
+      A child process inherits five things worth counting: its working
+      directory, its environment, its open descriptors, its resource ceilings
+      and its network. Four of those are decided by whoever starts the process,
+      in the call that starts it -- `subprocess` takes an argument for each one,
+      including a callable it runs in the child after the fork and before the
+      exec, which is the only moment `resource.setrlimit` can be applied.
+  - after_minutes: 34
+    text: >-
+      The fifth cannot be set from outside, because opening a file is not
+      something the process was given, it is something the process can ask for.
+      With no container to put it in, the decision has to be made inside the
+      process, after the interpreter starts and before the program does, by
+      something the program cannot then remove: `python3 -m pydoc
+      sys.addaudithook`. And when you write the rule, write the one that names
+      the directory that is allowed rather than the files that are not -- the
+      graders will try a path this brief never mentions.
+
+egress:
+  allow: []

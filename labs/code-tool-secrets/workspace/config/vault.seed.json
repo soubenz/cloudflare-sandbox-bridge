@@ -1,0 +1,9 @@
+{
+  "_comment": "How the credential got into the vault. Kept for the rotation runbook.",
+  "rotated_at": "2026-02-11T09:14:00Z",
+  "rotated_by": "d.okereke",
+  "entries": [
+    {"name": "desk-service-token", "value": "vseed-2f6c81d4e9037ab5", "ttl_days": 90},
+    {"name": "ledger-readonly", "value": "vseed-0a4b7e91cd63f28d", "ttl_days": 30}
+  ]
+}
