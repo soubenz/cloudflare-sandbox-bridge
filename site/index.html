@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opalix — production AI engineering, hands-on</title>
+<meta name="description" content="A hands-on learning platform for production AI engineering. Real hosted environments, real bugs, outcome-based grading. No slides, no multiple choice.">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Opalix <span class="brand-domain">opalix.ai</span>
+    </a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" id="navToggle" aria-label="Toggle menu">
+      <span class="nav-toggle-bar"></span>
+    </button>
+    <nav class="site-nav" id="site-nav">
+      <a href="#how-it-works">How it works</a>
+      <a href="#paths">Paths</a>
+      <a href="#free-labs">Free labs</a>
+      <a href="#access">Access</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow"><span class="dot" aria-hidden="true"></span> Early access — two labs open now</span>
+      <h1>Learn production AI engineering by fixing what's actually broken.</h1>
+      <p class="lede">
+        Opalix drops you into a real hosted environment — a Python agent, real
+        services, sometimes a real LLM behind Cloudflare AI Gateway — and gives
+        you a system that's either missing a piece or actively failing.
+        <strong>You build it, or you fix it.</strong> An outcome-based grader
+        checks what the system actually did, not what your code looks like.
+      </p>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" href="#free-labs">See the two free labs</a>
+        <a class="btn btn-ghost" href="#access">How access works</a>
+      </div>
+      <p class="hero-note">No slides. No multiple choice. Everything beyond the two free labs needs an account — there's no public signup yet.</p>
+    </div>
+  </section>
+
+  <section id="how-it-works">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">How it works</p>
+        <h2>Three steps, every lab</h2>
+        <p>The format doesn't change. What's broken does.</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">01</div>
+          <h3>Get a real environment</h3>
+          <p>A hosted container spins up for you: a Python agent, the services it talks to, sometimes a real model behind Cloudflare AI Gateway. Nothing simulated, nothing to install.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <h3>Break it, or fix it</h3>
+          <p>Every lab is a build or a break-fix. You either build the missing component or find and fix what's actually failing — reading real code and real logs, not answering a quiz about them.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <h3>Outcome-based grading</h3>
+          <p>A grader replays the scenario and checks what the services themselves recorded — deliveries, spend, retries, traces. It never reads your source or takes a model's word for it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="paths">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">The catalogue</p>
+        <h2>30 labs across four paths</h2>
+        <p>Each path is a category of failure, not a chapter of theory.</p>
+      </div>
+      <div class="paths">
+        <div class="path-card">
+          <div class="path-index">Path 1</div>
+          <h3>Production Agents Essentials</h3>
+          <p>The everyday failures: retried side effects, budget blowouts, silent stale reads, provider outages, context-window mismanagement.</p>
+        </div>
+        <div class="path-card">
+          <div class="path-index">Path 2</div>
+          <h3>Securing AI Agents</h3>
+          <p>Sandboxing a code-execution tool, secrets hygiene, and the failures shaped like prompt injection.</p>
+        </div>
+        <div class="path-card">
+          <div class="path-index">Path 3</div>
+          <h3>Building an AI Platform</h3>
+          <p>Multi-tenant budgets, observability you can actually trace, scaling a stateful service behind replicas.</p>
+        </div>
+        <div class="path-card">
+          <div class="path-index">Path 4</div>
+          <h3>Evals and Safe Releases</h3>
+          <p>Building an eval gate and catching a regression before it ships, instead of after.</p>
+        </div>
+      </div>
+      <p class="catalogue-note">Labs are titled by the symptom, not the concept — the way an incident actually shows up.</p>
+    </div>
+  </section>
+
+  <section id="free-labs">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">Start here</p>
+        <h2>Two free labs, no account needed</h2>
+        <p>The rest of the catalogue needs an account. These two don't.</p>
+      </div>
+      <div class="free-labs">
+        <div class="lab-card">
+          <span class="lab-tag">Free</span>
+          <h3>Customers are getting the same reply twice</h3>
+          <p>A support agent answers tickets, and some customers get the same reply two or three times. Retries are involved. Deleting them is not the fix — make every ticket get exactly one reply while retries keep working.</p>
+          <div class="lab-meta">Idempotency-key bug · Path 1 · core</div>
+        </div>
+        <div class="lab-card">
+          <span class="lab-tag">Free</span>
+          <h3>The $4,000 weekend</h3>
+          <p>A research desk was left running over the weekend and billed $4,112. Make one pass over the queue cost less than budget, without dropping the questions that are expensive to answer.</p>
+          <div class="lab-meta">Runaway budget · Path 1 · core</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="what-makes-it-different">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">Why it's graded this way</p>
+        <h2>What makes it different</h2>
+      </div>
+      <div class="diff-list">
+        <div class="diff-item">
+          <div class="diff-mark">→</div>
+          <div>
+            <h3>Grading reads outcomes, not code</h3>
+            <p>Every check is a fact recorded by the system itself — a mailbox log, a gateway ledger, a trace — never a read of your source or a model's opinion of your wording. A correct fix passes no matter how you got there, and a cosmetic one doesn't.</p>
+          </div>
+        </div>
+        <div class="diff-item">
+          <div class="diff-mark">→</div>
+          <div>
+            <h3>Every lab is checked against a real wrong answer</h3>
+            <p>Before a lab ships, it's verified against an actual broken solution, not just the happy path. If the wrong fix would pass, the lab isn't done.</p>
+          </div>
+        </div>
+        <div class="diff-item">
+          <div class="diff-mark">→</div>
+          <div>
+            <h3>The bugs are the kind that actually ship</h3>
+            <p>Retried side effects, budgets nobody keyed by tenant, a status line trusted instead of the body — the failures here are lifted from real incidents, not written to teach a concept in isolation.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="access">
+    <div class="wrap">
+      <div class="cta-band">
+        <h2>Opalix is in early access</h2>
+        <p>The two free labs are open now. Everything else — all four paths, all 30 labs — needs an account, and there's no public signup yet.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="#free-labs">Start with a free lab</a>
+        </div>
+        <p class="hero-note">Watch this space, or check back — that's the honest answer right now.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p>Opalix — opalix.ai</p>
+    <div class="footer-links">
+      <a href="#top">Back to top</a>
+      <a href="#free-labs">Free labs</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var toggle = document.getElementById('navToggle');
+    var nav = document.getElementById('site-nav');
+    if (!toggle || !nav) return;
+    toggle.addEventListener('click', function () {
+      var open = nav.classList.toggle('is-open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    nav.querySelectorAll('a').forEach(function (link) {
+      link.addEventListener('click', function () {
+        nav.classList.remove('is-open');
+        toggle.setAttribute('aria-expanded', 'false');
+      });
+    });
+  })();
+</script>
+
+</body>
+</html>

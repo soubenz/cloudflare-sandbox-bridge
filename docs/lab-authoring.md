@@ -157,13 +157,19 @@ not reachable from outside. The default is `false`, so exposure is opt-in.
 - **No stated path.** `brief.md` says what the system should do, never how.
 - **Break-fix labs are titled by symptom** ("Customers are getting
   duplicate emails"), never by the concept being taught.
-- **Three hints, gated solution.** `solution/` is never uploaded to the
-  server at all. The hint half is weaker than it sounds: nothing caps
-  `hints[]` at three, and there is no unlock gate — each entry fires on its
-  own `after_minutes` timer and is pushed to the event stream as a `hint`
-  event carrying the full text. `hints.md`, if present, is shipped into
-  `/workspace` in plain text at session start, so anything written there is
-  readable by the learner from minute zero.
+- **Three hints, gated solution — one hint for `difficulty: intro`.** The
+  house default is three staged hints, but an intro lab is meant to be
+  finished without a walkthrough; a third of the way through it a stall
+  usually means one missing fact, not a missing strategy. Ship exactly one
+  `hints[]` entry for an intro lab, timed the same way as the others'
+  first hint (around the 15–20% mark of `timeout_minutes`). `solution/` is
+  never uploaded to the server at all, at any difficulty. The hint half is
+  weaker than it sounds: nothing caps `hints[]` at three (or at one), and
+  there is no unlock gate — each entry fires on its own `after_minutes`
+  timer and is pushed to the event stream as a `hint` event carrying the
+  full text. `hints.md`, if present, is shipped into `/workspace` in plain
+  text at session start, so anything written there is readable by the
+  learner from minute zero.
 - **Check scripts are never resident in the container between runs.** They
   are staged fresh from the private bundle at check time and deleted after
   (`src/session/checks.ts`) — don't rely on `checks/` being present at any
