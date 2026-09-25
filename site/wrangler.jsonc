@@ -1,18 +1,15 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "opalix-site",
+  "name": "opalix-landing",
   "compatibility_date": "2026-09-22",
 
-  // Static marketing page, no Worker code of its own: every request is
-  // served straight from assets. Same shape as dashboard/wrangler.jsonc's
-  // assets binding, minus the server-side auth that one needs.
+  // Static marketing page, no Worker script of its own: every request is
+  // served straight from assets. An assets-only Worker (no `main`) can't
+  // also declare a `binding` -- that's only for a Worker script that reads
+  // its own assets programmatically, which dashboard/wrangler.jsonc's does
+  // and this one doesn't.
   "assets": {
     "directory": ".",
-    "binding": "ASSETS",
     "not_found_handling": "404-page"
   }
-
-  // Not deployed from here. Publishing this Worker for the first time is
-  // `wrangler deploy --config site/wrangler.jsonc` from a session that's
-  // meant to touch the Cloudflare account -- this build didn't do that.
 }
