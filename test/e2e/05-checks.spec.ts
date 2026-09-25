@@ -22,11 +22,15 @@ test.describe('the checker', () => {
 
   test('reports the run on the event stream', async ({ session }) => {
     await session.locator('#btnChecks').click();
+    // The raw event log is operator telemetry and lives behind the Operator
+    // panel; the learner sees prose in Lab activity instead.
+    await session.locator('#btnOps').click();
     await expect(session.locator('#eventList li', { hasText: 'check.finished' }).first()).toBeVisible({
       timeout: 60_000,
     });
     const summary = await session.locator('#eventList li', { hasText: 'check.finished' }).first().innerText();
     expect(summary).toMatch(/\d+\/\d+ passed/);
+    await session.locator('#btnOps').click();
   });
 
   // The lab asks the learner to create /workspace/greeting.txt, and the

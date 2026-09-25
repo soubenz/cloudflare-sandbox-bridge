@@ -13,15 +13,14 @@ test.describe('ending the session', () => {
     page.on('dialog', (d) => d.accept());
     await page.locator('#btnEnd').click();
 
-    await expect(page.locator('#statePill')).toHaveText('ended', { timeout: 60_000 });
-    for (const id of ['#btnChecks', '#btnSnapshot', '#btnEnd']) {
-      await expect(page.locator(id)).toBeDisabled();
-    }
-    await expect(page.locator('#btnBackToLabs')).toBeVisible();
-
-    await page.locator('#btnBackToLabs').click();
-    await expect(page.locator('#launcher')).toBeVisible();
+    // Ending is deliberate and has an obvious next step, so the console
+    // takes it: no dead workspace parked behind one more button. (A session
+    // that ends on its own — idle, expiry, error — still stops and explains
+    // itself; that is a different path.)
+    await expect(page.locator('#launcher')).toBeVisible({ timeout: 60_000 });
     await expect(page.locator('.lab').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('#workspace')).toBeHidden();
+    await expect(page.locator('#sessionBar')).toBeHidden();
 
     clearSharedSession();
   });

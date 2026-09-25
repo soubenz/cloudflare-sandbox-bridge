@@ -39,15 +39,26 @@ test.describe('the operator view', () => {
     expect(labels.join(' ')).toContain('gateway pool');
   });
 
-  test('refuses prime and drain without a service key', async ({ page }) => {
+  test('shows nothing at all without a service key', async ({ page }) => {
+    // This used to assert that the *actions* were refused while the tiles
+    // still rendered, because GET /pools was open. It is not: the whole
+    // panel now needs the key, which is a stronger position than the one
+    // this test was defending.
     await openConsole(page);
     await page.locator('#btnOps').click();
-    await expect(page.locator('.tile').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('#poolTiles')).toContainText(/401|service key|unauthor/i, { timeout: 30_000 });
+    await expect(page.locator('.tile')).toHaveCount(0);
+  });
 
-    // Destructive pool actions stay behind the service key even while
-    // session start is open, so this must not go through.
-    await page.locator('.tile').first().locator('[data-act="drain"]').click();
-    await expect(page.locator('#opsKeyStatus')).toHaveText(/service key/i);
+  test('refuses a destructive action when the key is wrong', async ({ page }) => {
+    // The key gets the tiles on screen; a *bad* key must still not drain a
+    // pool. Prime and drain are the two irreversible things here.
+    await openConsole(page);
+    await page.locator('#btnOps').click();
+    await page.locator('#opsKey').fill('not-the-service-key');
+    await page.locator('#btnSaveKey').click();
+    await expect(page.locator('#poolTiles')).toContainText(/401|service key|unauthor/i, { timeout: 30_000 });
+    await expect(page.locator('.tile')).toHaveCount(0);
   });
 
   test('toggles back to whatever it was showing', async ({ page }) => {

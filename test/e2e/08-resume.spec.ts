@@ -1,4 +1,4 @@
-import { test, expect, openConsole, startOrResume } from './fixtures';
+import { test, expect, openConsole, startOrResume, signIn } from './fixtures';
 
 test.describe('session continuity', () => {
   test('comes back to the running lab after a reload', async ({ page }) => {
@@ -24,6 +24,7 @@ test.describe('session continuity', () => {
   });
 
   test('falls back to the picker when the stored session is gone', async ({ page }) => {
+    await signIn(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => {
       localStorage.setItem(

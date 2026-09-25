@@ -1,4 +1,4 @@
-import { test, expect, openConsole, API, LAB } from './fixtures';
+import { test, expect, openConsole, signIn, API, LAB } from './fixtures';
 
 test.describe('lab launcher', () => {
   test('lists published labs once signed in', async ({ page }) => {
@@ -71,13 +71,16 @@ test.describe('lab launcher', () => {
     await expect(lab.locator('.lab-sub')).toHaveText(new RegExp(`^${LAB}@`));
   });
 
-  test('surfaces an unreachable API instead of hanging', async ({ page }) => {
+  test('surfaces a failing catalogue instead of hanging', async ({ page }) => {
+    // This used to point `opalix.apiBase` at an invalid host. The lab list
+    // no longer comes from there: it is served by this console's own Worker
+    // at /api/labs, so the stored API base cannot break it any more. Fail
+    // the real request instead, which is both truer and deterministic.
+    await signIn(page);
+    await page.route('**/api/labs', (route) => route.abort());
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.evaluate(() => localStorage.setItem('opalix.apiBase', 'https://opalix-does-not-exist.invalid'));
-    await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('#labList .error')).toBeVisible({ timeout: 30_000 });
-    // Leave the API pointing somewhere real for the specs that follow.
-    await page.evaluate((api) => localStorage.setItem('opalix.apiBase', api), API);
+    await page.unroute('**/api/labs');
   });
 
   test('names the API it is talking to', async ({ page }) => {
