@@ -1,0 +1,202 @@
+# P3-05 in the lab catalogue: path 3, Building an AI Platform. Scripted, L.
+#
+# Break-fix, titled by symptom rather than by the concept being taught
+# (external state, checkpoints, safe resume). Three planted bugs, all of them
+# in workspace/agent/replica.py, and all of them the same mistake seen from
+# three angles: the replica treats itself as the place the conversation
+# lives. It keeps the thread in a module-level dict, it performs the turn's
+# side effect without recording that it was about to, and it appends to the
+# store unconditionally so a retried turn is written twice. Every other file
+# is correct and says something locally true; agent/store.py even ships the
+# three functions the fix needs -- read_thread, read_checkpoint,
+# write_checkpoint -- complete, documented and never called.
+#
+# Why the replicas and the router are NOT services[] entries: a manifest
+# service is launched as root from a fixed argv and a learner editing its
+# file does not change the running process, which is exactly what we want for
+# the two fault-injecting stubs and exactly wrong for the code under repair.
+# So `run_agent.py` starts the desk's own three processes (two replicas and
+# the router) and stops them again, and services[] holds only the two stubs.
+# That is also why there is no depends_on anywhere: nothing here has an order.
+#
+# Runtime risk, settled before this lab was written. The catalogue flagged
+# "two processes and a load balancer in one container" as a shape to prove
+# early, so it was built and measured first, under a real 0.5-vCPU cgroup
+# quota -- standard-1, per src/session/metrics.ts, which is half a core and
+# not a whole one.
+#
+# Five processes at once (store, payments, two replicas, router) and 26 turns
+# through the router: 3.4-3.7s wall per grader run, 0.33-0.43 CPU-seconds,
+# 20 MB peak RSS of the 4 GiB provisioned. The wall clock is almost entirely
+# the faults sleeping on purpose -- a 3s late payment against a 2s timeout,
+# plus the retry backoff -- so the desk uses under a tenth of the half core
+# it is allowed. Three graders back to back: 10.8s of wall against three
+# separate 180s check budgets, and 1.2 CPU-seconds of the 45 available inside
+# one 90s OPALIX_AGENT_RUN_TIMEOUT_S at 0.5 vCPU. Starting the three child
+# processes costs 0.5s of that, once per run.
+#
+# Two things the measurements settled about the design. Turns are driven one
+# at a time, because 16 in flight on half a core pushed p99 latency to ~1s --
+# on the listen backlog, not on CPU, but a lab whose numbers move with the
+# scheduler is not a lab. And the number of replicas stays at two: the cost
+# is linear in processes and there is room for more, but nothing in the
+# lesson needs a third.
+#
+# There is deliberately no hints.md: everything in workspace/ is readable
+# from minute zero, so a hints file is not gated at all. The staged hints
+# below are, and they are the only hints this lab ships.
+slug: split-brain-chat
+version: 1.0.0
+title: "Two replicas, two different conversations"
+type: break-fix
+family: agent
+difficulty: advanced
+summary: >-
+  The billing desk runs as two replicas behind a router, and which one takes a
+  turn decides what it remembers: customers are asked things twice, and
+  sometimes refunded twice. The conversation lives in a replica's memory.
+  Pinning each conversation to one replica is not the fix.
+objectives:
+  - "Move a conversation's state out of the process that happens to be handling the turn"
+  - "Record progress through a turn before the step that cannot be undone, so a resumed turn finishes instead of repeating"
+  - "Prove a conversation is whole from the store's own thread, not from what either replica remembers"
+# The work is 50-70 minutes: three changes in one file, but the third only
+# becomes visible once the first two are done. 90 leaves room to read the
+# transcript rather than guess at it.
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  # Wiring. Each service's port appears twice on purpose -- once here for the
+  # healthcheck and the proxy, once as the variable the service itself reads --
+  # so either one can be started by hand from a shell.
+  TRANSCRIPT_URL: "http://127.0.0.1:8851"
+  PAYMENTS_URL: "http://127.0.0.1:8852"
+  TRANSCRIPT_PORT: "8851"
+  PAYMENTS_PORT: "8852"
+  TRANSCRIPT_FILE: "/workspace/transcripts.json"
+  # The desk's own processes, which `run_agent.py` starts and stops. Two
+  # replicas is what the desk was scaled to; the length of REPLICA_PORTS is
+  # what decides how many there are.
+  ROUTER_PORT: "8853"
+  REPLICA_PORTS: "8854,8855"
+  # The desk's tunables. Every one has a matching default in
+  # workspace/agent/config.py, so the desk also runs from a bare shell.
+  # The timeouts nest -- payment inside store inside replica inside router --
+  # so a failure is reported by the layer closest to it.
+  DESK_NAME: "billing-desk"
+  PAYMENT_TIMEOUT_S: "2"
+  STORE_TIMEOUT_S: "5"
+  REPLICA_TIMEOUT_S: "15"
+  ROUTER_TIMEOUT_S: "20"
+  MAX_ATTEMPTS: "2"
+  RETRY_BASE_DELAY_S: "0.25"
+  FLEET_START_TIMEOUT_S: "15"
+  # The faults, fixed per conversation so every run of the graders sees the
+  # same failures. Nothing here is random and nothing looks at the clock
+  # except PAYMENTS_FAULT_SLOW_SECONDS.
+  #
+  #   C-4471 is Priya Raghunathan, who wrote in because she was charged
+  #   twice. Her refund is carried out and then the connection is lost, so
+  #   the desk retries the turn -- onto the other replica -- and refunds the
+  #   woman complaining about a double charge a second time. That is the
+  #   joke, and it is also what side-effects-happen-exactly-once grades.
+  PAYMENTS_FAULT_DROP_CONVERSATIONS: "C-4471"
+  #   C-4473's cancellation is carried out and then answered 3s later,
+  #   against a 2s PAYMENT_TIMEOUT_S: a 1.5x margin, and the assertion is on
+  #   the provider's record rather than on elapsed time. Two fault shapes
+  #   rather than one, because side-effects-happen-exactly-once checks that
+  #   both were reached before it grades anything -- otherwise it has nothing
+  #   to prove and fails the lab rather than the learner.
+  PAYMENTS_FAULT_SLOW_CONVERSATIONS: "C-4473"
+  PAYMENTS_FAULT_SLOW_SECONDS: "3.0"
+  #   The third failure has nothing to do with money: the store accepts
+  #   C-4475's third append and then loses the connection. A replica that
+  #   resumes that turn from the beginning writes the customer's line into
+  #   the thread twice, which is what continuity-holds-across-replicas
+  #   grades besides the forgetting.
+  STORE_FAULT_DROP_APPENDS: "C-4475:3"
+
+services:
+  # The store is the diagnostic. It is the only thing in the lab that sees a
+  # whole conversation -- each replica sees the turns it happened to take --
+  # so the transcript tab shows the thread the customer experienced, stamped
+  # with which replica wrote each row, next to what the desk claimed to know
+  # at the time. A learner who reads only what `run_agent.py` prints sees 26
+  # turns answered and nothing amiss.
+  - name: transcript
+    argv: ["python3", "/workspace/services/transcript_service.py"]
+    cwd: /workspace
+    port: 8851
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: []
+  # The provider stays dark: it is the other fault surface, and an
+  # anti-cheat needs a failure path the learner cannot see being injected.
+  - name: payments
+    argv: ["python3", "/workspace/services/payments_service.py"]
+    cwd: /workspace
+    port: 8852
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: []
+
+pressure:
+  - id: monday
+    at_minutes: 12
+    argv: ["/opt/lab/pressure/monday.sh"]
+    title: "Monday morning, and one of them has noticed the double refund"
+    message: >-
+      Four more conversations just landed, and one of them is Priya
+      Raghunathan again -- she has had the 42.50 back twice and wants to know
+      which one she is allowed to keep. If a turn still starts over from the
+      beginning, this queue will make more of these.
+
+checks:
+  - name: continuity-holds-across-replicas
+    script: continuity-holds-across-replicas.sh
+    timeout_s: 180
+    weight: 2
+  # The strongest anti-cheat. Moving the conversation into the store makes
+  # the desk stop forgetting and does nothing at all about the refund that
+  # went out twice, because the thread does not say how far through a turn
+  # anybody got.
+  - name: side-effects-happen-exactly-once
+    script: side-effects-happen-exactly-once.sh
+    timeout_s: 180
+    weight: 2
+  - name: both-replicas-take-turns
+    script: both-replicas-take-turns.sh
+    timeout_s: 180
+    weight: 1
+
+hints:
+  - after_minutes: 12
+    text: >-
+      Open the transcript tab and read one conversation from the top,
+      including the "desk knew" column. Then compare it with what
+      `run_agent.py` printed. Neither replica's own account of the run is
+      evidence about the conversation; only the store saw all of it.
+  - after_minutes: 24
+    text: >-
+      Two different things are wrong in that transcript and they have
+      different causes. Some replies were written knowing less than the
+      customer had already said. And one customer's line is in the thread
+      twice, while the payments provider carried out two instructions that
+      the conversations only asked for once.
+  - after_minutes: 39
+    text: >-
+      A turn is not finished when the reply is composed; it is finished when
+      everything it changed has been recorded. So: what does a replica know
+      about a turn another replica started and did not finish -- and where
+      could it have found out, given that losing the connection to a payments
+      provider tells you nothing about whether the money moved?
+
+egress:
+  allow: []

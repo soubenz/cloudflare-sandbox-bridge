@@ -1,0 +1,172 @@
+{
+  "desk": "billing-support",
+  "generated_at": "2026-09-25T09:10:00Z",
+  "conversations": [
+    {
+      "id": "C-4471",
+      "customer": "Priya Raghunathan",
+      "turns": [
+        {
+          "n": 1,
+          "text": "Hello - my account is AC-4471 and I have been charged twice for September.",
+          "facts": {"account": "AC-4471"}
+        },
+        {
+          "n": 2,
+          "text": "The duplicate is 42.50, dated the 3rd.",
+          "facts": {"amount": "42.50"}
+        },
+        {
+          "n": 3,
+          "text": "Yes, please refund the duplicate.",
+          "action": {"kind": "refund", "amount": 42.50}
+        },
+        {
+          "n": 4,
+          "text": "Thank you. Can you confirm which account you refunded and how much?"
+        }
+      ]
+    },
+    {
+      "id": "C-4472",
+      "customer": "Tomas Brandt",
+      "turns": [
+        {
+          "n": 1,
+          "text": "Hi, account AC-4472. I want to check something before I renew.",
+          "facts": {"account": "AC-4472"}
+        },
+        {
+          "n": 2,
+          "text": "My renewal date is the 14th - is that right?",
+          "facts": {"renewal": "the 14th"}
+        },
+        {
+          "n": 3,
+          "text": "Good. And the card ending 0114 is the one you will charge?",
+          "facts": {"card": "0114"}
+        },
+        {
+          "n": 4,
+          "text": "Then go ahead. Read back the account and the card you have for me."
+        }
+      ]
+    },
+    {
+      "id": "C-4473",
+      "customer": "Noor Haddad",
+      "turns": [
+        {
+          "n": 1,
+          "text": "Account AC-4473. I would like to stop my subscription.",
+          "facts": {"account": "AC-4473"}
+        },
+        {
+          "n": 2,
+          "text": "It is the team plan, 96.00 a month.",
+          "facts": {"amount": "96.00"}
+        },
+        {
+          "n": 3,
+          "text": "No, I do not want the smaller plan. Cancel it now please.",
+          "action": {"kind": "cancel_subscription", "amount": 96.00}
+        },
+        {
+          "n": 4,
+          "text": "Is it cancelled? Tell me the account and the amount you cancelled."
+        }
+      ]
+    },
+    {
+      "id": "C-4474",
+      "customer": "Eamon Doyle",
+      "turns": [
+        {
+          "n": 1,
+          "text": "Account AC-4474 - I need last month's statement for our auditor.",
+          "facts": {"account": "AC-4474"}
+        },
+        {
+          "n": 2,
+          "text": "Yes, send it to the address you have on file.",
+          "action": {"kind": "send_statement", "amount": 0.00}
+        },
+        {
+          "n": 3,
+          "text": "Which account did you send it for?"
+        }
+      ]
+    },
+    {
+      "id": "C-4475",
+      "customer": "Lucia Ferrante",
+      "turns": [
+        {
+          "n": 1,
+          "text": "Hello - this is about AC-4475, a charge I do not recognise.",
+          "facts": {"account": "AC-4475"}
+        },
+        {
+          "n": 2,
+          "text": "It is 7.99 and the reference says WKSP-2.",
+          "facts": {"amount": "7.99", "reference": "WKSP-2"}
+        },
+        {
+          "n": 3,
+          "text": "What is WKSP-2, and is it on the account I gave you?"
+        },
+        {
+          "n": 4,
+          "text": "All right, leave it for now. Just confirm what you have on file for me."
+        }
+      ]
+    },
+    {
+      "id": "C-4476",
+      "customer": "Kofi Mensah",
+      "turns": [
+        {
+          "n": 1,
+          "text": "Account AC-4476. Two problems, both refunds, I am afraid.",
+          "facts": {"account": "AC-4476"}
+        },
+        {
+          "n": 2,
+          "text": "The first is 64.25 - the seat we removed in July.",
+          "action": {"kind": "refund", "amount": 64.25},
+          "facts": {"amount": "64.25"}
+        },
+        {
+          "n": 3,
+          "text": "The second is separate: 18.00 of overage that was billed twice.",
+          "facts": {"overage": "18.00"}
+        },
+        {
+          "n": 4,
+          "text": "Yes, refund that one as well please.",
+          "action": {"kind": "refund", "amount": 18.00}
+        }
+      ]
+    },
+    {
+      "id": "C-4477",
+      "customer": "Hana Ito",
+      "turns": [
+        {
+          "n": 1,
+          "text": "Account AC-4477, and my invoice reference is INV-9903.",
+          "facts": {"account": "AC-4477", "invoice": "INV-9903"}
+        },
+        {
+          "n": 2,
+          "text": "I only want to know whether the credit has been applied to it.",
+          "facts": {"credit": "pending"}
+        },
+        {
+          "n": 3,
+          "text": "Sorry, I have asked this twice now - which invoice were we talking about?"
+        }
+      ]
+    }
+  ]
+}
