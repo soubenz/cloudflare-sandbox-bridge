@@ -14,7 +14,7 @@ import type { OutboundHandler } from '@cloudflare/containers';
  * `test/unit/egress.test.ts`). The handler *bodies* run per-request and can
  * read `env` freely — only the hostname keys are fixed at load time.
  */
-export const LLM_HOST = 'llm.opalix.ai';
+export const LLM_HOST = 'gateway.ai.cloudflare.com';
 export const MIRROR_HOST = 'mirror.opalix.ai';
 export const BUNDLES_HOST = 'bundles.opalix.internal';
 
@@ -28,18 +28,30 @@ export const BUNDLES_HOST = 'bundles.opalix.internal';
 export const BASE_ALLOWED_HOSTS = [LLM_HOST, MIRROR_HOST, BUNDLES_HOST];
 
 /**
- * Every outbound call to the LLM Worker gets the real credential injected
- * here, in the Worker, so the container never holds `LLM_WORKER_KEY`. The
- * container sets `X-Opalix-Session` and `X-Opalix-Session-Token` from
- * `/etc/opalix/session.env` (written at session start, see
- * session/lifecycle.ts); this handler forwards them unchanged so the LLM
- * Worker can verify the session token without a round trip back here.
+ * Model calls go to Cloudflare AI Gateway, and the credential is injected
+ * here so the container never holds it. Lab code calls the gateway's
+ * OpenAI-compatible endpoint with no key at all; this handler adds one.
+ *
+ * `Authorization`, **not** `cf-aig-authorization`. The AI Gateway docs
+ * present the latter as the gateway credential and warn that using
+ * `Authorization` is the top cause of 401s — for a Workers AI model on
+ * `/compat` it is the other way round, measured against a live gateway:
+ * `cf-aig-authorization` alone returns 401 and plain `Authorization`
+ * returns 200 (see the AI Gateway section of docs/spike.md). That header
+ * applies to gateways with authenticated-gateway mode on, which ours is
+ * not; if that is ever turned on, both are needed.
+ *
+ * The session headers the container sets from `/etc/opalix/session.env`
+ * are forwarded unchanged. AI Gateway ignores them, but they are what a
+ * later fault-injection Worker in front of the gateway would key on, and
+ * dropping them here would make that a breaking change rather than an
+ * additive one.
  */
 export const llmOutbound: OutboundHandler = async (request, env) => {
   const forwarded = new Request(request, {
     headers: new Headers(request.headers),
   });
-  forwarded.headers.set('Authorization', `Bearer ${env.LLM_WORKER_KEY}`);
+  forwarded.headers.set('Authorization', `Bearer ${env.AI_GATEWAY_TOKEN}`);
   return fetch(forwarded);
 };
 

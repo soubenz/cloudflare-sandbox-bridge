@@ -109,7 +109,8 @@ async function runStart(rt: SessionRuntime): Promise<void> {
     OPALIX_SESSION_ID: rt.sessionId,
     OPALIX_SESSION_TOKEN: llmToken,
     OPALIX_BASE_URL: baseUrl,
-    LLM_BASE_URL: `http://${rt.env.LLM_HOST}`,
+    LLM_BASE_URL: llmBaseUrl(rt.env),
+    LLM_MODEL: rt.env.LLM_MODEL,
     ...manifest.env,
   });
 
@@ -303,7 +304,8 @@ export async function recover(rt: SessionRuntime, reason: string): Promise<void>
     OPALIX_SESSION_ID: rt.sessionId,
     OPALIX_SESSION_TOKEN: llmToken,
     OPALIX_BASE_URL: rt.env.PUBLIC_BASE_URL,
-    LLM_BASE_URL: `http://${rt.env.LLM_HOST}`,
+    LLM_BASE_URL: llmBaseUrl(rt.env),
+    LLM_MODEL: rt.env.LLM_MODEL,
     ...manifest.env,
   });
 
@@ -328,6 +330,15 @@ async function workspaceSurvived(rt: SessionRuntime): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * The OpenAI-compatible endpoint lab code calls, with no credential of its
+ * own — `llmOutbound` injects one on the way out, so the container never
+ * holds a key. The account id and gateway name are not secret; the token is.
+ */
+function llmBaseUrl(env: SessionRuntime['env']): string {
+  return `https://${env.LLM_HOST}/v1/${env.CLOUDFLARE_ACCOUNT_ID}/${env.AI_GATEWAY_NAME}/compat`;
 }
 
 /** `POST /sessions/{id}/snapshot` and the automatic snapshot taken on expiry/idle/user end. */
@@ -397,7 +408,8 @@ async function runResume(rt: SessionRuntime): Promise<void> {
     OPALIX_SESSION_ID: rt.sessionId,
     OPALIX_SESSION_TOKEN: llmToken,
     OPALIX_BASE_URL: rt.env.PUBLIC_BASE_URL,
-    LLM_BASE_URL: `http://${rt.env.LLM_HOST}`,
+    LLM_BASE_URL: llmBaseUrl(rt.env),
+    LLM_MODEL: rt.env.LLM_MODEL,
     ...manifest.env,
   });
   await applyEgressAllowlist(rt, manifest);

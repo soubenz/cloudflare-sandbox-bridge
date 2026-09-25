@@ -62,7 +62,12 @@
     "PUBLIC_BASE_URL": "https://opalix-sandbox.soubenz94.workers.dev",
     "POOL_TARGET_AGENT": "1",
     "POOL_TARGET_GATEWAY": "1",
-    "LLM_HOST": "llm.opalix.ai",
+    "LLM_HOST": "gateway.ai.cloudflare.com",
+    "AI_GATEWAY_NAME": "opalix",
+    // A small model on purpose: Workers AI text generation is capped at 300
+    // requests/minute per ACCOUNT, and frontier models at 20. A cohort runs
+    // labs concurrently, so a frontier model is demo-only. See docs/spike.md.
+    "LLM_MODEL": "workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8",
     "MIRROR_HOST": "mirror.opalix.ai",
     // The dashboard is its own Worker, so every browser call to this API is
     // cross-origin. Listed explicitly rather than "*": the list is visible
@@ -114,7 +119,9 @@
         "PUBLIC_BASE_URL": "https://labs-api-staging.opalix.ai",
         "POOL_TARGET_AGENT": "0",
         "POOL_TARGET_GATEWAY": "0",
-        "LLM_HOST": "llm-staging.opalix.ai",
+        "LLM_HOST": "gateway.ai.cloudflare.com",
+        "AI_GATEWAY_NAME": "opalix-staging",
+        "LLM_MODEL": "workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8",
         "MIRROR_HOST": "mirror.opalix.ai",
     // The dashboard is its own Worker, so every browser call to this API is
     // cross-origin. Listed explicitly rather than "*": the list is visible

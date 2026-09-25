@@ -26,6 +26,10 @@ export interface Env {
   POOL_TARGET_AGENT: string;
   POOL_TARGET_GATEWAY: string;
   LLM_HOST: string;
+  /** AI Gateway name on the account; with LLM_HOST and the account id it forms the compat endpoint. */
+  AI_GATEWAY_NAME: string;
+  /** Default model for labs, e.g. workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8. */
+  LLM_MODEL: string;
   MIRROR_HOST: string;
   /** Comma-separated origins allowed to call this API from a browser. The dashboard is its own Worker, so it is cross-origin. */
   DASHBOARD_ORIGIN: string;
@@ -35,5 +39,6 @@ export interface Env {
   SESSION_TOKEN_SECRET: string;
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
-  LLM_WORKER_KEY: string;
+  /** Cloudflare API token with Workers AI access; injected into model calls by llmOutbound. */
+  AI_GATEWAY_TOKEN: string;
 }

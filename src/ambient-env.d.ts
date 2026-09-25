@@ -19,6 +19,7 @@ declare namespace Cloudflare {
     SESSION_TOKEN_SECRET: string;
     R2_ACCESS_KEY_ID: string;
     R2_SECRET_ACCESS_KEY: string;
-    LLM_WORKER_KEY: string;
+    /** Cloudflare API token with Workers AI access; injected into model calls by llmOutbound. */
+  AI_GATEWAY_TOKEN: string;
   }
 }
