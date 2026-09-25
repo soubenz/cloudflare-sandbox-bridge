@@ -16,8 +16,19 @@
     "run_worker_first": true
   },
 
+  // A service binding, not an HTTPS call. A Worker cannot fetch another
+  // Worker over workers.dev -- Cloudflare answers error 1042 -- and even
+  // where it works it would leave the edge and come back. This dispatches
+  // directly to the API Worker, so the request never becomes a public one.
+  // The API still authenticates it: the key travels on the request as
+  // before, and its router does not care how the request arrived.
+  "services": [
+    { "binding": "API", "service": "opalix-sandbox" }
+  ],
+
   "vars": {
-    "API_BASE": "https://opalix-sandbox.soubenz94.workers.dev"
+    // Only the path is used; the origin makes it a well-formed Request.
+    "API_BASE": "https://opalix-sandbox.internal"
   }
   // Secrets (wrangler secret put --config dashboard/wrangler.jsonc):
   //   SANDBOX_API_KEY        the API's service key; never reaches the browser

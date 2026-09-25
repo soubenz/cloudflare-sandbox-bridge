@@ -87,9 +87,17 @@ async function subjectFrom(request, env) {
 
 /* -------------------------------------------------------------------- api */
 
-/** Calls the sandbox API with the service key. Server-side only, so no CORS. */
+/**
+ * Calls the sandbox API with the service key.
+ *
+ * Through a service binding rather than `fetch()`: a Worker cannot call
+ * another Worker over workers.dev at all — Cloudflare answers error 1042 —
+ * and a binding dispatches directly without the request leaving the edge.
+ * No Origin header is involved, so none of this touches the API's CORS
+ * allowlist; the key is the only credential.
+ */
 async function callApi(env, path, init = {}) {
-  return fetch(`${env.API_BASE}${path}`, {
+  return env.API.fetch(`${env.API_BASE}${path}`, {
     ...init,
     headers: {
       ...(init.headers ?? {}),
