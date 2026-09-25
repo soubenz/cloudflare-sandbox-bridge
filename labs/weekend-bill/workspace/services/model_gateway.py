@@ -374,7 +374,12 @@ PAGE = """<!doctype html>
 <tbody id="calls"></tbody></table>
 <script>
 const base = location.pathname.replace(/\\/+$/, "");
-const usd = n => "$" + n.toFixed(n < 1 ? 4 : 2);
+const usd = n => {
+  if (n >= 1) return "$" + n.toFixed(2);
+  let s = n.toFixed(4).replace(/0+$/, "");
+  while (s.split(".")[1].length < 2) s += "0";
+  return "$" + s;
+};
 async function tick(){
   let data;
   try { data = await (await fetch(base + "/api/spend")).json(); }
@@ -382,18 +387,21 @@ async function tick(){
   const t = data.totals || {}, rows = data.by_question || [], calls = data.calls || [];
   const total = t.cost_usd || 0, budget = t.budget_usd || 0;
   const over = budget > 0 && total > budget;
-  const worst = rows.filter(r => total > 0 && r.cost_usd / total >= 0.2);
+  // Flagged against the budget, not against the run's own total: in a run
+  // that is inside the budget, no single question is a problem.
+  const hot = r => budget > 0 && r.cost_usd >= budget * 0.25;
+  const worst = rows.filter(hot);
   const s = document.getElementById("summary");
   s.className = over ? "over" : "";
   s.textContent = usd(total) + " charged for " + rows.length + " question(s) over " +
     (t.calls || 0) + " model call(s). The budget for one run of the queue is " + usd(budget) + " — " +
     (over ? "this run is " + (budget ? (total / budget).toFixed(1) : "?") + "x over it" : "this run is inside it") +
     (worst.length ? ". " + worst.map(r => r.question_id + " alone cost " + usd(r.cost_usd) +
-      " over " + r.calls + " calls").join("; ") + "." : ".");
+      " over " + r.calls + " call(s)").join("; ") + "." : ".");
   document.getElementById("rows").innerHTML = rows.map(r => {
     const share = total > 0 ? r.cost_usd / total : 0;
-    return `<tr class="${share >= 0.2 ? "hot" : ""}"><td>${r.question_id}` +
-      (share >= 0.2 ? ' <span class="tag">runaway</span>' : "") +
+    return `<tr class="${hot(r) ? "hot" : ""}"><td>${r.question_id}` +
+      (hot(r) ? ' <span class="tag">runaway</span>' : "") +
       (r.steps === 0 && r.refused > 0 ? ' <span class="tag warn">never answered</span>' : "") +
       `</td><td class="n">${r.calls}</td><td class="n">${r.refused || ""}</td>` +
       `<td class="n">${r.prompt_tokens.toLocaleString()}</td><td class="n">${r.completion_tokens.toLocaleString()}</td>` +

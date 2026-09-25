@@ -42,7 +42,7 @@
       "id": "Q-2207",
       "asker": "Leah Castellanos",
       "team": "Support",
-      "question": "The customer has pasted their entire invoice history into the thread and wants it all explained. Can you summarise what each line means?"
+      "question": "The customer has pasted their entire invoice history into the thread and wants every line explained. Quoting it here so you have it: INV-8811 249.00 seat licence March, INV-8812 249.00 seat licence April, INV-8813 312.50 seat licence April plus overage, INV-8814 -62.50 credit note against INV-8813, INV-8815 249.00 seat licence May, INV-8816 498.00 seat licence May second workspace, INV-8817 249.00 seat licence June, INV-8818 0.00 proforma issued in error, INV-8819 249.00 seat licence July, INV-8820 37.40 usage above plan, INV-8821 249.00 seat licence August, INV-8822 -249.00 full credit August billed twice, INV-8823 249.00 seat licence August reissued, INV-8824 249.00 seat licence September, INV-8825 118.20 usage above plan, INV-8826 249.00 seat licence October renewal, INV-8827 12.60 proration for the second workspace, INV-8828 249.00 seat licence November, INV-8829 -12.60 proration reversed, INV-8830 249.00 seat licence December. They also want to know which of these the credit notes cancel out, whether the reissued August invoice is the one to pay, and what the proration lines are for. Every attempt to send this one to the model has come back 503 since Friday and there is a ticket open with the provider about it."
     },
     {
       "id": "Q-2208",

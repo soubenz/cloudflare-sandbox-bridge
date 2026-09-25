@@ -1,0 +1,150 @@
+# P1-02 in the lab catalogue: the second lab a learner meets, and free tier.
+#
+# Break-fix, titled by symptom rather than by the concept being taught.
+# Three planted bugs, all of them ordinary: the per-question loop in
+# workspace/agent/loop.py has no ceiling, the retry policy is applied at two
+# layers at once (the client in agent/http.py retries, and the loop wraps it
+# in agent/retry.py), and nothing consults the spend that agent/spend.py is
+# already collecting. Each file is locally reasonable; the bug is the
+# conclusion they add up to.
+#
+# There is deliberately no hints.md: everything in workspace/ is readable
+# from minute zero, so a hints file is not gated at all. The staged hints
+# below are, and they are the only hints this lab ships.
+slug: weekend-bill
+version: 1.0.0
+title: "The $4,000 weekend"
+type: break-fix
+family: agent
+difficulty: core
+summary: >-
+  Nobody worked over the weekend and the research desk billed $4,112. The
+  agent loops until the model says it is done, retries at two layers, and
+  measures nothing. Skipping the expensive questions is not the fix.
+objectives:
+  - "Bound an agent loop so an input that never converges costs a known maximum"
+  - "Put a retry policy at one layer instead of multiplying attempts across two"
+  - "Prove what a run cost from the provider's own ledger, not from what the agent counted"
+# The work is 30-45 minutes; 60 is the schema minimum and keeps the container
+# bill honest for a free lab. (The irony is noted.)
+timeout_minutes: 60
+idle_minutes: 10
+
+env:
+  MODEL_URL: "http://127.0.0.1:8791"
+  CASEBOOK_URL: "http://127.0.0.1:8792"
+  MODEL_PORT: "8791"
+  CASEBOOK_PORT: "8792"
+  QUESTION_QUEUE: "/workspace/questions.json"
+  # The agent's tunables. Every one has a matching default in
+  # workspace/agent/config.py, so the agent also runs from a bare shell.
+  # MAX_ATTEMPTS is the *policy*: how many times one call may be attempted
+  # before it is not going to work. Two places in the agent apply it.
+  MODEL_NAME: "opalix-research-stub"
+  MODEL_TIMEOUT_S: "10"
+  SEARCH_TIMEOUT_S: "5"
+  MAX_ATTEMPTS: "3"
+  RETRY_BASE_DELAY_S: "0.25"
+  BUDGET_USD: "0.75"
+  # What the gateway charges. Kept out of the agent on purpose: the agent is
+  # told the price of each call in the reply, it does not get to assume one.
+  PRICE_PER_1K_INPUT: "0.003"
+  PRICE_PER_1K_OUTPUT: "0.015"
+  # The faults, fixed per question so every run of the graders sees the same
+  # failures and the same spend. Nothing here is random or timing-dependent.
+  #
+  #   Normal questions take two searches and then an answer.
+  MODEL_CONVERGE_STEP: "3"
+  #   Q-2206 and Q-2208 are the open-ended ones -- "which accounts are
+  #   affected, and what do we tell each of them" -- and the model never
+  #   resolves them quickly. They do converge in the end, at call 150, so an
+  #   unbounded loop finishes in seconds rather than hanging; it just
+  #   finishes about twenty times past the budget.
+  MODEL_RUNAWAY_QUESTIONS: "Q-2206,Q-2208"
+  MODEL_RUNAWAY_STEP: "150"
+  #   Q-2203's first two calls are charged and refused, then it recovers.
+  #   transient-failures-still-recover needs that to exist, or it has nothing
+  #   to prove the retry on and fails the lab rather than the learner.
+  MODEL_FAULT_503_QUESTIONS: "Q-2203"
+  MODEL_FAULT_503_CALLS: "2"
+  #   Q-2207 is the customer who pasted their whole invoice history. The
+  #   provider has refused every request for it since Friday and there is a
+  #   ticket open about it. No number of retries produces an answer, which is
+  #   the point: a retry policy only decides what it costs to find that out.
+  MODEL_HARD_503_QUESTIONS: "Q-2207"
+
+services:
+  # The ledger is the diagnostic: it is the gateway's own invoice, per
+  # question, including the calls it charged for and then refused. The agent
+  # prints a total of its own, from the usage blocks it was handed -- and it
+  # is never handed one for a call that failed. A learner who trusts the
+  # agent's arithmetic is reading a number the agent cannot know.
+  - name: ledger
+    argv: ["python3", "/workspace/services/model_gateway.py"]
+    cwd: /workspace
+    port: 8791
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: []
+  - name: casebook
+    argv: ["python3", "/workspace/services/casebook_service.py"]
+    cwd: /workspace
+    port: 8792
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: []
+
+pressure:
+  - id: monday
+    at_minutes: 8
+    argv: ["/opt/lab/pressure/monday.sh"]
+    title: "Monday morning, and Finance has seen the invoice"
+    message: >-
+      Four more questions just landed on the desk, one of them from Finance
+      about the weekend. If the loop still has no ceiling, this queue is
+      about to cost more than the last one.
+
+checks:
+  - name: run-costs-under-budget
+    script: run-costs-under-budget.sh
+    timeout_s: 180
+    weight: 2
+  # The strongest anti-cheat. Deleting the retries makes the bill smaller by
+  # dropping work, and retrying at two layers makes a failure that never
+  # clears cost three times what the policy says it may.
+  - name: transient-failures-still-recover
+    script: transient-failures-still-recover.sh
+    timeout_s: 180
+    weight: 2
+  - name: every-input-resolved
+    script: every-input-resolved.sh
+    timeout_s: 180
+    weight: 1
+
+hints:
+  - after_minutes: 8
+    text: >-
+      Open the ledger tab and compare its total with the total the agent
+      printed when it finished. The agent can only add up the calls it got a
+      reply from.
+  - after_minutes: 16
+    text: >-
+      Look at the per-question rows in the ledger: two questions account for
+      almost all of the money, and one question was charged for nine calls
+      without ever being answered. Those are two different problems.
+  - after_minutes: 26
+    text: >-
+      Nothing in the run decides when a question has had enough. A loop that
+      ends only when the model says so has no ceiling, and one retry policy
+      wrapped around another is that policy squared. A question that reaches
+      its ceiling has not been answered -- it is a question for a person, and
+      it still has to be filed as one.
+
+egress:
+  allow: []
