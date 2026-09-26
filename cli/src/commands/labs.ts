@@ -92,7 +92,12 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
     .action(async (dir: string, opts: { user: string }) => {
       const manifestPath = join(dir, 'manifest.yaml');
       if (!existsSync(manifestPath)) throw new Error(`No manifest.yaml in ${dir}`);
-      const manifest = parseYaml(readFileSync(manifestPath, 'utf8')) as { slug?: string; type?: string; title?: string };
+      const manifest = parseYaml(readFileSync(manifestPath, 'utf8')) as {
+        slug?: string;
+        type?: string;
+        title?: string;
+        services?: { healthcheck?: { timeout_s?: number } }[];
+      };
       const slug = manifest.slug;
       if (!slug) throw new Error(`${manifestPath} has no slug`);
 
@@ -120,7 +125,7 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
       let afterSolution: CheckResultLine[] | undefined;
       try {
         console.log(`Session ${started.id} state=${started.state}. Waiting for it to become running...`);
-        await waitForRunning(authed, started.id);
+        await waitForRunning(authed, started.id, startBudgetMs(manifest.services));
 
         console.log('\nFresh-session checks (at least one is expected to FAIL):');
         fresh = checkResults(await authed.runChecks(started.id));
@@ -241,6 +246,19 @@ export function judgeLabTest(input: {
     problems.push(`check "${r.name}" still fails after applying solution/: ${message || 'no message'}`);
   }
   return problems;
+}
+
+/**
+ * How long a session may take to reach `running`. Services start one after
+ * another, and each may use its whole healthcheck budget, so a fixed wait
+ * cut off labs with several slow services: a gateway lab (Postgres, then
+ * LiteLLM migrating a fresh database) takes about 75 s live, over the
+ * 60 s this used to allow. The extra 180 s covers claiming a container
+ * (a cold one has taken 21 s) and hydrating the workspace.
+ */
+function startBudgetMs(services: { healthcheck?: { timeout_s?: number } }[] | undefined): number {
+  const healthchecks = (services ?? []).reduce((total, s) => total + (s?.healthcheck?.timeout_s ?? 30), 0);
+  return (healthchecks + 180) * 1000;
 }
 
 async function waitForRunning(client: OpalixClient, sessionId: string, timeoutMs = 60_000): Promise<void> {

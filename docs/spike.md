@@ -1324,3 +1324,313 @@ after the deploy step returns.
 A second hazard from the same hour: a push to `main` from another session
 redeployed `main`'s older Worker and images over this branch's deploy.
 Whichever deploy finishes last is what is live.
+
+## LiteLLM boot time: where it goes (26 Sep 2026)
+
+Follow-up to the 77 s figure above: where exactly the time goes, and what
+the "migrate a template database at build time" lever is actually worth.
+Measured locally (4-core Intel(R) Xeon(R) Processor @ 2.80GHz, `nproc` 4),
+LiteLLM pinned to one core with `taskset -c 0` to approximate the live
+container's 0.5 vCPU. LiteLLM 1.102.1 + prisma 0.15.0 (the T4 venv, prisma
+client already generated). Postgres 16 binaries, run as the `postgres` OS
+user. Every case used the fixture's exact argv/env from
+`test/fixtures/labs/gateway-litellm-hello/manifest.yaml`, only substituting
+ports (Postgres 65432, LiteLLM 64000) and `SERVER_ROOT_PATH` ->
+`/sessions/local/services/litellm`. One substitution had to change: the
+task's assigned provider port, **68961, is not a valid TCP port** (max is
+65535) — `fake_provider.py` crashed on it immediately
+(`OverflowError: bind(): port must be 0-65535`), so 60961 was used instead,
+in `config.yaml`'s `api_base` and the provider's `PROVIDER_PORT`. Each case
+was run 3 times; medians are reported. Every phase timestamp below is read
+straight from LiteLLM's own log, piped live through a small line-timestamper
+(`tsline.py`, since `ts`/moreutils isn't installed on this box) — not
+estimated.
+
+### A — Postgres: initdb and start-to-accepting
+
+Fresh empty dir each time (`initdb -D ... --auth=trust -U postgres`, then
+`postgres -D ... -h 127.0.0.1 -p 65432 -k /tmp`, exactly the manifest's
+argv), polled with `pg_isready`.
+
+| | run 1 | run 2 | run 3 | median |
+|---|---|---|---|---|
+| initdb | 624 ms | 632 ms | 706 ms | **632 ms** |
+| start → accepting connections | 68 ms | 70 ms | 79 ms | **70 ms** |
+
+Postgres itself is never the bottleneck — well under a second combined,
+even on one core.
+
+### B–F — LiteLLM boot, by DB state
+
+| Case | Condition | Run 1 | Run 2 | Run 3 | **Median** |
+|---|---|---|---|---|---|
+| B | Fresh empty DB (current behaviour) | 28.93 s | 30.01 s | 30.21 s | **30.01 s** |
+| C | Already-migrated DB, restart | 19.60 s | 20.37 s | 19.09 s | **19.60 s** |
+| D | Migrated DB + `DISABLE_SCHEMA_UPDATE=True` | 14.87 s | 15.63 s | 14.38 s | **14.87 s** |
+| E | No `DATABASE_URL` at all (import/boot floor) | 9.36 s | 9.64 s | 9.30 s | **9.36 s** |
+| F | Template copy + `DISABLE_SCHEMA_UPDATE=True` | 14.54 s | 14.31 s | 15.05 s | **14.54 s** |
+
+(F's number is copy + Postgres start + LiteLLM, all three timed per run and
+summed; see below.)
+
+### Where case B's 30 s actually goes (phase timestamps from the log)
+
+```
+t=0.00s   process launched (taskset -c 0 litellm --config ... --port 64000)
+t=8.36s   first log line ("Using default (v1) migration resolver...")
+t=8.36s   "Preparing the Prisma CLI toolchain (timeout 600.0s)"
+t=12.63s  "Prisma CLI toolchain ready" / "Running prisma migrate deploy"
+t=17.95s  "prisma migrate deploy completed" (171 migrations applied)
+t=17.96s  "Running post-migration sanity check..." / "Generating migration diff..."
+t=22.11s  "Migration diff created..." -> "Running prisma db execute..."
+t=26.28s  "Migration diff applied successfully" / "Post-migration sanity check completed"
+t=26.29s  "Started server process" / LiteLLM banner
+t=28.57s  "Application startup complete."
+t=28.57s  "Uvicorn running on http://0.0.0.0:64000"
+t=28.92s  first 200 on GET /health/readiness
+```
+
+Five roughly sequential phases, none of them Postgres:
+
+1. **Python import + config load: ~8.4 s.** Nothing DB-related has run yet —
+   confirmed by case E (no `DATABASE_URL`), which reaches
+   `Application startup complete` at **t=8.53s** with an otherwise-identical
+   log up to that point. This is pure `import litellm.proxy.proxy_server` +
+   YAML config parse + router init cost, and it is paid in *every* case
+   (B–F), migrations or not.
+2. **"Preparing the Prisma CLI toolchain": ~4.3 s.** A subprocess call to
+   the Prisma CLI just to confirm the toolchain is installed
+   (`litellm_proxy_extras/prisma_toolchain.py:ensure_prisma_toolchain`),
+   even though the binaries are already fully cached from build time. Paid
+   whenever LiteLLM calls `PrismaManager.setup_database` — i.e. whenever
+   `DISABLE_SCHEMA_UPDATE` is not set.
+3. **`prisma migrate deploy` itself: ~5.3 s** on a fresh DB (171 migrations,
+   real work) or **~4.2 s** on an already-migrated one, restart case C
+   (subprocess/CLI overhead even to report "No pending migrations to
+   apply" — confirmed live: `caseC-litellm-1.log`, `t=12.86s → t=17.10s`).
+4. **Post-migration sanity check: ~8.3 s, fresh-DB only.**
+   `litellm_proxy_extras` runs a second `prisma migrate diff` against the
+   just-migrated DB (~4.2 s) and then `prisma db execute` to apply
+   whatever it finds (~4.2 s) — every time `migrate deploy` actually
+   applied a pending migration. On restart (case C), the log shows
+   `"No pending migrations — skipping post-migration sanity check"` and
+   this entire phase (~8.3 s) disappears — this is the single biggest
+   difference between a fresh boot and a restart, bigger than the
+   migrations themselves.
+5. **FastAPI/Uvicorn app startup + Prisma client connect: ~2.1–2.3 s**,
+   same in every case.
+
+### D — what `DISABLE_SCHEMA_UPDATE=True` actually does
+
+Read from the installed source, then verified live:
+`litellm/proxy/db/prisma_client.py:should_update_prisma_schema` reads
+`DISABLE_SCHEMA_UPDATE` (default `false`); when true, `proxy_cli.py` skips
+`PrismaManager.setup_database` (the toolchain-check + `migrate deploy` +
+sanity-check chain above) entirely and instead calls
+`check_prisma_schema_diff` (`litellm/proxy/db/check_migration.py`), which
+runs one `prisma migrate diff --from-url <DATABASE_URL> --to-schema-datamodel
+./schema.prisma --script` and only *logs* a warning if it finds a
+difference — it never applies anything, never raises, and never blocks
+startup ("Never raises: a diff that cannot be produced ... is reported as
+'no diff' so boot continues", per the function's own docstring).
+
+**Live bug found while measuring:** that diff call is broken in 1.102.1 —
+it never `os.chdir`s into the schema's directory before invoking Prisma
+with a relative `./schema.prisma` path, so it fails every time:
+```
+Failed to generate migration diff. Error: Error: Could not load
+`--to-schema-datamodel` from provided path `schema.prisma`: file or
+directory not found
+```
+(caught and swallowed, exactly per the docstring above — boot proceeds
+normally). So today, `DISABLE_SCHEMA_UPDATE=True` does **not** actually
+detect schema drift; its only live effect is skipping the toolchain-check
+and `migrate deploy` calls, which is exactly why case D (14.87 s) is
+faster than case C (19.60 s) by almost exactly the toolchain-check +
+migrate-deploy cost (~4.3 s + ~4.2 s ≈ 8.5 s cases C→D delta is 4.73 s;
+the rest of the difference is measurement noise between runs).
+
+**Functional check, after booting this way** (migrated DB, restart, from
+the template used in case F below):
+```
+$ curl -sX POST :64000/chat/completions -H "Authorization: Bearer sk-opalix-fixture-master" \
+    -d '{"model":"support","messages":[{"role":"user","content":"hello there"}]}'
+-> HTTP 200 {"...,"choices":[{"...,"message":{"content":"reply from deployment a",...
+
+$ curl -sX POST :64000/key/generate -H "Authorization: Bearer sk-opalix-fixture-master" \
+    -d '{"models":["support"],"key_alias":"caseF-func-key"}'
+-> HTTP 200, key created
+
+$ curl -sX POST :64000/team/new -H "Authorization: Bearer sk-opalix-fixture-master" \
+    -d '{"team_alias":"caseF-func-team","models":["support"]}'
+-> HTTP 200, team created
+```
+All three work. `DISABLE_SCHEMA_UPDATE=True` is safe to bake into the image
+as a permanent env var; it just means "trust the image's migrations,
+don't re-check them at every boot" (currently a no-op check regardless).
+
+### E/G — the ~8.4 s import floor
+
+`python3 -X importtime -c "import litellm.proxy.proxy_server"` (also
+`taskset -c 0`), top cumulative offenders:
+
+| Module | Cumulative |
+|---|---|
+| `litellm.proxy.proxy_server` (total) | 8.81 s |
+| `litellm.proxy` (package init) | 4.12 s |
+| `prisma` (client + types + errors), via `workflow_management_endpoints` | 2.53 s |
+| `litellm.llms.anthropic.*` chain (transformation/handler/logging) | 1.21 s |
+| `litellm.litellm_core_utils.core_helpers` | 0.85 s |
+| `litellm.utils` (incl. `openai` types/package) | 0.81 s |
+
+This matches case E's ~8.5 s to `Application startup complete` almost
+exactly, and it is a **fixed cost paid in every case**, including the
+"do nothing" case E. Note that importing the `prisma` Python client alone
+(2.53 s) costs more than actually running `prisma migrate deploy` against
+an up-to-date DB (case C's ~4.2 s figure includes CLI subprocess overhead,
+not Python import — these are different processes). This floor cannot be
+reduced by anything database-related; it would need upstream changes to
+LiteLLM's import graph (lazy-importing the Anthropic transformation chain,
+the prisma client, etc.), which is out of scope here and not something a
+lab image can fix.
+
+### F — the template idea, measured
+
+Built once, as it would be at image-build time: fresh empty dir, `initdb`,
+start Postgres, then **the exact command LiteLLM itself runs** —
+found by reading `litellm_proxy_extras/utils.py`
+(`ProxyExtrasDBManager.setup_database` / `_get_prisma_dir`, which is
+LiteLLM's own installed package directory, holding both `schema.prisma`
+and `migrations/`):
+
+```
+$ cd <venv>/lib/python3.10/site-packages/litellm_proxy_extras
+$ DATABASE_URL=postgresql://postgres@127.0.0.1:65432/postgres prisma migrate deploy
+Prisma schema loaded from schema.prisma
+Datasource "client": PostgreSQL database "postgres", schema "public" at "127.0.0.1:65432"
+171 migrations found in prisma/migrations
+No pending migrations to apply.        # (this run: applied all 171 -- see below)
+```
+Timed: **5.14 s**, run once against a genuinely empty DB (`psql \dt` before:
+"Did not find any relations"; after: `SELECT COUNT(*) FROM
+"_prisma_migrations" WHERE finished_at IS NOT NULL` → **171**, `\dt` → 81
+tables). This is the build-time step; it needs a reachable Postgres and
+`PATH` including the venv's `bin` (so the schema's `prisma-client-py`
+generator resolves), but does **not** need LiteLLM itself running.
+
+Then, simulating a session boot from that baked-in template:
+
+| Step | Run 1 | Run 2 | Run 3 | Median |
+|---|---|---|---|---|
+| `cp -a` template dir → fresh dir | 107 ms | 155 ms | 122 ms | 122 ms |
+| Postgres start → accepting | 70 ms | 64 ms | 67 ms | 67 ms |
+| LiteLLM boot (`DISABLE_SCHEMA_UPDATE=True`) → ready | 14.37 s | 14.09 s | 14.86 s | 14.37 s |
+| **Total** | 14.54 s | 14.31 s | 15.05 s | **14.54 s** |
+
+Template data directory size: **43 MB** (`du -sh`) — copying it is noise
+(~0.1 s) next to everything else. Booting from the copy with
+`DISABLE_SCHEMA_UPDATE=True` reached `"No pending migrations"`-equivalent
+behaviour (the buggy-but-harmless diff check, see case D) and passed the
+same chat-call / `/key/generate` / `/team/new` functional check above.
+
+### Bonus — a fast path for graders' fresh `grading` DB
+
+Since Postgres itself supports database-level templating, a grader that
+needs its own fresh, already-migrated database doesn't need to re-run
+`prisma migrate deploy` (or generate a diff) at all — it can clone the
+already-migrated database directly:
+```
+$ psql -U postgres -c "CREATE DATABASE grading TEMPLATE postgres;"
+CREATE DATABASE   -- 112 ms
+$ psql -U postgres -d grading -c 'SELECT COUNT(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL;'
+ count
+-------
+   171
+```
+**Caveats, both confirmed live:** (1) `CREATE DATABASE ... TEMPLATE`
+requires zero other connections to the source database at the moment of
+the call (`pg_terminate_backend` was needed here to clear LiteLLM's own
+pooled connections first) — a grader would need to point this at a
+dedicated, idle "migrated baseline" database, not the live session's
+`postgres` db while LiteLLM is still connected to it. (2) it clones
+*all* rows, not just schema — template from the clean, freshly-migrated
+baseline (before any keys/teams/spend rows exist), not from a session
+that a learner has already used, or the grading DB inherits that data.
+
+### Summary table
+
+| Case | What | Local median | Scaled estimate (× 77s/30.0s = 2.57)† |
+|---|---|---|---|
+| A | Postgres initdb + start | 0.70 s | ~1.8 s |
+| B | LiteLLM, fresh DB (today) | 30.01 s | 77.0 s (the measured baseline) |
+| C | LiteLLM, migrated DB, restart | 19.60 s | ~50.3 s |
+| D | Migrated DB + `DISABLE_SCHEMA_UPDATE=True` | 14.87 s | ~38.2 s |
+| E | No DB at all (import/boot floor) | 9.36 s | ~24.0 s |
+| F | Template copy + `DISABLE_SCHEMA_UPDATE=True` | 14.54 s | **~37.3 s** |
+
+† The scaling factor is this session's live 77 s divided by this spike's
+own case-B median (30.0 s), i.e. calibrated so case B reproduces the
+measured 77 s exactly. It is **an estimate**, not a live measurement — the
+live container's actual behaviour should be re-checked once the image
+change ships, the same way this document's other environment-vs-container
+gaps have needed reconciling (see the "companion data point" in the T4
+section above, and the live-vs-sandbox RSS gap it flagged).
+
+### Recommendation
+
+1. **Bake a migrated Postgres data directory into the gateway image**
+   (case F): at build time, `initdb` into a throwaway dir, start Postgres,
+   run the exact command above (`prisma migrate deploy` from
+   `litellm_proxy_extras`'s own directory) once, stop Postgres cleanly, and
+   ship that data directory (43 MB) as an image layer. At session boot,
+   `cp -a` it into `/tmp/pg` (matching the existing manifest's writable
+   path — no manifest change needed there) instead of running `initdb`
+   into an empty dir.
+2. **Set `DISABLE_SCHEMA_UPDATE=True` as a permanent env var** on the
+   `litellm` service in both the image and `manifest.yaml` (alongside the
+   existing `LITELLM_LOCAL_MODEL_COST_MAP=True`). It skips the
+   toolchain-check + `migrate deploy` shell-outs on every boot; its
+   drift-detection is currently a no-op due to the upstream relative-path
+   bug above, so there is no functional loss versus today, and every
+   management/chat operation this fixture and the other Module 1 gateway
+   labs need still works (verified live).
+3. **Lower `litellm`'s healthcheck `timeout_s`** from 120 back down
+   towards something like 45-50 s once the image change ships — the
+   120 s figure in the manifest exists specifically because a fresh-DB
+   migration could take that long; after this change it never does.
+4. **Do not touch** the postgres/provider service definitions or argv —
+   case A shows Postgres was never the bottleneck, and the `runuser`
+   `initdb`-then-`postgres` dance is unaffected by any of this (it still
+   runs, just against a pre-populated dir instead of an empty one — one
+   risk to flag: `initdb`'s existence check is
+   `if [ ! -f /tmp/pg/PG_VERSION ]`, and a baked-in template directory
+   already has `PG_VERSION`, so that argv's guard correctly skips
+   `initdb` and goes straight to `exec postgres` against the copied data —
+   this only works if the image ships the *contents* of `/tmp/pg`
+   pre-populated at that exact path, or the build step copies the baked
+   template there before the service's own argv runs).
+
+**Risks:**
+- **A learner's restart of `litellm` must still work.** Confirmed: case D
+  is exactly "restart against an already-migrated DB with
+  `DISABLE_SCHEMA_UPDATE=True`" and it succeeded 3/3 times with all
+  three functional checks passing.
+- **The `DISABLE_SCHEMA_UPDATE` diff-check bug** means the image will
+  never warn if a future LiteLLM upgrade's schema drifts from what got
+  baked into the template at build time — worth a comment in the
+  Dockerfile/build script pointing back to this section, since upstream
+  may fix the relative-path bug in a later release and change this
+  behaviour.
+- **Grader fresh-DB creation**: `CREATE DATABASE ... TEMPLATE` is a real,
+  fast (112 ms) option, but only if the grader can guarantee no other
+  connections to the template source at that moment and templates from a
+  clean baseline, not a used session's DB — both confirmed above. If a
+  grader instead spins up its own fresh Postgres cluster + `prisma migrate
+  deploy` (case F's build step, ~5 s), that also works and sidesteps the
+  connection-contention caveat entirely.
+- **Scaled estimates are not measurements.** The container's 0.5 vCPU is
+  approximated here with `taskset -c 0` on a 4-core box (Intel Xeon
+  2.80GHz) with otherwise-idle cores; the real container has other
+  processes (Postgres, the provider, the session's own supervisor)
+  contending for that same half core, which this local setup does not
+  fully reproduce. Re-measure once the image ships.

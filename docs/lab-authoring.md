@@ -154,6 +154,16 @@ service with `ui: false` is refused by the proxy with `403 not_exposed` even
 for a valid session token, so a port a lab opens for its own internal use is
 not reachable from outside. The default is `false`, so exposure is opt-in.
 
+**The proxy forwards the full path.** A request for the tab reaches the
+service as `/sessions/{id}/services/{name}/...`, unchanged. Tools with a
+base-path setting take `{{service.prefix}}` there (Grafana's
+`GF_SERVER_ROOT_URL`, LiteLLM's `SERVER_ROOT_PATH`). A small page of your
+own must strip that prefix itself: pass it in its env (for example
+`VIEW_PREFIX: "{{service.prefix}}"`), strip it from the request path,
+and keep every link relative. Healthchecks go straight to the port without
+the prefix, so answer both. A page that only answers `/` passes every
+local test and returns 404 in the console.
+
 **No login.** Every `ui: true` tab must open already signed in; a learner
 must never land on a login form. Either the tool has a real anonymous mode
 (configure it — Grafana's three `GF_AUTH_*` variables above are the
