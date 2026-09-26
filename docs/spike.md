@@ -431,3 +431,538 @@ the Worker. The open question this answered was whether the SDK's https
 interception and its ephemeral CA would let a plain `curl` out to the
 gateway at all — they do, with no change to the image. The egress fence is
 unaffected: everything not on the allowlist is still refused.
+
+## LiteLLM proxy (T4, 26 Sep 2026)
+
+Everything below was run in a venv under
+`/tmp/claude-0/.../scratchpad/litellm-t4/` (this session's scratchpad), not
+in this repo, against a real local PostgreSQL 16 cluster and a real
+fake-OpenAI HTTP server. Nothing was guessed from litellm's docs; every
+claim cites the command and the real output. Where I did read installed
+package *source* (not docs) to explain *why* something happened, I say so
+explicitly and separately from the live evidence.
+
+### Environment note — this is not quite the lab image
+
+This dev sandbox is **Ubuntu 24.04.4 LTS**, not the 22.04 the lab
+containers run (`cat /etc/os-release` → `PRETTY_NAME="Ubuntu 24.04.4
+LTS"`). Per the task, I used the `python3.10` interpreter that happens to
+also be installed here (`/usr/bin/python3.10`, `Python 3.10.20`) rather
+than the system default (`python3` → `Python 3.11.15`), so the *Python*
+version matches the lab target even though the OS userland (glibc, apt
+package set, preinstalled Node) does not. This matters for one specific
+claim below (Prisma's Node bootstrap) — flagged where relevant.
+
+### Step 1 — install and pin
+
+```
+$ python3.10 -m venv venv
+$ ./venv/bin/pip install "litellm[proxy]"
+...
+Successfully installed ... litellm-1.102.1 litellm-enterprise-0.1.67
+litellm-proxy-extras-0.4.97 ... fastapi-0.141.1 uvicorn-0.54.0 ...
+
+$ ./venv/bin/pip show litellm
+Name: litellm
+Version: 1.102.1
+...
+```
+
+Two things worth flagging about this install, found by inspecting what
+actually landed in `site-packages` (not docs):
+
+* **`litellm[proxy]` pulls in `litellm-enterprise` 0.1.67 automatically**
+  (`License-Expression: LicenseRef-Proprietary`). It's just an importable
+  dependency, not a license grant — enterprise-gated endpoints still refuse
+  without a license (see Q3c).
+* **`litellm[proxy]` does *not* install the `prisma` Python package.**
+  `./venv/bin/pip show prisma` → `WARNING: Package(s) not found: prisma`
+  right after the install above. Starting the proxy with a Postgres
+  `DATABASE_URL` at this point fails immediately:
+  ```
+  ModuleNotFoundError: No module named 'prisma'
+  Unable to connect to DB. DATABASE_URL found in environment, but the
+  prisma CLI is neither on PATH nor importable as a package.
+  ```
+  `prisma` (0.15.0) had to be `pip install`ed separately.
+
+### Step 2 — Postgres, locally
+
+`postgresql` (meta) + `postgresql-16` were installed with `apt-get install
+-y postgresql` (real internet access confirmed via `apt-get update`
+succeeding). A cluster was created and started under the scratchpad,
+running as the unprivileged `postgres` system user:
+
+```
+$ sudo -u postgres /usr/lib/postgresql/16/bin/initdb -D .../litellm-t4/pgdata --auth=trust
+... Success. ...
+
+$ sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D pgdata -l pgdata/pg.log \
+    -o "-p 5432 -h 127.0.0.1" start
+waiting for server to start.... done
+server started
+
+$ psql -h 127.0.0.1 -p 5432 -U postgres -c "SELECT version();"
+ PostgreSQL 16.13 (Ubuntu 16.13-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu ...
+```
+
+Postgres worked, so this is answered directly rather than "if you can't, say
+why" — but one real, reproducible problem showed up along the way, worth
+recording because it cost real time: **this specific coding sandbox
+periodically resets the scratchpad's ancestor directories back to `700`
+between tool calls** (a security control of the harness, not of the target
+container). Since `pgdata` lives several directories under the scratchpad
+root, this twice made an ancestor directory untraversable to the `postgres`
+user *while Postgres was already running*, and its checkpointer — which
+reopens `pg_control` by path on every checkpoint — hit:
+```
+2026-09-26 10:22:25.303 UTC [2482] PANIC:  could not open file
+  ".../pgdata/global/pg_control": Permission denied
+2026-09-26 10:22:25.304 UTC [2481] LOG:  checkpointer process (PID 2482)
+  was terminated by signal 6: Aborted
+2026-09-26 10:22:25.314 UTC [2481] LOG:  database system is shut down
+```
+Both times, `pg_ctl start` afterwards replayed WAL cleanly and all data
+(171 applied migrations, created keys/teams/spend rows) survived intact —
+confirmed via `SELECT COUNT(*) FROM "_prisma_migrations" WHERE finished_at
+IS NOT NULL` returning `171` both before and after. **This is an artifact
+of this research sandbox, not a finding about the real container image**
+(which won't have an external process resetting its filesystem
+permissions), so it is not carried into the Implications list, but it does
+mean two of the timing runs below started from a WAL-recovered cluster
+rather than a pristine one — noted where relevant.
+
+### Step 3 — fake provider + config
+
+`fake_provider.py` (plain `http.server`, no deps) on `127.0.0.1:8961`
+answers `POST /a/v1/chat/completions` with a fixed
+`{"content": "fixed-fake-reply"}` and `usage: {"prompt_tokens": 1000,
+"completion_tokens": 1000, "total_tokens": 2000}` (a large fixed usage so a
+tiny budget is easy to exceed deterministically). `config.yaml` defines two
+aliases, `support` and `other`, both `openai/fake-model` pointed at that
+`api_base`, each given explicit `input_cost_per_token`/
+`output_cost_per_token: 0.001` (needed for Q3d — a model litellm doesn't
+recognise prices at `$0` by default, so a budget could never be exceeded
+without this). The proxy was started with:
+```
+DATABASE_URL=postgresql://litellm:litellm@127.0.0.1:5432/litellm
+LITELLM_MASTER_KEY=sk-t4-master
+LITELLM_LOCAL_MODEL_COST_MAP=True
+./venv/bin/litellm --config config.yaml --port 4000
+```
+
+### Q1 — Does key/team management require Postgres?
+
+Yes, hard-required — confirmed two ways.
+
+**Live**: same install, `DATABASE_URL=sqlite:///$(pwd)/test_sqlite.db`,
+port 4001:
+```
+LiteLLM Proxy: DATABASE_URL uses unsupported scheme 'sqlite'. LiteLLM's
+database features (virtual keys, store_model_in_db, spend tracking)
+require PostgreSQL; use a 'postgresql://' connection string. SQLite and
+other engines are not supported. See https://docs.litellm.ai/docs/proxy/virtual_keys
+```
+The process exits immediately — no server ever binds
+(`curl .../health/readiness` → connection refused, `000`).
+
+**Why, from the installed source** (not docs): the schema every version of
+the DB layer is generated from is hard-coded, not merely defaulted —
+`venv/lib/python3.10/site-packages/litellm_proxy_extras/schema.prisma`:
+```
+datasource client {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+```
+There is no other provider shipped, so no config change makes SQLite work;
+this isn't a missing driver, it's a schema that only understands Postgres.
+
+### Q2 — what does the proxy try to reach at runtime?
+
+Method used: started the proxy with a bad, **process-scoped**
+`HTTPS_PROXY=http://127.0.0.1:1` (nothing listens there) so any outbound
+HTTPS call fails fast and loud in the log, without touching the session's
+real proxy settings.
+
+**a) Model cost map (`model_prices_and_context_window.json` from GitHub).**
+Confirmed live, both directions.
+
+Without `LITELLM_LOCAL_MODEL_COST_MAP` set, network blocked:
+```
+LiteLLM:WARNING: model cost map fetch attempt 1/3 failed (ConnectError
+  fetching https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json:
+  [Errno 111] Connection refused); retrying in 2.4s
+LiteLLM:WARNING: ... attempt 2/3 failed ...; retrying in 4.7s
+LiteLLM:WARNING: Failed to fetch remote model cost map from
+  https://raw.githubusercontent.com/... after 3 attempts; keeping local backup
+```
+It degrades gracefully (falls back to litellm's bundled copy, does not
+crash) but burns ~7s of retries with backoff on every cold start with no
+egress.
+
+With `LITELLM_LOCAL_MODEL_COST_MAP=True` set, same blocked network, fresh
+run, log grepped for `model_prices|github|cost map`: **zero fetch-attempt
+lines** (only the static "file an issue on GitHub" banner text remained).
+Startup proceeded straight through with no retry delay. The env var is
+also documented in the installed module's own docstring
+(`litellm/litellm_core_utils/get_model_cost_map.py`), which I read to name
+it, then verified live.
+
+**b) Prisma engine binaries / `prisma generate` / migrations.** This is a
+genuine build-time-only step; nothing suppresses it via an env var. Traced
+through four real states:
+
+1. `litellm[proxy]` alone, `DATABASE_URL` set to real Postgres → crashes
+   immediately (`ModuleNotFoundError: No module named 'prisma'`, shown
+   above).
+2. `pip install prisma` (0.15.0) → different, later crash:
+   ```
+   Exception: Unable to find Prisma binaries. Please run 'prisma generate' first.
+   ```
+3. Manually ran the real generation step (needs `venv/bin` on `PATH` so
+   the schema's declared generator binary, `prisma-client-py`, resolves):
+   ```
+   $ PATH=$(pwd)/venv/bin:$PATH DATABASE_URL=postgresql://... \
+     prisma generate --schema=.../litellm_proxy_extras/schema.prisma
+   ✔ Generated Prisma Client Python (v0.15.0) to ./venv/lib/python3.10/site-packages/prisma in 1.16s
+   ```
+   This is the point where the real network calls happen. It downloaded a
+   Node-based Prisma CLI plus **5 query-engine binaries**, one per
+   `binaryTarget` the schema declares (`native`, `debian-openssl-1.1.x`,
+   `debian-openssl-3.0.x`, `linux-musl`, `linux-musl-openssl-3.0.x`), into
+   `~/.cache/prisma/` (104 MB) and
+   `~/.cache/prisma-python/binaries/5.17.0/<hash>/node_modules/prisma/`
+   (134 MB) — confirmed by `find ~/.cache -iname '*query-engine*'` and
+   `du -sh` before/after.
+4. With that cache in place, the real proxy startup log shows the rest
+   happening automatically, from Postgres alone (no network needed at this
+   point):
+   ```
+   litellm_proxy_extras - INFO - Preparing the Prisma CLI toolchain (timeout 600.0s)
+   litellm_proxy_extras - INFO - Prisma CLI toolchain ready
+   litellm_proxy_extras - INFO - Running prisma migrate deploy
+   ... 171 migrations found in prisma/migrations ... No pending migrations to apply.
+   litellm_proxy_extras - INFO - prisma migrate deploy completed
+   ```
+   So migrations themselves are *not* a manual step — the proxy runs
+   `prisma migrate deploy` against its own bundled 171 migrations on every
+   boot — but that only works because the client+engine from step 3 were
+   already generated.
+
+No env var bypasses step 3. This is corroborated straight from the
+installed source, not docs: `litellm/proxy/prisma_migration.py`'s own
+docstring reads *"every shipped image bakes the client at build time;
+refreshing it writes into site-packages, which an arbitrary non-root uid or
+a read-only root filesystem cannot do"* — i.e. upstream's own image already
+treats this as build-time-only, which matches exactly what I reproduced.
+
+One gap: Node 22 was already present on this machine
+(`/opt/node22/bin/node`), so the private-Node-runtime bootstrap that
+`litellm_proxy_extras/prisma_toolchain.py`'s own docstring describes for a
+machine with *no* Node at all ("installs a private Node runtime... can
+take minutes") was never exercised here. **The real Ubuntu 22.04 lab base
+image needs to be checked for whether Node is present**; if not, the
+build-time `prisma generate` step will also pull a private Node via
+`nodeenv`, adding to the one-time build cost (still build-time, still not a
+runtime download, but worth knowing about before assuming step 3 is quick).
+
+**c) Telemetry.** Read the source first, then verified with the
+network-blocked run above. `litellm/utils.py` hardcodes
+`posthog: Final = None`, and the actual `PostHogLogger`
+(`litellm/integrations/posthog.py`) is only instantiated if `"posthog"` is
+explicitly configured as a `success_callback`/logging integration with an
+API key — nothing in `config.yaml` does that here. Across every log
+captured in this spike, including the two deliberately network-blocked
+runs above, grepping for `posthog|telemetry` in the *runtime* logs never
+turns up an outbound attempt (only source-code matches when grepping
+`site-packages` directly). So for litellm 1.102.1 there is no env var
+needed to "turn telemetry off" because nothing calls out by default; I did
+**not** test the opposite direction (deliberately configuring the
+`posthog` callback to confirm it *would* call out), since that wasn't
+needed to support the negative claim.
+
+### Q3 — what works without an enterprise licence
+
+**a) Virtual key limited to specific model aliases — works.**
+```
+$ curl -sX POST :4000/key/generate -H "Authorization: Bearer sk-t4-master" \
+    -d '{"models": ["support"], "key_alias": "q3a-key-v2"}'
+{"...,"models":["support"],...,"key":"sk-<generated>",...}
+
+$ curl -sX POST :4000/chat/completions -H "Authorization: Bearer $KEY" \
+    -d '{"model":"support",...}'
+-> HTTP 200, {"...,"choices":[{"message":{"content":"fixed-fake-reply"}...
+
+$ curl -sX POST :4000/chat/completions -H "Authorization: Bearer $KEY" \
+    -d '{"model":"other",...}'
+-> HTTP 403
+{"error":{"message":"key not allowed to access model. This key can only
+access models=['support']. Tried to access other",
+"type":"key_model_access_denied","code":"403"}}
+```
+
+**b) Teams — works.**
+```
+$ curl -sX POST :4000/team/new -H "Authorization: Bearer sk-t4-master" \
+    -d '{"team_alias": "team-alpha", "models": ["support"]}'
+-> {"team_alias":"team-alpha","team_id":"4fff92e8-...",...}
+
+$ curl -sX POST :4000/key/generate -H "Authorization: Bearer sk-t4-master" \
+    -d '{"team_id": "4fff92e8-...", "key_alias": "team-alpha-key"}'
+-> {"...,"team_id":"4fff92e8-...","key":"sk-<generated>",...}
+```
+
+**c) A team member who can create keys for their own team, refused for a
+different team, refused on a proxy-admin endpoint — works, but *not* the
+way the question assumes.** Assigning the **`admin`** team-member role is
+itself enterprise-gated:
+```
+$ curl -sX POST :4000/team/member_add -H "Authorization: Bearer sk-t4-master" \
+    -d '{"team_id": "<team-alpha>", "member": {"user_id": "alice", "role": "admin"}}'
+{"detail":{"error":"Assigning team admins is a premium feature. You must be
+a LiteLLM Enterprise user to use this feature. ..."}}
+```
+(traced to
+`litellm/proxy/management_endpoints/team_endpoints.py:_check_team_member_admin_add`
+— `if m.role == "admin" and premium_user is not True: raise ValueError(...)`).
+So the literal scenario in Q3c ("a team member with an admin role")
+**cannot be built without a licence.** Adding the same user with
+`role: "user"` succeeds (`HTTP 200`), and by default a plain `user`-role
+member is *also* refused `/key/generate` for their own team:
+```
+{"error":{"message":"Team member does not have permissions for endpoint:
+/key/generate. You only have access to the following endpoints:
+['/key/info', '/key/health'] for team 4fff92e8-.... To create keys for
+this team, please ask your proxy admin to check the team member
+permission settings...","type":"team_member_permission_error","code":"401"}}
+```
+The free, non-enterprise mechanism for this is `team_member_permissions`
+(`POST /team/permissions_update`, itself gated only to proxy/team/org
+admins, with **no premium check in the code path** — confirmed by reading
+`team_endpoints.py` around that route). After the proxy admin grants it:
+```
+$ curl -sX POST :4000/team/permissions_update -H "Authorization: Bearer sk-t4-master" \
+    -d '{"team_id": "<team-alpha>", "team_member_permissions": ["/key/generate", ...]}'
+-> HTTP 200
+
+$ curl -sX POST :4000/key/generate -H "Authorization: Bearer $ALICE_KEY" \
+    -d '{"team_id": "<team-alpha>", "key_alias": "alice-for-team-alpha-2"}'
+-> HTTP 200, key created, "created_by":"alice"
+
+$ curl -sX POST :4000/key/generate -H "Authorization: Bearer $ALICE_KEY" \
+    -d '{"team_id": "<team-beta>", "key_alias": "alice-for-team-beta-2"}'
+-> HTTP 400 {"error":{"message":"User=alice not assigned to team=<team-beta>",...}}
+
+$ curl -s :4000/user/list -H "Authorization: Bearer $ALICE_KEY"
+-> HTTP 403 {"detail":{"error":"Only proxy admins and organization admins can list users."}}
+```
+So: own-team key creation ✔, foreign-team refused ✔, proxy-admin-only
+endpoint (`GET /user/list`) refused ✔ — all without a licence, just not via
+the `admin` role field.
+
+**d) Per-team budgets — works.**
+```
+$ curl -sX POST :4000/team/new -H "Authorization: Bearer sk-t4-master" \
+    -d '{"team_alias":"team-budget","models":["support"],"max_budget":1.0,"budget_duration":"30d"}'
+-> {"team_id":"c376eb0e-...","max_budget":1.0,"spend":0.0,...}
+
+$ curl -sX POST :4000/key/generate ... -d '{"team_id":"c376eb0e-...","key_alias":"budget-key"}'
+-> key sk-<generated>
+
+$ curl -sX POST :4000/chat/completions -H "Authorization: Bearer $BKEY" \
+    -d '{"model":"support",...}'
+-> HTTP 200 (spend logged at $2.00 — 1000 in + 1000 out tokens * $0.001, via /spend/logs)
+
+$ curl -s ":4000/team/info?team_id=c376eb0e-..." -H "Authorization: Bearer sk-t4-master"
+-> spend=2.0 max_budget=1.0
+
+$ curl -sX POST :4000/chat/completions -H "Authorization: Bearer $BKEY" \
+    -d '{"model":"support",...}'
+-> HTTP 429
+{"error":{"message":"Budget has been exceeded! Team=c376eb0e-... Current
+cost: 2.0, Max budget: 1.0","type":"budget_exceeded","code":"429"}}
+```
+
+### Q4 — exact status codes and bodies
+
+**a) Key calls an alias it isn't allowed to use → `403`:**
+```
+{"error":{"message":"key not allowed to access model. This key can only
+access models=['support']. Tried to access other",
+"type":"key_model_access_denied","param":"model","code":"403"}}
+```
+
+**b) Anyone calls an alias that doesn't exist in the config (tried with
+the master key itself) → `400`:**
+```
+{"error":{"message":"/chat/completions: Invalid model name passed in
+model=nope-model. Call `/v1/models` to view available models for your
+key.","type":"invalid_request_error","param":null,"code":"400"}}
+```
+
+### Q5 — startup time, peak memory, key-info endpoint
+
+Measured against the already-migrated Postgres cluster (171 migrations
+already applied — realistic for a learner's *n*-th session, not a from-
+scratch DB), Prisma client already generated, `LITELLM_LOCAL_MODEL_COST_MAP=True`,
+polling `/health/readiness` every 0.5–1s from process launch:
+
+| Run | Elapsed to first `200` |
+|---|---|
+| 1 (single alias) | 22 092 ms |
+| 2 (two aliases) | 19 836 ms |
+
+Both in the same ~20–22s band. Time is dominated by three sequential
+shell-outs the proxy does before Uvicorn even starts: the "Preparing the
+Prisma CLI toolchain" check (~4–5s, even fully cached, because it's still a
+subprocess `prisma --version` call), then `prisma migrate deploy` (~4s to
+invoke and report "No pending migrations to apply"), then Python/FastAPI
+import and app init.
+
+Peak RSS, sampled every 0.5s from launch to ready, summed across the
+Python process and its Prisma query-engine child (a separate OS process):
+**≈589 MB** peak during startup (`588 904` KB), settling to **≈455 MB**
+steady-state a few seconds after `/health/readiness` turned healthy
+(`439 008` KB parent + `24 504` KB query-engine child, and again
+`441 732` + `25 636` KB on a second run) — measured with `ps -o rss=`
+against the litellm PID and its child.
+
+**Key-info endpoint:** `GET /key/info?key=<key>` (bearer: master key),
+confirmed live — returns `models`, `team_id`, `max_budget`, `spend`,
+`budget_duration`, `blocked`, etc. for the given key:
+```
+$ curl -s ":4000/key/info?key=$ALICE_KEY" -H "Authorization: Bearer sk-t4-master"
+{"key":"sk-<generated>","info":{"key_alias":"alice-personal-key",
+"models":[],"user_id":"alice","team_id":null,"max_budget":null,"spend":0.0,...}}
+```
+(Role isn't a *key*-level field in this version — role lives on the
+team-membership or user record; `/key/info` still returns everything
+needed to know what a key can do: its allowed models and its team.)
+
+### A companion data point (attributed, not verified by me here)
+
+The agent building the actual gateway container image reported, from a live
+run of that image (not from this local spike): litellm 1.102.1 already
+installed, ~10.5s to first successful call with
+`LITELLM_LOCAL_MODEL_COST_MAP=True` set (vs ~16.3s without it, consistent
+in *kind* with the ~7s of retry cost measured above, though smaller in
+this instance's case), ~320 MB RSS, and that `httpx` inside that container
+fails `CERTIFICATE_VERIFY_FAILED` unless `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt`
+is set. I did not reproduce any of these four numbers myself in this
+sandbox (different environment: bare pip+venv+local Postgres, not the
+built image) — they're included here only because they bear directly on
+the Implications list below, and are called out as reported, not measured,
+so they aren't mistaken for this spike's own evidence.
+
+### Implications for the gateway image
+
+* **Pin `litellm==1.102.1`** (`litellm[proxy]` extra) — the exact version
+  installed and exercised throughout this spike (`pip show litellm`).
+  Explicitly also pin/install **`prisma==0.15.0`**, since it is *not*
+  pulled in by the `[proxy]` extra and the proxy hard-fails without it.
+* **Postgres is mandatory, not a default** — `DATABASE_URL` must be a
+  `postgresql://` URL. SQLite (or anything else) is rejected outright at
+  startup (Q1), and the rejection is backed by a hard-coded
+  `provider = "postgresql"` in the shipped Prisma schema — there is no
+  config path around this.
+* **Build-time steps required so nothing downloads at runtime:**
+  1. `pip install "litellm[proxy]" prisma` (the pin above).
+  2. With a reachable (even throwaway) Postgres at build time, run
+     `PATH=<venv>/bin prisma generate --schema=<venv>/lib/python3.*/site-packages/litellm_proxy_extras/schema.prisma`
+     with `DATABASE_URL` set. This is the one genuinely network-dependent
+     step (Node CLI + 5 query-engine binaries, confirmed downloaded,
+     ~238 MB combined cache) and there is no env var that defers or skips
+     it — it must happen at build time. Check whether the Ubuntu 22.04 base
+     already has Node; if not, this step also bootstraps a private Node
+     runtime and will take noticeably longer the first time.
+  3. Migrations (`prisma migrate deploy`, 171 of them today) do **not**
+     need a separate manual step — the proxy runs them itself at every
+     boot, and this only needs DB connectivity, not network, once step 2's
+     client is already baked in. Still fine to also run once at build time
+     against a throwaway Postgres as an extra validation if desired.
+  4. Bake `LITELLM_LOCAL_MODEL_COST_MAP=True` into the image's default
+     environment — confirmed live to fully suppress the
+     `raw.githubusercontent.com` cost-map fetch (and its ~7s of retries
+     under blocked egress) with zero functional loss for a config that
+     only uses custom-priced aliases like ours.
+  5. No build step or env var is needed for telemetry in this version —
+     nothing calls out by default (Q2c); don't add a `posthog` callback.
+  6. (Reported, not verified here) set `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt`
+     if the built image shows `CERTIFICATE_VERIFY_FAILED` on any httpx
+     call — see the companion data point above.
+* **Startup/memory budget:** allow ~20s cold start even with everything
+  pre-baked and DB reachable (this sandbox: 19.8–22.1s; the real container
+  reportedly ~10.5s) and size the instance for at least 512 MB–1 GB RSS
+  (this sandbox: ~455 MB steady / ~589 MB peak; the real container
+  reportedly ~320 MB) — the two environments disagree enough in absolute
+  terms that the labs should re-measure this once inside the actual image
+  rather than trust either number blindly.
+* **For the two learning labs:** scoped virtual keys, teams, per-team
+  model restriction, per-team budgets, and `/key/info` all work fully in
+  the open-source tier with real evidence above — safe to build labs
+  around them. **Team-admin-role assignment (`role: "admin"` on
+  `/team/member_add`) is Enterprise-only** and will refuse with a clear
+  "premium feature" error; if a lab wants "a team lead who can self-serve
+  keys for their own team," build it on `team_member_permissions` +
+  `/team/permissions_update` (free, demonstrated above), not on the
+  `admin` role, unless the labs are meant to also teach the Enterprise
+  licensing boundary itself.
+
+### What I could not verify
+
+* Whether enabling the `posthog` logging callback *would* actually call
+  out (only confirmed it's off by default and unused in our config).
+* Any other management endpoint's premium-gating beyond team-admin-role
+  and `/user/list` — did not exhaustively fuzz every endpoint.
+* The Node-runtime bootstrap path in `prisma generate` on a machine with no
+  Node pre-installed (this machine already had Node 22) — the real 22.04
+  base image should be checked directly.
+* The four companion numbers in the "attributed" section above (real
+  container startup time/RSS with/without the cost-map env var, and the
+  `SSL_CERT_FILE` requirement) — reported by a parallel session against the
+  actual built image, not reproduced by me in this local spike.
+* Real Ubuntu 22.04 behaviour generally — this sandbox is 24.04; only the
+  Python interpreter version (3.10.20) was matched to the lab target, not
+  the OS userland.
+
+## LiteLLM in a live gateway container (26 Sep 2026)
+
+Measured in a real `gateway-hello` session on the deployed platform
+(`standard-1`: 0.5 vCPU, 4 GiB), through the learner's terminal, then the
+session was ended. No database — the database numbers are T4's, above.
+
+Environment: LiteLLM **1.102.1** (already in the image, unpinned), Python
+3.10.12, `nproc` 1, 4169 MB RAM, **no Postgres binaries**.
+
+| LiteLLM proxy, scripted provider on 127.0.0.1 | Ready after | RSS |
+|---|---|---|
+| As installed | 16.3 s | ~320 MB |
+| With `LITELLM_LOCAL_MODEL_COST_MAP=True` | 10.5 s | ~320 MB |
+
+Without the variable, the log shows three failed attempts to fetch
+`model_prices_and_context_window.json` from `raw.githubusercontent.com`
+(`CERTIFICATE_VERIFY_FAILED`), then "keeping local backup". A call through
+the proxy to the scripted provider succeeded in both runs.
+
+**HTTPS from Python to the allowed AI Gateway host**
+(`https://gateway.ai.cloudflare.com/v1`):
+
+| Client | Result |
+|---|---|
+| curl | 404 (reached the gateway) |
+| Python `urllib` | HTTP 404 (reached it) |
+| Python `httpx` | `CERTIFICATE_VERIFY_FAILED: self-signed certificate in certificate chain` |
+| `httpx` with `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt` | 404 (reached it) |
+
+`images/common/opalix-init.sh` adds the container's outbound CA to the
+system store with `update-ca-certificates`. `httpx` and `requests` use
+certifi's own bundle instead, and nothing in either image sets
+`SSL_CERT_FILE` or `REQUESTS_CA_BUNDLE`. So LiteLLM, and any learner code
+using the OpenAI Python SDK, `httpx` or `requests`, cannot reach the AI
+Gateway in either image. The shipped Real-mode labs work only because their
+services use `urllib`.
+
+Probe pitfall: a file written through the files API into a new directory
+leaves that directory `root:755`, so the learner's shell can't create files
+next to it.
