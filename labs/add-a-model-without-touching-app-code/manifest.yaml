@@ -234,28 +234,88 @@ services:
     ui: true
     depends_on: [litellm, provider]
 
+  - name: sync
+    # THE LEARNER'S OWN SERVICE. No port, so it never gates session
+    # startup and is never proxied -- editing platform/sync.py and hitting
+    # Restart on this entry in the console's Services panel is exactly how
+    # a learner is meant to iterate. Left unimplemented, sync_once() raises
+    # NotImplementedError and the process exits immediately; the Services
+    # panel shows it stopped, which is the correct signal, not a bug.
+    # NOTE: {{service.prefix}} renders against THIS block's own service
+    # name (src/labs/manifest.ts, serviceCtx/renderManifest) -- inside
+    # `sync` it would give /sessions/{id}/services/sync, not mlflow's
+    # prefix. mlflow's own prefix is built by hand instead, from
+    # {{session.id}} plus the fixed, literal path the proxy uses
+    # (docs/lab-authoring.md: "/sessions/{id}/services/{name}/...").
+    argv: ["python3", "-B", "/workspace/platform/sync.py"]
+    cwd: /workspace
+    env:
+      MLFLOW_TRACKING_URI: "http://127.0.0.1:8964/sessions/{{session.id}}/services/mlflow"
+      LITELLM_URL: "http://127.0.0.1:4000"
+      LITELLM_MASTER_KEY: "sk-opalix-catalogue-master"
+      REGISTERED_MODEL: "support-router"
+      LITELLM_MODEL_NAME: "support"
+      PINNED_MODEL_NAME: "support-legacy"
+      CHALLENGER_DEFAULT_PERCENT: "10"
+      SYNC_POLL_INTERVAL_S: "2"
+    ui: false
+    depends_on: [litellm, mlflow]
+
 pressure: []
 
 checks:
-  # Placeholder for part 2 -- deliberately fails, so this parses and so
-  # `labs test`'s "at least one check must fail on a fresh workspace" rule
-  # holds until real, outcome-based checks replace it.
-  - name: placeholder
-    script: placeholder.sh
-    timeout_s: 30
+  # All three share one grader-run's worth of setup (its own fresh
+  # LiteLLM against a throwaway database, its own fresh MLflow, the
+  # learner's own platform/sync.py run against both) -- see
+  # checks/_harness.py. Sequential on purpose: whichever runs first pays
+  # the setup cost and the other two just read its result. Generous
+  # timeout_s: the shared setup alone can take ~30-90s live (two fresh
+  # servers, a real migration), before any of the three phases it drives.
+  - name: champion-drives-support
+    script: champion-drives-support.sh
+    timeout_s: 280
+    weight: 2
+    parallel: false
+  - name: challenger-gets-its-share
+    script: challenger-gets-its-share.sh
+    timeout_s: 280
+    weight: 1
+    parallel: false
+  - name: pinned-team-stays-put
+    script: pinned-team-stays-put.sh
+    timeout_s: 280
     weight: 1
     parallel: false
 
 hints:
   # ~15% of timeout_minutes.
   - after_minutes: 14
-    text: "PLACEHOLDER for part 2."
+    text: >-
+      app.py only ever asks LiteLLM for one alias, and that alias does not
+      exist in the catalogue yet -- your sync has to create it, not just
+      keep it current. MLflow's registered model already has three
+      versions and a "champion" alias; whichever version champion points
+      to right now is the deployment your sync should be driving that
+      alias toward, checked on every pass, not only once at startup.
   # ~30% of timeout_minutes.
   - after_minutes: 27
-    text: "PLACEHOLDER for part 2."
+    text: >-
+      LiteLLM's own OpenAPI schema (bare GET /openapi.json against the
+      gateway) lists what its live catalogue actually exposes at runtime,
+      with store_model_in_db: true already on -- nothing here needs
+      gateway/config.yaml touched or the litellm process restarted, ever,
+      for either the initial catalogue entry or a later change to it.
   # ~45% of timeout_minutes.
   - after_minutes: 40
-    text: "PLACEHOLDER for part 2."
+    text: >-
+      Two LiteLLM endpoints do the actual catalogue writes: POST
+      /model/new to add a deployment the first time, POST /model/update
+      (by its model_info.id) to change one that already exists. For the
+      staged rollout, LiteLLM's router does a weighted random pick among
+      several deployments sharing one model_name whenever any of them
+      sets litellm_params.weight -- run the champion and the challenger
+      as two such deployments, weights adding to 100, and remove the
+      second one (POST /model/delete) when "challenger" goes away.
 
 egress:
   allow: []
