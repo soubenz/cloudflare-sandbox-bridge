@@ -137,7 +137,11 @@ def _recreate_grading_db():
     rc, out, err = _psql("DROP DATABASE IF EXISTS %s;" % GRADER_DB_NAME)
     if rc != 0:
         raise RuntimeError("could not drop grading db: %s" % (err or out))
-    rc, out, err = _psql("CREATE DATABASE %s;" % GRADER_DB_NAME)
+    # From the image's pre-migrated template (images/gateway/build-pg-template.sh):
+    # instant, and the grader's LiteLLM then skips its migrations. Nothing
+    # connects to litellm_template, so the copy never trips over the open
+    # connections the learner's own gateway holds on `postgres`.
+    rc, out, err = _psql("CREATE DATABASE %s TEMPLATE litellm_template;" % GRADER_DB_NAME)
     if rc != 0:
         raise RuntimeError("could not create grading db: %s" % (err or out))
 
@@ -147,6 +151,7 @@ def _start_grader_litellm(log_path):
     env["DATABASE_URL"] = "postgresql://postgres@%s:%s/%s" % (
         GRADER_PG_HOST, GRADER_PG_PORT, GRADER_DB_NAME,
     )
+    env["DISABLE_SCHEMA_UPDATE"] = "True"
     env["LITELLM_MASTER_KEY"] = LITELLM_MASTER_KEY
     env["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
     log_f = open(log_path, "wb")

@@ -52,7 +52,14 @@
 # T4 Q1) and its own admin UI always requires a login and nothing turns
 # that off (T5 Q4) -- so, per docs/lab-authoring.md's no-login rule,
 # `litellm` stays `ui: false` and `view` (a small read-only stdlib page)
-# is the tab instead.
+# is the tab instead.#
+# An accepted alternative fix (user decision, 26 Sep 2026): setting
+# `general_settings.fail_closed_budget_enforcement: true` in
+# gateway/config.yaml, with the hook left untouched, makes LiteLLM's own
+# reservation refuse instead of shrinking, and passes all three checks,
+# including the concurrent burst. The checks grade outcomes, so it counts.
+# The hints still steer toward the hook, which is the part that teaches.
+
 slug: hard-budget-per-team
 version: 1.0.0
 title: "Put a hard budget on every team"
@@ -88,7 +95,7 @@ services:
     argv:
       [
         "sh", "-c",
-        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then mkdir -p /tmp/pg && chown postgres:postgres /tmp/pg && runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
       ]
     cwd: /workspace
     port: 5432
@@ -126,6 +133,9 @@ services:
       LITELLM_MASTER_KEY: "sk-opalix-hbpt-master"
       SERVER_ROOT_PATH: "{{service.prefix}}"
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh).
+      DISABLE_SCHEMA_UPDATE: "True"
       PROVIDER_BASE_URL: "http://127.0.0.1:8961/v1"
       LITELLM_URL: "http://127.0.0.1:4000"
       GATEWAY_KEYS_FILE: "/workspace/gateway/keys.json"

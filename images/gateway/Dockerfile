@@ -102,6 +102,31 @@ RUN curl -fsSL "https://github.com/prometheus/prometheus/releases/download/v${PR
 RUN pip3 install --no-cache-dir "litellm[proxy]==1.102.1" "prisma==0.15.0" locust \
     && pip3 show litellm | grep -qx 'Version: 1.102.1'
 
+# MLflow, for Path 2's model-catalogue lab: its model registry's aliases
+# drive which provider model a LiteLLM alias points to. Pinned to 3.16.1,
+# the version the feasibility run proved alongside litellm 1.102.1 and
+# prisma 0.15.0 (`pip check` clean in one environment). The full package,
+# not mlflow-skinny: skinny can't run `mlflow server` without a hand-picked
+# set of extra deps and never ships the UI at all.
+#
+# litellm and prisma are named again at their pins so pip resolves MLflow
+# around them instead of upgrading a dependency they were proven with.
+RUN pip3 install --no-cache-dir "mlflow==3.16.1" "litellm[proxy]==1.102.1" "prisma==0.15.0" \
+    && pip3 show mlflow | grep -qx 'Version: 3.16.1' \
+    && pip3 show litellm | grep -qx 'Version: 1.102.1' \
+    && pip3 show prisma | grep -qx 'Version: 0.15.0' \
+    && python3 -c "import mlflow.server, litellm"
+# MLflow 3.16's defaults, each wrong for a lab container:
+# - telemetry is on and calls config.mlflow-telemetry.io, which the egress
+#   fence refuses anyway -- off, so it isn't even attempted;
+# - `mlflow server` starts a job runner plus several worker processes for
+#   GenAI scorers on every boot, used or not: ~1.8 GB RSS against ~650 MB
+#   without it, on a 4 GiB container that also runs LiteLLM and Postgres;
+# - a startup banner advertising an agent integration.
+ENV MLFLOW_DISABLE_TELEMETRY=1
+ENV MLFLOW_SERVER_ENABLE_JOB_EXECUTION=false
+ENV MLFLOW_DISABLE_AGENT_HINT=1
+
 # `prisma generate` must run at build time, against the schema shipped
 # inside litellm_proxy_extras, because it's the one step in this whole
 # install that reaches the network: it downloads a Node-based Prisma CLI
@@ -128,6 +153,14 @@ RUN DATABASE_URL="postgresql://opalix:opalix@127.0.0.1:5432/opalix" \
     prisma generate --schema="$(python3 -c "import litellm_proxy_extras, os; print(os.path.join(os.path.dirname(litellm_proxy_extras.__file__), 'schema.prisma'))")" \
     && python3 -c "import prisma" \
     && python3 -c "import prisma.models as m; assert hasattr(m, 'LiteLLM_BudgetTable'), 'prisma client was not generated against the litellm schema'"
+
+# A Postgres data dir with LiteLLM's schema already migrated, copied into
+# place by each lab's postgres service instead of running initdb. Halves
+# LiteLLM's boot (33 s to 16-18 s on one core locally), since a session
+# no longer runs 171 migrations and the check that follows them. See the
+# script for the two databases it leaves and why.
+COPY --chmod=755 build-pg-template.sh /usr/local/bin/build-pg-template.sh
+RUN /usr/local/bin/build-pg-template.sh /opt/opalix/pg-template
 
 # Stops LiteLLM re-fetching model_prices_and_context_window.json from
 # GitHub on every cold boot: with no internet at runtime, that fetch just

@@ -84,7 +84,7 @@ services:
     argv:
       [
         "sh", "-c",
-        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then mkdir -p /tmp/pg && chown postgres:postgres /tmp/pg && runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
       ]
     cwd: /workspace
     port: 5432
@@ -115,6 +115,9 @@ services:
       LITELLM_MASTER_KEY: "sk-opalix-one-key-master"
       SERVER_ROOT_PATH: "{{service.prefix}}"
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh).
+      DISABLE_SCHEMA_UPDATE: "True"
     port: 4000
     healthcheck:
       type: http
