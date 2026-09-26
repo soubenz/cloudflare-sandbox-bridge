@@ -1,0 +1,13 @@
+Charlie runbook: CHARLIE-ONLY-PHRASE-driftwood backup verification.
+
+Nightly backups are taken at 02:00 and copied to two separate regions.
+Verification does not just check that the backup file exists -- a
+restore is actually attempted against a scratch database once a week, and
+the row counts of a fixed set of tables are compared against the source.
+A backup that exists but fails this restore check is treated the same as
+a missing backup: it pages the on-call engineer immediately rather than
+waiting for the next scheduled check.
+
+CHARLIE-ONLY-PHRASE-driftwood is the tag applied to every backup produced
+by this pipeline, so a restore drill can always find the right object
+without guessing from a timestamp alone.

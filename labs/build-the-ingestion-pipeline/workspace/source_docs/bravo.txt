@@ -1,0 +1,13 @@
+Bravo runbook: OLD-BRAVO-MARKER-echo-relay message retries.
+
+The echo-relay service retries a failed downstream publish up to three
+times, with a fixed two-second delay between attempts, before it gives up
+and writes the message to the dead-letter queue. Nothing currently pages
+anyone when a message lands in the dead-letter queue -- it is checked by
+hand once a day during business hours.
+
+This is known to be too slow for anything time-sensitive, and is tracked
+as a follow-up: the plan is to page on dead-letter depth once it crosses
+a small threshold, rather than relying on a human noticing during the
+daily check. OLD-BRAVO-MARKER-echo-relay is the identifier this runbook
+uses for the service in every dashboard and alert that references it.

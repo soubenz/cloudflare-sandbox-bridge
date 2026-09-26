@@ -1,0 +1,15 @@
+Alpha runbook: rotating the on-call schedule.
+
+Every Monday at 09:00 the on-call rotation hands off to the next engineer
+on the roster. The handoff is not automatic -- the outgoing engineer must
+post a summary of any open incidents in the team channel before 09:00,
+and the incoming engineer must acknowledge it there before taking the
+pager. If no acknowledgement lands within thirty minutes, the rotation
+tool escalates to the secondary on-call automatically.
+
+Incidents opened in the last twenty-four hours of a shift are the
+outgoing engineer's responsibility to either close or hand off explicitly
+by name; a rotation handoff never silently drops an open incident on the
+floor. This has been the rule since the September postmortem, where an
+incident sat untouched for six hours because neither engineer believed it
+was theirs.

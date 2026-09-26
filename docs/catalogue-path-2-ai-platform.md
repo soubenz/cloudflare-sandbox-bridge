@@ -58,6 +58,22 @@ planted wrong answer, on the intended check, against a live session.
 - labs/keep-answering-when-a-provider-fails: 4 wrong answers.
 Not built yet: "Add a model to the catalogue without touching app code"
 (needs MLflow in the gateway image; feasible, awaiting the user's go-ahead).
+
+Module 3 (Retrieval as a service) feasibility confirmed 26 Sep 2026
+(investigation, before any Module 3 lab is built): pgvector, Qdrant, and
+Arize Phoenix all proven feasible, no tool substitution, added to the
+`gateway` family (already has Postgres, ~3.4GB free memory headroom).
+Two build-time changes: pgvector must come from PGDG
+(`postgresql-14-pgvector` 0.8.6-1.pgdg22.04+2 for this image's PG14) since
+Ubuntu jammy's own universe has no pgvector package at all; Arize Phoenix
+needs its own isolated Python venv (a real `mcp` version conflict with
+the existing `litellm[proxy]` stack), the same shape as ContextForge
+needing its own Python 3.12. Both Qdrant and Phoenix confirmed fully
+offline and with no login screen by default, live-tested in an empty
+network namespace. Full findings: scratchpad `retrieval-inv/FINDINGS.md`,
+also folded into the product plan file's section 29. Not yet exercised:
+Qdrant's alias/reindex mechanism specifically (needed for "Keep the index
+fresh without downtime") — to be proven live before that lab is written.
 -->
 
 # Opalix Path 2: Building an AI Platform

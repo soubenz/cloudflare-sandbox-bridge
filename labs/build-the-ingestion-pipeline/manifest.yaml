@@ -1,0 +1,155 @@
+# Design decision (this lab's own "part 1"): pgvector, not Qdrant.
+#
+# Both are cleared by $SCRATCH/retrieval-inv/FINDINGS.md -- neither needs a
+# substitution. The choice here is about which one makes *repeatable
+# ingestion* the clearest lesson, and pgvector wins for one concrete
+# reason: repeatability is a property of a PRIMARY KEY. "Re-running must
+# not duplicate" is `INSERT ... ON CONFLICT (id) DO UPDATE`, a single
+# familiar SQL idiom the learner can read straight off the schema; "an
+# update must replace, not append" and "a delete must actually delete" are
+# both just `DELETE FROM chunks WHERE ...` against the same table, provable
+# with one ad-hoc `psql -c "SELECT count(*) ..."` at every step. The whole
+# lesson is inspectable with tools the learner already has, in a table
+# they can literally read. Qdrant's own collection/point-id upsert
+# mechanics would teach the identical lesson, but FINDINGS.md flags its
+# alias/reindex mechanism as *not yet proven* and earmarks it for lab 5
+# ("keep the index fresh without downtime") -- this lab has no need to
+# spend that unproven surface, and reserving it there keeps the two Build
+# labs that share pgvector-or-Qdrant (this one and lab 4) from teaching the
+# same primitive twice. pgvector also adds zero footprint beyond the
+# Postgres this image's `gateway` family already runs (FINDINGS.md's own
+# combined-footprint table: "~0 RSS added, no new process"), against
+# Qdrant's own extra ~45-135+ MB process -- a real, if secondary, point in
+# pgvector's favour for a lab that is otherwise just one table.
+#
+# Everything below was proven locally against a real PostgreSQL 14 +
+# postgresql-14-pgvector 0.8.6 cluster (this repo's own scratchpad, not
+# this container) before this manifest was written -- see the session
+# report for every command and its real output. The image itself does not
+# have pgvector yet (FINDINGS.md: PGDG's postgresql-14-pgvector must be
+# added to images/gateway/Dockerfile, a platform change made later); this
+# manifest's postgres service is written for what that image will provide,
+# the same posture as every sibling Module 3 lab.
+#
+# The "external content source that changes between ingestion runs" is a
+# static fixture directory, workspace/source_docs/ -- three plain .txt
+# files the learner can open, edit, and re-ingest by hand. Grading never
+# touches this directory; checks/_harness.py keeps its own scratch copy so
+# it can add/modify/remove documents between phases without disturbing
+# whatever the learner has been experimenting with in their terminal (see
+# _harness.py's own header for the shared 4-phase run this and the other
+# two checks all read).
+#
+# The planted trap lives entirely in workspace/ingest/store.py's
+# `chunk_id()`: it returns `str(uuid.uuid4())`, a fresh id every call, so
+# `upsert_chunk()`'s otherwise-correct `ON CONFLICT (id) DO UPDATE` never
+# fires for a chunk this pipeline already wrote. `reconcile_doc()` and
+# `delete_removed_docs()` are separate, honest stubs (`pass`) -- not
+# disguised as anything -- because "an update replaces" and "a delete
+# deletes" are each their own real piece of reconciliation logic, not a
+# side effect of fixing the id.
+slug: build-the-ingestion-pipeline
+version: 1.0.0
+title: "Build the ingestion pipeline behind it"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  Turn a folder of source documents into searchable chunks in pgvector --
+  and make re-running it, editing a document, and removing one all behave
+  the way a real ingestion pipeline has to.
+objectives:
+  - "Key stored chunks by a stable, content-derived id so re-running ingestion never duplicates rows"
+  - "Reconcile a changed document's chunks so the old text is actually removed, not left beside the new text"
+  - "Reconcile a removed document's chunks so deletion is real, not just absent from the next insert"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  PGHOST: "127.0.0.1"
+  PGPORT: "5432"
+  PGUSER: "postgres"
+  PGDATABASE: "postgres"
+  SOURCE_DOCS_DIR: "/workspace/source_docs"
+
+services:
+  # Fresh initdb every session -- no pre-built template is needed here
+  # (unlike LiteLLM's Postgres in one-endpoint-one-key/gateway-litellm-hello):
+  # this lab's own schema is one small table, created by ingest/run.py
+  # itself in well under a second, so there is no migration cost worth
+  # pre-baking. dynamic_shared_memory_type=sysv is still required with
+  # pgvector installed (FINDINGS.md section 1, re-confirmed live in this
+  # lab's own local Postgres+pgvector cluster) for the same missing-
+  # /dev/shm reason every other Module 1/2/3 lab's Postgres needs it.
+  # /tmp rather than /workspace for the data dir: /workspace is chowned to
+  # `learner`, and initdb must run as the unprivileged `postgres` OS user.
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "set -e; PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust; echo 'dynamic_shared_memory_type = sysv' >> /tmp/pg/postgresql.conf; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+
+pressure: []
+
+checks:
+  # None of these read the learner's code. Each shares one grader-run's
+  # worth of setup with the other two (its own throwaway `grading`
+  # database on this same Postgres server, its own scratch copy of the
+  # source documents, four calls to the learner's own ingest/run.py) --
+  # see checks/_harness.py. Sequential on purpose: whichever check runs
+  # first pays the setup cost and the other two just read its result.
+  - name: rerun-is-idempotent
+    script: rerun-is-idempotent.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  - name: updates-replace-not-append
+    script: updates-replace-not-append.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  - name: deletes-are-real
+    script: deletes-are-real.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      Re-running ingest/run.py against files you haven't touched keeps
+      adding rows instead of leaving the store alone. Look at what id each
+      chunk gets stored under, in store.py's chunk_id(). For a rerun to be
+      recognised as "the same chunk I already wrote", that id has to come
+      out the same every time for the same (doc_id, chunk_index, content)
+      -- not a fresh value on every call.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Fixing chunk_id() alone stops new duplicates from appearing, but it
+      doesn't remove what's already there from before a document's content
+      changed. Editing a document changes what its chunks hash to, which
+      means its old chunks are now stored under ids nothing computes
+      anymore -- they don't get overwritten by ON CONFLICT, they just sit
+      there forever unless something explicitly deletes them.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      A document that's removed from the source directory entirely is a
+      different case again: ingest/run.py never even looks at it, so
+      nothing in the per-document loop ever gets a chance to clean up its
+      chunks. That has to be handled once per full run, by comparing every
+      doc_id currently in the store against every doc_id the source
+      directory actually has right now.
+
+egress:
+  allow: []
