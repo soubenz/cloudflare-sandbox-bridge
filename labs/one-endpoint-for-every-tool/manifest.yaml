@@ -15,11 +15,13 @@
 # load-bearing facts are worth restating because the obvious calls don't
 # work first try:
 #
-#  1. With AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true, this is
-#     true of the entire /v1/* management API, not just the admin
-#     dashboard -- registering a gateway, creating a virtual server, and
-#     minting a token all work with no Authorization header at all. There
-#     is no master key in this lab because there is nothing to hold one.
+#  1. With AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true, the
+#     entire /v1/* management API is reachable with no Authorization
+#     header at all, for a script or server-side call -- registering a
+#     gateway, creating a virtual server, and minting a token all work
+#     this way. There is no master key in this lab because there is
+#     nothing to hold one. (This bypass does NOT extend to a browser
+#     hitting the dashboard itself -- see point 7 below.)
 #  2. SSRF protection blocks a gateway URL that points at 127.0.0.1/
 #     localhost by default -- SSRF_ALLOW_LOCALHOST=true turns that off. It
 #     has to be on here since every tool server in this lab is loopback,
@@ -60,11 +62,20 @@
 # /workspace, purely so the learner's workspace stays free of a database
 # file that isn't theirs to look at.
 #
-# ContextForge's own admin UI needs no login under AUTH_REQUIRED=false +
-# ALLOW_UNAUTHENTICATED_ADMIN=true (confirmed live: GET /admin redirects to
-# /admin/ and serves the real dashboard, no login form, no redirect to a
-# sign-in page) -- so it is `ui: true` directly, the same admin surface the
-# learner's own platform/setup.py talks to.
+# ContextForge's own admin UI is NOT a safe ui:true tab, despite
+# AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true -- confirmed live
+# with `curl -H "Accept: text/html" -L .../admin`: a browser-shaped request
+# (the session console's own iframe sends exactly that Accept header) is
+# redirected to a real /admin/login form before the unauthenticated-admin
+# bypass is ever reached (mcpgateway/middleware/rbac.py). The bypass IS
+# real for a script or server-side call with no such header -- confirmed
+# live too, and exactly what platform/setup.py and services/view.py below
+# both rely on -- it just never makes the dashboard itself safe to expose
+# as a tab. So, per the no-login rule, `contextforge` stays `ui: false`
+# and `view` (a small stdlib page, same pattern as every LiteLLM-based
+# lab) is the tab instead: gateways, the one virtual server and its
+# bundled tools, and client tokens (never a usable secret), all read
+# server-side.
 
 slug: one-endpoint-for-every-tool
 version: 1.0.0
@@ -74,11 +85,9 @@ family: agent
 difficulty: core
 summary: >-
   Three teams built three MCP tool servers with no platform involved, and
-  billing's server exposes an on-call-only tool alongside its public one.
-  ContextForge is up but nothing is registered with it. Reconcile the
-  gateway with platform/catalogue.yaml: one virtual server, exactly the
-  tools that should be public, and one client token that can reach only
-  that bundle.
+  billing's server exposes an on-call-only tool next to its public one.
+  Reconcile ContextForge with platform/catalogue.yaml: one virtual server
+  with exactly the public tools, and one client token scoped to it.
 objectives:
   - "Federate independently-built MCP tool servers behind one gateway, as opposed to handing every caller a different address"
   - "Bundle exactly the tools a caller should reach into one virtual server, deliberately leaving a sensitive tool out"
@@ -131,11 +140,11 @@ services:
     ui: false
     depends_on: []
   - name: contextforge
-    # ui: true -- AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true
-    # gives a real, un-gated admin dashboard (confirmed live: no login
-    # form ever renders). The same anonymous-admin context also covers the
-    # /v1/* management API platform/setup.py calls -- no master key exists
-    # in this lab because nothing needs to hold one.
+    # ui: false -- its own admin dashboard redirects a browser to a real
+    # login form (see the header comment above); `view` below is the tab.
+    # The anonymous-admin bypass still covers every /v1/* call
+    # platform/setup.py itself makes (a script, never a browser) -- no
+    # master key exists in this lab because nothing needs to hold one.
     argv: ["mcpgateway", "--host", "0.0.0.0", "--port", "4744"]
     cwd: /workspace
     env:
@@ -170,8 +179,24 @@ services:
       # SQLite file -- proven live at ~10-11s cold; 60s leaves headroom
       # for a slower container without hiding a real failure.
       timeout_s: 60
-    ui: true
+    ui: false
     depends_on: [inventory, billing, search]
+  - name: view
+    # This lab's substitute for ContextForge's own (login-gated) admin
+    # dashboard: a small read-only stdlib page, services/view.py. It never
+    # accepts a write and never returns a usable token.
+    argv: ["python3", "-B", "/workspace/services/view.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "8904"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+    port: 8904
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: [contextforge]
 
 pressure: []
 

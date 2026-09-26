@@ -22,11 +22,11 @@ CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").r
 VIRTUAL_SERVER_NAME = os.environ.get("CONTEXTFORGE_VIRTUAL_SERVER", "toy-tools")
 
 
-def _request(method, path, body=None, timeout=15):
+def _request(method, path, body=None, timeout=15, headers=None):
     """Returns (status, parsed_json_or_text_or_None). Never raises."""
     url = CONTEXTFORGE_URL + path
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
+    req = urllib.request.Request(url, data=data, method=method, headers=dict(headers or {}))
     if data is not None:
         req.add_header("Content-Type", "application/json")
     try:
@@ -82,6 +82,7 @@ def check_gateway_is_up():
         "POST",
         "/servers/%s/mcp" % server["id"],
         {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "calculator-tools-add", "arguments": {"a": 2, "b": 2}}},
+        headers={"Accept": "application/json, text/event-stream"},
     )
     if status != 200:
         _finish(False, "tool call through the virtual server returned %r, expected 200 (body: %s)" % (status, body))

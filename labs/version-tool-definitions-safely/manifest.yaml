@@ -1,0 +1,250 @@
+# Path 2, Module 2, lab 5 -- REDESIGNED per the ContextForge feasibility
+# investigation ($SCRATCH/contextforge-inv/FINDINGS.md): ContextForge has
+# no real canary/percentage-rollout/history mechanism, only a bare edit
+# counter, enabled/deprecated flags, and whole-config export/import. This
+# lab is about the learner building their OWN staged-rollout and rollback
+# discipline on top of those real primitives -- graded on whether that
+# discipline actually works, not on a gateway feature that doesn't exist.
+#
+# This is PART 1 (scaffolding + feasibility): manifest, workspace, and two
+# real, working, outcome-based checks. The checks for the other two graded
+# outcomes (no-downtime cutover; fast, same-address rollback) are Part 2.
+#
+# Everything below was proven live against a real
+# mcp-contextforge-gateway==1.0.10, in a throwaway python3.12 venv, in this
+# session's own scratchpad (never against the real lab image -- that gets
+# python3.12 added later, same order as Module 1's Postgres template).
+# Three things turned out to need a real design change from the original
+# ask, found by actually exercising the running gateway rather than
+# trusting its docs or the earlier investigation's summary of it:
+#
+#  1. SSRF protection blocks a gateway URL that points at 127.0.0.1/
+#     localhost unless SSRF_ALLOW_LOCALHOST=true -- without it, registering
+#     either tool server 422s with "Gateway URL contains localhost address
+#     which is blocked by SSRF protection". Needed here because both tool
+#     servers run in the same container as ContextForge itself.
+#
+#  2. The `deprecated` flag on a tool is NOT usable in 1.0.10, contrary to
+#     the shared investigation's characterization of "enabled/deprecated
+#     flags" as a pair of working primitives. Confirmed live: PUT
+#     /v1/tools/{id} with {"deprecated": true} returns 200, bumps the
+#     tool's edit counter, and its response still reports
+#     `"deprecated": false` -- a GET immediately after confirms it never
+#     persisted. Read from the installed source
+#     (mcpgateway/services/tool_service.py, ToolService.update_tool): every
+#     other ToolUpdate field is applied to the DB row in an
+#     `if tool_update.X is not None:` block; `deprecated` has no such block
+#     anywhere in that method. The admin UI's own edit-tool form
+#     (mcpgateway/admin.py, admin_edit_tool) doesn't send the field either.
+#     `enabled` (POST /v1/tools/{id}/state?activate=...) is the flag that
+#     actually works -- confirmed live: disabling a tool makes it vanish
+#     from that server's tools/list and refuses tools/call with a clear
+#     "Tool '...' exists but is inactive" error. This lab's design leans on
+#     `enabled`, not `deprecated`.
+#
+#  3. Whole-config re-import (POST /v1/import) is NOT a safe way to roll
+#     back ONE virtual server's tool association while that server still
+#     exists -- confirmed live, twice, against the real bug behavior:
+#       a. conflict_strategy="update" (the default) against an existing
+#          server: the response reports the server as a warning --
+#          "Could not update server price-lookup: 'list' object has no
+#          attribute 'name'" -- and the server's associated_tools is left
+#          completely unchanged. Silently. No exception surfaces past a
+#          warning string.
+#       b. Deleting the server first, then re-importing, DOES restore the
+#          correct tool association -- but the server comes back under a
+#          brand-new id, which breaks the one thing a rollback must not
+#          break: the stable address (`/servers/{id}/mcp`) every caller
+#          already depends on.
+#     A direct `PUT /v1/servers/{id}` with `associated_tools` (the same
+#     call the cutover itself uses) is what actually works, live, in
+#     well under a second, with the id untouched -- confirmed by timing it.
+#     Export is still real and still worth taking -- as the timestamped
+#     record of what was live, and (for a whole lost instance) as real
+#     disaster recovery -- but it is not what applies a rollback here.
+#     `workspace/rollout/rollout.py` points the learner at proving this
+#     for themselves rather than stating it (no stated path), but the
+#     graded checks (Part 2) will not reward a rollback whose mechanism is
+#     "reimport over the live server" if it does not actually restore the
+#     tool the caller needs -- or one that restores it under a new server
+#     id.
+#
+# One more real thing worth recording since it changes a stated deliverable:
+# ContextForge's OWN admin UI cannot be `ui: true` as literally asked, for
+# TWO independent, confirmed reasons -- my first pass here only found the
+# second one; re-read a sibling agent's own lab in this same module
+# (one-endpoint-for-every-tool vs. see-how-tools-reach-an-agent disagree
+# with each other on exactly this point) and re-verified from source
+# before trusting either:
+#  a. ALLOW_UNAUTHENTICATED_ADMIN=true does NOT bypass login for a real
+#     browser tab. Read from the installed source
+#     (mcpgateway/middleware/rbac.py, get_current_user): a request is
+#     treated as "browser-shaped" whenever its Accept header contains
+#     `text/html`, or it's an HTMX request, or its Referer is same-origin
+#     under /admin -- and for a browser-shaped request with no token, it is
+#     302-redirected to a real `/admin/login` form BEFORE the
+#     allow_unauthenticated_admin bypass is ever reached; that bypass only
+#     fires for a request that does NOT look like a browser. A plain `curl`
+#     with no `Accept` header (what my own first pass here used) never
+#     triggers the browser branch at all, which is exactly why it looked
+#     like "no login screen ever renders" -- true for curl, not true for an
+#     actual browser tab, which always sends `Accept: text/html`.
+#  b. Independently, its HTML hard-codes absolute asset paths (e.g.
+#     `/static/js/password-validator.js`) and it has no reverse-proxy
+#     path-prefix support of its own (its `APP_ROOT_PATH` setting only
+#     feeds FastAPI's OpenAPI/link generation, confirmed by reading
+#     mcpgateway/main.py -- there is no middleware that strips or mounts
+#     under an arbitrary prefix). Confirmed live: a request shaped like this
+#     platform's own proxy would send it
+#     (`/sessions/<id>/services/contextforge/admin`) 404s against a real
+#     running instance, where the unprefixed `/admin` 200s.
+# Either one alone already rules out a bare `ui: true` on ContextForge
+# itself under this platform's no-login rule. Per docs/lab-authoring.md's
+# own established fallback for exactly this shape
+# of problem ("the tool's own UI is not exposed as a tab and the lab ships
+# a small page of its own instead" -- the same pattern this repo already
+# uses for LiteLLM's always-login-gated UI, just for a different
+# underlying reason here), `contextforge` stays `ui: false` and `view`
+# (workspace/services/view.py) is this lab's tab: read-only, no login,
+# renders correctly under the prefix because it strips it itself.
+#
+# No Postgres: ContextForge's SQLite backend is real and sufficient for
+# this lab (per the investigation; Redis is optional and unused here too).
+slug: version-tool-definitions-safely
+version: 1.0.0
+title: "Version tool definitions and roll changes out safely"
+type: build
+family: agent
+summary: >-
+  A caller depends on price-lookup's v1 shape. v2 is already built and
+  running, but ContextForge doesn't know about it yet. Roll it out, and
+  roll it back fast, without ever breaking the caller or leaving it a
+  half-migrated answer.
+objectives:
+  - "Register a new tool version as its own, separately-addressable registration rather than editing the live one in place"
+  - "Cut traffic over deliberately, in one step, rather than as a side effect of registering or testing a new version"
+  - "Build a fast, same-address rollback out of a real config snapshot and your own bookkeeping, not a gateway feature that doesn't exist"
+difficulty: core
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+  TOOL_SERVER_V1_URL: "http://127.0.0.1:65101/mcp"
+  TOOL_SERVER_V2_URL: "http://127.0.0.1:65102/mcp"
+
+services:
+  - name: tool-server-v1
+    argv: ["python3", "-B", "/workspace/services/tool_server.py", "v1"]
+    cwd: /workspace
+    port: 65101
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: tool-server-v2
+    argv: ["python3", "-B", "/workspace/services/tool_server.py", "v2"]
+    cwd: /workspace
+    port: 65102
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: contextforge
+    # mcpgateway-server is the real package's own console-script entry
+    # point (mcp-contextforge-gateway==1.0.10); it reads HOST/PORT/etc from
+    # its own Settings object, which is why they're plain env here rather
+    # than argv flags. seed.py is launched backgrounded before it, the same
+    # pattern hard-budget-per-team uses for seed_teams.py -- it does its
+    # own readiness poll against /health, so nothing here has to wait on it,
+    # and it's idempotent, so a restart of this service finds v1 already
+    # registered and changes nothing.
+    argv:
+      [
+        "sh", "-c",
+        "python3 -B /workspace/contextforge/seed.py & exec mcpgateway-server",
+      ]
+    cwd: /workspace
+    env:
+      HOST: "0.0.0.0"
+      PORT: "4744"
+      DATABASE_URL: "sqlite:////workspace/contextforge/mcp.db"
+      # Fixed literal values, not real secrets -- same pattern as this
+      # repo's other labs' fixed LITELLM_MASTER_KEY. Must be non-placeholder
+      # and pass a minimum entropy/length check (mcpgateway/config.py,
+      # _enforce_secret_strength) -- confirmed live with values in this
+      # shape; a short or `__REPLACE_ME__`-shaped value refuses to boot.
+      JWT_SECRET_KEY: "M4iA8Pp-TGSbFIVwV8PNFsEsrmSfQTs2Ua6BD60kz0U"
+      AUTH_ENCRYPTION_SECRET: "Yh4LCbuiYm_pvOflb8unP1ZNGwm32sJ2s6nMmLNUCv0"
+      BASIC_AUTH_PASSWORD: "6QjTBJi8u5LGRqOoojlIylDE9yEJdu4F21ADjtv7V1o"
+      PLATFORM_ADMIN_PASSWORD: "ph6RqKFKVHa5Dq8Mt2YJVYVh2cAMpH35O-wAiAC3QxA"
+      DEFAULT_USER_PASSWORD: "btnQvQPFWHmyL4MEqYv0-VfgObdqliKNfi_2DtQ42q8"
+      # Confirmed live: AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true
+      # gives a real, working, un-gated admin UI and API -- no login screen
+      # ever renders (see docs/lab-authoring.md's no-login rule). See the
+      # header comment above for why the admin UI is still not this lab's
+      # tab regardless.
+      AUTH_REQUIRED: "false"
+      ALLOW_UNAUTHENTICATED_ADMIN: "true"
+      # Both tool servers are on 127.0.0.1 in this same container --
+      # without this, registering either one 422s (see header comment #1).
+      SSRF_ALLOW_LOCALHOST: "true"
+      # Without this, a validation error (e.g. a malformed gateway
+      # registration) comes back as a bare "An error occurred, please try
+      # again." with no indication of which field or why -- confirmed live.
+      # Real for this sandboxed lab; not something to carry into a
+      # production deployment.
+      EXPOSE_ERROR_DETAILS: "true"
+    port: 4744
+    healthcheck:
+      type: http
+      path: /health
+      # Confirmed live: a fresh SQLite DB (first boot, all migrations
+      # running) reported healthy in ~8s. 60s leaves real room for a slower
+      # container without hiding an actual failure.
+      timeout_s: 60
+    ui: false
+    depends_on: [tool-server-v1, tool-server-v2]
+  - name: view
+    argv: ["python3", "-B", "/workspace/services/view.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "65103"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+      # The session proxy forwards this service's full path unchanged
+      # (docs/lab-authoring.md) -- view.py strips this itself.
+      VIEW_PREFIX: "{{service.prefix}}"
+    port: 65103
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: [contextforge]
+
+pressure: []
+
+checks:
+  # Part 1 scope: two real, working, outcome-based checks. Neither reads
+  # the learner's source -- v2-registered-independently asks ContextForge
+  # itself what's registered; caller-still-works runs the real caller
+  # script. The checks for the other two graded outcomes (a cutover that
+  # never breaks an existing caller mid-flight; a fast, same-address
+  # rollback) are Part 2.
+  - name: v2-registered-independently
+    script: v2-registered-independently.sh
+    timeout_s: 30
+    weight: 1
+    parallel: true
+  - name: caller-still-works
+    script: caller-still-works.sh
+    timeout_s: 30
+    weight: 1
+    parallel: true
+
+hints: []
+
+egress:
+  allow: []

@@ -35,9 +35,17 @@ changes out safely" (lab 5) is redesigned: ContextForge has no real
 canary/rollout/history mechanism (a bare edit counter plus enable/disable
 plus whole-config export/import only), so the lab now asks the learner to
 build their own staged-rollout/rollback discipline on those primitives,
-not use a gateway feature that doesn't exist. A real anonymous admin-UI
-mode exists (AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true), so
-unlike LiteLLM its admin tab can be a real `ui: true` service.
+not use a gateway feature that doesn't exist.
+
+CORRECTED 26 Sep 2026 (found while building the first Module 2 lab):
+AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true does not make
+ContextForge's admin UI a safe `ui: true` tab -- a request shaped like a
+browser (which the session console's iframe is) is redirected to a real
+login form before that bypass is ever reached, traced to
+mcpgateway/middleware/rbac.py and reproduced live. ContextForge is
+`ui: false` in every lab, same as LiteLLM, with its own small stdlib view
+page as the tab instead. The bypass is still real and useful for
+non-browser callers (scripts, a view page's own server-side calls).
 
 Built and verified live (26 Sep 2026). Each passes `labs test`: the
 untouched workspace fails and solution/ passes. Each also fails every

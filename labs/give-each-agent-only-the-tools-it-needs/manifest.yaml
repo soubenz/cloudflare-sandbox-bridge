@@ -1,0 +1,271 @@
+# Path 2, Module 2, lab 3 (build, agent family). Part 1 of this lab: the
+# design below is proven live against a scratchpad reference
+# implementation (own venv312, mcp-contextforge-gateway==1.0.10, Python
+# 3.12, mcp==1.30.0). checks/ is a placeholder; the real outcome-based
+# grader is part 2. No solution/ in this lab folder on purpose -- part 1's
+# own instructions kept the reference implementation in scratchpad only.
+#
+# Catalogue's "what makes it hard": "Scope by role, enforced at the
+# gateway and not in prompts." Confirmed live, three separate ways, that
+# ContextForge's own scoping is a real server-side control and not
+# something a prompt has to ask nicely for:
+#
+#  1. A token scoped (POST /v1/tokens, scope.server_id) to a virtual
+#     server that simply never had a tool associated with it gets a real,
+#     gateway-side resolution failure calling that tool -- even through
+#     the SAME virtual server its own token IS correctly scoped to:
+#       {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text",
+#        "text":"Tool not found: tickets-tools-create-ticket"}],
+#        "isError":true}}
+#     (a support-agent token, tickets-tools-create-ticket not in its own
+#     server's associated_tools). HTTP 200 by MCP convention, but the tool
+#     never ran -- isError is the real signal, exactly like a plain 403
+#     would be for a REST-shaped API.
+#  2. A token scoped to one virtual server that tries a DIFFERENT virtual
+#     server's server_id outright -- even for a tool that virtual server
+#     DOES expose -- is refused before the call is ever resolved:
+#     HTTP 403 {"detail":"Access denied"} (support-agent's own token
+#     against the admin virtual server's id, calling
+#     accounts-tools-delete-account). This is the one that matters most:
+#     a role's token cannot be pointed at a different, more-privileged
+#     virtual server just because that server's id isn't secret.
+#  3. With NO token at all: HTTP 401
+#     {"detail":"Authentication required for MCP endpoints"} -- even for a
+#     plain reader tool. This is the fact that makes (1) and (2) mean
+#     anything: see the MCP_REQUIRE_AUTH note below.
+#
+# One combined mechanism, not two competing ones: ContextForge's own
+# token-scoping primitive (POST /v1/tokens with scope.server_id) only
+# takes ONE server id, and a token's `permissions` are coarse
+# ("tools.read"/"tools.execute"), never a specific tool list (confirmed
+# from mcp-contextforge-gateway's own TokenScopeRequest schema) -- so the
+# per-tool-set boundary has to come from PER-ROLE VIRTUAL SERVERS (each
+# exposing exactly one role's tools), and the token-scoping primitive is
+# what stops a role's own token from being pointed at a different,
+# more-privileged virtual server it happens to learn the id of. Neither
+# half alone is the real control: virtual servers alone would leave any
+# caller free to hit another role's server_id with an unscoped token;
+# scoped tokens alone have nothing narrower than "every tool on one
+# virtual server" to bind to.
+#
+# MCP_REQUIRE_AUTH=true is set EXPLICITLY below. mcp-contextforge-gateway
+# derives it from AUTH_REQUIRED when unset (both default false here, for
+# the no-login admin UI -- see next paragraph), which would leave the
+# actual tool-calling surface, /servers/{id}/mcp, wide open to anyone with
+# no token at all: fact 3 above is what an explicit MCP_REQUIRE_AUTH=true
+# buys, confirmed by booting once with it unset and once with it set and
+# diffing the anonymous-call result (401 only in the second case).
+#
+# The admin/management API (POST /gateways, /v1/servers, /v1/tokens, GET
+# /v1/tools) is a DIFFERENT surface and stays unauthenticated on purpose:
+# confirmed live, an unauthenticated POST to any of those is answered as
+# admin@example.com (AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=
+# true, same mechanism the ContextForge investigation verified for the
+# admin UI). That is what lets both bootstrap_ungoverned.py and the
+# learner's own platform/setup.py skip a login step entirely -- and it is
+# genuinely a different rule from fact 3, not a contradiction: one surface
+# creates things as the platform, the other calls a tool as some caller,
+# and only the second one is what a role's own token has to be checked
+# against.
+#
+# Env quirks, each hit live standing this exact manifest up (the first
+# three are the same three labs/write-a-tool-server-the-platform-can-host
+# already documented; worth restating since they are load-bearing here
+# too, not just there):
+#  - MCPGATEWAY_ADMIN_API_ENABLED must be set (default false) alongside
+#    MCPGATEWAY_UI_ENABLED, or POST /gateways (and every other admin API
+#    route) 404s even though the admin UI itself loads fine.
+#  - SSRF_ALLOW_LOCALHOST must be true, or registering any of the three
+#    tool servers below 422s -- they are all 127.0.0.1 by construction.
+#  - JWT_SECRET_KEY / AUTH_ENCRYPTION_SECRET must each be >=32 chars and
+#    DEFAULT_USER_PASSWORD >=12, or the gateway refuses to boot at all
+#    (SecurityConfigurationError) -- enforced at boot regardless of
+#    whether anyone ever logs in, which nobody does in this lab.
+#  - POST /v1/servers takes its body wrapped as {"server": {...}}, not the
+#    fields at the top level (confirmed against the schema ContextForge's
+#    own OpenAPI document names for that route,
+#    Body_create_server_v1_servers_post) -- this file's own
+#    bootstrap_ungoverned.py already gets this right; it is exactly the
+#    kind of thing setup.py's docstring deliberately does not spell out
+#    for the learner.
+#  - ContextForge's own admin UI is real and needs no login under
+#    AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true (confirmed:
+#    the rendered page's only <form> is a logout form, and every static
+#    asset link is correctly rewritten under APP_ROOT_PATH when the
+#    session proxy forwards the full path) -- so, per the no-login rule,
+#    `contextforge` is `ui: true` directly, no substitute view page
+#    needed (unlike LiteLLM in every Module 1 / gateway-family lab).
+#
+# No Postgres: SQLite is enough (ContextForge falls back to it cleanly;
+# the ContextForge investigation's FINDINGS.md already established this).
+# Its data dir is under /tmp, same reasoning as every Postgres-backed
+# lab's data dir: /workspace is chowned to `learner`.
+slug: give-each-agent-only-the-tools-it-needs
+version: 1.0.0
+title: "Give each agent only the tools it needs"
+type: build
+family: agent
+summary: >-
+  Three toy tool servers are registered on ContextForge as one ungoverned
+  bundle: every token, including a brand-new one, can call every tool on
+  it, including the one that permanently deletes an account. Give each of
+  three roles its own gateway-enforced boundary instead.
+objectives:
+  - "Tell a role's own visible tool set apart from what its prompt merely claims it will stick to"
+  - "Scope a role to exactly its own tools using the gateway's own primitives, not an instruction an agent could ignore"
+  - "Prove a refusal is the gateway's own doing (a real 401/403/tool-not-found) rather than something a client chose not to send"
+difficulty: core
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+  KNOWLEDGE_TOOL_URL: "http://127.0.0.1:4745/mcp"
+  TICKETS_TOOL_URL: "http://127.0.0.1:4746/mcp"
+  ACCOUNTS_TOOL_URL: "http://127.0.0.1:4747/mcp"
+
+services:
+  - name: knowledge-tools
+    argv: ["python3", "-B", "/workspace/tool_servers/knowledge_server.py"]
+    cwd: /workspace
+    env:
+      KNOWLEDGE_TOOL_PORT: "4745"
+    port: 4745
+    healthcheck:
+      # An MCP streamable-http server only answers a JSON-RPC POST -- a
+      # bare GET on /mcp is 406, confirmed live even while the server is
+      # completely healthy (same fact labs/write-a-tool-server-the-
+      # platform-can-host's manifest documents for its own tool server).
+      # `tcp` (port open) is the right-shaped check here, not `http`.
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: tickets-tools
+    argv: ["python3", "-B", "/workspace/tool_servers/tickets_server.py"]
+    cwd: /workspace
+    env:
+      TICKETS_TOOL_PORT: "4746"
+    port: 4746
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: accounts-tools
+    argv: ["python3", "-B", "/workspace/tool_servers/accounts_server.py"]
+    cwd: /workspace
+    env:
+      ACCOUNTS_TOOL_PORT: "4747"
+    port: 4747
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: contextforge
+    # bootstrap_ungoverned.py runs in the background and writes
+    # platform/ungoverned_token.txt once ContextForge is actually
+    # answering -- it polls /health itself (see that file), so nothing
+    # here has to -- and is idempotent, so a restart of this same service
+    # (which re-runs this whole argv) finds "ungoverned-bundle" already
+    # there and changes nothing.
+    argv:
+      [
+        "sh", "-c",
+        "mkdir -p /tmp/contextforge-lab; python3 -B /workspace/platform/bootstrap_ungoverned.py & exec mcpgateway --host 0.0.0.0 --port 4744",
+      ]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "sqlite:////tmp/contextforge-lab/mcp.db"
+      AUTH_REQUIRED: "false"
+      ALLOW_UNAUTHENTICATED_ADMIN: "true"
+      MCPGATEWAY_UI_ENABLED: "true"
+      # Default false -- without this, POST /gateways (and every other
+      # admin API route) 404s even though the UI itself loads fine.
+      MCPGATEWAY_ADMIN_API_ENABLED: "true"
+      # Without this, registering any of the three tool servers below
+      # 422s -- ContextForge's own SSRF guard, and every tool server here
+      # is 127.0.0.1 by construction.
+      SSRF_ALLOW_LOCALHOST: "true"
+      # THE decoupling this whole lab depends on: unset, this defaults
+      # from AUTH_REQUIRED (false), and /servers/{id}/mcp would accept an
+      # anonymous call same as the admin API does. Set explicitly, the
+      # admin/management API stays open (bootstrap_ungoverned.py and
+      # platform/setup.py never log in) while the actual tool-calling
+      # surface still refuses a call with no token -- confirmed live, see
+      # the header comment above.
+      MCP_REQUIRE_AUTH: "true"
+      # Helpful, not sensitive: a lab-only gateway with disposable data,
+      # and every mistake made proving this design out first showed up as
+      # a generic "An error occurred, please try again." without it.
+      EXPOSE_ERROR_DETAILS: "true"
+      # Fixed, disposable, lab-only strings -- ContextForge refuses to
+      # boot with its own default/placeholder secrets or a short one
+      # (JWT_SECRET_KEY/AUTH_ENCRYPTION_SECRET must be >=32 chars,
+      # DEFAULT_USER_PASSWORD >=12), enforced at boot regardless of
+      # whether anyone ever logs in -- nobody does, in this lab.
+      JWT_SECRET_KEY: "opalix-lab3-jwt-secret-do-not-reuse-anywhere-else"
+      AUTH_ENCRYPTION_SECRET: "opalix-lab3-auth-encryption-secret-do-not-reuse"
+      BASIC_AUTH_PASSWORD: "opalix-lab3-basic-auth-pw-887"
+      PLATFORM_ADMIN_PASSWORD: "opalix-Lab3-admin-pw-554!"
+      DEFAULT_USER_PASSWORD: "opalix-Lab3-user-pw-221!"
+    port: 4744
+    healthcheck:
+      type: http
+      path: /health
+      timeout_s: 60
+    # ContextForge's own admin UI needs no login here (see header comment)
+    # -- a real substitute for the "ui:false + custom view page" pattern
+    # every LiteLLM-based lab needs instead.
+    ui: true
+    depends_on: [knowledge-tools, tickets-tools, accounts-tools]
+
+pressure: []
+
+checks:
+  # Placeholder for part 1 -- see checks/placeholder.sh. Always fails,
+  # which is correct: roles.yaml and ContextForge don't match yet, and
+  # platform/setup.py does nothing untouched.
+  - name: placeholder
+    script: placeholder.sh
+    timeout_s: 30
+    weight: 1
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 13
+    text: >-
+      platform/ungoverned_token.txt already has a working token -- call
+      any tool through it (the admin UI's Virtual Servers tab shows its
+      server id) and notice it reaches everything, including
+      accounts-tools-delete-account. That is the bug this lab is about,
+      not something to fix by editing that token or the bundle it's
+      scoped to -- your job is roles.yaml's own roles, each with their own
+      virtual server and their own token, not making the existing one
+      safer.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Every tool from all three tool servers is already registered and
+      already has a real ContextForge id -- the admin UI's Global Tools
+      view (or a plain GET against its tools listing) will show you every
+      one of them, and which gateway each came from. roles.yaml's
+      "server"/"tool" pairs are the platform's own names for them, not
+      whatever ContextForge itself decided to call them once registered
+      -- matching the two up is a lookup, not a guess.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      A token created for one virtual server and a virtual server that
+      simply never had a tool associated with it are two different kinds
+      of "no" -- one is ContextForge refusing to let a token reach a
+      DIFFERENT server_id at all (a 403 before anything about the tool
+      itself is even considered), the other is the tool call resolving
+      against a server that was never given that tool in the first place
+      (a real failure, just shaped like a normal MCP tool result). Both
+      only ever happen at the gateway. Neither one is something you write
+      into a role's own prompt.
+
+egress:
+  allow: []

@@ -98,7 +98,10 @@ def _finish(passed, message):
 def _http(method, path, token=None, body=None, base=GRADER_CF_URL, timeout=PROBE_TIMEOUT_S):
     """Returns (status_or_None, parsed_body_or_text). Never raises."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    headers = {}
+    # The streamable-http MCP transport (the /servers/{id}/mcp endpoints)
+    # refuses with 406 unless the client also accepts text/event-stream --
+    # confirmed live. Harmless to send on every plain /v1/* call too.
+    headers = {"Accept": "application/json, text/event-stream"}
     if token:
         headers["Authorization"] = "Bearer %s" % token
     req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
@@ -181,8 +184,11 @@ def _start_grader_contextforge(db_path, log_path):
     env.update(CF_ENV)
     env["DATABASE_URL"] = "sqlite:///%s" % db_path
     log_f = open(log_path, "wb")
+    # The same `mcpgateway` console script the manifest's own contextforge
+    # service runs -- not `python -m mcpgateway`, which reads HOST/PORT
+    # from settings instead of taking --host/--port flags.
     proc = subprocess.Popen(
-        [sys.executable, "-m", "mcpgateway", "--host", "127.0.0.1", "--port", GRADER_CF_PORT],
+        ["mcpgateway", "--host", "127.0.0.1", "--port", GRADER_CF_PORT],
         env=env, stdout=log_f, stderr=subprocess.STDOUT, start_new_session=True,
     )
     return proc, log_f
@@ -489,6 +495,8 @@ def check_client_token_cannot_escalate():
         _finish(False, r["setup_error"])
     if r.get("client_error"):
         _finish(False, "platform/client.json problem: %s" % r["client_error"])
+    if not r.get("server_id_present") or not r.get("token_present"):
+        _finish(False, "platform/client.json is missing virtual_server_id or client_token")
 
     checks = [
         (r.get("gateways_list_with_client_token_status") != 200,

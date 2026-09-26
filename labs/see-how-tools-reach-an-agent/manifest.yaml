@@ -1,0 +1,206 @@
+# Path 2, Module 2, lab 1 in docs/catalogue-path-2-ai-platform.md
+# (explore, agent family).
+#
+# type: explore -- nothing is broken and nothing is missing (see
+# docs/lab-authoring.md, "type: explore is a guided tour, not a puzzle").
+#
+# Real project: IBM's mcp-context-forge, PyPI package
+# mcp-contextforge-gateway==1.0.10 (see $SCRATCH/contextforge-inv/FINDINGS.md).
+# It needs Python 3.12, not the image's default 3.10 -- adding a python3.12
+# interpreter to the agent image is a platform change the main session
+# makes later (same order as Module 1's Postgres template and MLflow); this
+# manifest already assumes it is there. The two toy MCP tool servers below
+# only need the `mcp` PyPI package (requires-python >=3.10, confirmed via
+# `pip show mcp`), so they run under the image's existing default `python3`.
+#
+# No Postgres, no Redis: SQLite is enough (FINDINGS.md). The two secrets
+# ContextForge refuses to boot without, JWT_SECRET_KEY and
+# AUTH_ENCRYPTION_SECRET, were generated once, locally, offline, via its own
+# `python -m mcpgateway.scripts.init_secrets` (no network involved) and are
+# given below as fixed values -- the learner never regenerates them.
+#
+# Two findings from the investigation corrected after independently
+# re-verifying them live for this lab, per the house rule to confirm no
+# login screen ever renders before relying on ALLOW_UNAUTHENTICATED_ADMIN:
+#
+#  1. ALLOW_UNAUTHENTICATED_ADMIN=true does grant every request full admin
+#     access without a token -- but only for a request that doesn't look
+#     like a browser (no `Accept: text/html`, no same-origin `/admin`
+#     referer). A real browser tab hitting /admin is unconditionally
+#     redirected to a real "Sign In" login form regardless of that setting
+#     (mcpgateway/middleware/rbac.py's get_current_user: the browser-request
+#     branch checks for a token before it ever reaches the
+#     allow_unauthenticated_admin bypass). So ContextForge's own admin UI
+#     cannot be a `ui: true` tab after all -- it stays `ui: false`, and this
+#     lab's own `view` service is the tab instead, same pattern as LiteLLM
+#     in every Module 1 lab and in see-what-a-gateway-does. The bypass is
+#     still real and is exactly what lets seed_contextforge.py and
+#     call_tool.py work with zero key or token.
+#  2. Registering a gateway at a 127.0.0.1 URL is blocked by ContextForge's
+#     own SSRF protection by default ("Gateway URL contains localhost
+#     address which is blocked by SSRF protection"); needs
+#     SSRF_ALLOW_LOCALHOST=true, unsurprising for a lab where every service
+#     is loopback-only, but not called out in FINDINGS.md.
+#
+# Also not in FINDINGS.md: the default admin password ("changeme") is too
+# short for the email-auth feature's own password-strength check, which is
+# on by default (EMAIL_AUTH_ENABLED=true) and unconditional regardless of
+# AUTH_REQUIRED. Since this lab exposes no login UI at all, email auth (and
+# its /v1/tokens minting API, which requires it) is simply turned off
+# instead of given two more generated passwords -- keeping the "two
+# required secrets" claim literally true. See call_tool.py's docstring for
+# what that trades away (no minted scoped token) and why it doesn't matter
+# here (no auth to scope against).
+slug: see-how-tools-reach-an-agent
+version: 1.0.0
+title: "See how tools reach an agent"
+type: explore
+family: agent
+summary: >-
+  ContextForge fronting two toy MCP tool servers. A guided tour of how a
+  tool call actually gets from a tool server to an agent through a
+  gateway: register it, expose it through a virtual server, call it, and
+  watch the gateway's own log record it.
+objectives:
+  - "Register an MCP tool server as a gateway in ContextForge"
+  - "Expose a chosen set of tools through one virtual server"
+  - "Call a tool through the gateway and see the request and response"
+  - "Find where a gateway records that a call happened"
+difficulty: intro
+timeout_minutes: 60
+idle_minutes: 10
+
+env:
+  CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+  WEATHER_TOOL_URL: "http://127.0.0.1:7745/mcp"
+  CALC_TOOL_URL: "http://127.0.0.1:7746/mcp"
+  CONTEXTFORGE_VIRTUAL_SERVER: "toy-tools"
+
+services:
+  - name: weather-tools
+    # A toy MCP tool server (real `mcp` PyPI SDK, streamable-http
+    # transport) -- get_weather and get_forecast, both made-up. No real
+    # weather API and no route out of the container to one.
+    argv: ["python3", "-B", "/workspace/tools/weather_tool_server.py"]
+    cwd: /workspace
+    env:
+      WEATHER_TOOL_HOST: "127.0.0.1"
+      WEATHER_TOOL_PORT: "7745"
+    port: 7745
+    # No separate /health route on an MCP tool server -- reachability is
+    # the MCP initialize+tools/list handshake itself (FINDINGS.md), so a
+    # plain TCP check is what "up" means here.
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: calculator-tools
+    # A second toy MCP tool server -- add, subtract, multiply.
+    argv: ["python3", "-B", "/workspace/tools/calculator_tool_server.py"]
+    cwd: /workspace
+    env:
+      CALC_TOOL_HOST: "127.0.0.1"
+      CALC_TOOL_PORT: "7746"
+    port: 7746
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: contextforge
+    # ui: false -- see the note above: a real browser is redirected to a
+    # login form regardless of ALLOW_UNAUTHENTICATED_ADMIN. `view` below
+    # is this lab's tab instead.
+    #
+    # seed_contextforge.py runs once in the background alongside the
+    # gateway's own boot (same pattern as hard-budget-per-team's
+    # seed_teams.py): it polls /health itself, so nothing here has to wait
+    # for the gateway before starting it, and is idempotent, so a restart
+    # of this same service (which re-runs this whole argv) finds both
+    # gateways and the virtual server already in place and changes
+    # nothing.
+    argv:
+      [
+        "sh", "-c",
+        "python3 -B /workspace/seed_contextforge.py & exec python3.12 -m mcpgateway",
+      ]
+    cwd: /workspace
+    env:
+      HOST: "0.0.0.0"
+      PORT: "4744"
+      # No login, ever (docs/lab-authoring.md's no-login rule): auth is off
+      # outright, and unauthenticated requests get full admin context --
+      # for a script, not for a browser tab (see the note above).
+      AUTH_REQUIRED: "false"
+      ALLOW_UNAUTHENTICATED_ADMIN: "true"
+      # Off so the email/password login stack (and its password-strength
+      # checks) never comes into play at all -- see the note above.
+      EMAIL_AUTH_ENABLED: "false"
+      # Every service here is loopback-only; without this, registering
+      # either toy tool server as a gateway is refused by ContextForge's
+      # own SSRF protection.
+      SSRF_ALLOW_LOCALHOST: "true"
+      # Generated once, locally, offline, via ContextForge's own
+      # `python -m mcpgateway.scripts.init_secrets` -- fixed lab values,
+      # never regenerated by the learner.
+      JWT_SECRET_KEY: "A9NdC6L_0Ewg3WT0vZuj-JEStFhflsDFELOTK6deBO8"
+      AUTH_ENCRYPTION_SECRET: "hcakHJdD7TEiesCMThCGZaRAQgKcSiVDXkm8D7kLcoo"
+      DATABASE_URL: "sqlite:////workspace/contextforge.db"
+      CACHE_TYPE: "database"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+      WEATHER_TOOL_URL: "http://127.0.0.1:7745/mcp"
+      CALC_TOOL_URL: "http://127.0.0.1:7746/mcp"
+    port: 4744
+    healthcheck:
+      type: http
+      path: /health
+      # Live boot (migrations included, fresh SQLite) is ~12-16s; 90s
+      # leaves room for a slow container without hiding a real failure.
+      timeout_s: 90
+    ui: false
+    depends_on: [weather-tools, calculator-tools]
+  - name: view
+    # This lab's substitute for ContextForge's own (login-gated) admin UI:
+    # a small read-only stdlib page, workspace/view_service.py. Shows the
+    # registered gateways and discovered tools (from ContextForge's own
+    # REST API, called the same unauthenticated-script way call_tool.py
+    # calls it) and the virtual server, plus ContextForge's own execution
+    # log for every call made so far (read directly from its tool_metrics
+    # table -- the gateway's own aggregate /v1/metrics is cached for up to
+    # 60s, but the underlying table is written within a second or two of
+    # each call, so this is the more immediate proof).
+    argv: ["python3", "-B", "/workspace/view_service.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "7747"
+      VIEW_PREFIX: "{{service.prefix}}"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+      CONTEXTFORGE_DB_PATH: "/workspace/contextforge.db"
+    port: 7747
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: true
+    depends_on: [contextforge, weather-tools, calculator-tools]
+
+pressure: []
+
+checks:
+  - name: gateway-is-up
+    script: gateway-is-up.sh
+    timeout_s: 60
+    weight: 1
+
+hints:
+  - after_minutes: 10
+    text: >-
+      Run `python3 -B call_tool.py --list` from a terminal to see every
+      tool reachable through the virtual server, then
+      `python3 -B call_tool.py calculator-tools-add '{"a": 3, "b": 4}'`.
+      Open the view tab afterwards -- the bottom table is ContextForge's
+      own record of that call.
+
+egress:
+  allow: []

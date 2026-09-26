@@ -59,6 +59,12 @@ def _request(method, path, body=None):
     except urllib.error.HTTPError as e:
         status = e.code
         raw = e.read()
+    except (urllib.error.URLError, OSError, TimeoutError) as e:
+        # ContextForge isn't listening yet (connection refused) or took too
+        # long -- _wait_ready's caller treats this the same as any other
+        # not-ready response and keeps polling, rather than crashing the
+        # one background process that's supposed to retry.
+        return None, str(e)
     if not raw:
         return status, None
     try:
