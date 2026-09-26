@@ -1,0 +1,223 @@
+# A build lab: nothing is broken in the sense of a planted one-liner, but
+# platform/main.py's /search endpoint has a bug that looks like correct
+# tenant scoping until you test it against a corpus where other tenants'
+# documents can outrank the caller's own. Three teams (tenants) share one
+# pgvector-backed document store; the task is to make /search actually
+# honor tenant boundaries while still ranking by real vector similarity.
+#
+# Proven live, locally, against PostgreSQL 14.24 + postgresql-14-pgvector
+# 0.8.6-1.pgdg24.04+2 (PGDG, matching $SCRATCH/retrieval-inv/FINDINGS.md --
+# this sandbox is Ubuntu 24.04/noble; the real gateway image is 22.04/jammy
+# and gets the jammy PGDG build of the identical upstream version, per that
+# investigation) and FastAPI/uvicorn/psycopg2. The load-bearing facts:
+#
+#  1. The pseudo-embedding (workspace/platform/embedding.py) is a
+#     deterministic bag-of-words hash, tuned to DIM=256 after finding that
+#     DIM=32 and DIM=128 produced enough hash noise between unrelated
+#     tokens to occasionally out-rank a real (but low-word-overlap) match
+#     -- confirmed live by round-tripping the exact corpus through real
+#     pgvector `<=>` cosine distance and comparing against a pure-python
+#     model; at DIM=256 both agree exactly on every scenario below, with
+#     comfortable score margins (see the lab's own scratchpad proof run).
+#  2. The three graded scenarios were hand-built against this exact corpus
+#     and proven, live, to discriminate before this lab was finished:
+#       - RECALL (acme's own sales-commission query): proven that acme's
+#         true top-3 (by real cosine similarity) exactly equals the global
+#         top-3 -- i.e. this query has zero cross-tenant competition, so
+#         it isolates ranking correctness from tenant-filtering bugs.
+#       - ISOLATION (globex's vendor-security query): proven that acme's
+#         near-duplicate document (acme-vendor-dup) scores 0.946 cosine
+#         similarity against this exact query -- second only to globex's
+#         own real document (1.0) -- so an unfiltered top-5 provably
+#         leaks it.
+#       - CROWDING (northwind's RMA query): proven that seven near-verbatim
+#         restatements of the query, planted under acme/globex, all score
+#         higher (0.75-0.90) than any of northwind's three real (but
+#         differently-worded) RMA documents (0.40-0.60) -- so a "global
+#         LIMIT 3, then filter by tenant" implementation provably returns
+#         ZERO results for northwind here, while `WHERE tenant_id = ...`
+#         before the LIMIT still returns its true top-3.
+#  3. A real, load-bearing gotcha found while building this: a package
+#     literally named `platform` (this lab's own folder, matching the
+#     "workspace/platform/" the task names) shadows python's stdlib
+#     `platform` module the instant it's imported as a top-level package
+#     from /workspace -- confirmed live, it breaks `uuid` (imported by
+#     `click`, imported by `uvicorn`) with `AttributeError: module
+#     'platform' has no attribute 'system'`. Fixed by running
+#     `platform/main.py` as a plain script (its own `if __name__ ==
+#     "__main__": uvicorn.run(...)`) rather than `uvicorn
+#     platform.main:app` -- running a script by path makes python put
+#     *that file's own directory* at sys.path[0] instead of /workspace, so
+#     `import platform` still resolves to the stdlib. Both the `platform`
+#     service below and the grader's own copy in checks/_harness.py launch
+#     it exactly this way.
+#  4. pgvector needs no in-database migration step of its own: `CREATE
+#     EXTENSION vector` just needs the extension's files present on the
+#     filesystem (the PGDG package), which is independent of which data
+#     directory template you start from -- so `services/seed_db.py` (run
+#     from the `postgres` service's own argv, after the pre-warmed
+#     template copy in build-pg-template.sh's pattern) does
+#     `CREATE EXTENSION IF NOT EXISTS vector` plus its own idempotent
+#     schema/seed every boot, safely, in well under a second for this
+#     corpus (21 rows).
+#
+# Postgres data dir: this lab's own local proof used a plain `initdb`
+# under /tmp (not under a scratchpad -- the postgres OS user can't
+# traverse a root-only-mode scratchpad tree, the same class of problem
+# `/workspace` being chowned to `learner` solves for in the real
+# container), with `dynamic_shared_memory_type = sysv` pinned per
+# build-pg-template.sh's own documented fix. The manifest below assumes
+# the real container reuses the existing `/opt/opalix/pg-template` copy
+# (this lab's schema doesn't need anything baked into that template --
+# only the pgvector *package* being present on the image, which is the
+# platform change $SCRATCH/m3-common.md says the main session makes
+# later) plus this lab's own seed_db.py on top, at boot, every time.
+#
+# `platform` (the learner's own FastAPI app) is `ui: false` -- there's
+# nothing worth browsing to (no admin console, and exposing FastAPI's
+# auto-docs would just be noise); the learner talks to it with `curl` or
+# through the `app` tab. `app` is this lab's untouchable caller simulator
+# and its own read-only view (ui: true, no login, a plain stdlib page),
+# same shape as add-a-model-without-touching-app-code's `app` service.
+slug: offer-a-retrieval-service-teams-dont-build
+version: 1.0.0
+title: "Offer teams a retrieval service they do not have to build"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  Three teams share one pgvector-backed document store behind a single
+  /search endpoint. Build it so every team gets real vector similarity
+  ranked within its own documents, and never sees another team's, even
+  when the other team's content sits closer in embedding space.
+objectives:
+  - "Rank a tenant's own documents by real vector similarity to the query, not just return something non-empty"
+  - "Keep one tenant's results from ever including another tenant's documents, even when they're closer in embedding space"
+  - "Push the tenant filter into the SQL query's WHERE clause, not into a Python step applied after the database's own LIMIT"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  POSTGRES_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+  PLATFORM_URL: "http://127.0.0.1:8100"
+
+services:
+  # Copied from test/fixtures/labs/gateway-litellm-hello/'s template-copy
+  # pattern (images/gateway/build-pg-template.sh); see that fixture's
+  # manifest for why each line of this argv exists. seed_db.py (this lab's
+  # own addition, not part of the shared template) creates the pgvector
+  # extension, the `chunks` table, and loads the fixed tenant corpus --
+  # idempotent, so a Restart from the console's Services panel never
+  # re-seeds or duplicates rows.
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp & PID=$!; python3 -B /workspace/services/seed_db.py; wait $PID",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+
+  - name: platform
+    # THE LEARNER'S OWN SERVICE. Editing platform/main.py and hitting
+    # Restart on this entry in the console's Services panel is exactly how
+    # a learner is meant to iterate. ui: false -- nothing here is worth
+    # browsing to; talk to it with curl (PLATFORM_URL is in your
+    # environment) or watch it through the `app` tab below. Run as a plain
+    # script, not `uvicorn platform.main:app` -- see header comment,
+    # point 3, for why that matters.
+    argv: ["python3", "-B", "/workspace/platform/main.py"]
+    cwd: /workspace
+    env:
+      POSTGRES_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      PLATFORM_PORT: "8100"
+    port: 8100
+    healthcheck:
+      type: http
+      path: /health
+      timeout_s: 30
+    ui: false
+    depends_on: [postgres]
+
+  - name: app
+    # THE SERVICE YOU MUST NOT CHANGE: simulates real tenant-scoped
+    # callers against your /search endpoint and shows what came back,
+    # including a plain, visible flag if a result ever belongs to a
+    # different tenant than the one that asked. This IS the lab's
+    # read-only view -- see workspace/services/app.py's own docstring.
+    argv: ["python3", "-B", "/workspace/services/app.py"]
+    cwd: /workspace
+    env:
+      APP_PORT: "8101"
+      VIEW_PREFIX: "{{service.prefix}}"
+      PLATFORM_URL: "http://127.0.0.1:8100"
+      APP_CALL_INTERVAL_S: "2.0"
+    port: 8101
+    healthcheck:
+      type: http
+      path: /health
+      timeout_s: 20
+    ui: true
+    depends_on: [platform]
+
+pressure: []
+
+checks:
+  # All three share one grader-run's worth of setup (its own throwaway
+  # `grading` database, seeded fresh from services/corpus.py, and the
+  # learner's own platform/main.py launched as a subprocess against it) --
+  # see checks/_harness.py. Sequential on purpose: whichever runs first
+  # pays the setup cost (seeding ~21 rows and starting one uvicorn
+  # process, well under 10s live) and the other two just read its result.
+  - name: tenant-isolation-is-real
+    script: tenant-isolation-is-real.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  - name: recall-works-within-a-tenant
+    script: recall-works-within-a-tenant.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  - name: filtering-happens-in-the-query-not-after
+    script: filtering-happens-in-the-query-not-after.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      There are two different questions you could ask Postgres: "what are
+      the top-k closest rows across the whole table" and "what are the
+      top-k closest rows that also belong to this tenant". They are not
+      the same query, and which one you get depends on where a `WHERE
+      tenant_id = ...` clause sits relative to `ORDER BY ... LIMIT ...` --
+      not on whether you filter the results afterward in Python.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Watch the `app` tab for a while. Its `globex` row is asking about a
+      vendor security questionnaire -- and acme happens to have a document
+      about the exact same thing, worded almost identically. If that ever
+      shows up as a LEAK for globex, your query is looking at every
+      tenant's documents before it decides which ones to keep.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      The current skeleton's `ORDER BY embedding <=> %s::vector LIMIT
+      %s` runs against the whole `chunks` table, and the tenant check
+      only happens in Python afterward, on whatever already made it into
+      that LIMIT. Add `WHERE tenant_id = %s` to the same SQL statement
+      that does the ordering and the limiting, so the database itself
+      never considers another tenant's rows a candidate in the first
+      place.
+
+egress:
+  allow: []
