@@ -26,6 +26,19 @@ therefore its other four: the trace explore lab, propagation, telemetry
 pipelines, and LiteLLM spend attribution with Grafana. Modules 1-3 keep
 all five each (5+5+5+4+1+1 = 21).
 
+ContextForge feasibility confirmed 26 Sep 2026 (investigation, before
+Module 2 build started): real project (IBM's mcp-context-forge,
+Apache-2.0), feasible for Module 2's five phase-1 labs with two changes.
+It needs Python 3.12 in the image, not the default 3.10 -- pin
+mcp-contextforge-gateway==1.0.10. And "Version tool definitions and roll
+changes out safely" (lab 5) is redesigned: ContextForge has no real
+canary/rollout/history mechanism (a bare edit counter plus enable/disable
+plus whole-config export/import only), so the lab now asks the learner to
+build their own staged-rollout/rollback discipline on those primitives,
+not use a gateway feature that doesn't exist. A real anonymous admin-UI
+mode exists (AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true), so
+unlike LiteLLM its admin tab can be a real `ui: true` service.
+
 Built and verified live (26 Sep 2026). Each passes `labs test`: the
 untouched workspace fails and solution/ passes. Each also fails every
 planted wrong answer, on the intended check, against a live session.
