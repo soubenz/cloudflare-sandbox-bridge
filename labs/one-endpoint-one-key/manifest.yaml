@@ -36,7 +36,7 @@
 # Postgres is mandatory here for the same reason as gateway-litellm-hello
 # (LiteLLM's virtual-key/team/spend layer is backed by a Prisma schema
 # hard-coded to `provider = "postgresql"`) -- see that fixture's manifest
-# for the full initdb/runuser dance, copied verbatim below.
+# for the full template-copy/runuser dance, copied verbatim below.
 #
 # `litellm`'s own admin UI always requires a login and nothing turns that
 # off, so per the no-login rule it is `ui: false` and never a tab; `view`
@@ -77,7 +77,7 @@ env:
 
 services:
   # Copied from test/fixtures/labs/gateway-litellm-hello/ -- see that
-  # fixture's manifest for why each line of this argv exists (initdb once,
+  # fixture's manifest for why each line of this argv exists (template copied in once,
   # then exec as the postgres OS user via runuser, data dir under /tmp
   # because /workspace is chowned to `learner`).
   - name: postgres
@@ -122,10 +122,10 @@ services:
     healthcheck:
       type: http
       path: /health/readiness
-      # A fresh database runs all of LiteLLM's migrations on first boot
-      # (docs/spike.md T4 Q5: ~20-28s even on an already-migrated DB in
-      # this spike's sandbox) -- use the schema's max rather than default 30.
-      timeout_s: 120
+      # The database starts pre-migrated, so LiteLLM boots in ~25-33 s live
+      # (docs/spike.md, "Gateway boot with a pre-migrated database"); 90 s
+      # leaves room for a slow container without hiding a real failure.
+      timeout_s: 90
     ui: false
     depends_on: [postgres, provider]
   - name: view

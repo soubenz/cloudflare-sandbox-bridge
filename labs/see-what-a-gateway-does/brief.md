@@ -35,8 +35,7 @@ watch them arrive as you make them.
 alias means. Right now `fast` points at deployment `b`. Change its
 `api_base` so it points at the same deployment `support` already uses,
 save the file, then restart `litellm` from the **Services** panel on the
-left (it takes up to a minute to come back, since it re-checks its
-database on every start).
+left (it takes about 30 seconds to come back).
 
 Send `fast` a call again and watch the **view** tab. Nothing about `support`
 changes -- only what `fast` now does changed, because you changed what the

@@ -1634,3 +1634,37 @@ section above, and the live-vs-sandbox RSS gap it flagged).
   processes (Postgres, the provider, the session's own supervisor)
   contending for that same half core, which this local setup does not
   fully reproduce. Re-measure once the image ships.
+
+## Gateway boot with a pre-migrated database, live (26 Sep 2026)
+
+The gateway image now carries a Postgres data dir with LiteLLM's schema
+already migrated (`images/gateway/build-pg-template.sh`). Labs copy it
+into place and boot LiteLLM with `DISABLE_SCHEMA_UPDATE=True`. Four fresh
+sessions on `standard-1` after the rollout settled and the pool was
+drained:
+
+| | before | after |
+|---|---|---|
+| session start to `running` | 77 s (twice) | 46 s, 34 s (fixture); 48 s, 48 s (explore lab) |
+| LiteLLM restart from the Services panel | 41 s | 32 s, 23 s, 33 s, 31 s |
+| memory used, whole container | ~550 MB | 550-600 MB |
+| full check run | ~2 s | 2.0-2.5 s |
+
+About 40% faster, a little short of the 37 s the local, one-core
+estimate predicted. What's left is mostly LiteLLM importing and starting
+(about 24 s scaled from the no-database floor), plus container claim and
+hydration.
+
+The first deploy of this broke every Postgres-backed lab live. Postgres
+exited at startup with `could not open shared memory segment
+"/PostgreSQL.<n>"`. Lab containers have no `/dev/shm`, and `initdb` on
+the image builder, which has one, had chosen POSIX dynamic shared memory.
+When `initdb` ran inside the container it chose System V. The template
+now pins `dynamic_shared_memory_type = sysv`. Neither the dev machine nor
+the builder could show this, since both have `/dev/shm`. A temporary check
+script run as root in a live session was the way to read Postgres's own
+error: the service log tail was empty, and the learner can't read
+`/tmp/pg`.
+
+Image sizes (deploy #51): gateway **3.51 GB** (MLflow 592 MB, the template
+60 MB), agent 2.17 GB.

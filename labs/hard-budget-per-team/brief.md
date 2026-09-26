@@ -38,8 +38,7 @@ more than its budget allows" quickly and correctly is yours to build.
 
 After you change `gateway/hooks/budget_guard.py`, restart the `litellm`
 service from the Services panel for the change to take effect (this takes
-around 40 seconds -- the gateway re-runs its own startup, migrations and
-all).
+about 30 seconds).
 
 ## Checking your work
 

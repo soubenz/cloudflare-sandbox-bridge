@@ -14,7 +14,7 @@
 #     features are backed by a Prisma schema with a hard-coded
 #     `provider = "postgresql"` (T4 Q1), so DATABASE_URL must be a real
 #     postgres:// URL. Postgres also refuses to run as root, hence the
-#     initdb-then-exec-as-postgres dance in its argv below.
+#     copy-the-template-then-exec-as-postgres dance in its argv below.
 #  2. LiteLLM's own admin UI always requires a login (T5 Q4), so under the
 #     no-login rule in docs/lab-authoring.md it stays `ui: false` and is
 #     never a tab -- this lab's own `view` service is the tab instead: a
@@ -24,10 +24,9 @@
 #     master key, so a learner never sees the key move across the wire from
 #     the page itself).
 #
-# A fresh database runs all 171 of LiteLLM's bundled migrations on first
-# boot, which is why litellm's healthcheck timeout is the schema maximum
-# (120s) rather than the usual default -- confirmed locally at ~20-23s even
-# on an already-migrated DB (docs/spike.md T4 Q5).
+# Postgres starts from the gateway image's pre-migrated template
+# (images/gateway/build-pg-template.sh), so a session never runs LiteLLM's
+# 171 migrations.
 slug: see-what-a-gateway-does
 version: 1.0.0
 title: "See what a gateway actually does"
@@ -87,10 +86,10 @@ services:
     healthcheck:
       type: http
       path: /health/readiness
-      # Schema max, not the 30s default -- a fresh DB runs all of LiteLLM's
-      # migrations on first boot (docs/spike.md T4 Q5: ~20-23s even on an
-      # already-migrated DB).
-      timeout_s: 120
+      # The database starts pre-migrated, so LiteLLM boots in ~25-33 s live
+      # (docs/spike.md, "Gateway boot with a pre-migrated database"); 90 s
+      # leaves room for a slow container without hiding a real failure.
+      timeout_s: 90
     ui: false
     depends_on: [postgres, provider]
   - name: view
