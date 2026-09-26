@@ -25,7 +25,13 @@ What "driving the scenario" actually does, in order:
   2. Run caller.py in a tight loop, continuously, while calling
      register_v2() -- and for a short buffer after it returns -- to prove
      outcome 1: nothing about v2 reaches an existing caller until a
-     deliberate cutover.
+     deliberate cutover. Alongside caller.py (real, but slow: a fresh
+     Python process plus several HTTP round trips per run), this stage
+     ALSO runs the same dense, direct-HTTP sampling described in step 3
+     below against the server's associated-tools list, so a register_v2()
+     that briefly points the shared server at v2 -- to "test" it, say --
+     gets caught even if no caller.py run happened to be in flight at
+     that exact moment.
   3. Call snapshot(), then start continuous, high-frequency sampling of
      GET /v1/servers/{id}'s associated tool count -- BEFORE calling
      cutover_to("v2"), and keep sampling straight through rollback() --
@@ -419,15 +425,33 @@ def check_no_downtime_during_registration():
     if r.get("register_error"):
         _finish(False, "can't judge the registration window: %s" % r["register_error"])
         return
-    samples = r.get("registration_window_caller_results") or []
-    if len(samples) < 3:
-        _finish(False, "only %d caller.py run(s) landed during the registration window -- not enough to judge" % len(samples))
+
+    # Signal 1: dense, fast, direct sampling of the server's own
+    # associated-tools list -- reliably catches even a narrow window where
+    # register_v2() (or anything it calls) pointed the shared server at v2.
+    v1_tool_name = r.get("v1_tool_name")
+    tool_samples = r.get("registration_window_tool_samples") or []
+    if len(tool_samples) < 3:
+        _finish(False, "only %d sample(s) of the server's associated tools were taken during registration -- not enough to judge" % len(tool_samples))
         return
-    bad = [s for s in samples if not s.get("pass")]
-    if bad:
-        _finish(False, "%d of %d caller.py runs during v2's registration failed (first: %s) -- v2 reached an existing caller before any deliberate cutover" % (len(bad), len(samples), bad[0].get("message")))
+    bad_tool_samples = [s for s in tool_samples if s != [v1_tool_name]]
+    if bad_tool_samples:
+        _finish(False, "price-lookup was observed serving %r during v2's registration window, not just v1's tool (%r) -- v2 reached an existing caller before any deliberate cutover" % (bad_tool_samples[0], v1_tool_name))
         return
-    _finish(True, "all %d caller.py runs during v2's registration window kept getting the v1 shape" % len(samples))
+
+    # Signal 2: the real caller.py itself, several concurrent runs across
+    # the same window -- slower and could miss a very narrow bad window on
+    # its own, but it's the actual outcome that matters, so still checked.
+    caller_samples = r.get("registration_window_caller_results") or []
+    if len(caller_samples) < 3:
+        _finish(False, "only %d caller.py run(s) landed during the registration window -- not enough to judge" % len(caller_samples))
+        return
+    bad_caller_samples = [s for s in caller_samples if not s.get("pass")]
+    if bad_caller_samples:
+        _finish(False, "%d of %d caller.py runs during v2's registration failed (first: %s) -- v2 reached an existing caller before any deliberate cutover" % (len(bad_caller_samples), len(caller_samples), bad_caller_samples[0].get("message")))
+        return
+
+    _finish(True, "price-lookup served only v1's tool through %d direct samples and %d caller.py runs across v2's whole registration window" % (len(tool_samples), len(caller_samples)))
 
 
 def check_rollback_is_fast_and_stable():
@@ -465,11 +489,11 @@ def check_never_zero_or_two_tools_live():
         return
     samples = r.get("tool_count_samples") or []
     if len(samples) < 3:
-        _finish(False, "only %d sample(s) of the server's associated-tool count were taken during cutover+rollback -- not enough to judge" % len(samples))
+        _finish(False, "only %d sample(s) of the server's associated tools were taken during cutover+rollback -- not enough to judge" % len(samples))
         return
-    bad = [n for n in samples if n != 1]
+    bad = [s for s in samples if len(s) != 1]
     if bad:
-        _finish(False, "the price-lookup server was observed with %d associated tool(s) at least once during cutover/rollback (samples: %r) -- a caller could have gotten no answer or an ambiguous one" % (bad[0], samples))
+        _finish(False, "the price-lookup server was observed with %d associated tool(s) at least once during cutover/rollback (samples: %r) -- a caller could have gotten no answer or an ambiguous one" % (len(bad[0]), samples))
         return
     _finish(True, "all %d samples of the server's associated tools during cutover+rollback showed exactly 1 -- never 0, never 2" % len(samples))
 
