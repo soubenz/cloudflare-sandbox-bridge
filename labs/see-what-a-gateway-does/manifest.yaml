@@ -1,0 +1,134 @@
+# Path 2, Module 1, lab 1 in docs/catalogue-path-2-ai-platform.md
+# (explore, gateway family).
+#
+# type: explore -- nothing is broken and nothing is missing (see
+# docs/lab-authoring.md, "type: explore is a guided tour, not a puzzle").
+# The services, fake provider (deterministic per-deployment token formula,
+# GET /log) and gateway config are copied unmodified from the
+# locally-verified base fixture, test/fixtures/labs/gateway-litellm-hello/
+# -- see its own manifest.yaml and docs/spike.md ("LiteLLM proxy (T4)" and
+# "LiteLLM under a path prefix (T5)") for why each piece of the wiring is
+# there. Two load-bearing facts carried over from that fixture:
+#
+#  1. Postgres is mandatory, not a default -- LiteLLM's virtual-key/spend
+#     features are backed by a Prisma schema with a hard-coded
+#     `provider = "postgresql"` (T4 Q1), so DATABASE_URL must be a real
+#     postgres:// URL. Postgres also refuses to run as root, hence the
+#     initdb-then-exec-as-postgres dance in its argv below.
+#  2. LiteLLM's own admin UI always requires a login (T5 Q4), so under the
+#     no-login rule in docs/lab-authoring.md it stays `ui: false` and is
+#     never a tab -- this lab's own `view` service is the tab instead: a
+#     small read-only stdlib http.server page (no login, no external
+#     assets) showing the provider's /log (which deployment served each
+#     call) and LiteLLM's own /spend/logs (called server-side with the
+#     master key, so a learner never sees the key move across the wire from
+#     the page itself).
+#
+# A fresh database runs all 171 of LiteLLM's bundled migrations on first
+# boot, which is why litellm's healthcheck timeout is the schema maximum
+# (120s) rather than the usual default -- confirmed locally at ~20-23s even
+# on an already-migrated DB (docs/spike.md T4 Q5).
+slug: see-what-a-gateway-does
+version: 1.0.0
+title: "See what a gateway actually does"
+type: explore
+family: gateway
+summary: >-
+  LiteLLM in front of two model deployments, backed by a real Postgres. A
+  guided tour of what a gateway does with one call: which deployment
+  answers, what it costs, and what the gateway remembers about it after.
+difficulty: intro
+timeout_minutes: 60
+idle_minutes: 10
+
+env:
+  LITELLM_URL: "http://127.0.0.1:4000"
+  PROVIDER_URL: "http://127.0.0.1:8961"
+  LITELLM_MASTER_KEY: "sk-opalix-fixture-master"
+
+services:
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then mkdir -p /tmp/pg && chown postgres:postgres /tmp/pg && runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+  - name: provider
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    port: 8961
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: litellm
+    # ui: false -- the admin UI always requires a login (T5 Q4); see the
+    # note above. `view` is this lab's tab instead.
+    argv: ["litellm", "--config", "/workspace/gateway/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-fixture-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # Schema max, not the 30s default -- a fresh DB runs all of LiteLLM's
+      # migrations on first boot (docs/spike.md T4 Q5: ~20-23s even on an
+      # already-migrated DB).
+      timeout_s: 120
+    ui: false
+    depends_on: [postgres, provider]
+  - name: view
+    argv: ["python3", "-B", "/workspace/services/view_service.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "8962"
+      VIEW_PREFIX: "{{service.prefix}}"
+    port: 8962
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: true
+    depends_on: [litellm, provider]
+
+pressure: []
+
+checks:
+  - name: gateway-is-up
+    script: gateway-is-up.sh
+    timeout_s: 60
+    weight: 1
+  # The graded check: derives the true answer to each of the brief's three
+  # questions from the live services themselves (never a hard-coded value),
+  # and compares them against /workspace/answers.json. It never calls the
+  # provider's /reset -- it snapshots /log before its own 'support' call and
+  # diffs afterwards, so it never disturbs a call the learner already made.
+  - name: answers-match-the-gateway
+    script: answers-match-the-gateway.sh
+    timeout_s: 60
+    weight: 2
+
+hints:
+  - after_minutes: 10
+    text: >-
+      Run `python3 -B send_calls.py support "hello gateway"` from
+      a terminal, then open the view tab. It shows two independent records
+      of that same call: what the provider itself received, and what
+      LiteLLM itself logged about it -- everything the three questions ask
+      for is in one of those two records.
+
+egress:
+  allow: []
