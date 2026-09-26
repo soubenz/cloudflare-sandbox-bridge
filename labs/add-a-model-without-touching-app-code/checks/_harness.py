@@ -29,6 +29,7 @@ scripts each apply their own pass/fail reading of the same facts, and
 never re-hit the network.
 """
 
+import contextlib
 import json
 import os
 import signal
@@ -319,26 +320,30 @@ def _seed_grader_mlflow():
 
     mlflow.set_tracking_uri(GRADER_MLFLOW_URL)
     client = MlflowClient(tracking_uri=GRADER_MLFLOW_URL)
-    client.create_registered_model(REGISTERED_MODEL, description="grader's own throwaway copy")
 
-    versions = {}
-    for deployment in ("a", "b", "c"):
-        with mlflow.start_run(run_name="grader-deployment-%s" % deployment) as run:
-            mlflow.log_param("deployment", deployment)
-            run_id = run.info.run_id
-        mv = client.create_model_version(
-            name=REGISTERED_MODEL,
-            source="runs:/%s/model" % run_id,
-            run_id=run_id,
-            tags={
-                "litellm_model_name": LITELLM_MODEL_NAME,
-                "litellm_upstream_model": "openai/fake-model",
-                "litellm_api_base": "%s/%s/v1" % (PROVIDER_URL, deployment),
-                "deployment": deployment,
-            },
-        )
-        versions[deployment] = mv.version
-    client.set_registered_model_alias(REGISTERED_MODEL, "champion", versions["a"])
+    # mlflow's client prints a "View run/experiment at ..." banner per
+    # run/version to stdout -- harmless, but noisy next to this script's
+    # own single JSON result line, so it's swallowed here.
+    with open(os.devnull, "w") as devnull, contextlib.redirect_stdout(devnull):
+        client.create_registered_model(REGISTERED_MODEL, description="grader's own throwaway copy")
+        versions = {}
+        for deployment in ("a", "b", "c"):
+            with mlflow.start_run(run_name="grader-deployment-%s" % deployment) as run:
+                mlflow.log_param("deployment", deployment)
+                run_id = run.info.run_id
+            mv = client.create_model_version(
+                name=REGISTERED_MODEL,
+                source="runs:/%s/model" % run_id,
+                run_id=run_id,
+                tags={
+                    "litellm_model_name": LITELLM_MODEL_NAME,
+                    "litellm_upstream_model": "openai/fake-model",
+                    "litellm_api_base": "%s/%s/v1" % (PROVIDER_URL, deployment),
+                    "deployment": deployment,
+                },
+            )
+            versions[deployment] = mv.version
+        client.set_registered_model_alias(REGISTERED_MODEL, "champion", versions["a"])
     return client, versions
 
 
