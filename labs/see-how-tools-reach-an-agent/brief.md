@@ -3,10 +3,6 @@
 Nothing is broken here. This is a tour of how a tool actually gets from a
 tool server to an agent through a gateway, not a puzzle to fix.
 
-**Part 1 placeholder.** The services below are real and running; the
-questions and grading in this brief are scaffolding for part 2 and will be
-replaced.
-
 ## What is running
 
 | Service | What it is doing |
@@ -37,12 +33,37 @@ own log for each one.
 
 ## Answer these
 
-(Placeholder for part 2.)
+1. How many tools does the virtual server `toy-tools` expose right now?
+   (`call_tool.py --list` prints exactly that set.)
+2. Call `calculator-tools-add` with exactly `{"a": 17, "b": 25}`. What
+   number comes back?
+3. Call a tool name that was never registered anywhere -- `does-not-exist`
+   is one that isn't -- through the same virtual server, the same way you
+   called the other two. The HTTP status is 200 either way; look at the
+   JSON-RPC result itself, the way `call_tool.py` prints it. Is it marked
+   as an error?
 
-Write your answers into `/workspace/answers.json`.
+Write your answers into `/workspace/answers.json`, which starts out as:
+
+```json
+{
+  "virtual_server_tool_count": null,
+  "calculator_add_result": null,
+  "unregistered_tool_call_is_error": null
+}
+```
+
+Replace each `null`: the first two with numbers, the third with `true` or
+`false`.
 
 ## Checking your work
 
-(Placeholder for part 2 -- see `checks/gateway-is-up.sh` for what part 1
-already proves: the gateway is up, both toy tool servers are registered,
-and a real call through the virtual server succeeds.)
+| Check | Passes when |
+|---|---|
+| `gateway-is-up` | ContextForge reports healthy, both toy tool servers are registered as gateways, and a real call through the virtual server succeeds |
+| `answers-match-the-gateway` | Your three answers match what the gateway actually reports right now, checked live |
+
+The second check makes its own `calculator-tools-add` call and its own
+call to a tool name that doesn't exist, and reads its own results back off
+the gateway -- it never looks at your source, and it never depends on
+which tools you personally called first.
