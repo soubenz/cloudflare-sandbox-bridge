@@ -966,3 +966,310 @@ services use `urllib`.
 Probe pitfall: a file written through the files API into a new directory
 leaves that directory `root:755`, so the learner's shell can't create files
 next to it.
+
+## LiteLLM under a path prefix (T5, 26 Sep 2026)
+
+Reused the T4 venv (litellm 1.102.1, prisma 0.15.0) and the T4 fake
+OpenAI-compatible provider script on 127.0.0.1:8961. Hit the known
+pitfall exactly as predicted: the T4 Postgres data dir could not be
+restarted —
+
+```
+$ sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D .../litellm-t4/pgdata \
+    -l .../pgdata/pg.log -o "-p 5432 -h 127.0.0.1" start
+pg_ctl: could not access directory ".../litellm-t4/pgdata": Permission denied
+```
+
+`namei -om` on the pgdata path showed the scratchpad's grandparent
+directory had been reset to `drwx------ root root` (mode 700, not even
+`--x` for other), so the `postgres` OS user could not traverse into it at
+all. Per the task's fallback, created a fresh cluster instead:
+
+```
+$ mkdir -p /tmp/litellm-t5-pg && chown postgres:postgres /tmp/litellm-t5-pg
+$ sudo -u postgres /usr/lib/postgresql/16/bin/initdb -D /tmp/litellm-t5-pg
+$ sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D /tmp/litellm-t5-pg \
+    -l /tmp/litellm-t5-pg/pg.log -o "-p 5432 -h 127.0.0.1" start
+server started
+$ psql -h 127.0.0.1 -U postgres -c 'select 1'
+ ?column?
+----------
+        1
+$ psql -h 127.0.0.1 -U postgres -c "CREATE ROLE litellm WITH LOGIN PASSWORD 'litellm'; \
+    ALTER ROLE litellm CREATEDB; CREATE DATABASE litellm OWNER litellm;"
+```
+
+Config (`config.yaml`, alias `support` → the fake provider at
+`127.0.0.1:8961/a/v1`):
+
+```yaml
+model_list:
+  - model_name: support
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/a/v1
+      api_key: sk-<generated>
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+```
+
+Started with:
+
+```
+LITELLM_MASTER_KEY=sk-t5-master \
+DATABASE_URL=postgresql://litellm:litellm@127.0.0.1:5432/litellm \
+LITELLM_LOCAL_MODEL_COST_MAP=True \
+SERVER_ROOT_PATH=/sessions/abc/services/litellm \
+litellm --config config.yaml --port 4000
+```
+
+Log confirmed the migrations ran clean against the fresh DB ("All
+migrations have been successfully applied") and the server came up
+("Uvicorn running on http://0.0.0.0:4000"). Verified `LITELLM_MASTER_KEY`,
+`SERVER_ROOT_PATH`, and the fake provider were all actually taken by
+querying the proxy's own discovery endpoint:
+
+```
+$ curl -s http://127.0.0.1:4000/sessions/abc/services/litellm/.well-known/litellm-ui-config
+{"server_root_path":"/sessions/abc/services/litellm", ... "admin_ui_disabled":false, ...}
+```
+
+### Q1: status with vs. without the prefix
+
+All requests below hit the same running proxy on port 4000; "with prefix"
+means `http://127.0.0.1:4000/sessions/abc/services/litellm<path>`,
+"without" means `http://127.0.0.1:4000<path>`.
+
+| Path | Method | With prefix | Without prefix |
+|---|---|---|---|
+| `/health/readiness` | GET | 200 | 200 |
+| `/v1/chat/completions` | POST (master key, model `support`) | 200 (`"content":"fixed-fake-reply"`, real `usage` block) | 200 (same) |
+| `/key/generate` | POST (master key) | 200 (returns `"key":"sk-<generated>"`) | 200 (returns a different `sk-<generated>`) |
+| `/key/info?key=...` | GET (master key) | 200 (`"spend":0.0`, full key metadata) | 200 (identical body) |
+| `/ui/` | GET | 200 (24718-byte Next.js app shell, asset links baked with the prefix) | **404** (13589-byte Next.js client `404.html`, "This page could not be found") |
+
+Evidence (uvicorn's own access log, `proxy.log`):
+
+```
+INFO: 127.0.0.1:xxxxx - "POST /sessions/abc/services/litellm/v1/chat/completions HTTP/1.1" 200 OK
+INFO: 127.0.0.1:xxxxx - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO: 127.0.0.1:xxxxx - "POST /sessions/abc/services/litellm/key/generate HTTP/1.1" 200 OK
+INFO: 127.0.0.1:xxxxx - "GET /sessions/abc/services/litellm/ui/ HTTP/1.1" 200 OK
+INFO: 127.0.0.1:xxxxx - "GET /ui/ HTTP/1.1" 404 Not Found
+```
+
+**Headline finding: `SERVER_ROOT_PATH` works — every one of the five
+paths answers correctly (200, right content) when requested WITH the
+prefix.** Q5's "try an alternative setting" branch was not needed: there
+was no path where the prefix failed to work.
+
+The unexpected wrinkle is the opposite direction: four of the five paths
+(everything except `/ui/`) *also* answer 200 at the bare, unprefixed
+path — `/v1/chat/completions` served a real completion, `/key/generate`
+minted a real (different) key, `/key/info` returned real data. Only
+`/ui/` is prefix-only; hitting it bare gives a real 404.
+
+Root cause (traced through the installed source, not guessed): FastAPI
+(`root_path=server_root_path`, `proxy_server.py:1510`) copies
+`server_root_path` into `scope["root_path"]` on *every* request
+regardless of the actual incoming path
+(`fastapi/applications.py:1161-1162`). Starlette's route matcher
+(`starlette/_utils.py:get_route_path`) then strips that root_path from
+`scope["path"]` only if the real path happens to start with it — so a
+prefixed request gets correctly stripped down to the literal route
+(`/v1/chat/completions`, `/key/generate`, …) and a bare request already
+*is* the literal route, so both match. `/ui/` is different only because
+it is a Starlette `Mount("/ui", StaticFiles(...))`
+(`proxy_server.py:2121`) — `_next` assets are deliberately mounted twice
+(once bare, once at `f"{server_root_path}/_next"`,
+`proxy_server.py:2109-2118`) but `/ui` itself is mounted only once, bare.
+`Mount.matches` (`starlette/routing.py:399-423`) always adds the app's
+assumed `server_root_path` onto the child scope's `root_path` regardless
+of whether the real request had it, so a bare `/ui/` request ends up
+with an inflated `root_path` inside the `StaticFiles` app that doesn't
+match its own (unstripped) `path`, so `StaticFiles` can't find the file
+and serves its own `404.html` fallback instead. This is a real, if minor,
+inconsistency in how LiteLLM mounts the UI vs. its static assets, not a
+config mistake in this spike.
+
+### Q2: `/ui/` asset URLs that escape the prefix
+
+Fetched `/sessions/abc/services/litellm/ui/` and extracted every `href=`
+/ `src=` in the HTML:
+
+```
+$ grep -oE 'href="[^"]+"|src="[^"]+"' ui_with.html | sed -E 's/^(href|src)="//; s/"$//' | sort -u
+/favicon.ico?favicon.3arlap5n8tyzg.ico
+/get_favicon
+/sessions/abc/services/litellm/_next/static/chunks/*.js   (36 chunk/css files)
+/sessions/abc/services/litellm/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2
+```
+
+All 37 `_next/static/...` assets are correctly prefixed and all resolved
+with the prefix:
+
+```
+$ curl -s -o /dev/null -w "%{http_code} %{content_type}\n" \
+    http://127.0.0.1:4000/sessions/abc/services/litellm/_next/static/chunks/1kid9zr1--h6y.css
+200 text/css; charset=utf-8
+$ curl ... chunks/33t46atd3n2zd.js
+200 text/javascript; charset=utf-8
+$ curl ... media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2
+200 font/woff2
+```
+
+Two references are **root-absolute and escape the prefix**:
+`/favicon.ico?favicon.3arlap5n8tyzg.ico` and `/get_favicon`. In a real
+browser these resolve against the *origin*, not the current path, so
+under Opalix (where the platform proxy forwards the path unchanged and
+does not strip it) a tab open at
+`.../sessions/abc/services/litellm/ui/` would send these two requests to
+the platform's bare root — i.e. to whatever the platform serves at `/`,
+not to this session's LiteLLM at all. Tested against the bare LiteLLM
+process directly (irrelevant to what the platform would actually route,
+but shows the LiteLLM side of it):
+
+```
+$ curl -s -D - -o /dev/null "http://127.0.0.1:4000/favicon.ico?favicon.3arlap5n8tyzg.ico"
+HTTP/1.1 404 Not Found
+$ curl -s -D - -o /dev/null "http://127.0.0.1:4000/get_favicon"
+HTTP/1.1 200 OK
+```
+
+(Same two results whether or not the prefix is manually prepended to
+these two URLs — `/favicon.ico` 404s with or without a query string,
+`/get_favicon` is a literal FastAPI route reachable at bare root either
+way, for the same `root_path`-stripping reason as Q1's API paths.)
+
+Redirect check: `GET /ui` (no trailing slash) 307-redirects to `/ui/`,
+and the `Location` header correctly carries the prefix when the request
+carried it:
+
+```
+$ curl -s -D - -o /dev/null http://127.0.0.1:4000/sessions/abc/services/litellm/ui
+HTTP/1.1 307 Temporary Redirect
+location: http://127.0.0.1:4000/sessions/abc/services/litellm/ui/
+$ curl -s -D - -o /dev/null http://127.0.0.1:4000/ui
+HTTP/1.1 307 Temporary Redirect
+location: http://127.0.0.1:4000/ui/
+```
+
+Net for Q2: the built UI's asset pipeline (`_next/*`) is prefix-safe, but
+two absolute paths baked into the page (`/get_favicon`, `/favicon.ico?…`)
+are not, and would 404 or hit the wrong service in a real multi-tenant
+Opalix deployment. Cosmetic (favicon-only) but real.
+
+### Q3: response headers on `/ui/` (with prefix)
+
+```
+$ curl -s -D - -o /dev/null http://127.0.0.1:4000/sessions/abc/services/litellm/ui/ | grep -iE "x-frame|content-security"
+x-frame-options: DENY
+content-security-policy: frame-ancestors 'none'
+```
+
+`X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors
+'none'` (from `SecurityHeadersMiddleware`, `proxy_server.py:2221`) are
+both present, unconditionally, on every response including this one and
+including the bare-path 404. **This means the LiteLLM Admin UI can never
+be embedded in an `<iframe>` at all** (own origin or not) — it can only
+be opened as its own top-level tab/window. Relevant to Opalix if the
+platform ever considered iframing services instead of opening them in a
+new tab.
+
+### Q4: can the UI be used without logging in? — **No**
+
+Traced the actual login gate in the installed package, not just the env
+var names:
+
+* `litellm/proxy/auth/login_utils.py:61-85` (`get_ui_credentials`):
+  `ui_username = os.getenv("UI_USERNAME", "admin")`;
+  `ui_password = os.getenv("UI_PASSWORD") or str(master_key)` — if
+  neither `UI_PASSWORD` nor a master key is set, login raises a 500
+  ("set Proxy master key to use UI"). So a login is always required, and
+  its password always resolves to either `UI_PASSWORD` or the master
+  key — there is no path where credentials are unnecessary.
+* The compiled frontend bundle
+  (`litellm/proxy/_experimental/out/_next/static/chunks/05php4kcqbp33.js`)
+  contains the exact banner text shown on `/ui/`: *"By default, Username
+  is `admin` and Password is your set LiteLLM Proxy `MASTER_KEY`."* — and
+  its login gate only skips the form if `getCookieFromDocument("token")`
+  finds an unexpired JWT already in the browser, or if SSO is fully
+  configured and `AUTO_REDIRECT_UI_LOGIN_TO_SSO=true` (which still means
+  logging in, just via an external IdP instead of a form).
+* `DISABLE_ADMIN_UI` (checked in
+  `litellm/proxy/discovery_endpoints/ui_discovery_endpoints.py:25` and
+  `litellm/proxy/management_endpoints/ui_sso.py:1025`) does **not**
+  bypass login — it makes `/ui/` show a permanent "Admin UI Disabled"
+  card instead of a usable UI (confirmed from the same JS bundle). It
+  removes the UI, it does not remove the login.
+* No `NO_AUTH`, `skip_login`, or similar bypass exists anywhere under
+  `litellm/proxy/auth/` or `litellm/proxy/management_endpoints/ui_sso.py`
+  (grepped for `no_auth`, `anonymous`, `skip_login`, `bypass.*auth` —
+  only unrelated hits, e.g. comments about MCP callers that bypass
+  `user_api_key_auth`, a different code path from the UI).
+
+Confirmed empirically end-to-end:
+
+```
+$ curl -s -o /dev/null -w "%{http_code}\n" \
+    "http://127.0.0.1:4000/sessions/abc/services/litellm/key/info?key=sk-<generated>"
+401
+$ curl -s "http://127.0.0.1:4000/sessions/abc/services/litellm/key/info?key=sk-<generated>"
+{"error":{"message":"Authentication Error, No api key passed in.", ...}}
+
+$ curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+    ".../sessions/abc/services/litellm/login" -d "username=admin&password=sk-t5-master"
+303   # correct master key as password -> redirect (logged in)
+
+$ curl -s -X POST ".../sessions/abc/services/litellm/login" -d "username=admin&password=wrong-pass"
+{"error":{"message":"Invalid credentials used to access UI.\nCheck 'UI_USERNAME', 'UI_PASSWORD' in .env file", ...},"code":"401"}
+```
+
+**Answer: no, the UI cannot be used without a login.** It always accepts
+username `admin` (or `UI_USERNAME`) and a password that is `UI_PASSWORD`
+if set, else the proxy's `LITELLM_MASTER_KEY` — so for Opalix's purposes
+the master key doubles as the UI password. For a learner to land on the
+UI without seeing a login form, Opalix's platform would have to either
+pre-authenticate the browser (mint a JWT/cookie for the learner's
+session before the tab opens, matching the "already has a valid token"
+branch above) or accept that the learner types `admin` /
+`<the session's master key>` once.
+
+### Q5: alternative settings for the one broken path
+
+Not needed. As shown in Q1, `SERVER_ROOT_PATH` alone made all five
+tested paths answer correctly under the prefix; there was no path where
+the prefix failed to work, so no fallback setting (e.g. `--root_path`)
+had to be tried. The only asymmetry found (`/ui/` 404ing when accessed
+*without* the prefix, and two UI assets that escape the prefix, Q2) is
+not fixed by any alternative env var or CLI flag visible in this
+version's source — it is a mount-registration gap (`/ui` mounted once,
+unlike `/_next` mounted twice) rather than a missing setting.
+
+### What's still running / cleaned up
+
+The fake provider (127.0.0.1:8961) and the LiteLLM proxy (127.0.0.1:4000,
+`SERVER_ROOT_PATH=/sessions/abc/services/litellm`) were both stopped
+before finishing this spike. The fresh Postgres cluster at
+`/tmp/litellm-t5-pg` (port 5432, role/db `litellm`) was left running,
+matching how T4 left its own Postgres running for reuse — stop it with
+`sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D /tmp/litellm-t5-pg stop`
+if it should not persist.
+
+### What T5 means for the labs (main session, 26 Sep 2026)
+
+- **Framing:** the `X-Frame-Options: DENY` and `frame-ancestors 'none'`
+  headers above don't stop the console from embedding the tab. The session
+  proxy removes both from every `ui: true` response
+  (`src/session/proxy.ts`, `unframed()`), the same fix that made Grafana
+  embeddable.
+- **Login:** LiteLLM's admin UI always asks for a login (`admin` plus the
+  master key or `UI_PASSWORD`), and no setting turns that off. Under the
+  no-login rule in `docs/lab-authoring.md`, labs set `ui: false` on the
+  `litellm` service and ship their own small read-only page as the tab
+  instead. The learner still uses the master key directly with the API;
+  that's lab material, not a login screen.
+- **Checks:** the API answers at both the prefixed and the bare path, so
+  graders inside the container can call `http://127.0.0.1:4000/...`
+  directly. Keep `SERVER_ROOT_PATH` set anyway, so anything a learner
+  opens through the proxy resolves.
