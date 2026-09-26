@@ -50,23 +50,25 @@
 #
 # MCP_REQUIRE_AUTH=true is set EXPLICITLY below. mcp-contextforge-gateway
 # derives it from AUTH_REQUIRED when unset (both default false here, for
-# the no-login admin UI -- see next paragraph), which would leave the
-# actual tool-calling surface, /servers/{id}/mcp, wide open to anyone with
-# no token at all: fact 3 above is what an explicit MCP_REQUIRE_AUTH=true
-# buys, confirmed by booting once with it unset and once with it set and
-# diffing the anonymous-call result (401 only in the second case).
+# the unauthenticated-admin bypass a plain script gets -- see next
+# paragraph), which would leave the actual tool-calling surface,
+# /servers/{id}/mcp, wide open to anyone with no token at all: fact 3
+# above is what an explicit MCP_REQUIRE_AUTH=true buys, confirmed by
+# booting once with it unset and once with it set and diffing the
+# anonymous-call result (401 only in the second case).
 #
 # The admin/management API (POST /gateways, /v1/servers, /v1/tokens, GET
 # /v1/tools) is a DIFFERENT surface and stays unauthenticated on purpose:
 # confirmed live, an unauthenticated POST to any of those is answered as
 # admin@example.com (AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=
-# true, same mechanism the ContextForge investigation verified for the
-# admin UI). That is what lets both bootstrap_ungoverned.py and the
-# learner's own platform/setup.py skip a login step entirely -- and it is
-# genuinely a different rule from fact 3, not a contradiction: one surface
-# creates things as the platform, the other calls a tool as some caller,
-# and only the second one is what a role's own token has to be checked
-# against.
+# true) as long as the CALLER isn't browser-shaped (see the ui:false note
+# below for the one case where it is). That is what lets
+# bootstrap_ungoverned.py, the learner's own platform/setup.py, and
+# view.py's own server-side reads all skip a login step entirely -- and it
+# is genuinely a different rule from fact 3, not a contradiction: one
+# surface creates/reads things as the platform, the other calls a tool as
+# some caller, and only the second one is what a role's own token has to
+# be checked against.
 #
 # Env quirks, each hit live standing this exact manifest up (the first
 # three are the same three labs/write-a-tool-server-the-platform-can-host
@@ -88,13 +90,20 @@
 #    bootstrap_ungoverned.py already gets this right; it is exactly the
 #    kind of thing setup.py's docstring deliberately does not spell out
 #    for the learner.
-#  - ContextForge's own admin UI is real and needs no login under
-#    AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true (confirmed:
-#    the rendered page's only <form> is a logout form, and every static
-#    asset link is correctly rewritten under APP_ROOT_PATH when the
-#    session proxy forwards the full path) -- so, per the no-login rule,
-#    `contextforge` is `ui: true` directly, no substitute view page
-#    needed (unlike LiteLLM in every Module 1 / gateway-family lab).
+#  - ContextForge's own admin UI is NOT a safe ui:true tab, despite
+#    AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true: confirmed
+#    live with a plain, non-browser-shaped GET (curl, no Accept header),
+#    the page renders and every static asset link is correctly rewritten
+#    under APP_ROOT_PATH -- but a BROWSER-shaped request (confirmed with
+#    curl -H "Accept: text/html") gets 302'd to a real /admin/login form
+#    by mcpgateway's own RBAC middleware BEFORE the unauthenticated-admin
+#    bypass is ever reached. The session console's tab sends exactly that
+#    header, so `contextforge` stays `ui: false` (same as LiteLLM in every
+#    Module 1 / gateway-family lab) and `view.py` -- a small stdlib page
+#    that only ever makes plain, non-browser-shaped calls to ContextForge
+#    server-side -- is the `ui: true` tab instead. The unauthenticated-
+#    admin bypass is still real and still useful for exactly that: a
+#    script's own calls, never a browser's.
 #
 # No Postgres: SQLite is enough (ContextForge falls back to it cleanly;
 # the ContextForge investigation's FINDINGS.md already established this).
@@ -215,11 +224,27 @@ services:
       type: http
       path: /health
       timeout_s: 60
-    # ContextForge's own admin UI needs no login here (see header comment)
-    # -- a real substitute for the "ui:false + custom view page" pattern
-    # every LiteLLM-based lab needs instead.
-    ui: true
+    # ContextForge's own admin UI 302s a browser-shaped request to a real
+    # /admin/login form (see header comment) -- ui:false, same as LiteLLM
+    # in every Module 1 / gateway-family lab. `view` below is the tab.
+    ui: false
     depends_on: [knowledge-tools, tickets-tools, accounts-tools]
+  - name: view
+    # This lab's substitute for ContextForge's own (browser-gated) admin
+    # UI: a small read-only stdlib page, workspace/view.py. It never
+    # accepts a write and never shows a token's own usable value.
+    argv: ["python3", "-B", "/workspace/view.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "4748"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+    port: 4748
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: [contextforge]
 
 pressure: []
 
@@ -237,8 +262,8 @@ hints:
   - after_minutes: 13
     text: >-
       platform/ungoverned_token.txt already has a working token -- call
-      any tool through it (the admin UI's Virtual Servers tab shows its
-      server id) and notice it reaches everything, including
+      any tool through it (the view tab's "Virtual servers" table shows
+      its server id) and notice it reaches everything, including
       accounts-tools-delete-account. That is the bug this lab is about,
       not something to fix by editing that token or the bundle it's
       scoped to -- your job is roles.yaml's own roles, each with their own
@@ -248,12 +273,13 @@ hints:
   - after_minutes: 27
     text: >-
       Every tool from all three tool servers is already registered and
-      already has a real ContextForge id -- the admin UI's Global Tools
-      view (or a plain GET against its tools listing) will show you every
-      one of them, and which gateway each came from. roles.yaml's
-      "server"/"tool" pairs are the platform's own names for them, not
-      whatever ContextForge itself decided to call them once registered
-      -- matching the two up is a lookup, not a guess.
+      already has a real ContextForge id -- the view tab's "Registered
+      tool servers" table, or a plain GET against ContextForge's own
+      tools listing, will show you every one of them, and which gateway
+      each came from. roles.yaml's "server"/"tool" pairs are the
+      platform's own names for them, not whatever ContextForge itself
+      decided to call them once registered -- matching the two up is a
+      lookup, not a guess.
   # ~45% of timeout_minutes.
   - after_minutes: 40
     text: >-

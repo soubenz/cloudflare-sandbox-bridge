@@ -24,7 +24,13 @@ call through.
 | `platform/roles.yaml` | The platform's own record of which role should see which tools: `support-agent` (read-only), `ops-agent` (read + write, no admin), `admin` (everything). You don't edit this to make the lab pass -- you make ContextForge match it. |
 | `platform/bootstrap_ungoverned.py` | Already ran once, automatically, before you opened this file. It's what put every tool into `ungoverned-bundle` and wrote `platform/ungoverned_token.txt`. Not your job to edit. |
 | `platform/setup.py` | Reads `roles.yaml` and is supposed to reconcile ContextForge with it -- one virtual server and one scoped token per role. Its docstring says what it must leave behind; none of it is implemented yet. |
-| **contextforge** tab | The real ContextForge admin UI -- Gateways, Virtual Servers, Global Tools, Tokens. No login needed. |
+| **view** tab | Read-only: every registered tool server (gateway) and how many tools it reported, and every virtual server with the exact tool names it currently exposes -- refreshes every couple of seconds, so it reflects whatever `setup.py` just did. |
+
+There's no browsable ContextForge admin tab in this lab -- its own admin
+UI redirects a real browser to a login form, so it isn't one. `curl`
+against `$CONTEXTFORGE_URL` from a terminal works fine with no login at
+all, the same way `bootstrap_ungoverned.py` and `setup.py` already talk
+to it.
 
 ## Your task
 
