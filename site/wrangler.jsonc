@@ -3,15 +3,36 @@
   "name": "opalix-site",
   "compatibility_date": "2026-09-22",
 
-  // The public marketing site for opalix.ai: static files only, no Worker
-  // code. It is separate from the dashboard (the password-gated lab
-  // console) and from the sandbox API, and talks to neither.
+  // The public marketing site for opalix.ai. Almost all of it is static
+  // files; the Worker only runs for /api/* (the waitlist form, see
+  // src/worker.ts), so page views never cost an invocation.
+  "main": "./src/worker.ts",
   "assets": {
     "directory": "./public",
-    // Paths the page links to before they exist (/join, /labs/<slug>, ...)
-    // get the friendly 404 instead of a bare error.
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"],
+    // Paths the page links to before they exist (/try, /signin, ...) get
+    // the friendly 404 instead of a bare error.
     "not_found_handling": "404-page"
   },
+
+  // The waitlist table lives in the platform's database (migration 0004)
+  // so the site needs no infrastructure of its own. Same id as the root
+  // wrangler.jsonc; nothing else in the site touches the database.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "opalix",
+      "database_id": "8af8d509-ceea-49b0-8ac5-b615a8907c54",
+      "migrations_dir": "../migrations"
+    }
+  ],
+
+  // Five signups per minute per address. namespace_id only has to be
+  // unique within the Cloudflare account.
+  "ratelimits": [
+    { "name": "WAITLIST_LIMIT", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } }
+  ],
 
   // Temporary home until opalix.ai's DNS is on Cloudflare:
   // https://opalix-site.<account-subdomain>.workers.dev
@@ -20,5 +41,5 @@
   "workers_dev": true
 
   // Deployed by .github/workflows/deploy-site.yml on every push to main
-  // that touches site/, or by hand with `npm run deploy:site`.
+  // that touches site/ or migrations/, or by hand with `npm run deploy:site`.
 }

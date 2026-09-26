@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join the waitlist · Opalix</title>
+<meta name="description" content="Join the Opalix waitlist for the full lab catalogue and the paid plans with 1-hour sessions. One lab is free to try now.">
+<meta name="theme-color" content="#0a0f2c">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@500;600;700&family=Funnel+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="nav">
+    <a class="brand" href="/" aria-label="Opalix home">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="6" fill="#0a0f2c"/><circle cx="12" cy="12" r="4.5" fill="#3552f2"/></svg>
+      <span>opalix</span>
+      <span class="beta-tag">BETA</span>
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="/#tracks">Tracks</a>
+      <a href="/#inside">How it works</a>
+      <a href="/#pricing">Pricing</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="btn btn-accent btn-sm keep-mobile" href="/try">Try it free <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="form-page">
+  <div class="wrap form-grid">
+    <div class="form-intro">
+      <span class="chip-tag"><span class="dot" aria-hidden="true"></span>WAITLIST</span>
+      <h1 class="h2">Get in when the next labs open.</h1>
+      <p class="lede">One lab is free to try right now. Join the waitlist for the rest of the catalogue and the paid plans. We'll email you when your spot opens.</p>
+      <ul class="perks" role="list">
+        <li>Every lab across both tracks</li>
+        <li>1-hour sessions instead of 45 minutes</li>
+        <li>Hints and a solution for every lab</li>
+        <li>For teams: a progress view per person and one invoice</li>
+      </ul>
+      <a class="text-link" href="/try">Not ready to wait? Try the free lab →</a>
+    </div>
+
+    <form class="form-card" method="post" action="/api/waitlist" novalidate>
+      <p class="form-error" data-error="email" role="alert" hidden>That email doesn't look right. Check it and try again.</p>
+      <p class="form-error" data-error="slow" role="alert" hidden>Too many tries from your network. Wait a minute and try again.</p>
+      <p class="form-error" data-error="down" role="alert" hidden>We couldn't save that just now. Please try again in a moment.</p>
+
+      <div class="field">
+        <label for="email">Work email</label>
+        <input class="input" id="email" name="email" type="email" autocomplete="email" inputmode="email" required maxlength="254" placeholder="you@company.com">
+      </div>
+
+      <fieldset class="field">
+        <legend>Which plan are you waiting for?</legend>
+        <div class="plan-options">
+          <label class="plan-option">
+            <input type="radio" name="plan" value="individual" checked>
+            <strong>Individual</strong>
+            <span>€39 a month or €299 a year</span>
+          </label>
+          <label class="plan-option">
+            <input type="radio" name="plan" value="team">
+            <strong>Team</strong>
+            <span>€349 per seat per year, 2 seats minimum</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="field">
+        <label for="role">What do you work on? <span class="optional">Optional</span></label>
+        <select class="input" id="role" name="role">
+          <option value="">Choose one</option>
+          <option value="backend">Backend engineering</option>
+          <option value="platform">Platform or infrastructure</option>
+          <option value="ml">ML or AI engineering</option>
+          <option value="sre">SRE or DevOps</option>
+          <option value="manager">Engineering management</option>
+          <option value="other">Something else</option>
+        </select>
+      </div>
+
+      <!-- Bots fill in every field; people never see this one. -->
+      <div class="hp" aria-hidden="true">
+        <label for="website">Website</label>
+        <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+      </div>
+      <input type="hidden" name="source" value="">
+
+      <button class="btn btn-accent btn-lg btn-block" type="submit">Join the waitlist</button>
+      <p class="fine">We'll only email you about Opalix access, and you can leave the list at any time. <a href="/privacy">Privacy</a></p>
+    </form>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap footer-row">
+    <span class="badge badge-accent mono">BETA</span>
+    <span>Hands-on labs for production AI engineering</span>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="/#tracks">Tracks</a>
+      <a href="/#pricing">Pricing</a>
+      <a href="/privacy">Privacy</a>
+    </nav>
+  </div>
+  <div class="wordmark" aria-hidden="true">opalix</div>
+</footer>
+
+<script>
+  // Progressive enhancement only: the form works without this.
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var form = document.querySelector('.form-card');
+    var plan = q.get('plan');
+    if (plan === 'team' || plan === 'individual') {
+      form.querySelector('input[name="plan"][value="' + plan + '"]').checked = true;
+    }
+    var from = q.get('from');
+    if (from && /^[a-z0-9_-]{1,32}$/i.test(from)) form.elements.source.value = from;
+    var e = q.get('e');
+    var msg = e && form.querySelector('[data-error="' + e.replace(/[^a-z]/g, '') + '"]');
+    if (msg) { msg.hidden = false; form.elements.email.focus(); }
+    form.addEventListener('submit', function (ev) {
+      if (!form.elements.email.checkValidity()) {
+        ev.preventDefault();
+        form.querySelectorAll('.form-error').forEach(function (m) { m.hidden = true; });
+        form.querySelector('[data-error="email"]').hidden = false;
+        form.elements.email.focus();
+      }
+    });
+  })();
+</script>
+</body>
+</html>
