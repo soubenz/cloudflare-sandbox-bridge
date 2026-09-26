@@ -1,0 +1,261 @@
+# A build lab: nothing is broken, but most of the catalogue does not exist
+# yet. LiteLLM boots with an EMPTY DB-backed model list -- app.py's calls
+# to alias "support" fail from the moment the session starts, the same
+# way they would in a real gateway the day before a model is onboarded.
+# The learner's job (platform/sync.py, a skeleton) is to make MLflow's
+# registry the one place that says which upstream deployment "support"
+# should reach, and to keep LiteLLM's live catalogue matching it -- no
+# LiteLLM restart, no change to app.py, ever.
+#
+# Proven live, locally, against LiteLLM 1.102.1 + Prisma (this repo's
+# venv) and MLflow 3.16.1 (see $SCRATCH/mlflow-inv/FINDINGS.md for the
+# earlier feasibility spike and the scratchpad session that built this
+# lab for the commands and real output cited below). The load-bearing
+# facts, because several of them are not the obvious design:
+#
+#  1. store_model_in_db models (POST /model/new, /model/update,
+#     /model/delete) coexist cleanly with a config-file model_list entry
+#     in the same running proxy -- confirmed live: created a config-file
+#     model ("support-legacy") and a DB model ("support") together, called
+#     both successfully, then /model/update'd only the DB one to a
+#     different upstream with LiteLLM never restarted (same pid, uptime
+#     climbing continuously) while the config-file model kept answering
+#     from its original deployment. So the pinned, never-synced model
+#     lives in gateway/config.yaml as a plain model_list entry, and the
+#     one the learner's sync drives lives only in the DB -- no config.yaml
+#     edit is ever needed for it, matching "without touching app code"
+#     (which includes gateway config, not just app.py).
+#  2. LiteLLM's own weighted routing (litellm_params.weight, read by
+#     litellm/router_strategy/simple_shuffle.py whenever ANY deployment
+#     under a model_name sets it) is what "staged switch" is built on:
+#     two DB deployments sharing the model_name "support", one tagged
+#     champion and one challenger, weights 100-N/N. Verified with 100 real
+#     calls at a configured 80/20 split: observed 76/24 one run, 75/25
+#     traffic_percent -> 74/26 another -- consistent with random weighted
+#     choice, not a bug.
+#  3. LiteLLM's team-based routing (POST /team/new with `models` and
+#     `model_aliases`) is what makes the per-team allowlist free: a team
+#     whose model_aliases maps "support" -> "support-legacy" gets the
+#     pinned deployment for every call it makes to "support", regardless
+#     of where the DB-backed "support" currently points, and gets a real
+#     403 if it tries to call anything outside its `models` list directly.
+#     Verified live: while the master key's "support" answered from
+#     deployment c, the legacy team's own key calling "support" still got
+#     deployment a, every time.
+#  4. MLflow's own env vars, already baked into this image
+#     (MLFLOW_DISABLE_TELEMETRY=1, MLFLOW_SERVER_ENABLE_JOB_EXECUTION=false,
+#     MLFLOW_DISABLE_AGENT_HINT=1), are enough: ready in ~8s locally
+#     (sqlite backend, --workers 1), ~530MB RSS across its two processes
+#     (server + one uvicorn worker).
+#  5. `--static-prefix` is strict in both directions, not just for /ui/ the
+#     way LiteLLM's SERVER_ROOT_PATH is: EVERY MLflow path, including
+#     /health, 404s when requested without the prefix and 200s with it --
+#     confirmed live (curl against the bare vs. prefixed path, same
+#     running server). So the healthcheck path below bakes the prefix in
+#     via {{service.prefix}} (that field is templated), and
+#     MLFLOW_TRACKING_URI is exported to every script here with the
+#     prefix included, not bare.
+#  6. A custom key stashed in model_info at /model/new time (this lab used
+#     it to tag which DB deployment is "champion" vs. "challenger") is
+#     silently NOT overwritten by a later /model/update to the same model,
+#     even though that update call succeeds and does change litellm_params
+#     (api_base, weight). Worth knowing before reaching for model_info as
+#     a place to store your own bookkeeping across updates.
+#
+# Postgres is mandatory for the same reason as gateway-litellm-hello
+# (LiteLLM's DB-backed model list and team/key management are behind a
+# Prisma schema hard-coded to `provider = "postgresql"`) -- template-copy
+# argv copied verbatim from that fixture.
+#
+# `litellm` stays `ui: false` (its admin UI always requires a login, no
+# setting turns that off). `app` is this lab's only tab: a small
+# stdlib page that calls alias "support" on a timer and shows which
+# deployment answered -- exactly the "unchanged app" the exercise is
+# about, so it doubles as the read-only view; a separate `view` service
+# was not built because the app.py page over its own /log already gives a
+# grader (and a learner) everything MLflow's own UI does not (which
+# deployment is presently reachable through the alias) plus MLflow's own
+# UI, proxied here (`mlflow`, ui: true), is enough to look at the registry
+# side by hand.
+slug: add-a-model-without-touching-app-code
+version: 1.0.0
+title: "Add a model to the catalogue without touching app code"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  A gateway team promotes and rolls back models by moving an alias in
+  MLflow's model registry, never by editing the gateway's config or
+  restarting it. Build the sync that makes that true, including a staged
+  canary split and a team that must stay pinned to the old model.
+objectives:
+  - "Drive LiteLLM's live model catalogue (/model/new, /model/update) from MLflow's registry, with no restart"
+  - "Split live traffic between two deployments of the same model by weight, for a staged rollout"
+  - "Keep one team's traffic pinned to a specific deployment while the rest of the catalogue moves on"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  LITELLM_URL: "http://127.0.0.1:4000"
+  PROVIDER_URL: "http://127.0.0.1:8961"
+  LITELLM_MASTER_KEY: "sk-opalix-catalogue-master"
+  LEGACY_TEAM_KEY: "sk-opalix-legacy-team-fixture-key"
+  LEGACY_TEAM_ID: "legacy-team"
+  REGISTERED_MODEL: "support-router"
+  LITELLM_MODEL_NAME: "support"
+  PINNED_MODEL_NAME: "support-legacy"
+  CHALLENGER_DEFAULT_PERCENT: "10"
+  # Suggested default for platform/sync.py's own poll loop -- the
+  # learner's script decides its own mechanism, but checks give at least
+  # 5x this long for a catalogue change to show up in app.py's calls.
+  SYNC_POLL_INTERVAL_S: "2"
+
+services:
+  # Copied from test/fixtures/labs/gateway-litellm-hello/ -- see that
+  # fixture's manifest for why each line of this argv exists.
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+
+  - name: provider
+    # The scripted stand-in for a model provider, with a THIRD deployment
+    # (c) beyond gateway-litellm-hello's a/b -- "c" is "the new model"
+    # being added to the catalogue over the course of this lab.
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8961"
+    port: 8961
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+
+  - name: litellm
+    # ui: false -- the admin UI always requires a login, no setting turns
+    # that off (docs/spike.md, "LiteLLM under a path prefix (T5)", Q4).
+    # gateway/config.yaml's model_list holds exactly one entry
+    # ("support-legacy", the pinned deployment) and store_model_in_db:
+    # true -- "support" itself does not exist until platform/sync.py (or
+    # this boot's own seed step below) creates it. platform/seed_litellm.py
+    # only sets up the legacy team + its pinned key; it does not create
+    # "support" -- that is the learner's first job, not a given.
+    argv:
+      [
+        "sh", "-c",
+        "litellm --config /workspace/gateway/config.yaml --port 4000 --host 0.0.0.0 & PID=$!; python3 -B /workspace/platform/seed_litellm.py; wait $PID",
+      ]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-catalogue-master"
+      LEGACY_TEAM_KEY: "sk-opalix-legacy-team-fixture-key"
+      LEGACY_TEAM_ID: "legacy-team"
+      LITELLM_MODEL_NAME: "support"
+      PINNED_MODEL_NAME: "support-legacy"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh).
+      DISABLE_SCHEMA_UPDATE: "True"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # Pre-migrated DB boot is ~15-30s live (docs/spike.md, "LiteLLM boot
+      # time: where it goes"); 90s leaves room for a slow container.
+      timeout_s: 90
+    ui: false
+    depends_on: [postgres, provider]
+
+  - name: mlflow
+    # --static-prefix is strict both ways here (see header comment, point
+    # 5) -- every path, including the one the healthcheck uses, needs the
+    # prefix, so it's baked into argv and into healthcheck.path below via
+    # {{service.prefix}} (both are templated fields). sqlite backend
+    # under /tmp (workspace is chowned to `learner`, mlflow's own process
+    # is not). platform/seed_mlflow.py registers the one model and its
+    # three deployment versions and points "champion" at the starting one
+    # -- idempotent, so the console's Restart button re-running this is a
+    # no-op against a registry that already has state.
+    argv:
+      [
+        "sh", "-c",
+        "mlflow server --host 0.0.0.0 --port 8964 --backend-store-uri sqlite:////tmp/mlflow.db --default-artifact-root /tmp/mlflow-artifacts --static-prefix {{service.prefix}} --workers 1 & PID=$!; python3 -B /workspace/platform/seed_mlflow.py; wait $PID",
+      ]
+    cwd: /workspace
+    env:
+      MLFLOW_TRACKING_URI: "http://127.0.0.1:8964{{service.prefix}}"
+      PROVIDER_URL: "http://127.0.0.1:8961"
+      REGISTERED_MODEL: "support-router"
+      LITELLM_MODEL_NAME: "support"
+    port: 8964
+    healthcheck:
+      type: http
+      path: "{{service.prefix}}/health"
+      # Ready in ~8s locally with the image's MLFLOW_* env vars already
+      # set; 60s leaves room for a slow container.
+      timeout_s: 60
+    ui: true
+    depends_on: []
+
+  - name: app
+    # THE SERVICE THE LEARNER MUST NOT CHANGE. Calls alias "support" on a
+    # timer forever and shows which deployment answered, on its own page
+    # and at /log -- this IS the lab's read-only view; see header comment
+    # for why a separate `view` service wasn't built. No login: a plain
+    # stdlib page with no auth of its own.
+    argv: ["python3", "-B", "/workspace/services/app.py"]
+    cwd: /workspace
+    env:
+      APP_PORT: "8962"
+      VIEW_PREFIX: "{{service.prefix}}"
+      LITELLM_URL: "http://127.0.0.1:4000"
+      LITELLM_MASTER_KEY: "sk-opalix-catalogue-master"
+      APP_MODEL_ALIAS: "support"
+      APP_CALL_INTERVAL_S: "1.0"
+    port: 8962
+    healthcheck:
+      type: http
+      path: /health
+      timeout_s: 20
+    ui: true
+    depends_on: [litellm, provider]
+
+pressure: []
+
+checks:
+  # Placeholder for part 2 -- deliberately fails, so this parses and so
+  # `labs test`'s "at least one check must fail on a fresh workspace" rule
+  # holds until real, outcome-based checks replace it.
+  - name: placeholder
+    script: placeholder.sh
+    timeout_s: 30
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: "PLACEHOLDER for part 2."
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: "PLACEHOLDER for part 2."
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: "PLACEHOLDER for part 2."
+
+egress:
+  allow: []
