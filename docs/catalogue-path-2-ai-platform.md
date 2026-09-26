@@ -74,6 +74,20 @@ network namespace. Full findings: scratchpad `retrieval-inv/FINDINGS.md`,
 also folded into the product plan file's section 29. Not yet exercised:
 Qdrant's alias/reindex mechanism specifically (needed for "Keep the index
 fresh without downtime") — to be proven live before that lab is written.
+Module 4 (Observability and cost) feasibility confirmed 26 Sep 2026
+(investigation, before any Module 4 lab is built): Jaeger (not Tempo)
+recommended as the tracing backend for the Explore lab and both Build
+labs, and otelcol-contrib (not core) confirmed mandatory since
+`tail_sampling` -- the error-aware sampler lab 3 needs -- is contrib-only.
+Both fully offline and no-login, confirmed live in a real empty network
+namespace. Context propagation across two real Flask services (real W3C
+traceparent headers) and error-preserving sampling (100% error retention,
+~10% success retention, both counted live) both proven solid. One real
+gap found: Grafana's Tempo datasource can't do ad-hoc TraceQL search over
+plain REST in this Grafana version (needs WebSocket streaming) -- moot
+given the Jaeger recommendation. Full findings: scratchpad
+`otel-inv/FINDINGS.md`, also folded into the product plan file's section
+30.
 -->
 
 # Opalix Path 2: Building an AI Platform
