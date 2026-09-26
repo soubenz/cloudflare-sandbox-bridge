@@ -1,0 +1,58 @@
+[
+  {
+    "id": 1,
+    "text": "Reset your password using the account recovery portal at /account/recovery."
+  },
+  {
+    "id": 2,
+    "text": "Invite a teammate from the new People page under Organization settings."
+  },
+  {
+    "id": 3,
+    "text": "Billing is now charged on the 15th, not the 1st -- policy changed this quarter."
+  },
+  {
+    "id": 4,
+    "text": "Export your data as a CSV from the reports tab."
+  },
+  {
+    "id": 5,
+    "text": "API keys can be created under developer settings."
+  },
+  {
+    "id": 6,
+    "text": "Two-factor authentication is optional but recommended."
+  },
+  {
+    "id": 7,
+    "text": "Delete your account from the danger zone in settings."
+  },
+  {
+    "id": 8,
+    "text": "Webhooks retry up to three times on failure."
+  },
+  {
+    "id": 9,
+    "text": "Rate limits reset every sixty seconds."
+  },
+  {
+    "id": 10,
+    "text": "Support tickets are answered within one business day."
+  },
+  {
+    "id": 11,
+    "text": "Custom roles can restrict access to billing."
+  },
+  {
+    "id": 12,
+    "text": "Single sign-on is available on the enterprise plan."
+  },
+  {
+    "id": 13,
+    "text": "Audit logs can be streamed to your own SIEM via the events API."
+  },
+  {
+    "id": 14,
+    "text": "Data residency can be pinned to the EU on the enterprise plan."
+  }
+]

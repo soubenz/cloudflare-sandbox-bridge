@@ -1,0 +1,174 @@
+# A build lab. Qdrant boots pre-populated with a working "live" search
+# index; the task is workspace/reindex/reindex.py, a skeleton whose
+# docstring states the contract it must satisfy, not how.
+#
+# This lab's whole premise -- that Qdrant's collection aliases give a real,
+# atomic, zero-downtime repoint -- was NOT assumed. It was proven live in
+# $SCRATCH/lab5-qdrant/ before any of this was written (the feasibility
+# investigation, $SCRATCH/retrieval-inv/FINDINGS.md, explicitly flagged this
+# primitive as not yet exercised): created collection A, alias "live" -> A,
+# queried through it; created collection B with different content; fired 8
+# threads doing ~800 searches/sec against "live" continuously; while that
+# traffic ran, repointed the alias to B in a single atomic
+# `POST /collections/aliases` call (`delete_alias` + `create_alias` as one
+# request). Across two separate runs (1330 and 1387 concurrent queries),
+# EVERY query returned 200 with real hits -- zero errors, zero empty
+# results -- and the content served flipped from collection A's payload to
+# collection B's within 4ms of the repoint call completing, with no
+# in-between state observed at all.
+#
+# For contrast, the exact bug this lab plants (DELETE the collection the
+# alias points at, then PUT/recreate it under the same name, then
+# repopulate) was run under identical query load two ways. Querying the
+# collection name directly (bypassing the alias) showed the "brief window"
+# failure mode you'd expect: 20 real 404s and 1 empty-result response
+# during the gap between the DELETE and the recreate finishing, self-
+# healing once the name existed again. But this lab's own checks query the
+# *alias*, the way a real caller would -- and that surfaced something
+# stronger, also proven live and worth knowing: deleting a collection
+# deletes any alias pointing at it, permanently; recreating a collection
+# under the same name does NOT restore an alias that pointed to it.
+# Confirmed directly (create alias -> delete its collection -> GET /aliases
+# already shows it gone -> recreate the same collection name -> GET
+# /aliases still shows it gone -> querying the alias 404s
+# "Collection `myalias` doesn't exist!"). So against a stable alias name,
+# the planted bug isn't a brief window at all -- it's a permanent outage
+# (722 of 1092 queries failed, every one of them after the delete, for the
+# rest of that run) unless the buggy code happened to also recreate the
+# alias, which it doesn't. The primitive holds exactly as assumed; the
+# planted bug produces a stronger failure than "a window", which is still
+# exactly the failure class the lesson is about. Full commands and output
+# are in this agent's report.
+#
+# Everything else follows FINDINGS.md's Qdrant section directly:
+# telemetry_disabled: true for a clean boot log, no api_key configured
+# (confirmed live elsewhere in that investigation: every route, including
+# /dashboard, answers with no Authorization challenge at all -- so Qdrant's
+# own dashboard is this lab's `ui: true` tab, no substitute view needed),
+# libunwind8 required on the real jammy image (not this lab's concern --
+# a platform/image change the main session makes later).
+#
+# Vectors throughout are a fixed, deterministic pseudo-embedding
+# (workspace/reindex/embedding.py, sha256-of-text -> 16 floats, normalized)
+# -- there is no model and no network here, only something with the same
+# determinism property a real embedding call has: same text always gives
+# the same vector.
+#
+# checks/_harness.py never reads the learner's code. It starts its OWN
+# Qdrant process against fresh, throwaway storage on its own port (Qdrant
+# needs no migration and boots in well under a second, so unlike the
+# LiteLLM-based labs' throwaway *database* this is a whole throwaway
+# *server*), seeds it from the fixed workspace/data/documents_v1.json,
+# starts continuous concurrent search traffic against a stable alias, then
+# runs the learner's own reindex.py against that fresh instance with
+# workspace/data/documents_v2.json while the traffic keeps firing. The
+# learner's own live Qdrant (the one their terminal and the dashboard tab
+# talk to) is never touched by grading.
+slug: keep-the-index-fresh-without-downtime
+version: 1.0.0
+title: "Keep the index fresh without downtime"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  A live search index needs to pick up new and changed content on a
+  schedule, without ever failing or emptying out a query in flight while
+  that happens. Build the reindex that actually gets this right.
+objectives:
+  - "Bring a new version of an index fully online before any traffic depends on it"
+  - "Switch live traffic from an old index to a new one atomically, with no window where neither is being served"
+  - "Remove an index version that no longer serves any traffic, without removing one that still does"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  QDRANT_URL: "http://127.0.0.1:6333"
+  ALIAS_NAME: "live"
+
+services:
+  - name: qdrant
+    # Boots, then seeds itself once from workspace/data/documents_v1.json
+    # (services/seed_qdrant.py) -- idempotent, so a Restart of this entry
+    # in the console is a no-op against storage that already has state,
+    # same shape as this module's other seed steps. Storage lives under
+    # /tmp, not /workspace: /workspace is chowned to `learner`, and this
+    # process does not run as that user (same reasoning as the postgres
+    # and MLflow services elsewhere in this module).
+    argv:
+      [
+        "sh", "-c",
+        "mkdir -p /tmp/qdrant-storage && qdrant --config-path /workspace/qdrant/config.yaml & PID=$!; python3 -B /workspace/services/seed_qdrant.py; wait $PID",
+      ]
+    cwd: /workspace
+    env:
+      QDRANT_URL: "http://127.0.0.1:6333"
+      ALIAS_NAME: "live"
+    port: 6333
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: true
+    depends_on: []
+
+pressure: []
+
+checks:
+  # All three share one grader-run's worth of setup (its own fresh, throwaway
+  # Qdrant process, seeded, with continuous query traffic already running
+  # against it before the learner's own reindex.py is invoked against that
+  # same instance) -- see checks/_harness.py. Sequential on purpose:
+  # whichever runs first pays the setup + reindex + query-window cost and
+  # the other two just read its result.
+  - name: reindex-actually-updates-the-data
+    script: reindex-actually-updates-the-data.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  - name: zero-downtime-is-real
+    script: zero-downtime-is-real.sh
+    timeout_s: 120
+    weight: 2
+    parallel: false
+  - name: old-collection-is-cleaned-up
+    script: old-collection-is-cleaned-up.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      `reindex.py` finds the collection its alias currently points to
+      (GET /aliases), and as shipped just deletes that collection and
+      recreates it under the same name before repopulating it. Deleting a
+      collection deletes any alias pointing at it -- permanently.
+      Recreating a collection under the same name does not bring back an
+      alias that used to point there. So this isn't a brief hiccup: once
+      the shipped version runs once, `live` stays broken until something
+      explicitly recreates the alias. Qdrant's collection-alias mechanism
+      exists precisely so a name can keep resolving to something real the
+      whole time, if you use it instead of working around it.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Build the new index under a name nobody is using yet, fully populate
+      it, and only then touch the alias -- never delete or recreate the
+      collection the alias currently serves while it's still serving.
+      `POST /collections/aliases` takes a list of actions and applies them
+      together in one request; giving it both a delete_alias and a
+      create_alias in the same call is what makes the switch atomic rather
+      than two separate steps with a gap between them.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      Once the alias points at the new collection, nothing is reading from
+      the old one anymore -- that's exactly when it's safe to
+      DELETE /collections/{old_name}. Doing that first, or never doing it
+      at all, are the two ways this half of the task fails: too early
+      causes the same gap as the planted bug; never causes the old
+      collection to sit there consuming memory and disk forever.
+
+egress:
+  allow: []

@@ -1,0 +1,50 @@
+[
+  {
+    "id": 1,
+    "text": "Reset your password using the settings page."
+  },
+  {
+    "id": 2,
+    "text": "Invite a teammate from the members tab."
+  },
+  {
+    "id": 3,
+    "text": "Billing is charged monthly on the 1st."
+  },
+  {
+    "id": 4,
+    "text": "Export your data as a CSV from the reports tab."
+  },
+  {
+    "id": 5,
+    "text": "API keys can be created under developer settings."
+  },
+  {
+    "id": 6,
+    "text": "Two-factor authentication is optional but recommended."
+  },
+  {
+    "id": 7,
+    "text": "Delete your account from the danger zone in settings."
+  },
+  {
+    "id": 8,
+    "text": "Webhooks retry up to three times on failure."
+  },
+  {
+    "id": 9,
+    "text": "Rate limits reset every sixty seconds."
+  },
+  {
+    "id": 10,
+    "text": "Support tickets are answered within one business day."
+  },
+  {
+    "id": 11,
+    "text": "Custom roles can restrict access to billing."
+  },
+  {
+    "id": 12,
+    "text": "Single sign-on is available on the enterprise plan."
+  }
+]

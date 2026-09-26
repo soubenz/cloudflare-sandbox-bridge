@@ -1,0 +1,18 @@
+# Minimal Qdrant config for this lab. storage_path/snapshots_path point at
+# /tmp, not /workspace -- /workspace is chowned to `learner` and this
+# process doesn't run as that user (same reasoning as this module's
+# postgres and MLflow services). telemetry_disabled avoids the one default
+# outbound call (a ping to telemetry.qdrant.io); it fails safely with no
+# api_key configured either way, but this keeps the boot log clean
+# (FINDINGS.md, "Qdrant, offline + dashboard/login").
+log_level: INFO
+storage:
+  storage_path: /tmp/qdrant-storage/storage
+  snapshots_path: /tmp/qdrant-storage/snapshots
+  on_disk_payload: true
+service:
+  host: 0.0.0.0
+  http_port: 6333
+  grpc_port: 6334
+  enable_cors: true
+telemetry_disabled: true
