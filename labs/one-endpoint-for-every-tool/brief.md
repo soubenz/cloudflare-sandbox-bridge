@@ -30,9 +30,9 @@ ContextForge with `platform/catalogue.yaml`. As shipped, it does nothing.
 `CONTEXTFORGE_URL`, `INVENTORY_URL`, `BILLING_URL`, and `SEARCH_URL` are
 all in your environment -- `setup.py` reads them, and so can you, from a
 terminal, with `curl`. ContextForge's own admin dashboard is not exposed
-as a tab in this lab (it requires a login this lab doesn't set up) -- the
-same `/v1/gateways`, `/v1/servers`, and `/v1/tokens` API it's built on is
-still there for you to call directly.
+as a tab in this lab (it requires a login this lab doesn't set up), but
+its management API is still there for you to call directly -- everything
+`setup.py` needs to do, it does through that same API.
 
 ## Your task
 
@@ -62,8 +62,8 @@ When it's done:
   docstring describes.
 
 Nothing here is undocumented API. Every call `setup.py` needs to make is
-one the admin dashboard itself makes -- try it by hand there first if a
-call's shape isn't obvious.
+one ContextForge's own management API documents -- try a call by hand
+with `curl` first if its shape isn't obvious.
 
 ## Checking your work
 
@@ -75,8 +75,8 @@ would.
 
 | Check | Passes when |
 |---|---|
-| `bundle-reaches-exactly-its-tools` | The virtual server's own `tools/list` returns exactly three tools, and the client token can successfully call all three. |
-| `excluded-tool-stays-out` | Billing's `refund_charge` is not in the bundle, and a direct call for it through the virtual server's own endpoint is refused. |
+| `bundle-reaches-exactly-its-tools` | Asking the virtual server what it offers returns exactly three tools, and the client token can successfully call all three. |
+| `excluded-tool-stays-out` | Billing's `refund_charge` is not among what the virtual server offers, and calling it directly through that same virtual server is refused. |
 | `client-token-cannot-escalate` | The client token cannot list every gateway, cannot create a second virtual server, and cannot reach a *different* virtual server than the one it was scoped to. |
 
 The third check exists to stop the first two being satisfied the easy way

@@ -132,6 +132,16 @@ env:
   CONTEXTFORGE_URL: "http://127.0.0.1:4744"
   TOOL_SERVER_V1_URL: "http://127.0.0.1:65101/mcp"
   TOOL_SERVER_V2_URL: "http://127.0.0.1:65102/mcp"
+  # Manifest-level (not just contextforge's own service env) so a learner's
+  # terminal -- where rollout.py actually runs -- has it too. Needed only
+  # for GET /v1/export: unlike registering a gateway or cutting a server
+  # over, `admin.export`/`admin.import` are NOT covered by
+  # ALLOW_UNAUTHENTICATED_ADMIN's bypass -- confirmed live, an
+  # unauthenticated GET /v1/export 403s ("Access denied") where the same
+  # request against /v1/gateways or /v1/servers succeeds with no token at
+  # all. A real login (POST /v1/auth/login) is what a snapshot needs.
+  PLATFORM_ADMIN_EMAIL: "admin@example.com"
+  PLATFORM_ADMIN_PASSWORD: "ph6RqKFKVHa5Dq8Mt2YJVYVh2cAMpH35O-wAiAC3QxA"
 
 services:
   - name: tool-server-v1
@@ -179,13 +189,14 @@ services:
       JWT_SECRET_KEY: "M4iA8Pp-TGSbFIVwV8PNFsEsrmSfQTs2Ua6BD60kz0U"
       AUTH_ENCRYPTION_SECRET: "Yh4LCbuiYm_pvOflb8unP1ZNGwm32sJ2s6nMmLNUCv0"
       BASIC_AUTH_PASSWORD: "6QjTBJi8u5LGRqOoojlIylDE9yEJdu4F21ADjtv7V1o"
-      PLATFORM_ADMIN_PASSWORD: "ph6RqKFKVHa5Dq8Mt2YJVYVh2cAMpH35O-wAiAC3QxA"
+      # PLATFORM_ADMIN_PASSWORD comes from manifest-level env above (a
+      # learner's terminal needs it too, for snapshot()'s admin login).
       DEFAULT_USER_PASSWORD: "btnQvQPFWHmyL4MEqYv0-VfgObdqliKNfi_2DtQ42q8"
       # Confirmed live: AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true
-      # gives a real, working, un-gated admin UI and API -- no login screen
-      # ever renders (see docs/lab-authoring.md's no-login rule). See the
-      # header comment above for why the admin UI is still not this lab's
-      # tab regardless.
+      # gives a real, working, un-gated management API (gateways, servers,
+      # tools, tokens all work with zero Authorization header) -- but NOT a
+      # real, working, un-gated browser UI; see the header comment above
+      # for why the admin UI is still not this lab's tab regardless.
       AUTH_REQUIRED: "false"
       ALLOW_UNAUTHENTICATED_ADMIN: "true"
       # Both tool servers are on 127.0.0.1 in this same container --

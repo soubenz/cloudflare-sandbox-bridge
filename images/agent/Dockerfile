@@ -96,6 +96,44 @@ RUN python3 -m pip install --no-cache-dir "litellm[proxy]"
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
+# --- ContextForge (mcp-contextforge-gateway), for Path 2 Module 2's tool-gateway labs ---
+# Pinned to 1.0.10: every lab in this module was proven against exactly this
+# version, and its own quirks are load-bearing (see labs/*/manifest.yaml
+# header comments for the associated_tools casing trap, the token scope
+# shape, the deprecated-flag-is-inert bug, and the admin UI's login
+# redirect and missing reverse-proxy support). No version of this package
+# that has the multi-tenancy/virtual-server features these labs need
+# supports this image's own default Python (3.11, from the base image's
+# bundled interpreter -- confirmed live, docs/spike.md): 0.2.0 through
+# 1.0.7 need 3.11, but 1.0.8+ (where the last of these labs' needed
+# features landed) needs 3.12. Rather than re-pin to an older release and
+# re-verify every already-proven quirk against it, this installs Python
+# 3.12 from the deadsnakes PPA (Ubuntu 22.04/jammy is a supported distro
+# for it) into its own venv, alongside the base image's own 3.11 default
+# -- so litellm, matplotlib/numpy/pandas and everything else already
+# installed against python3 stay on 3.11 untouched.
+RUN apt-get update -o Acquire::Retries=3 \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
+    software-properties-common gnupg \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update -o Acquire::Retries=3 \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
+    python3.12 python3.12-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3.12 -m venv /opt/contextforge-venv \
+    && /opt/contextforge-venv/bin/pip install --no-cache-dir "mcp-contextforge-gateway==1.0.10" \
+    && /opt/contextforge-venv/bin/pip show mcp-contextforge-gateway | grep -qx 'Version: 1.0.10'
+
+# The package's two console-script entry points (mcpgateway, the CLI a lab's
+# argv runs directly, and mcpgateway-server, the one some labs launch via a
+# wrapper shell) live in the venv's own bin/ -- symlinked onto the system
+# PATH so a lab's argv can name them directly, the same way `litellm` above
+# resolves without a lab needing to know it's a pip console script either.
+RUN ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
+    && ln -s /opt/contextforge-venv/bin/mcpgateway-server /usr/local/bin/mcpgateway-server \
+    && test -x /usr/local/bin/mcpgateway && test -x /usr/local/bin/mcpgateway-server \
+    && /opt/contextforge-venv/bin/python3.12 -c "import mcpgateway.main, mcpgateway.middleware.rbac"
+
 # --- Unprivileged learner user; the terminal and workspace files run as this user ---
 RUN useradd -m -s /bin/bash learner \
     && mkdir -p /workspace /opt/lab \

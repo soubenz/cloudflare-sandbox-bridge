@@ -227,29 +227,29 @@ checks:
     parallel: false
 
 hints:
-  # ~15% of timeout_minutes.
+  # ~15% of timeout_minutes -- outcome-level only, no specific calls named.
   - after_minutes: 14
     text: >-
-      Three separate things have to happen, in this order: each tool
-      server in platform/catalogue.yaml's tool_servers list gets
-      registered as a gateway (POST /v1/gateways, using its URL from your
-      environment -- CONTEXTFORGE_URL is the gateway's own address, never
-      hard-code either); then one virtual server gets created bundling
-      exactly the tools catalogue.yaml's public_bundle names; then one
-      token gets minted scoped to that virtual server. Nothing here is
-      undocumented API -- it's the same /v1/gateways, /v1/servers,
-      /v1/tokens surface the admin dashboard itself uses.
-  # ~30% of timeout_minutes.
+      Three separate things have to happen, in this order: every tool
+      server named in platform/catalogue.yaml gets registered with the
+      gateway; then one virtual server gets created bundling exactly the
+      tools catalogue.yaml's public_bundle names, and no others; then one
+      client token gets minted, scoped to that one virtual server. None of
+      this is undocumented -- it's ordinary management-API calls, the same
+      ones the gateway's own tooling would use. Try each step by hand with
+      curl before you script it, and read back what you got before moving
+      to the next step.
+  # ~30% of timeout_minutes -- still outcome-level.
   - after_minutes: 27
     text: >-
-      A registered gateway's tools don't necessarily show up in the same
-      response that registers it -- GET /v1/tools/?gateway_id=<id> is
-      where you confirm they've actually been federated before you try to
-      reference them by ID. And a federated tool's name follows a fixed
-      pattern from the gateway's name and the tool's own name -- printing
-      out what GET /v1/tools/ actually returns for each of your three
-      gateways is faster than guessing it.
-  # ~45% of timeout_minutes.
+      A tool server you just registered doesn't necessarily show its tools
+      in the very same response that registered it -- confirm separately
+      that each one actually federated before you try to reference its
+      tools by id. And a federated tool's name isn't the same string the
+      tool server itself uses -- it's derived from both the gateway's name
+      and the tool's own name, so read back what the gateway actually
+      calls each tool rather than guessing.
+  # ~45% of timeout_minutes -- may name the specific traps.
   - after_minutes: 40
     text: >-
       Two traps in the request bodies themselves: creating a virtual
