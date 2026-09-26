@@ -3,3 +3,7 @@
 # the real domain. Delete this rule when opalix.ai goes live.
 /*
   X-Robots-Tag: noindex
+
+# Self-hosted fonts rarely change; let browsers keep them for 30 days.
+/fonts/*
+  Cache-Control: public, max-age=2592000
