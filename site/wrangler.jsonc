@@ -1,15 +1,24 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "opalix-landing",
+  "name": "opalix-site",
   "compatibility_date": "2026-09-22",
 
-  // Static marketing page, no Worker script of its own: every request is
-  // served straight from assets. An assets-only Worker (no `main`) can't
-  // also declare a `binding` -- that's only for a Worker script that reads
-  // its own assets programmatically, which dashboard/wrangler.jsonc's does
-  // and this one doesn't.
+  // The public marketing site for opalix.ai: static files only, no Worker
+  // code. It is separate from the dashboard (the password-gated lab
+  // console) and from the sandbox API, and talks to neither.
   "assets": {
-    "directory": ".",
+    "directory": "./public",
+    // Paths the page links to before they exist (/join, /labs/<slug>, ...)
+    // get the friendly 404 instead of a bare error.
     "not_found_handling": "404-page"
-  }
+  },
+
+  // Temporary home until opalix.ai's DNS is on Cloudflare:
+  // https://opalix-site.<account-subdomain>.workers.dev
+  // When the domain moves, add it as a custom domain on this Worker, then
+  // delete public/_headers so the real site can be indexed.
+  "workers_dev": true
+
+  // Deployed by .github/workflows/deploy-site.yml on every push to main
+  // that touches site/, or by hand with `npm run deploy:site`.
 }

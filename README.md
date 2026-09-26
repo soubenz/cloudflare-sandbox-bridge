@@ -22,6 +22,8 @@ rationale; this README is the quick-start.
 - `labs/` — real lab content goes here (empty at this commit; see
   `test/fixtures/labs/hello` for a trivial worked example).
 - `cli/` — the `opalix` command-line client.
+- `site/` — the public opalix.ai home page: static HTML and CSS, its own
+  assets-only Worker (`npm run dev:site`, `npm run deploy:site`).
 - `test/unit` — fast, plain-Node unit tests (no Docker required).
 - `test/integration` — end-to-end tests against a running Worker (`wrangler
   dev` with Docker, or staging).

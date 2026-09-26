@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opalix: hands-on labs for production AI engineering</title>
+<meta name="description" content="Hosted labs where you build AI platform components and fix production AI systems that are already broken. Graded on whether the system actually works. Free during the beta.">
+<meta property="og:title" content="Opalix: real AI systems, real failures">
+<meta property="og:description" content="Hands-on labs for production AI engineering. Build the platform, fix what's broken, get graded on whether it works.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://opalix.ai/">
+<meta name="theme-color" content="#0a0f2c">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@500;600;700&family=Funnel+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<!--
+  Links to places that do not exist yet point at stable paths so they can be
+  wired later without touching the markup:
+    /join            beta sign-up
+    /labs/<slug>     the public page for each lab (one per lab, for search)
+    /manager-note    the one-page note an engineer forwards to a manager
+    /pilot           team pilot request
+    /feedback        beta feedback
+  Until those exist they fall through to 404.html.
+-->
+
+<header class="site-header">
+  <div class="nav">
+    <a class="brand" href="/" aria-label="Opalix home">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="6" fill="#0a0f2c"/><circle cx="12" cy="12" r="4.5" fill="#3552f2"/></svg>
+      <span>opalix</span>
+      <span class="beta-tag">BETA</span>
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="#labs">Labs</a>
+      <a href="#tracks">Tracks</a>
+      <a href="#inside">How it works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#teams">Teams</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="nav-signin" href="/signin">Sign in</a>
+      <a class="btn btn-accent btn-sm" href="/join">Join the beta <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      <details class="menu">
+        <summary aria-label="Open menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 9h14M5 15h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></summary>
+        <div class="menu-panel">
+          <a href="#labs">Labs</a>
+          <a href="#tracks">Tracks</a>
+          <a href="#inside">How it works</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#teams">Teams</a>
+          <a href="/signin">Sign in</a>
+          <a class="btn btn-accent" href="/join">Join the beta</a>
+        </div>
+      </details>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="hero">
+    <div class="wrap">
+      <a class="chip" href="#beta">
+        <span class="chip-tag"><span class="dot" aria-hidden="true"></span>BETA</span>
+        Two labs are live, and free while we're in beta
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <h1 class="hero-title">Real AI systems.<br>Real failures.<br><span class="mark">Learn by fixing them.</span></h1>
+      <div class="hero-row">
+        <p class="hero-lede">Hands-on labs for production AI engineering. Build the platform AI systems run on, fix the ones already broken, and get graded on whether the system actually works.</p>
+        <div class="hero-ctas">
+          <div class="btn-row">
+            <a class="btn btn-accent btn-lg" href="/join">Join the beta, free</a>
+            <a class="btn btn-ghost btn-lg" href="#labs">Browse labs</a>
+          </div>
+          <span class="mono small muted">Opens in your browser · nothing to install · no card</span>
+        </div>
+      </div>
+
+      <div class="stage" aria-label="A lab in progress: The $4,000 weekend" role="img">
+        <div class="window">
+          <div class="window-bar">
+            <span class="light"></span><span class="light"></span><span class="light"></span>
+            <span class="window-title">The $4,000 weekend</span>
+            <span class="pill-running">running</span>
+            <span class="window-timer">52:08 left</span>
+          </div>
+          <div class="window-body">
+            <div class="files">
+              <span class="files-head">Workspace</span>
+              <span>run_agent.py</span><span>agent/loop.py</span><span class="hl">agent/retry.py</span><span>agent/http.py</span><span>agent/spend.py</span><span>questions.json</span>
+            </div>
+<pre class="code"><span class="c-muted"># agent/retry.py</span>
+<span class="c-kw">def</span> with_retries(call, attempts=MAX_ATTEMPTS):
+    <span class="c-muted">"""Retry transient gateway failures."""</span>
+    <span class="c-kw">for</span> n <span class="c-kw">in</span> range(attempts):
+        <span class="c-kw">try</span>:
+            <span class="c-kw">return</span> call()  <span class="c-muted"># http.py retries too</span>
+        <span class="c-kw">except</span> GatewayError:
+            sleep(backoff(n))</pre>
+<pre class="code term"><span class="hl">$</span> python3 run_agent.py
+[Q-2201] 3 calls · answered
+[Q-2202] 3 calls · <span class="c-warn">503</span> · retry · answered
+[Q-2206] 48 calls · still searching…
+[Q-2206] 150 calls · answered
+<span class="hl">summary</span> 8 of 8 answered, no issues</pre>
+          </div>
+        </div>
+
+        <div class="float float-checks">
+          <span class="eyebrow muted">Checks</span>
+          <div class="check"><span class="check-icon fail">✗</span>Run costs under budget</div>
+          <p class="check-msg">The gateway charged $3.41 for one run. Q-2206 alone made 150 model calls.</p>
+          <div class="check"><span class="check-icon pass">✓</span>Every input resolved</div>
+          <div class="check"><span class="check-icon pass">✓</span>Transient failures recover</div>
+        </div>
+
+        <div class="float float-cost">
+          <span class="eyebrow">Live cost counter</span>
+          <div class="cost-row"><span class="cost-num">$3.41</span><span>of $0.75</span></div>
+          <div class="cost-bar"><span></span></div>
+          <span class="small">Fake money. Cost labs never spend yours.</span>
+        </div>
+
+        <div class="float float-pressure">
+          <span class="pressure-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z" stroke="#ffb86b" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
+          <div><strong>Pressure event</strong><span class="on-navy-muted">Monday 09:00. Eight new questions just landed in the queue.</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="stack" aria-label="The real stack">
+    <div class="wrap stack-inner">
+      <span class="muted">The real stack, in every lab</span>
+      <span class="tag">LiteLLM</span>
+      <span class="tag">Grafana</span>
+      <span class="tag">Python agent loop</span>
+      <span class="tag">OpenAI-compatible endpoint</span>
+      <span class="tag">real shell</span>
+      <span class="tag">code editor</span>
+      <span class="tag">plain HTTP tools</span>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap problem">
+      <h2 class="h2">The demo works. Production is the hard part.</h2>
+      <p class="lede">Cost control, reliability, security, state, observability, multi-tenancy. Engineers usually learn these with real money and real users. Opalix gives you the same failures in a hosted system built to break.</p>
+    </div>
+    <div class="wrap">
+      <div class="stats">
+        <div class="stat"><span class="stat-num">57%</span><span>of teams have agents in production. Quality is the top blocker.</span><span class="stat-src">LangChain survey, 1,300 professionals</span></div>
+        <div class="stat"><span class="stat-num">+143%</span><span>AI Engineer postings year over year. The fastest-growing US job in 2026.</span><span class="stat-src">LinkedIn</span></div>
+        <div class="stat"><span class="stat-num">71%</span><span>of engineering leaders say AI makes real skills harder to assess.</span><span class="stat-src">Karat, January 2026</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="tracks">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 class="h2">Two tracks.<br>Concepts first.</h2>
+        <p class="section-note">Frameworks show up only as context. What you learn here should still be true in five years.</p>
+      </div>
+      <div class="tracks">
+        <article class="track track-dark">
+          <div class="track-top"><span class="track-num">01</span><span class="badge badge-accent">Mostly break-fix</span></div>
+          <h3>Production agents</h3>
+          <p>How agents fail at scale and how to prevent it: cost, retries, state, injection, observability, evals, failover.</p>
+          <div class="track-tags">
+            <span>Customers are getting duplicate emails</span>
+            <span>Wrong answers with status 200</span>
+            <span>Conversations leak between users</span>
+          </div>
+        </article>
+        <article class="track track-light">
+          <div class="track-top"><span class="track-num">02</span><span class="badge badge-navy">Mostly build</span></div>
+          <h3>AI platform building</h3>
+          <p>How to build the platform agents and models run on: gateways, sandboxes, tracing, eval pipelines, multi-tenant controls.</p>
+          <div class="track-tags">
+            <span>Route requests with budgets and fallback</span>
+            <span>Stop one tenant using everyone's budget</span>
+            <span>Run agent code safely</span>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="inside">
+    <div class="wrap">
+      <h2 class="h2 section-title">Inside every lab</h2>
+      <div class="bento">
+        <div class="cell cell-navy cell-wide cell-checker">
+          <div class="stack-v">
+            <h3 class="cell-title-lg">Checked on outcomes, not commands</h3>
+            <p class="on-navy-muted">The checker tests the running system. Any correct fix passes, no cosmetic one does, and a failure tells you what's still wrong.</p>
+          </div>
+          <div class="checker-out mono">
+            <span class="hl">✓ every-ticket-answered</span>
+            <span class="hl">✓ retries-still-happen</span>
+            <span class="c-fail">✗ one-email-per-ticket</span>
+            <span class="c-dim indent">T-1041 got 2 messages. The mail service accepted the first before it timed out.</span>
+          </div>
+        </div>
+        <div class="cell cell-accent">
+          <span class="cell-big">$0.00</span>
+          <h3 class="cell-title">Fake money, real consequences</h3>
+          <p>Cost labs run on a scripted provider. The counter climbs, your card doesn't.</p>
+        </div>
+        <div class="cell">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3" stroke="currentColor" stroke-width="1.6"/><path d="M7 9l3 3-3 3M12 15h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <h3 class="cell-title">Real LiteLLM and Grafana</h3>
+          <p class="ink-2">Pinned versions you configure and restart like at work. A real shell and editor, with no AI autocomplete.</p>
+        </div>
+        <div class="cell">
+          <div class="pressure-chips mono">
+            <span>⚡ load arriving mid-debug</span>
+            <span>⚡ second failure in 10:00</span>
+          </div>
+          <h3 class="cell-title">Something fights back</h3>
+          <p class="ink-2">Pressure events, a clock, and a plausible wrong clue.</p>
+        </div>
+        <div class="cell">
+          <div class="hint-steps" aria-hidden="true">
+            <span class="on">1</span><span>2</span><span>3</span>
+            <span class="locked"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 11V8a4 4 0 118 0v3" stroke="currentColor" stroke-width="1.8"/></svg></span>
+          </div>
+          <h3 class="cell-title">Three hints, then the solution</h3>
+          <p class="ink-2">The solution unlocks after a real attempt, as a diff against your code.</p>
+        </div>
+        <div class="cell cell-full cell-tutor">
+          <div class="stack-v tutor-copy">
+            <h3 class="cell-title-lg">A tutor that won't spoil it</h3>
+            <p class="ink-2">Select any code, panel, log or request and ask what it means. It explains. It gives no answers until you pass.</p>
+          </div>
+          <div class="chat" aria-label="Example tutor exchange">
+            <div class="bubble bubble-me">Why does http.py retry if retry.py already does?</div>
+            <div class="bubble bubble-tutor">Good question to ask. Count how many times one failed call reaches the gateway, and compare it with MAX_ATTEMPTS.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <h2 class="h2 section-title">Build it. Break it. <span class="struck-ink">Then scale it.</span></h2>
+      <div class="types">
+        <article class="type">
+          <span class="mono small muted">BUILD</span>
+          <h3>Starts with a missing component</h3>
+          <p class="ink-2">A working base. Design the piece that makes the system meet its goals.</p>
+          <span class="type-eg muted">"Stop one tenant from using everyone's budget"</span>
+        </article>
+        <article class="type type-navy">
+          <div class="type-head"><span class="mono small on-navy-muted">BREAK-FIX</span><span class="badge badge-accent">Signature</span></div>
+          <h3>Starts broken in production</h3>
+          <p class="on-navy-muted">Find the cause and fix it while something fights back.</p>
+          <span class="type-eg on-navy-dim">"Customers are getting duplicate emails"</span>
+        </article>
+        <article class="type type-later">
+          <div class="type-head"><span class="mono small muted">SCALE</span><span class="badge badge-outline">After beta</span></div>
+          <h3 class="ink-2">Starts working, then traffic grows</h3>
+          <p class="muted">Survive the load without breaking cost or latency targets.</p>
+          <span class="type-eg muted">"Traffic triples. Keep p95 and spend under limits"</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="labs">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 class="h2">The launch set</h2>
+        <p class="section-note">Two live in the beta. The rest open as they pass testing.</p>
+      </div>
+      <ul class="labs" role="list">
+        <li><a class="lab lab-live" href="/labs/duplicate-emails"><span class="lab-dot" aria-hidden="true"></span><span class="lab-title">Customers are getting duplicate emails</span><span class="lab-track">Production agents</span><span class="lab-type mono">break-fix</span><span class="lab-go" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="sr-only">Live, free. Start lab.</span></a></li>
+        <li><a class="lab lab-live" href="/labs/weekend-bill"><span class="lab-dot" aria-hidden="true"></span><span class="lab-title">The $4,000 weekend</span><span class="lab-track">Production agents</span><span class="lab-type mono">break-fix</span><span class="lab-go" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="sr-only">Live, free. Start lab.</span></a></li>
+        <li><div class="lab"><span class="lab-dot" aria-hidden="true"></span><span class="lab-title">The agent follows instructions hidden in a web page</span><span class="lab-track">Production agents</span><span class="lab-type mono">break-fix</span><span class="lab-status">testing</span></div></li>
+        <li><div class="lab"><span class="lab-dot" aria-hidden="true"></span><span class="lab-title">Fallback works, but structured output breaks</span><span class="lab-track">Production agents</span><span class="lab-type mono">break-fix</span><span class="lab-status">testing</span></div></li>
+        <li><div class="lab"><span class="lab-dot" aria-hidden="true"></span><span class="lab-title">Long conversation, the agent forgets its rules</span><span class="lab-track">Production agents</span><span class="lab-type mono">break-fix</span><span class="lab-status">testing</span></div></li>
+        <li><div class="lab"><span class="lab-dot" aria-hidden="true"></span><span class="lab-title">Route requests across providers with budgets and fallback</span><span class="lab-track">AI platform</span><span class="lab-type mono">build</span><span class="lab-status">testing</span></div></li>
+        <li><div class="lab"><span class="lab-dot" aria-hidden="true"></span><span class="lab-title">Keep the platform stable when a provider throttles</span><span class="lab-track">AI platform</span><span class="lab-type mono">build</span><span class="lab-status">testing</span></div></li>
+        <li><div class="lab"><span class="lab-dot" aria-hidden="true"></span><span class="lab-title">Run agent-generated code safely</span><span class="lab-track">AI platform</span><span class="lab-type mono">build</span><span class="lab-status">testing</span></div></li>
+        <li><div class="lab"><span class="lab-dot" aria-hidden="true"></span><span class="lab-title">See every LLM and tool call across a request</span><span class="lab-track">AI platform</span><span class="lab-type mono">build</span><span class="lab-status">testing</span></div></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap compare">
+      <div class="compare-col compare-them">
+        <span class="mono small muted">THE USUAL COURSE</span>
+        <ul role="list">
+          <li><span aria-hidden="true">✕</span><s>Fill-in-the-blank tutorials with TODO comments</s></li>
+          <li><span aria-hidden="true">✕</span><s>Checker matches the right command</s></li>
+          <li><span aria-hidden="true">✕</span><s>One framework, this year's version</s></li>
+          <li><span aria-hidden="true">✕</span><s>Video first, then set it up on your laptop</s></li>
+          <li><span aria-hidden="true">✕</span><s>Prompts and evals only</s></li>
+          <li><span aria-hidden="true">✕</span><s>A certificate at the end</s></li>
+        </ul>
+      </div>
+      <div class="compare-col compare-us">
+        <span class="mono small hl">OPALIX</span>
+        <ul role="list">
+          <li><span class="hl" aria-hidden="true">✓</span>Real systems. Build or fix, no path given</li>
+          <li><span class="hl" aria-hidden="true">✓</span>Tests whether the system works. Many solutions pass</li>
+          <li><span class="hl" aria-hidden="true">✓</span>Concepts that stay true across frameworks</li>
+          <li><span class="hl" aria-hidden="true">✓</span>Hosted. Opens in the browser</li>
+          <li><span class="hl" aria-hidden="true">✓</span>Also gateways, sandboxing, rate limits, multi-tenancy</li>
+          <li><span class="hl" aria-hidden="true">✓</span>A result card you can share</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="beta">
+    <div class="wrap">
+      <div class="beta">
+        <div class="stack-v beta-lead">
+          <span class="chip-tag"><span class="dot" aria-hidden="true"></span>BETA</span>
+          <h2 class="h2-sm">What being in beta means</h2>
+          <a class="btn btn-navy" href="/feedback">Tell us what broke</a>
+        </div>
+        <div class="beta-points">
+          <div class="beta-point"><span class="mono accent">01</span><div><h3>The live labs are complete</h3><p class="ink-2">Full systems, full checks, hints and solutions. Not previews.</p></div></div>
+          <div class="beta-point"><span class="mono accent">02</span><div><h3>The catalogue is growing</h3><p class="ink-2">New labs open when they pass testing, including against frontier AI models.</p></div></div>
+          <div class="beta-point"><span class="mono accent">03</span><div><h3>Some things will be rough</h3><p class="ink-2">The broken parts inside the lab are on purpose. The rest we want to hear about.</p></div></div>
+          <div class="beta-point"><span class="mono accent">04</span><div><h3>Your feedback decides what ships</h3><p class="ink-2">Which labs come next, how hard they are, what the hints say.</p></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="pricing">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 class="h2">Free during<br>the beta.</h2>
+        <p class="section-note">Every live lab is free right now. These are the plans we plan to offer after the beta, so you know where it's going.</p>
+      </div>
+      <div class="plans">
+        <article class="plan plan-accent">
+          <div class="plan-head"><h3>Beta</h3><span class="badge badge-white">NOW</span></div>
+          <span class="plan-price">€0</span>
+          <p>Every live lab, hints, solutions and result cards.</p>
+          <a class="btn btn-white" href="/join">Join the beta</a>
+        </article>
+        <article class="plan">
+          <div class="plan-head"><h3>Individual</h3><span class="badge badge-outline">AFTER BETA</span></div>
+          <span class="plan-price">€39<small> /mo</small></span>
+          <p class="ink-2">Or €299 a year. All labs, hints and solutions. Two labs stay free.</p>
+        </article>
+        <article class="plan" id="teams">
+          <div class="plan-head"><h3>Team</h3><span class="badge badge-outline">AFTER BETA</span></div>
+          <span class="plan-price">€349<small> /seat/yr</small></span>
+          <p class="ink-2">Two seats minimum. Progress view per person, seat transfer, one invoice.</p>
+        </article>
+        <article class="plan plan-navy">
+          <h3>Teams of 6+</h3>
+          <span class="plan-price">Pilot</span>
+          <p class="on-navy-muted">Bring your team into the beta with a 14-day pilot and a call with the founder.</p>
+          <a class="btn btn-white" href="/pilot">Talk to the founder</a>
+        </article>
+      </div>
+      <div class="manager">
+        <div class="stack-v">
+          <h2 class="h3-lg">Like it? Forward it to your manager.</h2>
+          <p class="on-navy-muted">A one-page note on what the team learns, the price, and the ramp-time argument. You sell, we wrote it.</p>
+        </div>
+        <a class="btn btn-accent btn-lg" href="/manager-note">Get the manager note <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="faq">
+    <div class="wrap faq">
+      <div class="stack-v">
+        <h2 class="h2">Questions</h2>
+        <p class="ink-2">For backend, platform and ML engineers moving into agent and AI platform work. Not for beginners learning to code, or for certificates.</p>
+      </div>
+      <div class="faq-list">
+        <details open>
+          <summary>Is it really free during the beta?</summary>
+          <p>Yes, with no card needed. We'll say clearly, ahead of time, when paid plans start.</p>
+        </details>
+        <details>
+          <summary>Which framework does it teach?</summary>
+          <p>None on purpose. Labs use a raw agent loop in Python, an OpenAI-compatible endpoint behind a gateway, and plain HTTP tools. The concepts carry over to any framework.</p>
+        </details>
+        <details>
+          <summary>Can I paste the brief into ChatGPT?</summary>
+          <p>It won't get you far. The system is live and stateful, load arrives while you work, and the checker tests the running system rather than your answer.</p>
+        </details>
+        <details>
+          <summary>Does the cost lab spend real money?</summary>
+          <p>No. Cost labs run against a scripted model provider, so the counter climbs on fake money. When part of a lab is simulated, the brief says so.</p>
+        </details>
+        <details>
+          <summary>How long is a lab?</summary>
+          <p>Most take 30 to 60 minutes. A session lasts up to two hours and your state is saved.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="section join" id="join">
+    <div class="wrap join-inner">
+      <h2 class="join-title">Go break<br><span class="mark">something.</span></h2>
+      <p class="lede">Somebody's agent is emailing customers twice. Your first lab is free and takes about 45 minutes.</p>
+      <a class="btn btn-accent btn-xl" href="/join">Join the beta <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap footer-row">
+    <span class="badge badge-accent mono">BETA</span>
+    <span>Hands-on labs for production AI engineering</span>
+    <nav class="footer-links" aria-label="Footer">
+      <a href="#labs">Labs</a>
+      <a href="#pricing">Pricing</a>
+      <a href="/feedback">Feedback</a>
+      <a href="/privacy">Privacy</a>
+    </nav>
+  </div>
+  <div class="wordmark" aria-hidden="true">opalix</div>
+</footer>
+</body>
+</html>

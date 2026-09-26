@@ -1,0 +1,38 @@
+name: Deploy site
+
+# The public home page (site/) is static files only, so it deploys on its own
+# rather than inside the main Deploy workflow: no Docker, no D1, no reason to
+# wait on a container build. Until opalix.ai's DNS moves to Cloudflare it is
+# served from its workers.dev address.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/deploy-site.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Deploy site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          npx wrangler deploy --config site/wrangler.jsonc | tee deploy.log
+          url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          echo "Site: ${url:-see log above}" >> "$GITHUB_STEP_SUMMARY"
