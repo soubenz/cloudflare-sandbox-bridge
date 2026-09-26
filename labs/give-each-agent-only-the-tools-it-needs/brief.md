@@ -59,13 +59,24 @@ reach something outside its own list in `roles.yaml`.
 
 ## Checking your work
 
-The real checks aren't built yet (part 2 of this lab) -- `checks/` here
-is a placeholder. When they land, they will work the same way every
-other build lab's grader does: never reading your code, only calling
-ContextForge for real with whatever tokens `platform/keys.json` ends up
-holding, and reading back whether the gateway itself let each call
-through or refused it. A refusal only counts if ContextForge produced it
--- a 401, a 403, or a tool call that comes back `isError: true` because
-the tool was never associated with the server that token is scoped to.
-Nothing about what a role's own prompt says it will or won't do enters
-into it.
+**Run checks** never reads your code. It starts its own ContextForge
+against a fresh, empty database, with its own copies of the three tool
+servers, re-runs the workspace's own `bootstrap_ungoverned.py` against
+that fresh setup to reproduce the same starting state you got, then runs
+*your* `platform/setup.py` on top of it -- and calls the result the same
+way any real caller would.
+
+| Check | Passes when |
+|---|---|
+| `each-role-reaches-only-its-tools` | `support-agent`'s own token reaches all 5 reader tools and is refused on all 4 write/admin tools; `ops-agent`'s reaches all 8 reader+writer tools and is refused only on `delete_account`; `admin`'s reaches all 9. |
+| `refusal-is-real-not-client-side` | `support-agent`'s and `ops-agent`'s own tokens are refused outright (a real 401/403/tool-not-found) when pointed directly at the admin role's virtual server -- and no role's own token can list the platform's own gateways. |
+| `no-token-no-access` | A call to a real virtual server's own MCP endpoint with no token at all comes back a real 401. |
+
+The last two checks exist to stop the first one being satisfied the easy
+way: handing every role the same bundle/token (or quietly giving one
+role's token a second, unlisted scope "just in case") would otherwise
+pass "reaches its own tools" trivially, and if `MCP_REQUIRE_AUTH` weren't
+actually in effect, "refused" wouldn't mean anything to begin with. You
+need all three. A refusal only counts if ContextForge itself produced it
+-- nothing about what a role's own prompt says it will or won't do enters
+into any of this.

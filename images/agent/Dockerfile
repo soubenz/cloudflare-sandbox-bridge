@@ -129,10 +129,31 @@ RUN apt-get update -o Acquire::Retries=3 \
 # wrapper shell) live in the venv's own bin/ -- symlinked onto the system
 # PATH so a lab's argv can name them directly, the same way `litellm` above
 # resolves without a lab needing to know it's a pip console script either.
+#
+# The import check deliberately stops at the bare package, not
+# `mcpgateway.main`/`mcpgateway.middleware.rbac` as first written: both of
+# those (and in fact any access to `mcpgateway.config`'s lazy module
+# `__getattr__`) construct a real pydantic Settings object on import, which
+# 1.0.10 hardens against exactly this situation -- an unset JWT_SECRET_KEY /
+# AUTH_ENCRYPTION_SECRET at build time -- by raising
+# SecurityConfigurationError for the literal "__REPLACE_ME__" placeholder.
+# Reproduced locally in a matching python3.12 venv: `import mcpgateway` alone
+# never touches Settings and succeeds cleanly; `import mcpgateway.main`,
+# `import mcpgateway.middleware.rbac`, and even a bare `importlib.util.find_spec`
+# on either dotted path all fail the same way (find_spec still imports the
+# parent packages). Setting one real secret isn't a fix either -- the
+# validator checks several fields in turn (JWT_SECRET_KEY first, then
+# AUTH_ENCRYPTION_SECRET), so satisfying it fully at build time means baking
+# in placeholder "real" secrets that would then need rotating before the
+# image is trusted for anything -- not worth it just to prove an import
+# works. `pip show` above already confirms the exact pinned version
+# installed; this adds only what that doesn't cover, that the package's
+# top-level module is actually importable (catches missing/broken
+# dependencies bytecode-compiled wrong, etc.) without constructing app config.
 RUN ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
     && ln -s /opt/contextforge-venv/bin/mcpgateway-server /usr/local/bin/mcpgateway-server \
     && test -x /usr/local/bin/mcpgateway && test -x /usr/local/bin/mcpgateway-server \
-    && /opt/contextforge-venv/bin/python3.12 -c "import mcpgateway.main, mcpgateway.middleware.rbac"
+    && /opt/contextforge-venv/bin/python3.12 -c "import mcpgateway; print(mcpgateway.__version__)"
 
 # --- Unprivileged learner user; the terminal and workspace files run as this user ---
 RUN useradd -m -s /bin/bash learner \

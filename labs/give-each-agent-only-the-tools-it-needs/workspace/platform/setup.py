@@ -25,8 +25,12 @@ What this script has to leave behind, for every role in roles.yaml:
     so that even a caller who somehow learns another role's virtual
     server id cannot use this token to reach it;
   - platform/keys.json, in exactly this shape:
-       {"roles": {"support-agent": "<token>", "ops-agent": "<token>",
-                  "admin": "<token>"}}
+       {"roles": {"support-agent": {"server_id": "<id>", "token": "<token>"},
+                  "ops-agent": {"server_id": "<id>", "token": "<token>"},
+                  "admin": {"server_id": "<id>", "token": "<token>"}}}
+    (the server_id is what a caller actually calls --
+    POST /servers/<server_id>/mcp -- so it belongs next to the token that
+    is only ever usable against that one id)
 
 "Refused" has to mean the gateway itself says so -- a 401/403, or a
 same-shaped-but-still-real refusal like a resolution failure on a tool
@@ -113,7 +117,7 @@ def load_roles():
 
 def main():
     roles = load_roles()
-    result = {"roles": {name: "" for name in roles}}
+    result = {"roles": {name: {"server_id": "", "token": ""} for name in roles}}
 
     # TODO: for each role in `roles` (each one's `tools` list is
     # [{"server": ..., "tool": ...}, ...] straight from roles.yaml), work

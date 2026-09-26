@@ -69,7 +69,9 @@ V2_TOOL_SERVER_URL = os.environ.get("TOOL_SERVER_V2_URL", "http://127.0.0.1:6510
 
 REGISTRATION_POLL_TIMEOUT_S = 60   # generous: covers a slow register_v2()
 REGISTRATION_TAIL_S = 2.0          # keep polling caller.py a little past register_v2() returning
-ROLLBACK_BOUND_S = 5.0             # generous margin over the ~0.04-0.15s measured live for a direct PUT
+ROLLBACK_BOUND_S = 8.0             # generous margin: the PUT itself measured 0.04-0.15s live, and even
+                                    # polling caller.py (its own process-start + several HTTP round trips)
+                                    # to confirm it, end to end, measured 1.2-1.7s across three full runs
 SAMPLER_THREADS = 4                # concurrent GET pollers during cutover+rollback, for sampling density
 
 
@@ -85,11 +87,13 @@ def _load_state():
     return json.loads("\n".join(lines))
 
 
-def _http(method, path, body=None, token=None, timeout=10):
+def _http(method, path, body=None, token=None, timeout=10, extra_headers=None):
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = "Bearer %s" % token
+    if extra_headers:
+        headers.update(extra_headers)
     req = urllib.request.Request(CF.rstrip("/") + path, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -141,7 +145,7 @@ def _mint_witness_token(server_id):
 def _rpc(server_id, token, method, params, id_):
     status, body = _http(
         "POST", "/servers/%s/mcp" % server_id, {"jsonrpc": "2.0", "id": id_, "method": method, "params": params},
-        token=token,
+        token=token, extra_headers={"Accept": "application/json, text/event-stream"},
     )
     return status, body
 
@@ -170,13 +174,18 @@ def _witness_check(server_id, token):
     return True, "the original address (/servers/%s/mcp) still exists and still serves the v1 shape" % server_id
 
 
-def _sample_tool_count(server_id, samples, stop_event):
+def _sample_associated_tools(server_id, samples, stop_event):
+    """Appends the server's current associated-tool NAME list (not just a
+    count) on every sample -- used both to catch a two-step cutover/
+    rollback (never 0, never 2) and to catch v2 reaching the shared server
+    during registration/testing (should only ever be v1's tool name)."""
     while not stop_event.is_set():
         status, server = _http("GET", "/v1/servers/%s" % server_id)
         if status == 200 and isinstance(server, dict):
-            samples.append(len(server.get("associatedTools") or []))
+            samples.append(list(server.get("associatedTools") or []))
         # No sleep: back-to-back requests maximize sampling density during
-        # the narrow window a two-step cutover/rollback would be wrong in.
+        # the narrow window a two-step (or premature) cutover would be
+        # wrong in.
 
 
 def _build_results():
@@ -200,18 +209,36 @@ def _build_results():
         return results
     results["original_server_id"] = original_server_id
 
+    status, v1_tool = _http("GET", "/v1/tools/%s" % original_state["v1_tool_id"])
+    if status != 200 or not isinstance(v1_tool, dict):
+        results["setup_error"] = "could not read v1's own tool (%s) from ContextForge: %r" % (original_state["v1_tool_id"], v1_tool)
+        return results
+    v1_tool_name = v1_tool["name"]
+
     rollout = _import_rollout()
 
-    # --- stage 1: register_v2(), with caller.py polled continuously ---
+    # --- stage 1: register_v2() ---
+    # Two independent signals, both running for the whole window (through
+    # register_v2() and a short tail after it returns): caller.py itself
+    # (several concurrent pollers -- each real, but slow: a fresh Python
+    # process plus several HTTP round trips per run, which alone could
+    # miss a narrow bad window by luck), and dense, fast HTTP sampling of
+    # the server's own associated-tools list (no subprocess overhead, the
+    # same technique the anti-cheat check uses) -- this is the one that
+    # reliably catches a register_v2() that cuts over to "test" v2 through
+    # the shared server, even briefly.
     reg_results = []
+    reg_tool_samples = []
     stop_polling = threading.Event()
 
     def _poll_caller_during_registration():
         while not stop_polling.is_set():
             reg_results.append(_run_caller())
 
-    poller = threading.Thread(target=_poll_caller_during_registration, daemon=True)
-    poller.start()
+    callers = [threading.Thread(target=_poll_caller_during_registration, daemon=True) for _ in range(2)]
+    samplers = [threading.Thread(target=_sample_associated_tools, args=(original_server_id, reg_tool_samples, stop_polling), daemon=True) for _ in range(SAMPLER_THREADS)]
+    for t in callers + samplers:
+        t.start()
 
     register_error = None
     t0 = time.time()
@@ -227,10 +254,13 @@ def _build_results():
 
     time.sleep(REGISTRATION_TAIL_S)  # a short buffer past register_v2() returning
     stop_polling.set()
-    poller.join(timeout=5)
+    for t in callers + samplers:
+        t.join(timeout=5)
 
     results["register_error"] = register_error
     results["registration_window_caller_results"] = reg_results
+    results["registration_window_tool_samples"] = reg_tool_samples
+    results["v1_tool_name"] = v1_tool_name
 
     # Independent confirmation straight from ContextForge's own API --
     # never from state.yaml or the learner's bookkeeping.
@@ -265,7 +295,7 @@ def _build_results():
 
     samples = []
     stop_sampling = threading.Event()
-    samplers = [threading.Thread(target=_sample_tool_count, args=(original_server_id, samples, stop_sampling), daemon=True) for _ in range(SAMPLER_THREADS)]
+    samplers = [threading.Thread(target=_sample_associated_tools, args=(original_server_id, samples, stop_sampling), daemon=True) for _ in range(SAMPLER_THREADS)]
     for s in samplers:
         s.start()
 

@@ -1,9 +1,12 @@
-# Path 2, Module 2, lab 3 (build, agent family). Part 1 of this lab: the
-# design below is proven live against a scratchpad reference
-# implementation (own venv312, mcp-contextforge-gateway==1.0.10, Python
-# 3.12, mcp==1.30.0). checks/ is a placeholder; the real outcome-based
-# grader is part 2. No solution/ in this lab folder on purpose -- part 1's
-# own instructions kept the reference implementation in scratchpad only.
+# Path 2, Module 2, lab 3 (build, agent family). Design proven live against
+# mcp-contextforge-gateway==1.0.10, Python 3.12, mcp==1.30.0 (own venv312).
+# checks/_harness.py runs its own fresh ContextForge + own copies of the
+# three tool servers against solution/platform/setup.py (never uploaded --
+# docs/lab-authoring.md) on every one of 3 consecutive runs, and against
+# three deliberately wrong setup.py variants, each tripping the check it's
+# meant to: one shared bundle for every role, MCP_REQUIRE_AUTH left off,
+# and a role's token quietly also scoped to the admin server "just in
+# case" -- see this lab's own report for the full transcript of all of it.
 #
 # Catalogue's "what makes it hard": "Scope by role, enforced at the
 # gateway and not in prompts." Confirmed live, three separate ways, that
@@ -249,13 +252,35 @@ services:
 pressure: []
 
 checks:
-  # Placeholder for part 1 -- see checks/placeholder.sh. Always fails,
-  # which is correct: roles.yaml and ContextForge don't match yet, and
-  # platform/setup.py does nothing untouched.
-  - name: placeholder
-    script: placeholder.sh
-    timeout_s: 30
+  # Each check shares one grader-run's worth of setup (its own
+  # ContextForge against a fresh SQLite db, its own copies of the three
+  # tool servers, the workspace's own bootstrap_ungoverned.py re-run to
+  # reproduce the broken starting state, then the learner's own
+  # platform/setup.py on top) -- see checks/_harness.py. Sequential on
+  # purpose: whichever check runs first pays the setup cost and the other
+  # two just read its result.
+  - name: each-role-reaches-only-its-tools
+    script: each-role-reaches-only-its-tools.sh
+    timeout_s: 180
+    weight: 2
+    parallel: false
+  # The anti-cheat, in one direction: stops the first check being
+  # satisfied by handing every role the same bundle/token, or quietly
+  # over-scoping one role's token onto another role's server "just in
+  # case".
+  - name: refusal-is-real-not-client-side
+    script: refusal-is-real-not-client-side.sh
+    timeout_s: 180
     weight: 1
+    parallel: false
+  # The anti-cheat, in the other direction: proves MCP_REQUIRE_AUTH is
+  # actually doing something, so "refused" in the other two checks means
+  # what it claims to.
+  - name: no-token-no-access
+    script: no-token-no-access.sh
+    timeout_s: 180
+    weight: 1
+    parallel: false
 
 hints:
   # ~15% of timeout_minutes.
@@ -280,18 +305,23 @@ hints:
       platform's own names for them, not whatever ContextForge itself
       decided to call them once registered -- matching the two up is a
       lookup, not a guess.
-  # ~45% of timeout_minutes.
+  # ~45% of timeout_minutes -- may name the specific traps.
   - after_minutes: 40
     text: >-
-      A token created for one virtual server and a virtual server that
-      simply never had a tool associated with it are two different kinds
-      of "no" -- one is ContextForge refusing to let a token reach a
-      DIFFERENT server_id at all (a 403 before anything about the tool
-      itself is even considered), the other is the tool call resolving
-      against a server that was never given that tool in the first place
-      (a real failure, just shaped like a normal MCP tool result). Both
-      only ever happen at the gateway. Neither one is something you write
-      into a role's own prompt.
+      Minting a token needs `server_id` and `permissions` nested under a
+      `scope` object (plus an `expires_in_days` -- token expiration is
+      required by this gateway's policy), and that `server_id` is what
+      actually ties the token to one role's virtual server and no other:
+      a token scoped this way is refused outright by a DIFFERENT
+      server_id (a 403, before anything about the tool itself is even
+      considered), which is a different kind of "no" from a tool simply
+      never having been associated with the server its own token IS
+      correctly scoped to (a real failure, just shaped like a normal MCP
+      tool result, not an HTTP error). Both only ever happen at the
+      gateway. And if a call with no token at all ever succeeds against
+      this gateway, MCP_REQUIRE_AUTH isn't doing what this lab needs it
+      to -- that one is set in the manifest, not something setup.py
+      controls.
 
 egress:
   allow: []

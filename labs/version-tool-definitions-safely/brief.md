@@ -48,5 +48,21 @@ if it turns out to be a mistake. Three things have to hold the whole time:
 
 ## Checking your work
 
-Checks run `caller.py` and read ContextForge's own state directly -- they
-never look at your code.
+Checks call your `rollout.py` functions directly and drive the real
+scenario against your real, running ContextForge -- register v2, snapshot,
+cut over, roll back -- watching `caller.py` and ContextForge's own state
+throughout. They never read your code as text.
+
+| Check | Passes when |
+|---|---|
+| `v2-registered-independently` | ContextForge itself shows v2 registered as its own gateway, separate from v1, with its tool discovered. |
+| `no-downtime-during-registration` | Every `caller.py` run during v2's registration (and a little after) still gets the v1 shape. |
+| `rollback-is-fast-and-stable` | After a cutover to v2, rolling back gets `caller.py` passing again within a few seconds -- at the exact same server address it started at. |
+| `never-zero-or-two-tools-live` | Sampled continuously through the cutover and the rollback, `price-lookup` is observed with exactly one associated tool every time -- never zero, never two. |
+| `caller-still-works` | A plain, standalone run of `caller.py`, right now, passes. |
+
+You need all five: the first is the registration step itself; the next
+three are three different ways a rollout can go wrong even when v2 is
+registered correctly (leaking early, rolling back too slowly or to a new
+address, or momentarily serving no tool or both); the last is just a
+sanity check that nothing is left broken.

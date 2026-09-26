@@ -6,15 +6,16 @@
 # discipline on top of those real primitives -- graded on whether that
 # discipline actually works, not on a gateway feature that doesn't exist.
 #
-# This is PART 1 (scaffolding + feasibility): manifest, workspace, and two
-# real, working, outcome-based checks. The checks for the other two graded
-# outcomes (no-downtime cutover; fast, same-address rollback) are Part 2.
+# Built in two passes: Part 1 (scaffolding + feasibility) proved the
+# design live and shipped two of five checks; Part 2 (this pass) added
+# solution/, the remaining three checks, hints, and the "Checking your
+# work" table in brief.md.
 #
 # Everything below was proven live against a real
 # mcp-contextforge-gateway==1.0.10, in a throwaway python3.12 venv, in this
 # session's own scratchpad (never against the real lab image -- that gets
 # python3.12 added later, same order as Module 1's Postgres template).
-# Three things turned out to need a real design change from the original
+# Four things turned out to need a real design change from the original
 # ask, found by actually exercising the running gateway rather than
 # trusting its docs or the earlier investigation's summary of it:
 #
@@ -68,6 +69,21 @@
 #     "reimport over the live server" if it does not actually restore the
 #     tool the caller needs -- or one that restores it under a new server
 #     id.
+#
+#  4. GET /v1/export and POST /v1/import need a REAL admin login, unlike
+#     every other endpoint this design touches. Confirmed live: an
+#     unauthenticated GET /v1/export returns 403 "Access denied", where the
+#     identical unauthenticated request against /v1/gateways, /v1/servers,
+#     /v1/tools or /v1/tokens succeeds with no Authorization header at
+#     all. Traced to source: those routes are decorated
+#     `@require_permission("admin.export"/"admin.import")`
+#     (mcpgateway/main.py), and that decorator's own admin bypass is not
+#     the same code path as the plain `get_current_user` dependency the
+#     other management routes use -- ALLOW_UNAUTHENTICATED_ADMIN does not
+#     reach it. `POST /v1/auth/login` (PLATFORM_ADMIN_EMAIL/
+#     PLATFORM_ADMIN_PASSWORD, both manifest-level env so a learner's own
+#     terminal has them) is what a real snapshot needs; solution/
+#     rollout/rollout.py's `snapshot()` does exactly that.
 #
 # One more real thing worth recording since it changes a stated deliverable:
 # ContextForge's OWN admin UI cannot be `ui: true` as literally asked, for
@@ -208,6 +224,18 @@ services:
       # Real for this sandboxed lab; not something to carry into a
       # production deployment.
       EXPOSE_ERROR_DETAILS: "true"
+      # Real ContextForge default (rate_limit_lockout_threshold=5,
+      # rate_limit_lockout_duration_minutes=15): 5 rate-limit violations
+      # trigger a 15-minute account lockout on every subsequent request.
+      # Confirmed live: the graders' own dense polling (several concurrent
+      # threads sampling GET /v1/servers/{id} with no delay, to catch a
+      # narrow two-step-cutover race) tripped this for real, and every
+      # check failed for the next 15 minutes with "Account locked". This is
+      # a single-learner sandbox with one grader, not a multi-tenant
+      # production gateway -- there is no one here for a rate limit to
+      # protect against, so it's off, rather than trying to tune every
+      # poller in this lab to stay under an undocumented threshold.
+      RATE_LIMITING_ENABLED: "false"
     port: 4744
     healthcheck:
       type: http
@@ -238,24 +266,77 @@ services:
 pressure: []
 
 checks:
-  # Part 1 scope: two real, working, outcome-based checks. Neither reads
-  # the learner's source -- v2-registered-independently asks ContextForge
-  # itself what's registered; caller-still-works runs the real caller
-  # script. The checks for the other two graded outcomes (a cutover that
-  # never breaks an existing caller mid-flight; a fast, same-address
-  # rollback) are Part 2.
+  # None of these read the learner's source. Four of the five share ONE
+  # live run of the actual scenario (checks/_harness.py: register_v2(),
+  # then snapshot()+cutover_to("v2")+rollback(), calling the learner's own
+  # rollout.py directly and driving real traffic and real ContextForge
+  # state changes throughout) -- whichever check runs first pays that cost
+  # and the others just read its recorded results, same shared-run pattern
+  # as labs/hard-budget-per-team and labs/one-endpoint-one-key. Sequential
+  # on purpose. caller-still-works is the one exception: cheap, safe to run
+  # standalone, and stays parallel.
   - name: v2-registered-independently
     script: v2-registered-independently.sh
-    timeout_s: 30
+    timeout_s: 240
+    weight: 2
+    parallel: false
+  - name: no-downtime-during-registration
+    script: no-downtime-during-registration.sh
+    timeout_s: 240
+    weight: 2
+    parallel: false
+  - name: rollback-is-fast-and-stable
+    script: rollback-is-fast-and-stable.sh
+    timeout_s: 240
+    weight: 2
+    parallel: false
+  # The anti-cheat: stops the other checks being satisfied by a cutover
+  # or rollback built as two separate calls (remove the old tool, then
+  # add the new one) -- the two-step shape that can leave a caller with
+  # no tool at all, or two, for a real (if narrow) window.
+  - name: never-zero-or-two-tools-live
+    script: never-zero-or-two-tools-live.sh
+    timeout_s: 240
     weight: 1
-    parallel: true
+    parallel: false
   - name: caller-still-works
     script: caller-still-works.sh
     timeout_s: 30
     weight: 1
     parallel: true
 
-hints: []
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      Three real, separate primitives are what you have: a gateway
+      registration (one tool version, one URL, independent of any other
+      registration), a tool's enabled/disabled state, and a virtual
+      server's list of associated tools. Nothing about registering or
+      testing v2 has to touch `price-lookup`'s own associated-tools list
+      at all -- that list is the only thing an existing caller's answer
+      actually depends on.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Think of cutover and rollback as the exact same kind of operation --
+      "make this one tool the one `price-lookup` serves" -- just with a
+      different target. Whichever way you write that operation, make it
+      ONE call that replaces the whole associated-tools list, never two
+      calls where one removes the old tool and a later one adds the new
+      one. A caller can ask what `price-lookup` serves at any instant; a
+      two-call version has a real, if narrow, moment where the honest
+      answer is "nothing" or "both."
+  # ~45% of timeout_minutes.
+  - after_minutes: 41
+    text: >-
+      The concrete calls: `POST /v1/tools/{tool_id}/state?activate=true|false`
+      toggles a tool on or off. `PUT /v1/servers/{server_id}` with an
+      `associated_tools` list (tool IDs) is the single call that both
+      cutover and rollback are built from -- it replaces the whole list in
+      one request. If you're leaning on `POST /v1/import` to put a
+      snapshot back, check afterward what actually changed on the server
+      you re-imported over, not just what the import call returned.
 
 egress:
   allow: []
