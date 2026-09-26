@@ -1,0 +1,237 @@
+# Module 4 ("Observability and cost"), lab 2 in
+# docs/catalogue-path-2-ai-platform.md (build, gateway family). Catalogue's
+# own "what makes it hard": context propagation through the gateway and a
+# queue. Stack: OTel SDK and Collector.
+#
+# --- Design decision: "a queue" is an HTTP call, not a real broker -------
+# The catalogue frames the worker as picking a job off a queue. m4-common.md
+# / $SCRATCH/otel-inv/FINDINGS.md S3 proved real W3C traceparent propagation
+# live for an HTTP-to-HTTP hop (two separate Flask processes, standard
+# opentelemetry-instrumentation-flask/-requests, one connected trace,
+# correct parent-child chain) -- and explicitly flagged that a real
+# message-queue-shaped hop was NOT tested ("your own thing to prove first").
+# Rather than assume a queue client propagates context the same way (an
+# untested assumption this investigation was careful not to make), this lab
+# implements the "queue" as a second real HTTP hop: the gateway calls the
+# worker's own /process endpoint the same way a queue consumer would pick up
+# a job handed to it, and the worker forwards to a second downstream
+# service (storage) the same way a job handler persists its result. Every
+# hop is something this investigation actually proved propagates correctly
+# with real auto-instrumentation -- nothing here rests on an unverified
+# queue-transport assumption.
+#
+# --- The chain (3 real hops, so "one trace" can't be faked by 2) ---------
+#   caller -> gateway (/ingest) -> worker (/process) -> storage (/store)
+# gateway and storage are the fixed, untouchable platform: both already use
+# real OTel SDK auto-instrumentation correctly (opentelemetry-instrumentation-
+# flask server side, -requests client side -- never a hand-rolled
+# `traceparent` header, per m4-common.md #4). workspace/worker/worker.py is
+# the skeleton you fix: it wires up RequestsInstrumentor for its OWN
+# outbound call to storage (so that hop looks and behaves correctly in
+# isolation) but never wires up FlaskInstrumentor on its own Flask app --
+# so it never extracts the trace context the gateway's request actually
+# carried, and every request into it roots a brand-new, disconnected trace
+# instead of continuing the gateway's. It still produces real spans with
+# real durations and real attributes, and the worker->storage hop is
+# genuinely correctly nested *within* that new trace -- it's only rooted in
+# the wrong place. See solution/worker/worker.py for the (one-line) fix,
+# proven against three checks below.
+#
+# --- Jaeger + otelcol-contrib, same tools/ports as this module's siblings -
+# Real Jaeger v2.21.0 YAML config (in-memory storage, /api/v3/... query API
+# -- the old v1 paths 404 in this version) and real otelcol-contrib
+# (FINDINGS.md S2.1: tail_sampling and friends are contrib-only, though this
+# particular lab's own pipeline needs no sampling -- that's lab 3's lesson).
+# otelcol-contrib sits in front of Jaeger, so per m4-common.md's port
+# convention: otelcol keeps the canonical OTLP receiver ports 4317 (gRPC) /
+# 4318 (HTTP), and Jaeger's OWN OTLP receiver is re-pointed to 14317/14318
+# so the two don't clash in one manifest (workspace/jaeger/jaeger-config.yaml,
+# workspace/otelcol-config.yaml -- identical shape to
+# labs/collect-telemetry-without-losing-the-errors's own configs, this
+# module's lab 3, for consistency). Jaeger's query/UI stays on the
+# canonical 16686; no-login confirmed live for Jaeger's own UI
+# (FINDINGS.md S1.4 -- no auth of any kind by default).
+#
+# This manifest assumes the same platform (image) changes m4-common.md
+# flags for every Module 4 lab, not something this lab folder does:
+#   1. `jaeger` (v2.21.0) and `otelcol-contrib` (v0.161.0) binaries on PATH.
+#   2. Flask 3.1.3, requests 2.34.2, opentelemetry-api/sdk 1.45.0,
+#      opentelemetry-exporter-otlp-proto-http 1.45.0, and
+#      opentelemetry-instrumentation-flask/-requests 0.66b0 available to the
+#      image's base python3 -- the exact versions this lab's own services
+#      were built and proven against locally (see the build report). Every
+#      one of Module 4's toy services needs the same packages, so a single
+#      shared base-env install is assumed here, same posture as lab 1's own
+#      manifest comment.
+#
+# A real, silent trap this lab's own services deliberately avoid
+# (m4-common.md #6): every service below calls `provider.get_tracer(...)`,
+# never a bare `trace.get_tracer(...)` -- the latter would silently return a
+# no-op tracer since nothing else here calls `trace.set_tracer_provider`
+# before it. If a future edit to any of these files ever shows zero spans
+# arriving with no error anywhere, check that first.
+#
+# --- Grading (checks/_harness.py) ----------------------------------------
+# Outcome-based, shared-run harness (same shape as
+# labs/one-endpoint-one-key/checks/_harness.py): the first check to run
+# fires two real requests straight through the ALREADY-RUNNING gateway (one
+# plain, one with `trigger_error` set so storage deliberately fails), polls
+# the ALREADY-RUNNING Jaeger for each resulting trace by the trace id the
+# gateway itself returns, and writes one shared results.json the other two
+# checks just read. Nothing here reads worker.py's source, spins up a
+# competing instance of anything, or asserts on a config file -- only what
+# the real, running system actually produced in Jaeger.
+slug: see-one-request-across-every-service
+version: 1.0.0
+title: "See one request across every service"
+type: build
+family: gateway
+summary: >-
+  One request crosses a gateway, a worker, and a storage service. Wire up
+  real context propagation so Jaeger shows all three hops as one trace,
+  correctly nested -- not a disconnected second trace starting at the worker.
+objectives:
+  - "Use standard OTel SDK auto-instrumentation to extract an incoming W3C traceparent header, not a hand-rolled header"
+  - "Tell a genuinely connected, correctly-nested trace apart from one that merely shares a trace id"
+  - "Confirm a downstream failure still shows up on the right span without breaking the trace's connectivity"
+difficulty: core
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  GATEWAY_URL: "http://127.0.0.1:5001"
+  WORKER_URL: "http://127.0.0.1:5002"
+  STORAGE_URL: "http://127.0.0.1:5003"
+  JAEGER_QUERY_URL: "http://127.0.0.1:16686"
+  OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318"
+
+services:
+  - name: jaeger
+    argv: ["jaeger", "--config", "file:/workspace/jaeger/jaeger-config.yaml"]
+    cwd: /workspace
+    port: 16686
+    healthcheck:
+      type: http
+      path: /
+      # Jaeger booted in ~0.12s live in the feasibility investigation
+      # (FINDINGS.md 1.2); 30s leaves real margin for a slower container
+      # without hiding an actual failure to start.
+      timeout_s: 30
+    ui: true
+    depends_on: []
+
+  - name: otelcol
+    # ui: false -- otelcol-contrib has no web UI of its own; its
+    # health_check extension (workspace/otelcol-config.yaml) is for local
+    # debugging, not a learner-facing surface.
+    argv: ["otelcol-contrib", "--config", "file:/workspace/otelcol-config.yaml"]
+    cwd: /workspace
+    port: 4317
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: [jaeger]
+
+  - name: storage
+    # The second downstream hop -- untouchable in spirit, not by file
+    # permission: nothing in this lab asks you to edit
+    # workspace/services/storage.py. It's already correctly instrumented
+    # (FlaskInstrumentor server side); it deliberately fails with a real
+    # ERROR span status whenever a request body carries
+    # `"trigger_error": true`, which is this lab's planted downstream
+    # failure for the errors-still-propagate check.
+    argv: ["python3", "-B", "/workspace/services/storage.py"]
+    cwd: /workspace
+    env:
+      STORAGE_PORT: "5003"
+    port: 5003
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: [otelcol]
+
+  - name: worker
+    # The skeleton you fix. See the header comment above and brief.md.
+    argv: ["python3", "-B", "/workspace/worker/worker.py"]
+    cwd: /workspace
+    env:
+      WORKER_PORT: "5002"
+    port: 5002
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: [otelcol, storage]
+
+  - name: gateway
+    # The untouchable entry point. Already correctly instrumented on both
+    # its server side (FlaskInstrumentor) and its outbound call to the
+    # worker (RequestsInstrumentor) -- real W3C traceparent injection, no
+    # hand-rolled header. Nothing in this lab asks you to edit
+    # workspace/services/gateway.py.
+    argv: ["python3", "-B", "/workspace/services/gateway.py"]
+    cwd: /workspace
+    env:
+      GATEWAY_PORT: "5001"
+    port: 5001
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: [otelcol, worker]
+
+pressure: []
+
+checks:
+  # Sequential on purpose (same reasoning as one-endpoint-one-key): whichever
+  # check runs first pays the cost of firing both requests and polling
+  # Jaeger; the other two just read its shared result.
+  - name: one-trace-not-many
+    script: one-trace-not-many.sh
+    timeout_s: 60
+    weight: 2
+    parallel: false
+  - name: parent-child-chain-is-correct
+    script: parent-child-chain-is-correct.sh
+    timeout_s: 60
+    weight: 2
+    parallel: false
+  - name: errors-still-propagate-through-the-chain
+    script: errors-still-propagate-through-the-chain.sh
+    timeout_s: 60
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 13
+    text: >-
+      Fire a request through the gateway (POST /ingest) and open the
+      **jaeger** tab. Look for the trace id the gateway's own response
+      carries, and search Jaeger for it directly -- does that one trace
+      contain spans from opalix-worker and opalix-storage too, or only
+      opalix-gateway?
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      If the worker's own spans never show up under the gateway's trace id,
+      the worker's Flask app is never actually extracting the incoming
+      W3C traceparent header the gateway sent -- it's rooting a fresh trace
+      of its own instead, even though the requests it makes onward to
+      storage look completely normal in isolation.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      opentelemetry-instrumentation-flask does this extraction for you, but
+      only for the Flask app it's actually wired up to. Check whether
+      `FlaskInstrumentor().instrument_app(app)` is called anywhere in
+      workspace/worker/worker.py, right after the app is created and before
+      any request comes in.
+
+egress:
+  allow: []

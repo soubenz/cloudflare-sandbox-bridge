@@ -1,0 +1,40 @@
+# otelcol-contrib pipeline: receives traces from every one of this lab's
+# three toy services (gateway, worker, storage) and ships them straight on
+# to Jaeger. No sampling here -- that's lab 3's own lesson, not this one's
+# -- just the plain receive -> batch -> export shape this module's own
+# feasibility investigation proved end to end
+# ($SCRATCH/otel-inv/FINDINGS.md S2.2).
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+
+exporters:
+  otlp/jaeger:
+    endpoint: 127.0.0.1:14317
+    tls:
+      insecure: true
+
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: none
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/jaeger]
