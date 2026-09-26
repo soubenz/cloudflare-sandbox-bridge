@@ -1,0 +1,61 @@
+# Reference solution. Same tail_sampling shape the Module 4 feasibility
+# investigation proved with real counts
+# ($SCRATCH/otel-inv/collector-run/sampling.yaml, FINDINGS.md 2.4): every
+# error trace is kept outright by one policy; everything else gets the
+# original 10% probabilistic rate. tail_sampling makes its decision per
+# TRACE (after waiting decision_wait for all of a trace's spans to arrive),
+# so "does this trace contain an ERROR-status span" is a real question it
+# can answer -- unlike probabilistic_sampler, which only ever sees one
+# span's trace ID.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 10000
+    policies:
+      - name: keep-all-errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: sample-10pct-of-rest
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+  batch:
+    timeout: 2s
+
+exporters:
+  otlp/jaeger:
+    endpoint: 127.0.0.1:14317
+    tls:
+      insecure: true
+
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: normal
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 127.0.0.1
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [tail_sampling, batch]
+      exporters: [otlp/jaeger]

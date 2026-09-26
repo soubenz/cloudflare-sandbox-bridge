@@ -1,0 +1,60 @@
+# otelcol-contrib pipeline: receives traces from `traffic`, samples them,
+# batches them, and ships whatever survives to Jaeger.
+#
+# As shipped, this only samples: a flat 10% of everything, no matter what
+# it is. That's a real, working processor -- not a stub -- and 10% is a
+# perfectly reasonable-looking number for cutting a firehose of successful
+# traffic down to something a backend can hold. It has no idea what an
+# error trace is, though: `probabilistic_sampler` makes its keep/drop
+# decision from the trace ID alone. An error trace and a successful trace
+# with different trace IDs get the same 10% coin flip -- which means about
+# 90% of your error traces vanish along with 90% of the successful ones
+# they were mixed in with.
+#
+# Your job: keep every error trace, every time, while still cutting
+# successful traffic down to a real fraction of itself. Don't just widen
+# this processor's own reach -- the fix needs a processor that can tell
+# a trace's overall outcome apart from its ID, which means looking at the
+# whole trace, not one span in isolation.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  probabilistic_sampler:
+    sampling_percentage: 10
+  batch:
+    timeout: 2s
+
+exporters:
+  otlp/jaeger:
+    endpoint: 127.0.0.1:14317
+    tls:
+      insecure: true
+
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: normal
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 127.0.0.1
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [probabilistic_sampler, batch]
+      exporters: [otlp/jaeger]

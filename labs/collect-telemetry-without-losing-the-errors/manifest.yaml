@@ -1,0 +1,196 @@
+# A build lab, not break-fix: otelcol-config.yaml ships with a real,
+# working sampling processor (probabilistic_sampler at 10%) -- not a stub,
+# not a syntax error. The task is to notice it has no error awareness and
+# replace it with one that does.
+#
+# Everything here is proven live against the exact binaries the Module 4
+# feasibility investigation installed and measured
+# ($SCRATCH/otel-inv/FINDINGS.md) -- Jaeger v2.21.0 and OpenTelemetry
+# Collector Contrib v0.161.0 -- and the load-bearing facts are worth
+# restating because the obvious design doesn't work:
+#
+#  1. otelcol-contrib is mandatory, not otelcol-core: `tail_sampling` (the
+#     only sampler in either distribution that can look at a trace's
+#     overall status, not just one span's trace-ID hash) exists only in
+#     contrib, confirmed by direct component enumeration
+#     (FINDINGS.md 2.1). Core cannot pass this lab at any configuration.
+#  2. otelcol-contrib sits in front of Jaeger, so it needs the canonical
+#     4317/4318 OTLP receiver ports for itself; Jaeger's own OTLP receiver
+#     is re-pointed to 14317/14318 (workspace/jaeger/jaeger-config.yaml) --
+#     the exact re-pointing m4-common.md calls for when both are in one
+#     manifest.
+#  3. Jaeger v2's query API is `/api/v3/...`; the old v1 `/api/services`
+#     paths 404 in this version (FINDINGS.md 1.3). Its own tag/attribute
+#     search filter (`query.attributes[key]=value`) is accepted by the
+#     server but silently NOT honored -- confirmed live while building this
+#     lab's own grader (a filter for a case.id that was never sent still
+#     returned every trace for the service). The grader never relies on
+#     it: it pulls back every trace for the service with a large
+#     `query.search_depth` (the API caps at 100 results without it -- also
+#     confirmed live) and matches case.id values itself.
+#  4. tail_sampling with two OR'd policies (`status_code: [ERROR]` +
+#     `probabilistic`) is the exact shape FINDINGS.md 2.4 proved with real
+#     counts (40/40 error traces kept, ~11.7% of successful traffic kept
+#     against a 10% configured rate). This lab's own verification run saw
+#     30/30 and 9-18% (workspace/solution and its checks below), the same
+#     shape, comfortably inside that noise band.
+#  5. otelcol-contrib's own Prometheus telemetry
+#     (`otelcol_receiver_accepted_spans`, a counter, and
+#     `otelcol_processor_batch_batch_send_size_count`, a histogram's own
+#     event count) gives a real, live "batching still happens" signal with
+#     no extra debug exporter needed: confirmed live, 230 individually-
+#     accepted spans collapsed into 1-2 batch export events depending on
+#     timing, a 100x+ reduction either way.
+#
+# `traffic` is this lab's stand-in for whatever real service would
+# otherwise be generating the gateway's telemetry: it sends a real,
+# individually-tagged mix of successful and error-status traces through
+# whatever otelcol-config.yaml currently does, on request
+# (workspace/traffic/generate.py). checks/_harness.py drives it directly
+# (POST /run) with a fresh, unique run each grading run, then reads real
+# survivor counts back out of Jaeger and a real batching signal back out
+# of otelcol's own telemetry -- never the config file itself. See that
+# module's own docstring for the full methodology and the `results.json` +
+# lock sharing pattern (same shape as
+# labs/one-endpoint-one-key/checks/_harness.py).
+#
+# Neither Jaeger's own UI nor otelcol-contrib has anything requiring a
+# login (FINDINGS.md 1.4, 5.3) -- Jaeger's UI is the one `ui: true` tab;
+# otelcol-contrib and `traffic` have no UI of their own and are `ui: false`.
+slug: collect-telemetry-without-losing-the-errors
+version: 1.0.0
+title: "Collect telemetry without losing the errors"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  A collector pipeline samples successful traffic down to something a
+  backend can hold, while never dropping a single error trace. Fix the
+  sampling processor so it can tell the difference.
+objectives:
+  - "Tell a config-file-plausible sampler apart from one that can actually see a trace's outcome"
+  - "Configure tail_sampling with an error-keeping policy OR'd with a probabilistic policy for the rest"
+  - "Prove sampling behavior with real counted trace survival, not by reading the config"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  JAEGER_URL: "http://127.0.0.1:16686"
+  OTELCOL_METRICS_URL: "http://127.0.0.1:8888/metrics"
+  TRAFFIC_URL: "http://127.0.0.1:5010"
+  TRAFFIC_SERVICE_NAME: "opalix-traffic"
+
+services:
+  - name: jaeger
+    # Assumes the image puts the Jaeger v2.21.0 binary on PATH as `jaeger`
+    # (the same convention litellm/mlflow already use as pip console-
+    # scripts) -- this is the platform (image) change m4-common.md says
+    # the main session makes later, not something this lab folder does.
+    argv: ["jaeger", "--config", "file:/workspace/jaeger/jaeger-config.yaml"]
+    cwd: /workspace
+    port: 16686
+    healthcheck:
+      type: http
+      path: /
+      # Jaeger booted in ~0.12s live in the feasibility investigation
+      # (FINDINGS.md 1.2); 30s leaves real margin for a slower container
+      # without hiding an actual failure to start.
+      timeout_s: 30
+    ui: true
+    depends_on: []
+  - name: otelcol
+    # ui: false -- otelcol-contrib has no web UI of its own; its health
+    # extension (workspace/otelcol-config.yaml) is for local debugging,
+    # not a learner-facing surface.
+    # Assumes the image puts the otelcol-contrib v0.161.0 binary on PATH as
+    # `otelcol-contrib`, same convention as `jaeger` above.
+    argv: ["otelcol-contrib", "--config", "file:/workspace/otelcol-config.yaml"]
+    cwd: /workspace
+    port: 4317
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: [jaeger]
+  - name: traffic
+    # Assumes `opentelemetry-sdk` and
+    # `opentelemetry-exporter-otlp-proto-http` are pip-installed in the
+    # image (this lab needs no flask/requests instrumentation -- unlike
+    # lab 2's context-propagation lesson, this one only needs to emit real
+    # spans with real status codes, not link two processes' spans
+    # together). Another platform change for the main session, not this
+    # lab folder.
+    #
+    # Untouchable in spirit, not by file permission: nothing in this lab
+    # asks you to edit workspace/traffic/generate.py, and the checks drive
+    # it themselves with their own known run each time (see checks/_harness.py) --
+    # editing it doesn't help you pass, it only breaks the one thing the
+    # checks need it for.
+    argv: ["python3", "-B", "/workspace/traffic/generate.py"]
+    cwd: /workspace
+    env:
+      TRAFFIC_OTLP_ENDPOINT: "http://127.0.0.1:4318/v1/traces"
+      TRAFFIC_PORT: "5010"
+      TRAFFIC_SERVICE_NAME: "opalix-traffic"
+    port: 5010
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: [otelcol]
+
+pressure: []
+
+checks:
+  # Shared one run's worth of setup (see checks/_harness.py): whichever
+  # check runs first drives `traffic` for a fresh, known 200-success/
+  # 30-error mix and reads the real survivor counts and batching signal;
+  # the other two just read its cached result. Sequential on purpose.
+  - name: no-error-trace-is-ever-lost
+    script: no-error-trace-is-ever-lost.sh
+    timeout_s: 120
+    weight: 2
+    parallel: false
+  - name: successful-traffic-is-meaningfully-reduced
+    script: successful-traffic-is-meaningfully-reduced.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  - name: batching-still-happens
+    script: batching-still-happens.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      probabilistic_sampler makes its keep/drop decision from one span's
+      trace ID alone -- it has no way to look at a trace's overall status.
+      An error trace and a successful trace get the same coin flip if
+      sampling_percentage is the only thing deciding. The fix needs a
+      processor that can see a trace's outcome as a whole, not widen this
+      one's reach.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      `tail_sampling` is the processor that can do this, and it only
+      exists in otelcol-contrib (not otelcol-core -- this image ships
+      contrib on purpose). It waits `decision_wait` for all of a trace's
+      spans to arrive before deciding, which is exactly what lets it ask
+      "did any span in this trace have an ERROR status?" -- a real
+      question about the whole trace, not one span in isolation.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      `tail_sampling` takes a list of policies and keeps a trace if ANY of
+      them says keep. One policy of type `status_code` with
+      `status_codes: [ERROR]` keeps every error trace outright; OR it with
+      a second policy of type `probabilistic` (the same
+      `sampling_percentage` the skeleton already had) for everything else.
+      Keep `batch` in the pipeline after it, same as before.
+
+egress:
+  allow: []
