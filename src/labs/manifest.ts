@@ -104,7 +104,7 @@ export const labManifestSchema = z.object({
   slug: z.string().regex(slugPattern, 'slug must be lowercase, hyphenated, 3-64 chars'),
   version: z.string().regex(versionPattern, 'version must be semver, e.g. 1.0.0'),
   title: z.string().min(1).max(200),
-  type: z.enum(['build', 'break-fix', 'scale']),
+  type: z.enum(['build', 'break-fix', 'scale', 'explore']),
   family: z.enum(['agent', 'gateway']),
   /**
    * One sentence for the launcher card: what this lab is about, before a

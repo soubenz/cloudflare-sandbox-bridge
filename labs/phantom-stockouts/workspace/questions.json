@@ -1,0 +1,62 @@
+{
+  "queue": "shop-assistant",
+  "generated_at": "2026-09-25T09:10:00Z",
+  "questions": [
+    {
+      "id": "Q-3101",
+      "customer": "Dana Whitfield",
+      "sku": "SKU-4417",
+      "item": "Lumen desk lamp",
+      "question": "Do you have the Lumen desk lamp in? I need two of them by Thursday and I would rather not order and then be told."
+    },
+    {
+      "id": "Q-3102",
+      "customer": "Ravi Menon",
+      "sku": "SKU-5062",
+      "item": "Harbour wool throw",
+      "question": "Is the Harbour wool throw available in the oatmeal colour, and how many have you got? It is a present so I need it this week."
+    },
+    {
+      "id": "Q-3103",
+      "customer": "Priya Raman",
+      "sku": "SKU-6810",
+      "item": "Tidewater mug set of four",
+      "question": "Your assistant has told me twice this week that the Tidewater mug set is sold out. I was in the Kreuzberg shop on Saturday and there was a stack of them on the table by the door. Which is it?"
+    },
+    {
+      "id": "Q-3104",
+      "customer": "Tobias Lindgren",
+      "sku": "SKU-7723",
+      "item": "Alder side table",
+      "question": "Any chance the Alder side table is back in? I have been checking for a fortnight."
+    },
+    {
+      "id": "Q-3105",
+      "customer": "Amara Nwosu",
+      "sku": "SKU-8091",
+      "item": "Field canvas tote",
+      "question": "How many of the Field canvas totes do you have left? I am buying for a team of nine and I do not want to split the order."
+    },
+    {
+      "id": "Q-3106",
+      "customer": "Felix Arbuthnot",
+      "sku": "SKU-2245",
+      "item": "Sona floor rug",
+      "question": "I have been trying to buy the Sona floor rug since Friday and every time I ask, the chat says it is gone. Has it actually gone, or is something wrong with your website? I will buy it today if you have one."
+    },
+    {
+      "id": "Q-3107",
+      "customer": "Ines Fabre",
+      "sku": "SKU-3364",
+      "item": "Copper stovetop kettle",
+      "question": "Is the copper stovetop kettle in stock, and is it the two-litre one? Happy to collect."
+    },
+    {
+      "id": "Q-3108",
+      "customer": "Yusuf Demir",
+      "sku": "SKU-9915",
+      "item": "Ridge linen duvet",
+      "question": "Do you have the Ridge linen duvet in king size? I ordered one last month, it arrived damaged, and I would like to reorder rather than wait for a replacement."
+    }
+  ]
+}

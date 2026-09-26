@@ -18,13 +18,21 @@ export function attachTerminal({ container, sessionId, token, onNotice, onStatus
   const term = new Terminal({
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     fontSize: 13,
+    lineHeight: 1.2,
     cursorBlink: true,
-    theme: { background: '#0b0e13', foreground: '#e6e9ef', cursor: '#5b9dd9' },
+    scrollback: 5000,
+    theme: {
+      background: '#0b0e13',
+      foreground: '#e6e9ef',
+      cursor: '#6aaee8',
+      cursorAccent: '#0b0e13',
+      selectionBackground: 'rgba(106, 174, 232, 0.35)',
+    },
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(container);
-  fit.fit();
+  safeFit();
 
   const ws = new WebSocket(terminalUrl(sessionId, token));
   ws.binaryType = 'arraybuffer';
@@ -34,8 +42,12 @@ export function attachTerminal({ container, sessionId, token, onNotice, onStatus
   ws.onopen = () => {
     open = true;
     onStatus?.('open');
+    safeFit();
     sendResize();
-    term.focus();
+    // Only take focus when the terminal is on screen: a reconnect after a
+    // container restart would otherwise pull the cursor out of the editor
+    // mid-keystroke, and send the next few keys to a shell nobody can see.
+    if (container.offsetWidth) term.focus();
   };
 
   ws.onmessage = (event) => {
@@ -77,16 +89,40 @@ export function attachTerminal({ container, sessionId, token, onNotice, onStatus
 
   term.onResize(sendResize);
 
-  const onWindowResize = () => {
-    fit.fit();
-  };
-  window.addEventListener('resize', onWindowResize);
+  /**
+   * Fitting a hidden terminal (the Brief tab is showing, so this view is
+   * display:none) measures zero and would shrink the PTY to nothing, so
+   * only fit something that is actually laid out.
+   */
+  function safeFit() {
+    if (!container.offsetWidth || !container.offsetHeight) return;
+    try {
+      fit.fit();
+    } catch {
+      /* xterm not ready yet; the next resize fits it */
+    }
+  }
+
+  /**
+   * Refit whenever the terminal's own box changes, not only when the window
+   * does: the side panes collapse at narrower widths, the operator's
+   * activity pane comes and goes, and the view is revealed by a tab switch
+   * — none of which fire a window resize. One fit per frame is plenty.
+   */
+  let frame = 0;
+  const observer = new ResizeObserver(() => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(safeFit);
+  });
+  observer.observe(container);
 
   return {
     term,
-    refit: () => fit.fit(),
+    refit: safeFit,
+    focus: () => term.focus(),
     dispose() {
-      window.removeEventListener('resize', onWindowResize);
+      observer.disconnect();
+      cancelAnimationFrame(frame);
       try {
         ws.close();
       } catch {

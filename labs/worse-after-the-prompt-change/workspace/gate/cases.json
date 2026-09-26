@@ -1,0 +1,35 @@
+{
+  "note": "A starting set of eval cases. Each one has a message and the outcome a correct reply must carry -- expected_policy_id and expected_escalate_to, computed with gate/policy.py so they can never drift from the rule the desk itself follows. This is deliberately a small, easy set: five short messages, one per plan/account/import/refund/privacy flavour. It does not include anything long, anything with more than one thing going on in it, or anything from the security queue. Whether that gap matters is something to find out, not something this file tells you.",
+  "cases": [
+    {
+      "id": "case-01",
+      "message": "How many seats does the growth plan include?",
+      "expected_policy_id": "POL-23",
+      "expected_escalate_to": null
+    },
+    {
+      "id": "case-02",
+      "message": "Can I get a refund for last month's charge?",
+      "expected_policy_id": "POL-04",
+      "expected_escalate_to": "billing"
+    },
+    {
+      "id": "case-03",
+      "message": "What is your data retention period?",
+      "expected_policy_id": "POL-11",
+      "expected_escalate_to": "privacy"
+    },
+    {
+      "id": "case-04",
+      "message": "The csv import keeps rejecting rows, can you help?",
+      "expected_policy_id": "POL-14",
+      "expected_escalate_to": null
+    },
+    {
+      "id": "case-05",
+      "message": "Just checking, what plan are we currently on?",
+      "expected_policy_id": "POL-02",
+      "expected_escalate_to": null
+    }
+  ]
+}

@@ -13,8 +13,8 @@
  * downloads the Python parser.
  */
 import { basicSetup } from 'codemirror';
-import { EditorView } from '@codemirror/view';
-import { Compartment } from '@codemirror/state';
+import { EditorView, keymap } from '@codemirror/view';
+import { Compartment, Prec } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
 
 /** Grammar per file extension, imported on demand so the initial load stays small. */
@@ -36,22 +36,40 @@ async function loadLanguage(filename) {
   return GRAMMARS[ext] ? GRAMMARS[ext]() : null;
 }
 
-export async function createEditor(mount, { onChange } = {}) {
+export async function createEditor(mount, { onChange, onSave } = {}) {
   const languageSlot = new Compartment();
+  // Replacing the document to open a file is not an edit, and reporting it
+  // as one made every freshly opened file look unsaved.
+  let loading = false;
 
   const editor = new EditorView({
     doc: '',
     parent: mount,
     extensions: [
+      // Mod-s is the reflex for "save" in every editor a learner has used;
+      // without this the browser opened its own "Save page as" dialog.
+      Prec.highest(
+        keymap.of([
+          {
+            key: 'Mod-s',
+            preventDefault: true,
+            run: () => {
+              onSave?.();
+              return true;
+            },
+          },
+        ])
+      ),
       basicSetup,
       oneDark,
       languageSlot.of([]),
       EditorView.updateListener.of((u) => {
-        if (u.docChanged) onChange?.();
+        if (u.docChanged && !loading) onChange?.();
       }),
       EditorView.theme({
-        '&': { height: '100%', fontSize: '13px' },
-        '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
+        '&': { height: '100%', fontSize: '13px', backgroundColor: '#0b0e13' },
+        '.cm-gutters': { backgroundColor: '#0b0e13', borderRight: '1px solid #262e3a' },
+        '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', lineHeight: '1.55' },
       }),
     ],
   });
@@ -59,10 +77,17 @@ export async function createEditor(mount, { onChange } = {}) {
   return {
     async load(text, filename) {
       const language = await loadLanguage(filename);
-      editor.dispatch({
-        changes: { from: 0, to: editor.state.doc.length, insert: text },
-        effects: languageSlot.reconfigure(language ? [language] : []),
-      });
+      loading = true;
+      try {
+        editor.dispatch({
+          changes: { from: 0, to: editor.state.doc.length, insert: text },
+          effects: languageSlot.reconfigure(language ? [language] : []),
+          selection: { anchor: 0 },
+          scrollIntoView: true,
+        });
+      } finally {
+        loading = false;
+      }
     },
     value: () => editor.state.doc.toString(),
     focus: () => editor.focus(),

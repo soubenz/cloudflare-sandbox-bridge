@@ -1,0 +1,29 @@
+# Three aliases, one scripted provider process with two "deployments" (just
+# two different URL paths, /a/v1 and /b/v1 -- see
+# workspace/services/fake_provider.py). A caller only ever names the alias;
+# LiteLLM decides which deployment actually answers.
+#
+# `internal-eval` is not a typo and not for any team: it is the platform's
+# own alias, pointed at deployment a like `support`, and it is deliberately
+# never listed in any team's `models` in platform/teams.yaml. A key scoped to
+# a team can only ever be used for that team's own allowed models -- so no
+# key this lab hands out, however it was created, can ever call
+# `internal-eval` through this gateway. That is what "one endpoint, one key"
+# is supposed to guarantee: the endpoint is shared, but a key only ever
+# reaches what its team was actually granted.
+model_list:
+  - model_name: support
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/a/v1
+      api_key: unused
+  - model_name: fast
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/b/v1
+      api_key: unused
+  - model_name: internal-eval
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/a/v1
+      api_key: unused

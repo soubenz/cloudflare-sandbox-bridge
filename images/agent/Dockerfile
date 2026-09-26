@@ -84,6 +84,18 @@ ENV GF_PLUGINS_PREINSTALL_DISABLED=true
 # confirmed by a real CI build failure (23 Sep 2026, "pip: not found").
 RUN python3 -m pip install --no-cache-dir "litellm[proxy]"
 
+# Python's httpx/requests (unlike curl and urllib) verify against
+# certifi's bundled CA list, not the system store, so they ignore the CA
+# that opalix-init.sh adds to the system store at boot
+# (update-ca-certificates). Confirmed live: httpx failed
+# CERTIFICATE_VERIFY_FAILED against the allowed AI Gateway host while
+# curl and urllib reached it fine; pointing httpx/requests at the system
+# bundle here fixed it. This only takes effect once opalix-init.sh has
+# actually installed the CA at boot -- the file doesn't exist yet at
+# build time.
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+
 # --- Unprivileged learner user; the terminal and workspace files run as this user ---
 RUN useradd -m -s /bin/bash learner \
     && mkdir -p /workspace /opt/lab \

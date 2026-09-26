@@ -1,0 +1,55 @@
+{
+  "queue": "front-desk",
+  "generated_at": "2026-09-25T09:05:00Z",
+  "requests": [
+    {
+      "id": "REQ-4401",
+      "asker": "Priya Raghunathan",
+      "account": "Northwind Analytics",
+      "topic": "billing",
+      "request": "Our October invoice has two seat licences on it and we only have one seat. Can somebody tell me which one is wrong before I pay it?"
+    },
+    {
+      "id": "REQ-4402",
+      "asker": "Tomas Eriksson",
+      "account": "Bluefin Logistics",
+      "topic": "data",
+      "request": "I need last quarter's usage export as a CSV, broken down by workspace. Is that something I can do myself or do you have to run it?"
+    },
+    {
+      "id": "REQ-4403",
+      "asker": "Grace Achebe",
+      "account": "Halyard Freight",
+      "topic": "access",
+      "request": "I have been locked out since nine this morning. The sign-in page spins and then says nothing at all. Three of my team are in the same state and we have a customer call at two."
+    },
+    {
+      "id": "REQ-4404",
+      "asker": "Dmitri Sokolov",
+      "account": "Corvid Media",
+      "topic": "billing",
+      "request": "We were charged in euros this month and in dollars every month before it. Which is the correct currency for our contract, and does it change the amount?"
+    },
+    {
+      "id": "REQ-4405",
+      "asker": "Hana Kobayashi",
+      "account": "Seto Instruments",
+      "topic": "integration",
+      "request": "Our webhook receiver has been getting duplicate deliveries since Tuesday, always exactly two, about a second apart. Is that us or you?"
+    },
+    {
+      "id": "REQ-4406",
+      "asker": "Beatrice Lindqvist",
+      "account": "Kestrel Grid",
+      "topic": "data",
+      "request": "Somebody on my team deleted a workspace yesterday afternoon. How far back does a restore go, and what do you need from me to start one?"
+    },
+    {
+      "id": "REQ-4407",
+      "asker": "Marcus Oyelaran",
+      "account": "Ferrule Works",
+      "topic": "access",
+      "request": "Can you remove an admin who left the company on Friday, and tell me what happens to the API tokens she created?"
+    }
+  ]
+}

@@ -1,0 +1,195 @@
+# P1-05 in the lab catalogue: context management, break-fix, Real mode.
+#
+# Titled by symptom rather than by the concept being taught. Three planted
+# bugs, all of them ordinary, and all in the same small corner: the packer in
+# workspace/agent/window.py drops messages from the *front* of the
+# conversation, which is where the system prompt and the policy live; it
+# decides how much to drop by counting messages rather than tokens, which is
+# a unit with no relationship to the limit it is respecting; and it leans on
+# workspace/agent/summarise.py to carry forward what it dropped, which a
+# summary cannot promise to do. Each file is locally reasonable. The bug is
+# the conclusion they add up to.
+#
+# This is a Real-mode lab: the requests go to a real model through the
+# session's AI Gateway, with no credential in the container. The graders do
+# not read a single reply. Everything they assert is a property of the
+# *request* -- its size, the rules in it, the turns in it -- recorded by the
+# service that received it, so the verdicts are facts about the learner's
+# system and not about what a model happened to say.
+#
+# There is deliberately no hints.md: everything in workspace/ is readable
+# from minute zero, so a hints file is not gated at all. The staged hints
+# below are, and they are the only hints this lab ships.
+slug: forgotten-rules
+version: 1.0.0
+title: "The agent forgot its rules at message 40"
+type: break-fix
+family: agent
+difficulty: core
+summary: >-
+  A support assistant follows its policy perfectly for the first half of a long
+  case and then starts breaking it, offering a refund it may not offer. The
+  conversation is trimmed to fit the model's context window. Sending all of it
+  is not the fix.
+objectives:
+  - "Treat a model's context window as a budget with entries in it that may never be evicted"
+  - "Bound a request by the tokens it carries rather than by the number of messages in it"
+  - "Prove what an agent sent from the record of the requests themselves, not from the replies"
+# The work is 40-55 minutes. More than the 60-minute floor because every run
+# over the case is one real model call per customer turn, so a learner here
+# iterates more slowly than in a lab with a local stub.
+timeout_minutes: 75
+idle_minutes: 10
+
+env:
+  # Wiring. The agent talks to the context service, not to the gateway: that
+  # service is the desk's gateway, and it is what records the requests.
+  MODEL_URL: "http://127.0.0.1:8794"
+  DESK_URL: "http://127.0.0.1:8795"
+  CONTEXT_PORT: "8794"
+  DESK_PORT: "8795"
+  CASE_FILE: "/workspace/case-4417.json"
+  # The agent's tunables. Every one has a matching default in
+  # workspace/agent/config.py, so the agent also runs from a bare shell.
+  # MODEL_NAME is only a label: the name the gateway actually needs is
+  # $LLM_MODEL, which the context service substitutes on the way out so the
+  # agent never has to hold provider details.
+  MODEL_NAME: "support-desk"
+  MODEL_TIMEOUT_S: "60"
+  DESK_TIMEOUT_S: "5"
+  MAX_ATTEMPTS: "3"
+  RETRY_BASE_DELAY_S: "0.25"
+  # The two numbers this lab is about.
+  #
+  # MODEL_CONTEXT_TOKENS is not ours to choose: 32,000 is the context window
+  # documented for @cf/meta/llama-3.1-8b-instruct-fp8, the model the session
+  # is given, and it covers the request *and* the reply. It is lower than most
+  # people guess, which is itself part of the lesson -- the full 42-message
+  # transcript of this one case is about 35,600 tokens, so a run that never
+  # trims does not merely get expensive, it gets refused.
+  #
+  # PROMPT_BUDGET_TOKENS is ours: what one request is allowed to carry. Well
+  # under the window, because the window is shared with the reply and because
+  # every token in a request is read, and billed, again on every later turn.
+  # The reference fix lands at about 3,700, so 6,000 is generous rather than
+  # tight -- the check is meant to reject an unbounded request, not to grade
+  # packing efficiency.
+  MODEL_CONTEXT_TOKENS: "32000"
+  MAX_COMPLETION_TOKENS: "160"
+  PROMPT_BUDGET_TOKENS: "6000"
+  # The knob the planted bug turns, and the reason it is a bug: 30 messages of
+  # chat is a small request, and 30 messages with four pasted logs in them is
+  # five times the budget.
+  KEEP_MESSAGES: "30"
+  # Real mode. There is no fault injection in this lab: the wall the desk hits
+  # is the model's own context window, and the case file is what walks it into
+  # it. What is configured here is how the call to the real model is made.
+  #
+  # auto = call the gateway, and fall back to a fixed local reply if it cannot
+  # be reached at all. A lab must not fail a learner because a provider had a
+  # bad minute, and since no check reads a reply, the fallback cannot move a
+  # verdict either. Set MODEL_MODE=live to make an unreachable gateway an
+  # error instead.
+  MODEL_MODE: "auto"
+  UPSTREAM_ATTEMPTS: "2"
+  UPSTREAM_TIMEOUT_S: "45"
+  # Requests go out with an explicit cf-aig-cache-key and this TTL, so a
+  # repeated run is served from the gateway's cache, byte for byte and free.
+  # The explicit-key path needs two sequential repeats before it hits (see the
+  # AI Gateway section of docs/spike.md), so an early MISS is normal and is
+  # never treated as an error.
+  MODEL_CACHE_TTL_S: "86400"
+  # How many of the newest turns a request must carry, for the third check.
+  # The graders' floor, not the fix's: the reference fix keeps six.
+  RECENT_TURNS_REQUIRED: "3"
+  # The harness's own budget for one run of the agent, nested inside each
+  # check's timeout_s below, so an over-running agent is reported with a
+  # diagnosis rather than by the platform as a bare timeout. Higher than the
+  # harness default because a run here is 17 real model calls.
+  OPALIX_AGENT_RUN_TIMEOUT_S: "150"
+
+services:
+  # The context service is the diagnostic: it is the record of what the desk
+  # actually put in each request -- the size, which rules and constraints were
+  # in it, which turns were in it. The agent prints its own estimate when it
+  # finishes and the estimate is not the problem; what it cannot tell you is
+  # what fell out of the request while it was being assembled.
+  - name: context
+    argv: ["python3", "/workspace/services/context_proxy.py"]
+    cwd: /workspace
+    port: 8794
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: []
+  - name: desk
+    argv: ["python3", "/workspace/services/desk_service.py"]
+    cwd: /workspace
+    port: 8795
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: []
+
+pressure:
+  - id: escalation
+    at_minutes: 8
+    argv: ["/opt/lab/pressure/escalation.sh"]
+    title: "The customer has escalated, and the thread just got longer"
+    message: >-
+      Three more messages have landed on case 4417, one of them from the
+      customer's account manager quoting the reply we should never have sent.
+      Every one of them is another turn the desk has to answer, and the
+      conversation only gets longer from here.
+
+checks:
+  - name: rules-survive-every-call
+    script: rules-survive-every-call.sh
+    timeout_s: 240
+    weight: 2
+  # The strongest anti-cheat. Keeping the rules by never dropping anything
+  # keeps them right up to the point where the provider refuses the request,
+  # and bills for every token of the conversation on every single turn until
+  # it does.
+  - name: context-stays-inside-the-budget
+    script: context-stays-inside-the-budget.sh
+    timeout_s: 240
+    weight: 2
+  - name: recent-turns-are-still-there
+    script: recent-turns-are-still-there.sh
+    timeout_s: 240
+    weight: 1
+
+hints:
+  - after_minutes: 8
+    text: >-
+      Open the context tab and read down the calls, then compare call 3 with
+      call 14. It shows what went into each request, not what came back. The
+      agent's own closing estimate is not evidence of what it sent.
+  - after_minutes: 16
+    text: >-
+      Two columns are doing the work. One says which of the case's rules and
+      constraints were in that request; the other is the token count, which is
+      not the message count and does not move with it. Scroll to the
+      message-by-message table for the last request and look at what is at the
+      top of it.
+  - after_minutes: 26
+    text: >-
+      A request has a size limit, so on a long case something has to be left
+      out -- the question is what chooses. Position in a list is the wrong
+      thing to choose by, because the front of the list is where the rules
+      are. Some entries may never be evicted: the policy, the constraints this
+      customer stated, and the turns nearest the one being answered.
+      Everything else is negotiable, including whether an old pasted log goes
+      in at all. And a summary is a place to keep the gist, not a place to
+      keep a rule.
+
+egress:
+  allow: []
+  # Empty on purpose. gateway.ai.cloudflare.com is already on the family's
+  # base allowlist, which is the only host this lab needs, and an empty list
+  # skips the runtime set_allowed_hosts call entirely.

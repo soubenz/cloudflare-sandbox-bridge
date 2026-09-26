@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Opalix lab console</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▣</text></svg>">
 <link rel="stylesheet" href="./dist/xterm.css">
@@ -12,115 +13,173 @@
 
 <!-- Shown from the moment a lab is launched until it is actually usable. -->
 <div class="modal" id="bootModal" hidden>
-  <div class="modal-card">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="bootTitle" aria-describedby="bootDetail">
     <div class="spinner" aria-hidden="true"></div>
+    <div class="boot-failed-mark" aria-hidden="true">!</div>
     <h2 id="bootTitle">Starting your lab</h2>
-    <p class="muted small" id="bootDetail">Claiming a container…</p>
+    <p class="muted small" id="bootDetail" aria-live="polite">Claiming a container…</p>
     <ol class="boot-steps" id="bootSteps">
       <li data-step="container">Container</li>
       <li data-step="workspace">Workspace files</li>
       <li data-step="services">Services</li>
       <li data-step="terminal">Terminal</li>
     </ol>
-    <p class="small muted">This usually takes a few seconds. A cold start can take up to 30.</p>
-    <p class="error small" id="bootError" hidden></p>
+    <p class="small muted" id="bootHint">This usually takes a few seconds, sometimes up to 30.</p>
+    <p class="notice notice-bad small" id="bootError" role="alert" hidden></p>
+    <div class="modal-actions" id="bootActions" hidden>
+      <button id="btnBootLabs" class="btn">Back to labs</button>
+      <button id="btnBootRetry" class="btn btn-primary">Keep waiting</button>
+    </div>
   </div>
 </div>
 
 <header class="bar">
-  <div class="brand">▣ <strong>Opalix</strong> <span class="muted">lab console</span></div>
+  <div class="brand"><span class="brand-mark" aria-hidden="true">▣</span> <strong>Opalix</strong> <span class="muted">lab console</span></div>
 
   <div class="bar-session" id="sessionBar" hidden>
     <span class="pill" id="statePill">—</span>
-    <span class="mono muted" id="sessionLab"></span>
-    <span class="mono muted small" id="sessionId"></span>
+    <span class="session-lab">
+      <span class="session-title" id="sessionTitle"></span>
+      <span class="mono muted small" id="sessionLab"></span>
+    </span>
+    <span class="mono muted small session-id" id="sessionId"></span>
     <span class="timer" id="expiryTimer" title="Time until the hard timeout"></span>
   </div>
 
   <div class="bar-actions">
-    <button id="btnChecks" class="btn" disabled>Run checks</button>
-    <button id="btnSnapshot" class="btn" disabled>Snapshot</button>
-    <button id="btnEnd" class="btn btn-danger" disabled>End session</button>
-    <button id="btnBackToLabs" class="btn" hidden>← Labs</button>
-    <button id="btnOps" class="btn btn-ghost" aria-pressed="false">Operator</button>
+    <div class="session-actions" id="sessionActions" hidden>
+      <button id="btnChecks" class="btn btn-primary" disabled>Run checks</button>
+      <button id="btnSnapshot" class="btn" disabled title="Save the workspace so it survives a container restart">Snapshot</button>
+      <button id="btnEnd" class="btn btn-danger" disabled>End session</button>
+    </div>
+    <button id="btnBackToLabs" class="btn btn-primary" hidden>← Back to labs</button>
   </div>
 </header>
 
 <!-- No session yet: pick a lab -->
 <section class="launcher" id="launcher">
-  <h1>Start a lab</h1>
-  <p class="muted">
-    Each lab runs in its own container. One live session per address — end the
-    current one before starting another.
-  </p>
-  <div id="labList" class="lab-list"><p class="muted">Loading labs…</p></div>
-  <p class="error" id="launchError" hidden></p>
+  <div class="launcher-head">
+    <h1>Start a lab <span class="count" id="labCount"></span></h1>
+    <p class="muted">
+      Each lab runs in its own container, with a terminal, an editor and the
+      lab's services. You can have one lab running at a time — starting
+      another while one is live takes you back to the one you have.
+    </p>
+  </div>
+  <div id="labList" class="lab-list" aria-busy="true">
+    <div class="lab-skeleton" aria-hidden="true"></div>
+    <div class="lab-skeleton" aria-hidden="true"></div>
+    <div class="lab-skeleton" aria-hidden="true"></div>
+    <p class="sr-only">Loading labs…</p>
+  </div>
+  <p class="notice notice-bad" id="launchError" role="alert" hidden></p>
 </section>
 
 <!-- Live session -->
 <main class="workspace" id="workspace" hidden>
-  <aside class="pane pane-left">
+  <aside class="pane pane-left" aria-label="Checks, hints and files">
     <section class="block">
-      <h2>Checks</h2>
-      <div id="checksPanel"><p class="muted small">Not run yet.</p></div>
+      <h2>
+        Checks
+        <span class="block-meta" id="checksSummary"></span>
+      </h2>
+      <div id="checksPanel" class="block-body" aria-live="polite"><p class="muted small">Not run yet. Run checks to grade your work so far.</p></div>
+    </section>
+
+    <!-- Every service the lab runs, including the ones with no tab, so a
+         learner who changed a service's config can restart it. -->
+    <section class="block" id="servicesBlock" hidden>
+      <h2>Services</h2>
+      <ul class="svc-list" id="serviceList" aria-live="polite"></ul>
     </section>
 
     <section class="block">
       <h2>Hints</h2>
-      <div id="hintsPanel"><p class="muted small">Hints unlock on a timer.</p></div>
+      <div id="hintsPanel" class="block-body" aria-live="polite"><p class="muted small">Hints unlock on a timer as the lab goes on.</p></div>
     </section>
 
     <section class="block block-grow">
       <h2>
         Workspace
-        <button id="btnNewFile" class="btn btn-tiny" title="Create a file in /workspace">+ New</button>
-        <button id="btnRefreshFiles" class="btn btn-tiny" title="Reload the file list">↻</button>
+        <span class="block-actions">
+          <button id="btnNewFile" class="btn btn-tiny" title="Create a file in /workspace">+ New file</button>
+          <button id="btnRefreshFiles" class="btn btn-tiny btn-icon" title="Reload the file list" aria-label="Reload the file list">↻</button>
+        </span>
       </h2>
-      <ul class="files" id="fileList"><li class="muted">loading…</li></ul>
-      <p class="error small" id="fileError" hidden></p>
+      <ul class="files" id="fileList" aria-label="Files in /workspace"><li class="muted">loading…</li></ul>
+      <p class="notice notice-bad small" id="fileError" role="alert" hidden></p>
     </section>
   </aside>
 
   <section class="pane pane-center">
-    <nav class="tabs" id="centerTabs">
-      <button class="tab tab-active" data-view="brief">Brief</button>
-      <button class="tab" data-view="terminal">Terminal</button>
-      <button class="tab" data-view="editor">Editor</button>
-      <span class="tab-spacer"></span>
-      <span id="serviceTabs"></span>
+    <p class="ended-banner" id="endedBanner" role="status" hidden>
+      <span id="endedText">This session has ended.</span>
+    </p>
+    <nav class="tabs" id="centerTabs" role="tablist" aria-label="Session views">
+      <button class="tab tab-active" data-view="brief" role="tab" aria-selected="true" aria-controls="viewBrief">Brief</button>
+      <button class="tab" data-view="terminal" role="tab" aria-selected="false" aria-controls="viewTerminal">Terminal</button>
+      <button class="tab" data-view="editor" role="tab" aria-selected="false" aria-controls="viewEditor">Editor</button>
+      <span class="tab-spacer" role="presentation"></span>
+      <span class="tab-group-label" id="serviceLabel" role="presentation" hidden>Services</span>
+      <span id="serviceTabs" class="service-tabs" role="presentation"></span>
     </nav>
 
-    <div class="view view-active" id="viewBrief">
+    <div class="view view-active" id="viewBrief" role="tabpanel" aria-label="Brief">
       <article class="brief" id="briefBody"><p class="muted">Loading the brief…</p></article>
     </div>
 
-    <div class="view" id="viewTerminal">
+    <div class="view" id="viewTerminal" role="tabpanel" aria-label="Terminal">
       <div id="term"></div>
       <div class="term-status" id="termStatus" hidden>
-        <p id="termStatusText">Terminal disconnected.</p>
-        <button id="btnReconnectTerm" class="btn btn-tiny">Reconnect</button>
+        <div class="term-status-card">
+          <p id="termStatusText">Terminal disconnected.</p>
+          <button id="btnReconnectTerm" class="btn btn-primary">Reconnect</button>
+        </div>
       </div>
     </div>
 
-    <div class="view" id="viewEditor">
+    <div class="view" id="viewEditor" role="tabpanel" aria-label="Editor">
       <div class="editor-head">
-        <span class="mono" id="editorPath">No file open</span>
-        <button id="btnSaveFile" class="btn btn-tiny" disabled>Save</button>
-        <span class="small muted" id="editorStatus"></span>
+        <span class="mono editor-path" id="editorPath">No file open</span>
+        <span class="small editor-status" id="editorStatus" aria-live="polite"></span>
+        <span class="editor-head-spacer"></span>
+        <kbd class="small muted editor-kbd" id="saveShortcut">Ctrl S</kbd>
+        <button id="btnSaveFile" class="btn btn-tiny btn-primary" disabled>Save</button>
       </div>
       <div id="editorMount" class="editor-mount"></div>
-      <p class="muted small editor-empty" id="editorEmpty">Open a file from the workspace list, or create one.</p>
+      <div class="empty-state" id="editorEmpty">
+        <p>No file open.</p>
+        <p class="muted small">Pick a file from the Workspace list, or create one with <strong>+ New file</strong>.</p>
+      </div>
     </div>
 
-    <div class="view" id="viewService">
-      <iframe id="serviceFrame" title="Service UI"></iframe>
+    <div class="view" id="viewService" role="tabpanel" aria-label="Service">
+      <div class="service-head">
+        <span class="mono" id="serviceName"></span>
+        <span class="small muted" id="serviceStatus" aria-live="polite"></span>
+        <span class="editor-head-spacer"></span>
+        <button id="btnServiceReload" class="btn btn-tiny">Reload</button>
+        <a id="serviceOpen" class="btn btn-tiny" target="_blank" rel="noopener noreferrer" href="#">Open in new tab ↗</a>
+      </div>
+      <div class="service-body">
+        <iframe id="serviceFrame" title="Service UI"></iframe>
+        <div class="service-loading" id="serviceLoading" hidden>
+          <div class="spinner" aria-hidden="true"></div>
+          <p class="small muted" id="serviceLoadingText">Loading…</p>
+        </div>
+      </div>
     </div>
   </section>
 
-  <aside class="pane pane-right">
+  <!--
+    The curated activity feed is operator-only: it appears once a service
+    key has been accepted in this tab (see setAdmin in app.js), never for a
+    learner.
+  -->
+  <aside class="pane pane-right" id="activityPane" aria-label="Lab activity" hidden>
     <section class="block block-grow">
-      <h2>Lab activity</h2>
-      <ol class="events" id="noticeList"></ol>
+      <h2>Lab activity <span class="block-meta">operator</span></h2>
+      <ol class="events" id="noticeList" aria-live="polite"></ol>
       <p class="muted small" id="noticeEmpty">Nothing yet. Pressure events, hints and warnings appear here.</p>
     </section>
   </aside>
@@ -138,30 +197,39 @@
 
   <div class="ops-auth">
     <label for="opsKey" class="small">
-      Service key — required for prime and drain. Kept in this tab only.
+      Service key — required for prime and drain, and turns on operator
+      mode (the lab activity panel) in this tab. Kept in this tab only.
     </label>
     <div class="row">
       <input id="opsKey" type="password" placeholder="SANDBOX_API_KEY" autocomplete="off">
       <button id="btnSaveKey" class="btn btn-tiny">Use key</button>
-      <span class="small muted" id="opsKeyStatus"></span>
+      <span class="small muted" id="opsKeyStatus" aria-live="polite"></span>
     </div>
   </div>
 
-  <div class="ops-auth">
+  <div class="ops-auth" id="eventStreamBlock" hidden>
     <h2 class="small muted">Event stream <span id="eventCount"></span></h2>
     <p class="muted small">
       Every event the session emits, including the telemetry a learner has no
-      use for — metrics, cost, check progress, state transitions. Only the
-      lab-facing ones reach the learner's activity panel.
+      use for — metrics, cost, check progress, state transitions.
     </p>
     <ol class="events" id="eventList"></ol>
   </div>
+  <p class="muted small ops-locked" id="eventStreamLocked">
+    Enter a service key above to see the raw event stream.
+  </p>
 </section>
 
 <footer class="footer">
   <span class="small muted">API <span class="mono" id="apiLabel"></span></span>
-  <button class="btn btn-tiny btn-ghost" id="btnChangeApi">change</button>
+  <span class="footer-spacer"></span>
+  <button id="btnOps" class="btn btn-tiny btn-ghost" aria-pressed="false">Operator</button>
 </footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden>
+  <span id="toastText"></span>
+  <button class="btn btn-tiny btn-ghost btn-icon" id="btnToastClose" aria-label="Dismiss">×</button>
+</div>
 
 <script type="module" src="./dist/app.js"></script>
 </body>

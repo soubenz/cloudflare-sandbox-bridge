@@ -1,0 +1,202 @@
+# P4-01 in the lab catalogue: Path 4 (Evals and Safe Releases), an eval gate
+# in CI. Build, agent family, Real mode, advanced.
+#
+# Advanced rather than core: this is not "find the planted bug in one file."
+# The learner has to build a scorer, a comparison against a pinned baseline
+# with a margin wide enough to absorb real model noise but narrow enough to
+# still catch a real regression, a refusal that explains itself in a
+# structured record, and a request-builder that does not hand a candidate
+# anything an eval case's answer key would give away. Four properties, and
+# a gate that gets three of them right and one wrong (ships everything,
+# scores on one case, or leaks the answer key) still fails.
+#
+# AI Gateway Evaluations are deprecated and unavailable on new accounts, so
+# this lab's eval harness is built entirely in-lab: gate/, candidates/ and
+# the judge service below are the whole of it, not a wrapper around a
+# platform feature.
+#
+# The gap is spread across three files in gate/, each locally reasonable on
+# its own: request.py hands a candidate the whole case record because that
+# is the convenient thing to do; scoring.py calls the judge once per case
+# because that is the obvious thing to do; decision.py ships anything that
+# clears a flat bar because a bar is the simplest decision rule there is.
+# None of the three looks wrong reading it alone. What is missing is that
+# together they cannot refuse a real regression, cannot resist a candidate
+# that detects it is being scored, and were never asked to survive being
+# run twice.
+#
+# There is deliberately no hints.md: everything in workspace/ is readable
+# from minute zero, so a hints file is not gated at all. The staged hints
+# below are, and they are the only hints this lab ships.
+slug: worse-after-the-prompt-change
+version: 1.0.0
+title: "A worse prompt shipped and nothing caught it"
+type: build
+family: agent
+difficulty: advanced
+summary: >-
+  A shortened prompt shipped last week because nothing measured whether it
+  made replies worse. Build the gate: cases, a scorer, and a ship-or-refuse
+  decision that catches a real regression, still ships a real fix, and
+  resists a candidate that knows it's being tested.
+objectives:
+  - "Compare a candidate against a pinned baseline with a margin wide enough for real model noise, not an absolute bar typed in once"
+  - "Build a case set that actually exercises the way a change can get worse, not just the cases that were easy to write"
+  - "Keep an eval's own bookkeeping -- ids, answer keys, anything that says 'this is a test' -- out of what a candidate is handed"
+  - "Write a refusal that a pipeline and a human can both act on, from a record your own services kept"
+# Advanced, and every run scores two candidates (the one under test and the
+# pinned baseline) over the whole case set, one real model call each -- more
+# iterations than a single-bug break-fix, and each one is real work.
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  JUDGE_URL: "http://127.0.0.1:8901"
+  RELEASE_URL: "http://127.0.0.1:8902"
+  JUDGE_PORT: "8901"
+  RELEASE_PORT: "8902"
+  POLICY_FILE: "/workspace/policy/index.json"
+  CASE_FILE: "/workspace/gate/cases.json"
+  # Real mode. auto = call the gateway, and fall back to a fixed local
+  # reply table if it cannot be reached at all -- a lab must not fail a
+  # learner because a provider had a bad minute. Because grading never
+  # reads a reply as prose (the judge reduces every reply to three
+  # booleans before anything else sees it), the fallback cannot move a
+  # verdict either. Set MODEL_MODE=live to make an unreachable gateway an
+  # error instead.
+  MODEL_MODE: "auto"
+  UPSTREAM_ATTEMPTS: "2"
+  UPSTREAM_TIMEOUT_S: "45"
+  MAX_COMPLETION_TOKENS: "220"
+  # Requests go out with an explicit cf-aig-cache-key and this TTL, so a
+  # repeated run over the same case set is served from the gateway's
+  # cache. The explicit-key path needs two sequential repeats before it
+  # HITs (see the AI Gateway section of docs/spike.md), so an early MISS
+  # is normal and is never treated as an error.
+  MODEL_CACHE_TTL_S: "86400"
+  # The harness's own budget for one `run_gate.py <candidate>` invocation,
+  # nested inside each check's timeout_s below, so a gate that hangs is
+  # reported with a diagnosis rather than by the platform as a bare
+  # timeout. A run scores two candidates (the one under test and the
+  # pinned baseline) over the whole case set -- up to two real model calls
+  # per case.
+  OPALIX_GATE_RUN_TIMEOUT_S: "120"
+  # The reliability table's own definition of "a long, detailed message" --
+  # declared here so the graders and the judge service can never drift
+  # apart on it. See workspace/services/judge_service.py.
+  HARD_CASE_CHARS: "200"
+  # The floor challenger_priority_fix's own score must clear before the
+  # ships-a-real-improvement check even asks whether the gate shipped it --
+  # a sanity check on the fixture, not on the learner's fix.
+  IMPROVEMENT_MIN_SCORE: "0.90"
+
+services:
+  # The judge is the desk's model gateway: every drafting call goes through
+  # it, and it is also where "did the reply carry the policy reference, the
+  # escalation tag and the disclosure line" gets decided -- once, here, as
+  # three booleans, so nothing downstream (including these graders) ever
+  # reads a reply as prose. ui: false: it is plumbing, read from the
+  # terminal with curl if you want to see it, not a tab.
+  - name: judge
+    argv: ["python3", "/workspace/services/judge_service.py"]
+    cwd: /workspace
+    port: 8901
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: []
+  # The release service is the diagnostic: it is the pipeline. It never
+  # re-scores anything itself -- it only records what the gate told it and
+  # acts on that, the same way a real release pipeline would. The
+  # **release** tab is where an anomaly gets named in plain words.
+  - name: release
+    argv: ["python3", "/workspace/services/release_service.py"]
+    cwd: /workspace
+    port: 8902
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: []
+
+pressure:
+  - id: ship-it-today
+    at_minutes: 12
+    argv: ["/opt/lab/pressure/ship-it-today.sh"]
+    title: "Leadership wants the trimmed prompt live before end of day"
+    message: >-
+      The token-cost savings from challenger_trim have made it to a slide.
+      Nobody asked whether it answers as completely as what's live now --
+      that question has your name on it, and it needs an answer a pipeline
+      can act on, not a vibe.
+
+checks:
+  # The strongest single signal, and the one most gate designs miss: does
+  # it actually refuse something worse. Weighted accordingly.
+  - name: refuses-a-real-regression
+    script: refuses-a-real-regression.sh
+    timeout_s: 200
+    weight: 2
+  # The anti-cheat for the check above: a gate that refuses everything
+  # would pass it by building nothing at all.
+  - name: ships-a-real-improvement
+    script: ships-a-real-improvement.sh
+    timeout_s: 200
+    weight: 2
+  # Runs the same candidate twice, under two different fixed samples of
+  # model noise. The anti-cheat for a gate that only looks stable because
+  # it barely looked at anything.
+  - name: decision-holds-under-noise
+    script: decision-holds-under-noise.sh
+    timeout_s: 280
+    weight: 2
+  - name: refusal-is-legible
+    script: refusal-is-legible.sh
+    timeout_s: 200
+    weight: 1
+  - name: gate-resists-eval-leakage
+    script: gate-resists-eval-leakage.sh
+    timeout_s: 200
+    weight: 2
+
+hints:
+  - after_minutes: 10
+    text: >-
+      Run `python3 run_gate.py challenger_trim` and then `python3 run_gate.py
+      challenger_priority_fix`, and open the release tab after each. Both are
+      real prompts a real teammate proposed this week. One of them is worse.
+      The gate as it stands cannot tell you which.
+  - after_minutes: 22
+    text: >-
+      gate/decision.py ships anything that clears a flat number. That number
+      was never compared against what production actually scores -- and
+      production's own score moves a little between runs, because the model
+      is real. Compare against candidates/production_current.py's own score,
+      scored fresh, every time, with room in the comparison for the fact
+      that neither number is exact.
+  - after_minutes: 34
+    text: >-
+      gate/request.py hands a candidate the whole case record from
+      cases.json -- including expected_policy_id and expected_escalate_to,
+      which only ever exist so a human can check an eval case's answer.
+      Nothing a live customer request sends ever has fields named
+      "expected_*". Build the candidate a minimal view: the message, the
+      classification it needs to draft with, and the disclosure line. Then
+      look at what candidates/challenger_gamed.py does with a view that
+      does and does not have those fields in it.
+  - after_minutes: 46
+    text: >-
+      gate/scoring.py calls the judge once per case. That is fine for a
+      case set big enough and varied enough that one unlucky call does not
+      move the average much -- and the five cases gate/cases.json starts
+      with are neither: they are all short, and none of them is from the
+      security queue. Growing the case set is not optional busywork here;
+      it is most of what makes the gate's score mean anything.
+
+egress:
+  allow: []
+  # Empty on purpose. gateway.ai.cloudflare.com is already on the family's
+  # base allowlist, which is the only host this lab needs.

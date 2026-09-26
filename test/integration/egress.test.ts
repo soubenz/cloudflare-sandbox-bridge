@@ -84,6 +84,20 @@ describeIfConfigured('egress fence', () => {
     expect(output).not.toMatch(/^root$/m);
   }, 120_000);
 
+  it('lets Python httpx reach an allowed HTTPS host (not just curl/urllib)', async () => {
+    // opalix-init.sh adds the outbound CA to the system store, but httpx
+    // (and requests) verify against certifi's own bundle instead, not the
+    // system store -- so this fails CERTIFICATE_VERIFY_FAILED unless the
+    // image also points SSL_CERT_FILE/REQUESTS_CA_BUNDLE at the system
+    // bundle (see docs/spike.md's live gateway container spike).
+    const { output } = await execViaTerminal(
+      terminalUrl,
+      `python3 -c "import httpx; print('STATUS', httpx.get('https://gateway.ai.cloudflare.com/v1', timeout=20).status_code)"`
+    );
+    expect(output).toMatch(/STATUS \d+/);
+    expect(output).not.toContain('CERTIFICATE_VERIFY_FAILED');
+  }, 120_000);
+
   it('keeps the grader out of reach of the learner', async () => {
     // /opt/lab holds the private bundle (checks + pressure scripts). A
     // learner who can read it can read the grader and the answers.

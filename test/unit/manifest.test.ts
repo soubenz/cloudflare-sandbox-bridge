@@ -32,6 +32,14 @@ describe('parseManifest', () => {
     expect(() => parseManifest(baseManifest({ timeout_minutes: 30 }))).toThrow();
   });
 
+  it('accepts a valid manifest with type: explore', () => {
+    expect(() => parseManifest(baseManifest({ type: 'explore' }))).not.toThrow();
+  });
+
+  it('rejects an unknown type', () => {
+    expect(() => parseManifest(baseManifest({ type: 'nonsense' }))).toThrow();
+  });
+
   it('rejects a services[].depends_on referencing an unknown service', () => {
     const bad = baseManifest({
       services: [{ name: 'a', argv: ['x'], depends_on: ['nonexistent'] }],

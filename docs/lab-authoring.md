@@ -45,8 +45,16 @@ services:                      # at least one
     ui: false
     depends_on: []
   - name: grafana
-    argv: ["/usr/sbin/grafana", "server"]
-    port: 3000
+    argv:
+      ["/usr/sbin/grafana-server", "--homepath=/usr/share/grafana", "--config=/etc/grafana/grafana.ini"]
+    cwd: /usr/share/grafana
+    env:
+      GF_SERVER_ROOT_URL: "{{session.base_url}}{{service.prefix}}/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_BASIC_ENABLED: "false"
+    port: 3001                  # NOT 3000 — that port is reserved for the sandbox control plane
     ui: true                    # proxied at /sessions/{id}/services/grafana/
 pressure:
   - id: burst
@@ -146,6 +154,24 @@ service with `ui: false` is refused by the proxy with `403 not_exposed` even
 for a valid session token, so a port a lab opens for its own internal use is
 not reachable from outside. The default is `false`, so exposure is opt-in.
 
+**The proxy forwards the full path.** A request for the tab reaches the
+service as `/sessions/{id}/services/{name}/...`, unchanged. Tools with a
+base-path setting take `{{service.prefix}}` there (Grafana's
+`GF_SERVER_ROOT_URL`, LiteLLM's `SERVER_ROOT_PATH`). A small page of your
+own must strip that prefix itself: pass it in its env (for example
+`VIEW_PREFIX: "{{service.prefix}}"`), strip it from the request path,
+and keep every link relative. Healthchecks go straight to the port without
+the prefix, so answer both. A page that only answers `/` passes every
+local test and returns 404 in the console.
+
+**No login.** Every `ui: true` tab must open already signed in; a learner
+must never land on a login form. Either the tool has a real anonymous mode
+(configure it — Grafana's three `GF_AUTH_*` variables above are the
+example), or the tool has no login at all (Prometheus, for example), or the
+tool's own UI is not exposed as a tab and the lab ships a small page of its
+own instead. An API key the learner uses on purpose, kept in the session
+env, is lab material, not a login screen.
+
 ## Design rules (from the product plan)
 
 - **Outcome-based checker.** A check script tests whether the system
@@ -157,13 +183,28 @@ not reachable from outside. The default is `false`, so exposure is opt-in.
 - **No stated path.** `brief.md` says what the system should do, never how.
 - **Break-fix labs are titled by symptom** ("Customers are getting
   duplicate emails"), never by the concept being taught.
-- **Three hints, gated solution.** `solution/` is never uploaded to the
-  server at all. The hint half is weaker than it sounds: nothing caps
-  `hints[]` at three, and there is no unlock gate — each entry fires on its
-  own `after_minutes` timer and is pushed to the event stream as a `hint`
-  event carrying the full text. `hints.md`, if present, is shipped into
-  `/workspace` in plain text at session start, so anything written there is
-  readable by the learner from minute zero.
+- **`type: explore` is a guided tour, not a puzzle.** Nothing is broken and
+  nothing is missing. The learner runs the system, looks around, and
+  answers a few questions listed in `brief.md`, writing the answers to
+  `/workspace/answers.json`. Checks compare each answer with what the
+  running services actually report — never with a hard-coded guess about
+  the learner's own setup. An empty answers file fails, so `labs test`'s
+  rule that at least one check must fail on a fresh session holds without
+  a special case for this type. Explore labs are usually
+  `difficulty: intro`, which means one hint (see below).
+- **Three hints, gated solution — one hint for `difficulty: intro`.** The
+  house default is three staged hints, but an intro lab is meant to be
+  finished without a walkthrough; a third of the way through it a stall
+  usually means one missing fact, not a missing strategy. Ship exactly one
+  `hints[]` entry for an intro lab, timed the same way as the others'
+  first hint (around the 15–20% mark of `timeout_minutes`). `solution/` is
+  never uploaded to the server at all, at any difficulty. The hint half is
+  weaker than it sounds: nothing caps `hints[]` at three (or at one), and
+  there is no unlock gate — each entry fires on its own `after_minutes`
+  timer and is pushed to the event stream as a `hint` event carrying the
+  full text. `hints.md`, if present, is shipped into `/workspace` in plain
+  text at session start, so anything written there is readable by the
+  learner from minute zero.
 - **Check scripts are never resident in the container between runs.** They
   are staged fresh from the private bundle at check time and deleted after
   (`src/session/checks.ts`) — don't rely on `checks/` being present at any

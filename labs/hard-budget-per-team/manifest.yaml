@@ -1,0 +1,235 @@
+# Build lab: nothing is broken, the pieces below are correct and running --
+# gateway/hooks/budget_guard.py is a skeleton whose `async_pre_call_hook`
+# currently does nothing, so untouched this lab behaves exactly like a bare
+# LiteLLM proxy with only the built-in per-team `max_budget` set. Grading
+# lives in checks/_harness.py: it never reads the learner's hook source --
+# it starts its own LiteLLM against a fresh `grading` database, pointed at
+# the learner's current gateway/config.yaml and hooks/, seeds its own
+# teams/keys, drives a concurrent burst plus sequential traffic, and reads
+# the results back over HTTP, the same way any real caller would.
+#
+# The lesson this closes (docs/spike.md, "LiteLLM proxy (T4)", Q3d): a
+# team's native `max_budget` is real and LiteLLM does try to enforce it
+# ahead of a call (`litellm/proxy/spend_tracking/budget_reservation.py`,
+# on by default) -- but that enforcement only ever *shrinks* an
+# over-budget reservation down to whatever room is left and lets the call
+# through anyway; it hard-refuses only once a team's committed spend is
+# already fully used up. So the call that actually pushes a team over its
+# budget is always let through, and only the next one is refused. Proven
+# live, locally, before writing this manifest: a team with a $0.50 budget
+# and calls costing $0.046 each let 10 through (totalling $0.46) and then
+# went ahead with an 11th anyway, landing at $0.506 -- over budget -- before
+# the 12th was finally refused.
+#
+# Two things worth stating plainly, both verified live against this
+# lab's own config and provider before it was written this way:
+#
+#  1. Pricing must be explicit and under `model_info` on the model_list
+#     entry (see gateway/config.yaml). Custom pricing under `litellm_params`
+#     instead is honoured for the spend LiteLLM logs after a call, but NOT
+#     by the router's own cost-estimate path (the one
+#     budget_reservation.py, and any hook that wants a comparable
+#     estimate, would read) -- confirmed by registering the same alias
+#     both ways and diffing what `llm_router` reported back.
+#  2. A team's spend, wherever your hook reads it from
+#     (`user_api_key_dict.team_spend`, or a direct read of the team's own
+#     Postgres row), lags real, already-committed spend by a long way --
+#     tens of seconds, not milliseconds. Measured directly: a burst of
+#     four calls landing within 200ms of each other all saw team spend as
+#     $0 (the true figure by then was already $0.60); a direct read of the
+#     team's Postgres row was still wrong 16 seconds later; the key
+#     object's own cached copy (`user_api_key_dict.team_spend`) was still
+#     wrong at 16s and only became correct at ~71s, once both LiteLLM's
+#     batched spend writer (`PROXY_BATCH_WRITE_AT`, default ~10-15s with
+#     jitter) and its separate ~60s in-memory cache on the team object
+#     (`DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL`) had both turned
+#     over. A hook that asks LiteLLM "what has this team spent" before
+#     every call is asking a question that is stale by design; the fix
+#     keeps its own count.
+#
+# Postgres is mandatory (LiteLLM's virtual-key/team/spend layer is backed
+# by a Prisma schema hard-coded to `provider = "postgresql"`, docs/spike.md
+# T4 Q1) and its own admin UI always requires a login and nothing turns
+# that off (T5 Q4) -- so, per docs/lab-authoring.md's no-login rule,
+# `litellm` stays `ui: false` and `view` (a small read-only stdlib page)
+# is the tab instead.#
+# An accepted alternative fix (user decision, 26 Sep 2026): setting
+# `general_settings.fail_closed_budget_enforcement: true` in
+# gateway/config.yaml, with the hook left untouched, makes LiteLLM's own
+# reservation refuse instead of shrinking, and passes all three checks,
+# including the concurrent burst. The checks grade outcomes, so it counts.
+# The hints still steer toward the hook, which is the part that teaches.
+
+slug: hard-budget-per-team
+version: 1.0.0
+title: "Put a hard budget on every team"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  Two teams share one LiteLLM gateway. Research has a small budget and
+  support-desk has a generous one, but right now that budget is only a
+  number on the team -- the call that actually blows past it is never
+  the one that gets refused.
+objectives:
+  - "Estimate a call's worst-case cost before it is sent, from its prompt and its requested max_tokens"
+  - "Refuse a call whose worst case would put its team over budget, rather than only noticing after the fact"
+  - "Keep a team's own count of committed spend rather than trust a value that lags by design"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  LITELLM_URL: "http://127.0.0.1:4000"
+  PROVIDER_BASE_URL: "http://127.0.0.1:8961/v1"
+  PROVIDER_PORT: "8961"
+  LITELLM_MASTER_KEY: "sk-opalix-hbpt-master"
+  GATEWAY_KEYS_FILE: "/workspace/gateway/keys.json"
+  VIEW_PORT: "8962"
+
+services:
+  # Copied from test/fixtures/labs/gateway-litellm-hello/ -- see that
+  # fixture's manifest for why each line of this argv exists (initdb once,
+  # then exec as the postgres OS user via runuser, data dir under /tmp
+  # because /workspace is chowned to `learner`).
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+  - name: provider
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    port: 8961
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: litellm
+    # ui: false -- the admin UI always requires a login (T5 Q4); `view` is
+    # the tab instead. The seed step runs in the background and writes
+    # gateway/keys.json once the proxy is actually answering -- it polls
+    # /health/readiness itself (see seed_teams.py), so nothing here has to
+    # -- and is idempotent, so a restart of this same service (which
+    # re-runs this whole argv) finds both teams and both keys already in
+    # place and changes nothing.
+    argv:
+      [
+        "sh", "-c",
+        "python3 -B /workspace/gateway/seed_teams.py & exec litellm --config /workspace/gateway/config.yaml --port 4000 --host 0.0.0.0",
+      ]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-hbpt-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh).
+      DISABLE_SCHEMA_UPDATE: "True"
+      PROVIDER_BASE_URL: "http://127.0.0.1:8961/v1"
+      LITELLM_URL: "http://127.0.0.1:4000"
+      GATEWAY_KEYS_FILE: "/workspace/gateway/keys.json"
+      # LiteLLM imports hooks/budget_guard.py by file path on every boot --
+      # without this, that write-bytecode-cache-next-to-the-source is the
+      # normal Python import default, and a __pycache__/ sitting in the
+      # learner's own workspace next to a file they are actively editing
+      # is confusing at best.
+      PYTHONDONTWRITEBYTECODE: "1"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # Schema max, not the 30s default -- a fresh DB runs all of
+      # LiteLLM's migrations on first boot (docs/spike.md T4 Q5: ~20-25s
+      # even on an already-migrated DB, measured again for this lab).
+      timeout_s: 120
+    ui: false
+    depends_on: [postgres, provider]
+  - name: view
+    argv: ["python3", "-B", "/workspace/gateway/view.py"]
+    cwd: /workspace
+    env:
+      LITELLM_URL: "http://127.0.0.1:4000"
+      LITELLM_MASTER_KEY: "sk-opalix-hbpt-master"
+      GATEWAY_KEYS_FILE: "/workspace/gateway/keys.json"
+      VIEW_PORT: "8962"
+      # The session proxy forwards a ui:true service's full path unchanged
+      # (GET /sessions/{id}/services/view/, not GET /) -- view.py strips
+      # this before routing.
+      VIEW_PREFIX: "{{service.prefix}}"
+    port: 8962
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: [litellm]
+
+pressure: []
+
+checks:
+  # Each check shares one grader-run's worth of setup (its own LiteLLM
+  # against a fresh `grading` database, loaded with the learner's current
+  # gateway/config.yaml and hooks/budget_guard.py, then one traffic run
+  # against it) -- see checks/_harness.py. Sequential on purpose: whichever
+  # check runs first pays the setup cost and the other two just read its
+  # result.
+  - name: no-team-goes-over
+    script: no-team-goes-over.sh
+    timeout_s: 300
+    weight: 2
+    parallel: false
+  - name: teams-in-budget-keep-working
+    script: teams-in-budget-keep-working.sh
+    timeout_s: 300
+    weight: 2
+    parallel: false
+  # The anti-cheat, in a sense: stops the first two being satisfied by a
+  # refusal that never says why. A learner (or a grading tool) has to be
+  # able to tell an over-budget refusal from any other failure.
+  - name: refusals-say-why
+    script: refusals-say-why.sh
+    timeout_s: 300
+    weight: 1
+    parallel: false
+
+hints:
+  - after_minutes: 14
+    text: >-
+      Run `python3 -B send_calls.py research 14` from a terminal, then
+      open the view tab. Watch which call number is the one that actually
+      pushes research's spend past its budget, and which one is the first
+      to get refused -- they are not the same call.
+  - after_minutes: 27
+    text: >-
+      gateway/hooks/budget_guard.py runs before a call is sent anywhere.
+      Everything it needs is already in its arguments: the team's budget,
+      and the request itself (its messages, and whatever it asked for in
+      max_tokens). Estimating cost from those and refusing when it doesn't
+      fit is the whole job -- trusting whatever the gateway itself reports
+      as a team's spend so far is not, since that number goes stale for a
+      long time (print it across a few calls sent back to back and see).
+  - after_minutes: 41
+    text: >-
+      Two problems in one: `async_pre_call_hook`'s own `user_api_key_dict`
+      argument is stale for a lot longer than it looks (tens of seconds,
+      not milliseconds, on this gateway) -- so keep your own running total
+      of committed spend per team, in the hook itself, rather than ask the
+      gateway what a team has spent. And a burst of calls sent at once all
+      reach the hook before any of them finish, so that total has to be
+      updated the moment a call is let through, not after it completes --
+      otherwise every call in the burst sees the same stale total and all
+      of them fit.
+
+egress:
+  allow: []

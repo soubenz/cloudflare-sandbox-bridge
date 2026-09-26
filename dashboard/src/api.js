@@ -7,15 +7,16 @@
  * the start call, used for everything inside a session; and the service key,
  * which the dashboard only holds if an operator pastes one for pool actions.
  */
-const API_KEY_STORAGE = 'opalix.apiBase';
 const DEFAULT_API = 'https://opalix-sandbox.soubenz94.workers.dev';
 
+/**
+ * The one API this console talks to. There used to be a localStorage
+ * override and a footer button to set it — a dev-era escape hatch that let
+ * anyone repoint a learner's console (and the session token it sends) at
+ * some other host. There is exactly one real API, so it is not configurable.
+ */
 export function apiBase() {
-  return localStorage.getItem(API_KEY_STORAGE) || DEFAULT_API;
-}
-
-export function setApiBase(url) {
-  localStorage.setItem(API_KEY_STORAGE, url.replace(/\/$/, ''));
+  return DEFAULT_API;
 }
 
 async function request(path, { method = 'GET', body, token, serviceKey, raw } = {}) {
@@ -84,6 +85,8 @@ export const api = {
   status: (id, token) => request(`/sessions/${id}`, { token }),
   end: (id, token, snapshot = false) =>
     request(`/sessions/${id}?snapshot=${snapshot ? 1 : 0}`, { method: 'DELETE', token }),
+  restartService: (id, token, name) =>
+    request(`/sessions/${id}/services/${encodeURIComponent(name)}/restart`, { method: 'POST', token }),
   snapshot: (id, token) => request(`/sessions/${id}/snapshot`, { method: 'POST', token }),
   runChecks: (id, token) => request(`/sessions/${id}/checks`, { method: 'POST', body: {}, token }),
 

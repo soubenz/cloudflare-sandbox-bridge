@@ -13,12 +13,23 @@ FROM docker.io/cloudflare/sandbox:next
 # Retried: the Ubuntu mirrors serve an index mid-sync often enough that a
 # plain `apt-get update` fails the whole build with "File has unexpected
 # size", and every deploy rebuilds these images.
+# postgresql: LiteLLM's DB layer (virtual keys, teams, spend tracking)
+# hard-requires PostgreSQL -- SQLite is refused outright at startup
+# ("DATABASE_URL uses unsupported scheme 'sqlite'", confirmed live in
+# docs/spike.md's LiteLLM proxy spike, T4, 26 Sep 2026). Ubuntu 22.04's
+# `postgresql` meta-package pulls in a real `initdb`/server; the assertion
+# below fails the build loudly if a future base image renames or drops it
+# rather than shipping a gateway that silently can't start a cluster.
+# DEBIAN_FRONTEND=noninteractive on this one command only: postgresql pulls
+# in tzdata, which otherwise stops the build waiting for a timezone answer.
+# Scoped to the RUN, not an ENV, so it doesn't leak into lab containers.
 RUN for attempt in 1 2 3; do \
       apt-get update -o Acquire::Retries=3 && break || { echo "apt-get update failed (attempt $attempt)"; sleep 10; }; \
     done \
-    && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
-    curl ca-certificates sudo python3 python3-pip musl tmux \
-    && rm -rf /var/lib/apt/lists/*
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
+    curl ca-certificates sudo python3 python3-pip musl tmux postgresql \
+    && rm -rf /var/lib/apt/lists/* \
+    && test -x "$(ls /usr/lib/postgresql/*/bin/initdb | head -1)"
 
 # The learner's shell runs inside tmux so it survives the PTY connection
 # dropping (a closed browser tab, a Durable Object eviction): the container's
@@ -80,7 +91,95 @@ RUN curl -fsSL "https://github.com/prometheus/prometheus/releases/download/v${PR
 # (22.0.2, from Ubuntu 22.04's python3-pip) -- that flag only exists on
 # pip 23.0.1+ / newer Ubuntu releases that enforce PEP 668. Confirmed by a
 # real CI build failure (23 Sep 2026, "no such option: --break-system-packages").
-RUN pip3 install --no-cache-dir "litellm[proxy]" locust
+#
+# Pinned to 1.102.1: the exact version "litellm[proxy]" resolves to today
+# and the one proven live in docs/spike.md. `litellm[proxy]` does NOT
+# install the `prisma` Python package (confirmed live: right after this
+# install, `pip3 show prisma` finds nothing, and starting the proxy against
+# Postgres crashes with `ModuleNotFoundError: No module named 'prisma'`),
+# so prisma==0.15.0 -- the version the build-time `prisma generate` step
+# below matches -- is installed alongside it explicitly.
+RUN pip3 install --no-cache-dir "litellm[proxy]==1.102.1" "prisma==0.15.0" locust \
+    && pip3 show litellm | grep -qx 'Version: 1.102.1'
+
+# MLflow, for Path 2's model-catalogue lab: its model registry's aliases
+# drive which provider model a LiteLLM alias points to. Pinned to 3.16.1,
+# the version the feasibility run proved alongside litellm 1.102.1 and
+# prisma 0.15.0 (`pip check` clean in one environment). The full package,
+# not mlflow-skinny: skinny can't run `mlflow server` without a hand-picked
+# set of extra deps and never ships the UI at all.
+#
+# litellm and prisma are named again at their pins so pip resolves MLflow
+# around them instead of upgrading a dependency they were proven with.
+RUN pip3 install --no-cache-dir "mlflow==3.16.1" "litellm[proxy]==1.102.1" "prisma==0.15.0" \
+    && pip3 show mlflow | grep -qx 'Version: 3.16.1' \
+    && pip3 show litellm | grep -qx 'Version: 1.102.1' \
+    && pip3 show prisma | grep -qx 'Version: 0.15.0' \
+    && python3 -c "import mlflow.server, litellm"
+# MLflow 3.16's defaults, each wrong for a lab container:
+# - telemetry is on and calls config.mlflow-telemetry.io, which the egress
+#   fence refuses anyway -- off, so it isn't even attempted;
+# - `mlflow server` starts a job runner plus several worker processes for
+#   GenAI scorers on every boot, used or not: ~1.8 GB RSS against ~650 MB
+#   without it, on a 4 GiB container that also runs LiteLLM and Postgres;
+# - a startup banner advertising an agent integration.
+ENV MLFLOW_DISABLE_TELEMETRY=1
+ENV MLFLOW_SERVER_ENABLE_JOB_EXECUTION=false
+ENV MLFLOW_DISABLE_AGENT_HINT=1
+
+# `prisma generate` must run at build time, against the schema shipped
+# inside litellm_proxy_extras, because it's the one step in this whole
+# install that reaches the network: it downloads a Node-based Prisma CLI
+# plus 5 query-engine binaries and writes the generated client into
+# site-packages (confirmed live in docs/spike.md: without this, the proxy
+# fails with "Unable to find Prisma binaries. Please run 'prisma generate'
+# first."). These lab containers have no internet at runtime (the egress
+# fence), so this cannot be deferred to first boot -- unlike the DB
+# migrations, which the proxy runs itself on every boot via
+# `prisma migrate deploy` against its own bundled migrations, needing only
+# Postgres, not the network.
+#
+# DATABASE_URL only needs to be a syntactically valid postgresql:// URL
+# here -- the schema's `datasource` block just reads the env var, it
+# doesn't have to connect. Verified locally: `prisma generate` against
+# postgresql://x:x@127.0.0.1:1/x, with nothing listening on that port,
+# still succeeds.
+#
+# The downloaded CLI and query-engine binaries are cached under the build
+# user's (root's) home (~/.cache/prisma, ~/.cache/prisma-python) rather
+# than anywhere baked into the image explicitly -- that's fine because
+# every lab service in this image runs as root, not as `learner`.
+RUN DATABASE_URL="postgresql://opalix:opalix@127.0.0.1:5432/opalix" \
+    prisma generate --schema="$(python3 -c "import litellm_proxy_extras, os; print(os.path.join(os.path.dirname(litellm_proxy_extras.__file__), 'schema.prisma'))")" \
+    && python3 -c "import prisma" \
+    && python3 -c "import prisma.models as m; assert hasattr(m, 'LiteLLM_BudgetTable'), 'prisma client was not generated against the litellm schema'"
+
+# A Postgres data dir with LiteLLM's schema already migrated, copied into
+# place by each lab's postgres service instead of running initdb. Halves
+# LiteLLM's boot (33 s to 16-18 s on one core locally), since a session
+# no longer runs 171 migrations and the check that follows them. See the
+# script for the two databases it leaves and why.
+COPY --chmod=755 build-pg-template.sh /usr/local/bin/build-pg-template.sh
+RUN /usr/local/bin/build-pg-template.sh /opt/opalix/pg-template
+
+# Stops LiteLLM re-fetching model_prices_and_context_window.json from
+# GitHub on every cold boot: with no internet at runtime, that fetch just
+# burns ~6-7s of retries with backoff before falling back to litellm's
+# bundled copy anyway (confirmed live in docs/spike.md; both runs reach
+# the same fallback data, this one just skips the wait).
+ENV LITELLM_LOCAL_MODEL_COST_MAP=True
+
+# Python's httpx/requests (unlike curl and urllib) verify against
+# certifi's bundled CA list, not the system store, so they ignore the CA
+# that opalix-init.sh adds to the system store at boot
+# (update-ca-certificates). Confirmed live: httpx failed
+# CERTIFICATE_VERIFY_FAILED against the allowed AI Gateway host while
+# curl and urllib reached it fine; pointing httpx/requests at the system
+# bundle here fixed it. This only takes effect once opalix-init.sh has
+# actually installed the CA at boot -- the file doesn't exist yet at
+# build time.
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 RUN useradd -m -s /bin/bash learner \
     && mkdir -p /workspace /opt/lab \

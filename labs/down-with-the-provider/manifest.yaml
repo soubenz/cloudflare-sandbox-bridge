@@ -1,0 +1,226 @@
+# P1-04 in the lab catalogue: the fourth lab a learner meets, and the first
+# one whose model calls are real.
+#
+# Break-fix, titled by symptom rather than by the concept being taught. The
+# slug names the symptom too -- we went down with the provider -- rather than
+# the cause, which is that the provider had an outage, or the lesson, which is
+# failover and schema validation at the boundary.
+#
+# Two planted bugs, both small and both locally reasonable.
+# workspace/agent/worker.py files nothing when a provider call does not come
+# back, on the true premise that a guess and a blank are both worse than
+# silence -- so during the outage the requests do not fail, they vanish. And
+# workspace/agent/provider.py reads the reply with `or` defaults instead of
+# checking it, so a 200 with the wrong shape becomes an empty answer in one
+# case and an AttributeError in the other. The standing rules the desk used
+# before it had a model are in workspace/agent/playbook.py, quoted into the
+# prompt and otherwise never called.
+#
+# Real, plus faults. The model calls leave the container and reach the real
+# provider in LLM_BASE_URL; the outage is injected by a lab-local proxy in
+# front of it (workspace/services/model_proxy.py), because a real provider
+# cannot be asked to fail on a schedule. Nothing is graded on what the model
+# said -- see the note on the fault block below.
+#
+# There is deliberately no hints.md: everything in workspace/ is readable from
+# minute zero, so a hints file is not gated at all. The staged hints below are,
+# and they are the only hints this lab ships.
+slug: down-with-the-provider
+version: 1.0.0
+title: "The provider is down, and so are we"
+type: break-fix
+family: agent
+difficulty: core
+summary: >-
+  The model provider had an outage this morning. The front desk did not get
+  slower, it stopped: requests came in and no answer came out. Then the
+  provider came back answering 200 with a different body. Retrying harder is
+  not the fix.
+objectives:
+  - "Degrade a model-dependent path instead of stopping it, and say in the record that you did"
+  - "Validate a provider's response at the boundary and reject it with a reason that names the fault"
+  - "Prove a failure was handled from the provider's record and the case log, not from the agent's own output"
+# The work is 30-45 minutes; 60 is the schema minimum and keeps the container
+# bill honest for a free lab.
+timeout_minutes: 60
+idle_minutes: 10
+
+env:
+  # Wiring. The agent talks to the proxy, never to LLM_BASE_URL directly: the
+  # proxy is what forwards to the real provider, and what injects the faults.
+  PROVIDER_URL: "http://127.0.0.1:8861"
+  DESK_URL: "http://127.0.0.1:8862"
+  PROVIDER_PORT: "8861"
+  DESK_PORT: "8862"
+  INTAKE_QUEUE: "/workspace/intake.json"
+  # The agent's tunables. Every one has a matching default in
+  # workspace/agent/config.py, so the agent also runs from a bare shell.
+  #
+  # MODEL_NAME repeats what the platform puts in LLM_MODEL, because a grader
+  # only ever sees this env block (src/session/checks.ts passes the
+  # manifest-level env and nothing else) and the agent it runs inherits it.
+  # The proxy prefers the session's own LLM_MODEL over this string when it
+  # forwards, so a session pointed at another model still works.
+  MODEL_NAME: "workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8"
+  # 12s is a real network call to a real model, not a local stub: the spike
+  # measured ~1.4s for a short completion, and this leaves an 8x margin
+  # before the desk decides nothing is coming.
+  MODEL_TIMEOUT_S: "12"
+  DESK_TIMEOUT_S: "5"
+  # MAX_ATTEMPTS is the policy: how many times one call may be attempted
+  # before we accept it is not going to work this minute.
+  MAX_ATTEMPTS: "3"
+  RETRY_BASE_DELAY_S: "0.25"
+  # A disposition is one or two sentences. The cap keeps the call quick and
+  # keeps the body identical run to run, which is what makes the provider's
+  # cache usable below.
+  MAX_OUTPUT_TOKENS: "90"
+  # The faults, fixed per request id so every run of the graders meets the
+  # same outage and the same misshapen replies. Nothing here is random and
+  # nothing here branches on the clock.
+  #
+  # What is *not* fixed is what the provider says: it is a real model, its
+  # wording varies between two identical calls, and no grader in this lab
+  # depends on it. Where a grader needs to know what the provider answered it
+  # reads the text the proxy recorded serving, so the assertion is that the
+  # case log agrees with the provider -- never that either said anything in
+  # particular.
+  #
+  #   REQ-4403 is Grace Achebe at Halyard Freight, locked out since nine with
+  #   a customer call at two. Every call about her is refused: the provider is
+  #   not asked at all, which is what an outage is. She is the request the
+  #   product stopped on, and she is also the reason the fallback has to exist.
+  #   REQ-4410 arrives with the pressure event and is on the same list.
+  PROVIDER_OUTAGE_ITEMS: "REQ-4403,REQ-4410"
+  #   REQ-4405's first call is left hanging past MODEL_TIMEOUT_S and then
+  #   answered into a socket nobody is listening to; later calls for it are
+  #   refused quickly, so a bounded retry policy does not sit through the wait
+  #   more than once. Its topic (`integration`) has no standing rule, which is
+  #   how the "no fallback exists either" path gets exercised.
+  PROVIDER_HANG_ITEMS: "REQ-4405"
+  PROVIDER_HANG_SECONDS: "14"
+  #   The two replies from after the provider came back. Both are forwarded
+  #   for real, both come back HTTP 200, and both have the envelope changed on
+  #   the way past. wrong-shape-replies-are-rejected needs both to exist, or
+  #   it has nothing to prove a boundary check on and fails the lab rather
+  #   than the learner.
+  #
+  #   REQ-4404: `choices` removed, so a defensive `or` default reads it as an
+  #   empty answer and files it with a green tick.
+  PROVIDER_DROP_CHOICES_ITEMS: "REQ-4404"
+  #   REQ-4406: `content` boxed into the parts-list form, so the same
+  #   defensive read hands a list to a string method and the request vanishes
+  #   in an AttributeError four frames from anything that knew its id.
+  PROVIDER_PARTS_CONTENT_ITEMS: "REQ-4406"
+  #   Caching, for cost and speed rather than for grading. The proxy sends
+  #   cf-aig-cache-key (keyed to the request id, so rewording the prompt does
+  #   not break it) and cf-aig-cache-ttl, and records the gateway's cache
+  #   status per call as information only. The explicit-key path is measured
+  #   to need two sequential repeats before it reports HIT, so no check may
+  #   ever treat a MISS as a failure.
+  PROVIDER_CACHE_TTL_S: "86400"
+  PROVIDER_CACHE_PREFIX: "opalix-front-desk"
+  #   One pass over the shipped queue makes five real calls (three requests
+  #   the provider answers plus the two it answers before its reply is
+  #   damaged); the refused and hanging ones never reach it. Three graders
+  #   means three passes, so a Run checks is about fifteen real calls against
+  #   a 300-per-minute, per-account limit for text generation.
+
+services:
+  # The proxy is the diagnostic. It is the only place that records what the
+  # provider was asked, what it actually said, and what was done to the reply
+  # before the desk saw it -- next to an agent whose own output says it filed
+  # what it found. A learner who reads only the terminal will believe the
+  # requests that vanished simply failed, and that the ones filed with nothing
+  # in them were answered.
+  - name: provider
+    argv: ["python3", "/workspace/services/model_proxy.py"]
+    cwd: /workspace
+    port: 8861
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: []
+  # The desk's own system: the case log every request has to end up in, and
+  # the standing rules that predate the model. ui: false, so the proxy refuses
+  # it -- it is read by the graders and, from the terminal, by a learner who
+  # wants to see what was filed.
+  - name: desk
+    argv: ["python3", "/workspace/services/desk_service.py"]
+    cwd: /workspace
+    port: 8862
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: []
+
+pressure:
+  - id: incident
+    at_minutes: 8
+    argv: ["/opt/lab/pressure/incident.sh"]
+    title: "The provider posts an update, and the queue does not wait for it"
+    message: >-
+      Three more requests just landed, one of them from a customer asking why
+      the status page says everything is fine. One of the three is on the same
+      account as this morning's lockout, so if the outage still empties into
+      silence, it is about to do it in front of somebody who has noticed.
+
+checks:
+  - name: degrades-instead-of-stopping
+    script: degrades-instead-of-stopping.sh
+    # 240s rather than the usual 180: the agent this runs makes real calls to
+    # a real provider and sits out one deliberate 14s hang, and the harness's
+    # own OPALIX_AGENT_RUN_TIMEOUT_S (150s) has to fit inside it with room to
+    # read both services afterwards.
+    timeout_s: 240
+    weight: 2
+  # The strongest anti-cheat. A reply that arrives as HTTP 200 and is not the
+  # shape the desk reads is the one failure nothing else in the system will
+  # ever mention: half-read it and the case log gets a wrong answer under a
+  # customer's name, swallow it and the request is gone with a green tick on
+  # it. Either way the outage looks survived.
+  - name: wrong-shape-replies-are-rejected
+    script: wrong-shape-replies-are-rejected.sh
+    timeout_s: 240
+    weight: 2
+  # And the one that stops the first two being satisfied by switching the
+  # model off: the requests nothing interferes with must still be answered
+  # from the provider's own reply.
+  - name: good-answers-still-get-through
+    script: good-answers-still-get-through.sh
+    timeout_s: 240
+    weight: 1
+
+hints:
+  - after_minutes: 8
+    text: >-
+      Open the provider tab and count its rows against what the agent printed
+      when it finished. The agent reports what it filed; that tab is the only
+      record of what was asked and what came back -- including the calls that
+      got a 200.
+  - after_minutes: 16
+    text: >-
+      Two of the replies this run came back HTTP 200 and were still not
+      answers. One of them has no `choices` in it at all; the other has a
+      `content` that is not a string. Then look at which requests have no row
+      in the case log, and notice they are not the same two.
+  - after_minutes: 26
+    text: >-
+      A reply is usable or it is a failure, and the only place that can be
+      decided is where the body stops being the provider's and starts being
+      ours -- nothing further down can tell an empty answer from an empty
+      reply. And an outage is not an absence of an answer: the standing rules
+      on the desk service are current, they need no provider, and "not right
+      now, here is the rule we use instead" is a disposition a queue owner can
+      act on. What must not happen is that a request leaves no trace.
+
+# Empty on purpose, and not because nothing leaves the container: the model
+# calls do. gateway.ai.cloudflare.com is already on the family's base
+# allowlist, so an extra entry here would add nothing and a non-empty list
+# would make the session do a set_allowed_hosts call it does not need.
+egress:
+  allow: []

@@ -3,6 +3,15 @@ node_modules/
 .wrangler/
 dist/
 *.log
+# ...but lab content is source, and a pasted log file is the most natural
+# fixture a lab has: the whole point of forgotten-rules is that four pasted
+# logs are worth more tokens than two hundred messages of chat. `*.log` had
+# silently kept all six out of the repo, so a fresh clone got a case file that
+# named attachments it did not have -- a lab with no bug left in it. Publish
+# packs from the working tree, so this was invisible to anyone authoring on
+# the machine that wrote them. test/unit/lab-content-tracked.test.ts is the
+# fence: it fails if anything under labs/ is ignored.
+!labs/**/*.log
 .DS_Store
 worker-configuration.d.ts
 

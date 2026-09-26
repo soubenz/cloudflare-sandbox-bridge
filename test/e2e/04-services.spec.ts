@@ -38,4 +38,23 @@ test.describe('the lab service UI', () => {
     await session.locator('#serviceTabs .tab').first().click();
     await expect(session.locator('#serviceFrame')).toHaveAttribute('src', new RegExp(`^${API}/sessions/`));
   });
+
+  test('lists every service with a restart that brings it back healthy', async ({ session }) => {
+    // Tabs only cover ui: true services; this list is how a learner who
+    // changed a service's config restarts it, since their shell can't.
+    const row = session.locator('#serviceList li[data-service="echo"]');
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await expect(row.locator('.svc-health')).toHaveText('healthy');
+
+    const restart = session.waitForResponse(
+      (r) => r.url().includes('/services/echo/restart') && r.request().method() === 'POST',
+      { timeout: 90_000 }
+    );
+    await row.getByRole('button', { name: 'Restart' }).click();
+    await expect(row.getByRole('button')).toHaveText('Restarting…');
+    const res = await restart;
+    expect(res.status()).toBe(200);
+    await expect(row.locator('.svc-health')).toHaveText('healthy');
+    await expect(row.getByRole('button')).toHaveText('Restart');
+  });
 });

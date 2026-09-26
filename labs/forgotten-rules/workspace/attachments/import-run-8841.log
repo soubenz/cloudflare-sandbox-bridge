@@ -1,0 +1,139 @@
+# nightly catalogue import, run 8841, tenant halberd-fen
+# started 2026-09-19T01:05:02Z  finished 2026-09-19T03:41:55Z  rows=41,208  rejected=6,902
+# worker image catalogue-import:2026.09.17-a41f0c  (previous good run 8837 on 2026.09.10-9db2e1)
+2026-09-19T01:07:23.131Z import-worker[8841] ERROR row=1003 sku=HF-TERRA-8092 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:14:46.262Z import-worker[8841] ERROR row=1006 sku=HF-TERRA-4701 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:21:09.393Z import-worker[8841] ERROR row=1009 sku=HF-LIME-2555 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:28:32.524Z import-worker[8841] ERROR row=1012 sku=HF-GRANITE-4897 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:35:55.655Z import-worker[8841] ERROR row=1015 sku=HF-TRAV-1771 action=upsert rejected: image url returned 404 at fetch time
+2026-09-19T01:42:18.786Z import-worker[8841] ERROR row=1018 sku=HF-PORC-2161 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:49:41.917Z import-worker[8841] ERROR row=1021 sku=HF-GRANITE-7632 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:56:04.048Z import-worker[8841] ERROR row=1024 sku=HF-LIME-4245 action=upsert rejected: image url returned 404 at fetch time
+2026-09-19T01:03:27.179Z import-worker[8841] ERROR row=1027 sku=HF-LIME-6325 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:10:50.310Z import-worker[8841] ERROR row=1030 sku=HF-LIME-1122 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:17:13.441Z import-worker[8841] ERROR row=1033 sku=HF-SLATE-1487 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:24:36.572Z import-worker[8841] ERROR row=1036 sku=HF-BAMBOO-8205 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:31:59.703Z import-worker[8841] ERROR row=1039 sku=HF-LIME-1246 action=upsert rejected: image url returned 404 at fetch time
+2026-09-19T01:38:22.834Z import-worker[8841] ERROR row=1042 sku=HF-MARBLE-4608 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:45:45.965Z import-worker[8841] ERROR row=1045 sku=HF-BAMBOO-5252 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:52:08.096Z import-worker[8841] ERROR row=1048 sku=HF-PORC-5094 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:59:31.227Z import-worker[8841] ERROR row=1051 sku=HF-SLATE-4746 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:06:54.358Z import-worker[8841] ERROR row=1054 sku=HF-VINYL-5515 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:13:17.489Z import-worker[8841] ERROR row=1057 sku=HF-PORC-3582 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:20:40.620Z import-worker[8841] ERROR row=1060 sku=HF-GRANITE-3367 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:27:03.751Z import-worker[8841] ERROR row=1063 sku=HF-SLATE-5613 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:34:26.882Z import-worker[8841] ERROR row=1066 sku=HF-VINYL-1883 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:41:49.013Z import-worker[8841] ERROR row=1069 sku=HF-VINYL-1547 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:48:12.144Z import-worker[8841] ERROR row=1072 sku=HF-OAK-2749 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:55:35.275Z import-worker[8841] ERROR row=1075 sku=HF-OAK-4850 action=upsert rejected: stock_location 'WH-3' is not enabled for this channel
+2026-09-19T01:02:58.406Z import-worker[8841] ERROR row=1078 sku=HF-VINYL-4438 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:09:21.537Z import-worker[8841] ERROR row=1081 sku=HF-LIME-6156 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:16:44.668Z import-worker[8841] ERROR row=1084 sku=HF-PORC-3759 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:23:07.799Z import-worker[8841] ERROR row=1087 sku=HF-PORC-3724 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:30:30.930Z import-worker[8841] ERROR row=1090 sku=HF-VINYL-7209 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:37:53.061Z import-worker[8841] ERROR row=1093 sku=HF-TRAV-3018 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:44:16.192Z import-worker[8841] ERROR row=1096 sku=HF-OAK-1490 action=upsert rejected: image url returned 404 at fetch time
+2026-09-19T01:51:39.323Z import-worker[8841] ERROR row=1099 sku=HF-TERRA-2455 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:58:02.454Z import-worker[8841] ERROR row=1102 sku=HF-BAMBOO-4665 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:05:25.585Z import-worker[8841] ERROR row=1105 sku=HF-BAMBOO-6995 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:12:48.716Z import-worker[8841] ERROR row=1108 sku=HF-VINYL-6273 action=upsert rejected: stock_location 'WH-3' is not enabled for this channel
+2026-09-19T01:19:11.847Z import-worker[8841] ERROR row=1111 sku=HF-SLATE-4234 action=upsert rejected: stock_location 'WH-3' is not enabled for this channel
+2026-09-19T01:26:34.978Z import-worker[8841] ERROR row=1114 sku=HF-BAMBOO-1003 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:33:57.109Z import-worker[8841] ERROR row=1117 sku=HF-LIME-3491 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:40:20.240Z import-worker[8841] ERROR row=1120 sku=HF-BAMBOO-2534 action=upsert rejected: stock_location 'WH-3' is not enabled for this channel
+2026-09-19T01:47:43.371Z import-worker[8841] ERROR row=1123 sku=HF-LIME-6257 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:54:06.502Z import-worker[8841] ERROR row=1126 sku=HF-SLATE-1344 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:01:29.633Z import-worker[8841] ERROR row=1129 sku=HF-BAMBOO-4617 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:08:52.764Z import-worker[8841] ERROR row=1132 sku=HF-OAK-7329 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:15:15.895Z import-worker[8841] ERROR row=1135 sku=HF-MARBLE-7801 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:22:38.026Z import-worker[8841] ERROR row=1138 sku=HF-VINYL-1601 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:29:01.157Z import-worker[8841] ERROR row=1141 sku=HF-SLATE-2709 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:36:24.288Z import-worker[8841] ERROR row=1144 sku=HF-BAMBOO-1127 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:43:47.419Z import-worker[8841] ERROR row=1147 sku=HF-MARBLE-4044 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:50:10.550Z import-worker[8841] ERROR row=1150 sku=HF-TERRA-2042 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:57:33.681Z import-worker[8841] ERROR row=1153 sku=HF-TERRA-7818 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:04:56.812Z import-worker[8841] ERROR row=1156 sku=HF-TRAV-8098 action=upsert rejected: stock_location 'WH-3' is not enabled for this channel
+2026-09-19T01:11:19.943Z import-worker[8841] ERROR row=1159 sku=HF-TRAV-6138 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:18:42.074Z import-worker[8841] ERROR row=1162 sku=HF-PORC-8441 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:25:05.205Z import-worker[8841] ERROR row=1165 sku=HF-LIME-3043 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:32:28.336Z import-worker[8841] ERROR row=1168 sku=HF-TRAV-7057 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:39:51.467Z import-worker[8841] ERROR row=1171 sku=HF-BAMBOO-6627 action=upsert rejected: stock_location 'WH-3' is not enabled for this channel
+2026-09-19T01:46:14.598Z import-worker[8841] ERROR row=1174 sku=HF-TERRA-5944 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:53:37.729Z import-worker[8841] ERROR row=1177 sku=HF-VINYL-1388 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:00:00.860Z import-worker[8841] ERROR row=1180 sku=HF-SLATE-1317 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:07:23.991Z import-worker[8841] ERROR row=1183 sku=HF-PORC-2953 action=upsert rejected: stock_location 'WH-3' is not enabled for this channel
+2026-09-19T01:14:46.122Z import-worker[8841] ERROR row=1186 sku=HF-PORC-4447 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:21:09.253Z import-worker[8841] ERROR row=1189 sku=HF-TERRA-3403 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:28:32.384Z import-worker[8841] ERROR row=1192 sku=HF-TRAV-8612 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:35:55.515Z import-worker[8841] ERROR row=1195 sku=HF-TRAV-2871 action=upsert rejected: image url returned 404 at fetch time
+2026-09-19T01:42:18.646Z import-worker[8841] ERROR row=1198 sku=HF-GRANITE-6353 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:49:41.777Z import-worker[8841] ERROR row=1201 sku=HF-LIME-1607 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:56:04.908Z import-worker[8841] ERROR row=1204 sku=HF-BAMBOO-8515 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:03:27.039Z import-worker[8841] ERROR row=1207 sku=HF-OAK-1566 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:10:50.170Z import-worker[8841] ERROR row=1210 sku=HF-VINYL-4651 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:17:13.301Z import-worker[8841] ERROR row=1213 sku=HF-OAK-1381 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:24:36.432Z import-worker[8841] ERROR row=1216 sku=HF-PORC-4021 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:31:59.563Z import-worker[8841] ERROR row=1219 sku=HF-LIME-8971 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:38:22.694Z import-worker[8841] ERROR row=1222 sku=HF-SLATE-3966 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:45:45.825Z import-worker[8841] ERROR row=1225 sku=HF-TERRA-3711 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:52:08.956Z import-worker[8841] ERROR row=1228 sku=HF-LIME-8756 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:59:31.087Z import-worker[8841] ERROR row=1231 sku=HF-LIME-1287 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:06:54.218Z import-worker[8841] ERROR row=1234 sku=HF-TERRA-8456 action=upsert rejected: duplicate barcode, already held by another variant
+2026-09-19T01:13:17.349Z import-worker[8841] ERROR row=1237 sku=HF-PORC-8887 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:20:40.480Z import-worker[8841] ERROR row=1240 sku=HF-OAK-5901 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:27:03.611Z import-worker[8841] ERROR row=1243 sku=HF-TERRA-1551 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:34:26.742Z import-worker[8841] ERROR row=1246 sku=HF-MARBLE-2119 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:41:49.873Z import-worker[8841] ERROR row=1249 sku=HF-SLATE-4711 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:48:12.004Z import-worker[8841] ERROR row=1252 sku=HF-MARBLE-7037 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:55:35.135Z import-worker[8841] ERROR row=1255 sku=HF-TRAV-7498 action=upsert rejected: duplicate barcode, already held by another variant
+2026-09-19T01:02:58.266Z import-worker[8841] ERROR row=1258 sku=HF-MARBLE-1695 action=upsert rejected: image url returned 404 at fetch time
+2026-09-19T01:09:21.397Z import-worker[8841] ERROR row=1261 sku=HF-SLATE-8136 action=upsert rejected: stock_location 'WH-3' is not enabled for this channel
+2026-09-19T01:16:44.528Z import-worker[8841] ERROR row=1264 sku=HF-OAK-8073 action=upsert rejected: image url returned 404 at fetch time
+2026-09-19T01:23:07.659Z import-worker[8841] ERROR row=1267 sku=HF-LIME-1119 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:30:30.790Z import-worker[8841] ERROR row=1270 sku=HF-VINYL-4106 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:37:53.921Z import-worker[8841] ERROR row=1273 sku=HF-OAK-5987 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:44:16.052Z import-worker[8841] ERROR row=1276 sku=HF-SLATE-1742 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:51:39.183Z import-worker[8841] ERROR row=1279 sku=HF-PORC-8207 action=upsert rejected: stock_location 'WH-3' is not enabled for this channel
+2026-09-19T01:58:02.314Z import-worker[8841] ERROR row=1282 sku=HF-MARBLE-4182 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:05:25.445Z import-worker[8841] ERROR row=1285 sku=HF-TERRA-4608 action=upsert rejected: image url returned 404 at fetch time
+2026-09-19T01:12:48.576Z import-worker[8841] ERROR row=1288 sku=HF-GRANITE-1686 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:19:11.707Z import-worker[8841] ERROR row=1291 sku=HF-GRANITE-1244 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:26:34.838Z import-worker[8841] ERROR row=1294 sku=HF-LIME-1718 action=upsert rejected: image url returned 404 at fetch time
+2026-09-19T01:33:57.969Z import-worker[8841] ERROR row=1297 sku=HF-OAK-2885 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:40:20.100Z import-worker[8841] ERROR row=1300 sku=HF-TERRA-7389 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:47:43.231Z import-worker[8841] ERROR row=1303 sku=HF-TERRA-3095 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:54:06.362Z import-worker[8841] ERROR row=1306 sku=HF-MARBLE-3466 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:01:29.493Z import-worker[8841] ERROR row=1309 sku=HF-LIME-2659 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:08:52.624Z import-worker[8841] ERROR row=1312 sku=HF-TRAV-7174 action=upsert rejected: duplicate barcode, already held by another variant
+2026-09-19T01:15:15.755Z import-worker[8841] ERROR row=1315 sku=HF-TERRA-5082 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:22:38.886Z import-worker[8841] ERROR row=1318 sku=HF-MARBLE-4315 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:29:01.017Z import-worker[8841] ERROR row=1321 sku=HF-BAMBOO-6195 action=upsert rejected: stock_location 'WH-3' is not enabled for this channel
+2026-09-19T01:36:24.148Z import-worker[8841] ERROR row=1324 sku=HF-BAMBOO-8211 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:43:47.279Z import-worker[8841] ERROR row=1327 sku=HF-VINYL-2798 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:50:10.410Z import-worker[8841] ERROR row=1330 sku=HF-MARBLE-2719 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:57:33.541Z import-worker[8841] ERROR row=1333 sku=HF-TRAV-5067 action=upsert rejected: duplicate barcode, already held by another variant
+2026-09-19T01:04:56.672Z import-worker[8841] ERROR row=1336 sku=HF-OAK-6826 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:11:19.803Z import-worker[8841] ERROR row=1339 sku=HF-PORC-7732 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:18:42.934Z import-worker[8841] ERROR row=1342 sku=HF-SLATE-4691 action=upsert rejected: image url returned 404 at fetch time
+2026-09-19T01:25:05.065Z import-worker[8841] ERROR row=1345 sku=HF-PORC-8583 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:32:28.196Z import-worker[8841] ERROR row=1348 sku=HF-VINYL-4133 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:39:51.327Z import-worker[8841] ERROR row=1351 sku=HF-TERRA-6506 action=upsert rejected: duplicate barcode, already held by another variant
+2026-09-19T01:46:14.458Z import-worker[8841] ERROR row=1354 sku=HF-LIME-4706 action=upsert rejected: duplicate barcode, already held by another variant
+2026-09-19T01:53:37.589Z import-worker[8841] ERROR row=1357 sku=HF-SLATE-7788 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:00:00.720Z import-worker[8841] ERROR row=1360 sku=HF-PORC-8150 action=upsert rejected: variant option 'finish' has no value on the parent
+2026-09-19T01:07:23.851Z import-worker[8841] ERROR row=1363 sku=HF-OAK-6556 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:14:46.982Z import-worker[8841] ERROR row=1366 sku=HF-LIME-3901 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:21:09.113Z import-worker[8841] ERROR row=1369 sku=HF-LIME-1156 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:28:32.244Z import-worker[8841] ERROR row=1372 sku=HF-VINYL-4725 action=upsert rejected: currency GBP does not match the price list currency EUR
+2026-09-19T01:35:55.375Z import-worker[8841] ERROR row=1375 sku=HF-OAK-7301 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:42:18.506Z import-worker[8841] ERROR row=1378 sku=HF-BAMBOO-7383 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:49:41.637Z import-worker[8841] ERROR row=1381 sku=HF-OAK-6154 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:56:04.768Z import-worker[8841] ERROR row=1384 sku=HF-TERRA-1893 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:03:27.899Z import-worker[8841] ERROR row=1387 sku=HF-MARBLE-8851 action=upsert rejected: attribute 'pack_coverage_m2' is not a number: '2,4'
+2026-09-19T01:10:50.030Z import-worker[8841] ERROR row=1390 sku=HF-BAMBOO-2633 action=upsert rejected: image url returned 404 at fetch time
+2026-09-19T01:17:13.161Z import-worker[8841] ERROR row=1393 sku=HF-PORC-2463 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:24:36.292Z import-worker[8841] ERROR row=1396 sku=HF-TERRA-5381 action=upsert rejected: price_ex_vat missing and no fallback on the variant
+2026-09-19T01:31:59.423Z import-worker[8841] ERROR row=1399 sku=HF-TRAV-2855 action=upsert rejected: lead_time_days out of range (got 0, expected 1-90)
+2026-09-19T01:38:22.554Z import-worker[8841] ERROR row=1402 sku=HF-MARBLE-5421 action=upsert rejected: tax_class 'reduced' withdrawn on 2026-08-01
+2026-09-19T01:45:45.685Z import-worker[8841] ERROR row=1405 sku=HF-GRANITE-6033 action=upsert rejected: parent sku not found in this catalogue version
+2026-09-19T01:52:08.816Z import-worker[8841] ERROR row=1408 sku=HF-VINYL-7953 action=upsert rejected: currency GBP does not match the price list currency EUR

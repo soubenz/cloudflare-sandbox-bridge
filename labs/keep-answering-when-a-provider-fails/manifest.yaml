@@ -1,0 +1,170 @@
+# See docs/lab-authoring.md for the lab format. checks/ is the real
+# grader (checks/_harness.py drives one traffic run, shared by all four
+# check scripts) and solution/gateway/config.yaml is the reference
+# solution it was proven against -- see this lab's scratchpad Step A/B
+# research for the live evidence and every threshold's justification.
+#
+# Load-bearing design notes:
+#
+#  1. No Postgres. LiteLLM 1.102.1 boots and serves fine with no
+#     DATABASE_URL at all -- `/health/readiness` reports
+#     `{"status":"healthy","db":"Not connected"}` -- as long as every model
+#     comes from this static config.yaml (no virtual keys/teams/spend,
+#     which do need Postgres; see gateway-litellm-hello's own notes for
+#     that half of the story). That also means litellm boots in ~10s here
+#     instead of the ~20s a fresh migration run costs, so the healthcheck
+#     timeout stays at the schema default rather than the schema max.
+#  2. The fault proxy is the only way to `a`. `support` in
+#     workspace/gateway/config.yaml reaches deployment a *only* through
+#     the fault proxy (never `provider` directly) -- so switching the
+#     proxy's mode is the only way an outage of a happens, and its own
+#     /log is a trustworthy witness of how many times a was actually
+#     bothered.
+#  3. `litellm`'s own admin UI always requires a login (docs/spike.md,
+#     "LiteLLM under a path prefix", Q4) and nothing turns that off, so
+#     under the no-login house rule `litellm` stays `ui: false` and `view`
+#     -- a small stdlib, read-only page of this lab's own -- is the tab
+#     instead.
+slug: keep-answering-when-a-provider-fails
+version: 1.0.0
+title: "Keep answering when a provider fails"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  The `support` alias answers every request through one deployment that
+  has outages. Keep it answering through one, without hammering the
+  failing deployment, and come back to it on its own once it recovers.
+objectives:
+  - "Give `support` a second path to an answer, so a customer request never fails just because one deployment is down"
+  - "Stop sending traffic to a deployment that's already refusing it, so it gets a real rest during an outage instead of a request every few hundred milliseconds"
+  - "Return to the primary deployment on its own once it recovers, with no manual step"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  PROVIDER_URL: "http://127.0.0.1:8961"
+  FAULT_PROXY_URL: "http://127.0.0.1:8963"
+  VIEW_URL: "http://127.0.0.1:8962"
+  LITELLM_URL: "http://127.0.0.1:4000"
+  LITELLM_MASTER_KEY: "sk-opalix-lab-master"
+
+services:
+  - name: provider
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8961"
+    port: 8961
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+
+  - name: fault-proxy
+    argv: ["python3", "-B", "/workspace/services/fault_proxy.py"]
+    cwd: /workspace
+    env:
+      FAULT_PROXY_PORT: "8963"
+      UPSTREAM_URL: "http://127.0.0.1:8961/a/v1"
+    port: 8963
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [provider]
+
+  - name: litellm
+    # ui: false -- litellm's own admin UI always requires a login (see the
+    # note above); `view` is this lab's tab instead.
+    argv: ["litellm", "--config", "/workspace/gateway/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    cwd: /workspace
+    env:
+      LITELLM_MASTER_KEY: "sk-opalix-lab-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      timeout_s: 30
+    ui: false
+    depends_on: [provider, fault-proxy]
+
+  - name: view
+    argv: ["python3", "-B", "/workspace/services/view.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "8962"
+      VIEW_PREFIX: "{{service.prefix}}"
+      FAULT_PROXY_URL: "http://127.0.0.1:8963"
+      PROVIDER_URL: "http://127.0.0.1:8961"
+    port: 8962
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: true
+    depends_on: [provider, fault-proxy]
+
+pressure: []
+
+checks:
+  # None of these read the learner's config.yaml as text. Each shares one
+  # grading run's own traffic -- a fresh, throwaway LiteLLM against the
+  # learner's *current* gateway/config.yaml, driven through a real outage
+  # of deployment a and back -- with the other three. Sequential on
+  # purpose: whichever runs first pays the setup + traffic cost (LiteLLM's
+  # own boot plus a wait past the stated cooldown ceiling, ~60-90s here
+  # locally), and the other three just read its result. timeout_s is
+  # generously above that for a slower, 0.5-vCPU container. See
+  # checks/_harness.py for the shared traffic run and every threshold's
+  # justification.
+  - name: customers-always-get-an-answer
+    script: customers-always-get-an-answer.sh
+    timeout_s: 300
+    weight: 1
+    parallel: false
+  - name: failing-provider-gets-a-rest
+    script: failing-provider-gets-a-rest.sh
+    timeout_s: 300
+    weight: 1
+    parallel: false
+  - name: retries-are-bounded
+    script: retries-are-bounded.sh
+    timeout_s: 300
+    weight: 1
+    parallel: false
+  - name: primary-comes-back
+    script: primary-comes-back.sh
+    timeout_s: 300
+    weight: 1
+    parallel: false
+
+hints:
+  - after_minutes: 15
+    text: >-
+      Run `python3 outage.py on` yourself and then `python3 traffic.py` in
+      another terminal -- watch what `support` actually does while
+      deployment a is down. The view tab and the provider's own /log show
+      you which deployment answered each call.
+  - after_minutes: 35
+    text: >-
+      The provider answers a second path too, directly, not through the
+      fault proxy: deployment b. It's a different URL on the same
+      provider process -- look at how `support` reaches deployment a in
+      gateway/config.yaml, and how fake_provider.py tells `a` and `b`
+      apart, for the shape of a path that reaches `b` instead.
+  - after_minutes: 55
+    text: >-
+      A router that keeps retrying a deployment that just told it "no"
+      isn't giving that deployment a rest -- it's only slowing down how
+      fast it gets hammered. Look for a setting that stops sending a
+      deployment traffic for a while after it fails enough times, and
+      starts again on its own once that while is up.
+
+egress:
+  allow: []

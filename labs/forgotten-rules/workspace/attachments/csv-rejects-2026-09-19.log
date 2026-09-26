@@ -1,0 +1,214 @@
+row,sku,reason,action,price_list,disposition
+1003,HF-TRAV-2987,"price_ex_vat missing and no fallback on the variant",archive,price-list-eu,retry
+1006,HF-SLATE-7058,"duplicate barcode, already held by another variant",upsert,price-list-uk,skip
+1009,HF-OAK-3616,"variant option 'finish' has no value on the parent",upsert,price-list-trade,hold
+1012,HF-VINYL-6800,"price_ex_vat missing and no fallback on the variant",archive,price-list-uk,hold
+1015,HF-PORC-3545,"stock_location 'WH-3' is not enabled for this channel",upsert,price-list-uk,retry
+1018,HF-LIME-5348,"variant option 'finish' has no value on the parent",upsert,price-list-trade,skip
+1021,HF-LIME-3742,"lead_time_days out of range (got 0, expected 1-90)",upsert,price-list-eu,skip
+1024,HF-GRANITE-2165,"lead_time_days out of range (got 0, expected 1-90)",create,price-list-trade,hold
+1027,HF-TRAV-4538,"price_ex_vat missing and no fallback on the variant",create,price-list-trade,retry
+1030,HF-VINYL-8578,"lead_time_days out of range (got 0, expected 1-90)",archive,price-list-eu,hold
+1033,HF-VINYL-4254,"parent sku not found in this catalogue version",create,price-list-trade,skip
+1036,HF-VINYL-5772,"price_ex_vat missing and no fallback on the variant",create,price-list-trade,hold
+1039,HF-GRANITE-5449,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-trade,hold
+1042,HF-VINYL-1721,"attribute 'pack_coverage_m2' is not a number: '2,4'",create,price-list-eu,retry
+1045,HF-VINYL-7399,"stock_location 'WH-3' is not enabled for this channel",upsert,price-list-uk,hold
+1048,HF-BAMBOO-4282,"price_ex_vat missing and no fallback on the variant",upsert,price-list-eu,retry
+1051,HF-TRAV-1247,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-eu,retry
+1054,HF-MARBLE-8452,"duplicate barcode, already held by another variant",archive,price-list-uk,skip
+1057,HF-OAK-1514,"tax_class 'reduced' withdrawn on 2026-08-01",upsert,price-list-trade,hold
+1060,HF-BAMBOO-6370,"attribute 'pack_coverage_m2' is not a number: '2,4'",upsert,price-list-uk,skip
+1063,HF-SLATE-7783,"parent sku not found in this catalogue version",archive,price-list-eu,retry
+1066,HF-SLATE-5083,"tax_class 'reduced' withdrawn on 2026-08-01",upsert,price-list-trade,skip
+1069,HF-TERRA-4900,"attribute 'pack_coverage_m2' is not a number: '2,4'",archive,price-list-trade,skip
+1072,HF-SLATE-7715,"variant option 'finish' has no value on the parent",create,price-list-uk,retry
+1075,HF-TRAV-5096,"duplicate barcode, already held by another variant",archive,price-list-uk,skip
+1078,HF-SLATE-2403,"variant option 'finish' has no value on the parent",create,price-list-trade,skip
+1081,HF-TRAV-1342,"attribute 'pack_coverage_m2' is not a number: '2,4'",upsert,price-list-eu,hold
+1084,HF-SLATE-2772,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-eu,retry
+1087,HF-TRAV-1191,"lead_time_days out of range (got 0, expected 1-90)",upsert,price-list-trade,skip
+1090,HF-LIME-2701,"stock_location 'WH-3' is not enabled for this channel",create,price-list-uk,hold
+1093,HF-GRANITE-7833,"parent sku not found in this catalogue version",upsert,price-list-uk,skip
+1096,HF-LIME-1270,"currency GBP does not match the price list currency EUR",upsert,price-list-eu,hold
+1099,HF-VINYL-1402,"stock_location 'WH-3' is not enabled for this channel",create,price-list-eu,retry
+1102,HF-BAMBOO-1922,"lead_time_days out of range (got 0, expected 1-90)",upsert,price-list-trade,hold
+1105,HF-TRAV-2460,"duplicate barcode, already held by another variant",upsert,price-list-uk,skip
+1108,HF-TRAV-5945,"lead_time_days out of range (got 0, expected 1-90)",upsert,price-list-eu,hold
+1111,HF-OAK-3269,"price_ex_vat missing and no fallback on the variant",upsert,price-list-trade,skip
+1114,HF-BAMBOO-4629,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-uk,skip
+1117,HF-MARBLE-3121,"price_ex_vat missing and no fallback on the variant",archive,price-list-eu,hold
+1120,HF-SLATE-2437,"variant option 'finish' has no value on the parent",archive,price-list-trade,skip
+1123,HF-PORC-7950,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-uk,skip
+1126,HF-PORC-5304,"parent sku not found in this catalogue version",create,price-list-trade,skip
+1129,HF-TERRA-7695,"parent sku not found in this catalogue version",archive,price-list-uk,skip
+1132,HF-VINYL-3812,"attribute 'pack_coverage_m2' is not a number: '2,4'",create,price-list-trade,hold
+1135,HF-GRANITE-2597,"parent sku not found in this catalogue version",upsert,price-list-uk,skip
+1138,HF-MARBLE-2932,"price_ex_vat missing and no fallback on the variant",archive,price-list-trade,retry
+1141,HF-BAMBOO-5568,"duplicate barcode, already held by another variant",archive,price-list-uk,hold
+1144,HF-MARBLE-7289,"price_ex_vat missing and no fallback on the variant",upsert,price-list-trade,hold
+1147,HF-OAK-7608,"attribute 'pack_coverage_m2' is not a number: '2,4'",upsert,price-list-trade,retry
+1150,HF-TRAV-3110,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-eu,skip
+1153,HF-LIME-6098,"tax_class 'reduced' withdrawn on 2026-08-01",archive,price-list-trade,skip
+1156,HF-MARBLE-8950,"price_ex_vat missing and no fallback on the variant",upsert,price-list-trade,hold
+1159,HF-MARBLE-6563,"lead_time_days out of range (got 0, expected 1-90)",upsert,price-list-uk,retry
+1162,HF-OAK-1965,"duplicate barcode, already held by another variant",create,price-list-uk,skip
+1165,HF-SLATE-1845,"image url returned 404 at fetch time",create,price-list-uk,retry
+1168,HF-TERRA-3330,"stock_location 'WH-3' is not enabled for this channel",create,price-list-eu,retry
+1171,HF-VINYL-3513,"currency GBP does not match the price list currency EUR",archive,price-list-uk,hold
+1174,HF-MARBLE-8401,"price_ex_vat missing and no fallback on the variant",create,price-list-eu,hold
+1177,HF-GRANITE-2782,"attribute 'pack_coverage_m2' is not a number: '2,4'",upsert,price-list-uk,skip
+1180,HF-GRANITE-2136,"image url returned 404 at fetch time",upsert,price-list-eu,retry
+1183,HF-TRAV-1928,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-eu,retry
+1186,HF-GRANITE-4086,"attribute 'pack_coverage_m2' is not a number: '2,4'",archive,price-list-eu,retry
+1189,HF-VINYL-2083,"variant option 'finish' has no value on the parent",create,price-list-eu,hold
+1192,HF-GRANITE-1398,"stock_location 'WH-3' is not enabled for this channel",archive,price-list-eu,hold
+1195,HF-TERRA-3956,"currency GBP does not match the price list currency EUR",create,price-list-trade,retry
+1198,HF-SLATE-1944,"parent sku not found in this catalogue version",create,price-list-uk,retry
+1201,HF-LIME-4869,"lead_time_days out of range (got 0, expected 1-90)",archive,price-list-uk,retry
+1204,HF-TRAV-5794,"lead_time_days out of range (got 0, expected 1-90)",archive,price-list-uk,hold
+1207,HF-BAMBOO-8641,"duplicate barcode, already held by another variant",archive,price-list-eu,skip
+1210,HF-GRANITE-6866,"parent sku not found in this catalogue version",create,price-list-trade,skip
+1213,HF-GRANITE-7545,"stock_location 'WH-3' is not enabled for this channel",create,price-list-uk,retry
+1216,HF-BAMBOO-6270,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-trade,skip
+1219,HF-LIME-1377,"variant option 'finish' has no value on the parent",upsert,price-list-trade,hold
+1222,HF-BAMBOO-3904,"image url returned 404 at fetch time",create,price-list-uk,hold
+1225,HF-BAMBOO-3853,"stock_location 'WH-3' is not enabled for this channel",create,price-list-uk,hold
+1228,HF-TRAV-1376,"tax_class 'reduced' withdrawn on 2026-08-01",archive,price-list-trade,skip
+1231,HF-SLATE-2038,"tax_class 'reduced' withdrawn on 2026-08-01",archive,price-list-uk,skip
+1234,HF-TRAV-1836,"duplicate barcode, already held by another variant",archive,price-list-trade,hold
+1237,HF-PORC-1103,"price_ex_vat missing and no fallback on the variant",upsert,price-list-eu,skip
+1240,HF-TRAV-4961,"parent sku not found in this catalogue version",archive,price-list-trade,retry
+1243,HF-SLATE-3141,"duplicate barcode, already held by another variant",upsert,price-list-eu,retry
+1246,HF-TRAV-6853,"attribute 'pack_coverage_m2' is not a number: '2,4'",archive,price-list-trade,hold
+1249,HF-PORC-6620,"image url returned 404 at fetch time",archive,price-list-eu,skip
+1252,HF-LIME-3638,"currency GBP does not match the price list currency EUR",upsert,price-list-trade,hold
+1255,HF-OAK-6031,"attribute 'pack_coverage_m2' is not a number: '2,4'",create,price-list-uk,retry
+1258,HF-GRANITE-5431,"stock_location 'WH-3' is not enabled for this channel",archive,price-list-eu,skip
+1261,HF-SLATE-2894,"stock_location 'WH-3' is not enabled for this channel",create,price-list-uk,hold
+1264,HF-MARBLE-6030,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-uk,hold
+1267,HF-MARBLE-8587,"stock_location 'WH-3' is not enabled for this channel",archive,price-list-uk,retry
+1270,HF-MARBLE-5407,"attribute 'pack_coverage_m2' is not a number: '2,4'",upsert,price-list-eu,retry
+1273,HF-TERRA-6393,"stock_location 'WH-3' is not enabled for this channel",create,price-list-uk,skip
+1276,HF-LIME-1226,"image url returned 404 at fetch time",create,price-list-uk,skip
+1279,HF-SLATE-6021,"tax_class 'reduced' withdrawn on 2026-08-01",upsert,price-list-eu,hold
+1282,HF-SLATE-1338,"image url returned 404 at fetch time",upsert,price-list-eu,skip
+1285,HF-TRAV-4726,"currency GBP does not match the price list currency EUR",upsert,price-list-uk,retry
+1288,HF-SLATE-2580,"lead_time_days out of range (got 0, expected 1-90)",create,price-list-trade,skip
+1291,HF-PORC-3516,"variant option 'finish' has no value on the parent",archive,price-list-eu,hold
+1294,HF-PORC-4009,"lead_time_days out of range (got 0, expected 1-90)",upsert,price-list-trade,skip
+1297,HF-BAMBOO-2161,"currency GBP does not match the price list currency EUR",create,price-list-eu,retry
+1300,HF-SLATE-7641,"lead_time_days out of range (got 0, expected 1-90)",create,price-list-trade,retry
+1303,HF-TERRA-5304,"variant option 'finish' has no value on the parent",archive,price-list-eu,retry
+1306,HF-OAK-2734,"parent sku not found in this catalogue version",archive,price-list-eu,retry
+1309,HF-OAK-7795,"image url returned 404 at fetch time",upsert,price-list-trade,skip
+1312,HF-BAMBOO-1913,"currency GBP does not match the price list currency EUR",create,price-list-eu,retry
+1315,HF-TRAV-3121,"currency GBP does not match the price list currency EUR",archive,price-list-eu,hold
+1318,HF-VINYL-1941,"duplicate barcode, already held by another variant",upsert,price-list-eu,retry
+1321,HF-SLATE-7334,"lead_time_days out of range (got 0, expected 1-90)",upsert,price-list-trade,hold
+1324,HF-MARBLE-3853,"lead_time_days out of range (got 0, expected 1-90)",archive,price-list-uk,hold
+1327,HF-PORC-6537,"stock_location 'WH-3' is not enabled for this channel",archive,price-list-uk,retry
+1330,HF-BAMBOO-2090,"parent sku not found in this catalogue version",create,price-list-eu,retry
+1333,HF-SLATE-8633,"currency GBP does not match the price list currency EUR",upsert,price-list-trade,skip
+1336,HF-LIME-3402,"attribute 'pack_coverage_m2' is not a number: '2,4'",upsert,price-list-eu,retry
+1339,HF-OAK-7074,"price_ex_vat missing and no fallback on the variant",archive,price-list-trade,hold
+1342,HF-TERRA-7145,"image url returned 404 at fetch time",create,price-list-trade,hold
+1345,HF-TRAV-7206,"tax_class 'reduced' withdrawn on 2026-08-01",upsert,price-list-uk,skip
+1348,HF-PORC-1366,"duplicate barcode, already held by another variant",upsert,price-list-uk,retry
+1351,HF-GRANITE-4623,"currency GBP does not match the price list currency EUR",archive,price-list-trade,hold
+1354,HF-MARBLE-2908,"parent sku not found in this catalogue version",create,price-list-trade,skip
+1357,HF-OAK-5159,"attribute 'pack_coverage_m2' is not a number: '2,4'",archive,price-list-trade,retry
+1360,HF-OAK-3509,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-eu,retry
+1363,HF-MARBLE-4447,"tax_class 'reduced' withdrawn on 2026-08-01",archive,price-list-uk,skip
+1366,HF-SLATE-8764,"image url returned 404 at fetch time",archive,price-list-eu,skip
+1369,HF-BAMBOO-3031,"variant option 'finish' has no value on the parent",upsert,price-list-uk,skip
+1372,HF-OAK-5901,"stock_location 'WH-3' is not enabled for this channel",create,price-list-eu,skip
+1375,HF-SLATE-8864,"lead_time_days out of range (got 0, expected 1-90)",create,price-list-eu,skip
+1378,HF-SLATE-3301,"duplicate barcode, already held by another variant",create,price-list-eu,skip
+1381,HF-GRANITE-7095,"parent sku not found in this catalogue version",archive,price-list-uk,skip
+1384,HF-TRAV-2948,"parent sku not found in this catalogue version",upsert,price-list-trade,skip
+1387,HF-SLATE-7688,"duplicate barcode, already held by another variant",create,price-list-trade,skip
+1390,HF-TERRA-5294,"image url returned 404 at fetch time",upsert,price-list-eu,skip
+1393,HF-SLATE-5045,"lead_time_days out of range (got 0, expected 1-90)",archive,price-list-eu,retry
+1396,HF-GRANITE-5991,"image url returned 404 at fetch time",archive,price-list-eu,skip
+1399,HF-LIME-7974,"variant option 'finish' has no value on the parent",create,price-list-eu,skip
+1402,HF-BAMBOO-7258,"image url returned 404 at fetch time",create,price-list-eu,retry
+1405,HF-TERRA-8824,"lead_time_days out of range (got 0, expected 1-90)",archive,price-list-trade,retry
+1408,HF-MARBLE-8904,"price_ex_vat missing and no fallback on the variant",archive,price-list-trade,skip
+1411,HF-OAK-4963,"lead_time_days out of range (got 0, expected 1-90)",create,price-list-uk,retry
+1414,HF-VINYL-3845,"image url returned 404 at fetch time",upsert,price-list-uk,skip
+1417,HF-TRAV-2721,"duplicate barcode, already held by another variant",upsert,price-list-uk,hold
+1420,HF-PORC-1389,"duplicate barcode, already held by another variant",upsert,price-list-uk,retry
+1423,HF-VINYL-8949,"variant option 'finish' has no value on the parent",archive,price-list-trade,hold
+1426,HF-TRAV-5671,"parent sku not found in this catalogue version",archive,price-list-uk,hold
+1429,HF-GRANITE-1991,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-uk,skip
+1432,HF-MARBLE-2552,"attribute 'pack_coverage_m2' is not a number: '2,4'",archive,price-list-uk,retry
+1435,HF-BAMBOO-5390,"tax_class 'reduced' withdrawn on 2026-08-01",upsert,price-list-trade,hold
+1438,HF-BAMBOO-1785,"variant option 'finish' has no value on the parent",upsert,price-list-eu,skip
+1441,HF-TRAV-3208,"image url returned 404 at fetch time",create,price-list-uk,hold
+1444,HF-VINYL-3904,"stock_location 'WH-3' is not enabled for this channel",upsert,price-list-eu,skip
+1447,HF-LIME-4268,"lead_time_days out of range (got 0, expected 1-90)",upsert,price-list-eu,retry
+1450,HF-OAK-3409,"lead_time_days out of range (got 0, expected 1-90)",archive,price-list-uk,hold
+1453,HF-TRAV-6132,"variant option 'finish' has no value on the parent",archive,price-list-uk,skip
+1456,HF-MARBLE-5294,"lead_time_days out of range (got 0, expected 1-90)",archive,price-list-trade,retry
+1459,HF-LIME-4899,"parent sku not found in this catalogue version",archive,price-list-trade,skip
+1462,HF-BAMBOO-3395,"price_ex_vat missing and no fallback on the variant",upsert,price-list-trade,hold
+1465,HF-OAK-1904,"variant option 'finish' has no value on the parent",archive,price-list-trade,hold
+1468,HF-GRANITE-5803,"currency GBP does not match the price list currency EUR",create,price-list-uk,retry
+1471,HF-VINYL-3500,"lead_time_days out of range (got 0, expected 1-90)",create,price-list-uk,retry
+1474,HF-LIME-3238,"image url returned 404 at fetch time",create,price-list-trade,hold
+1477,HF-SLATE-3738,"parent sku not found in this catalogue version",create,price-list-trade,retry
+1480,HF-VINYL-3461,"stock_location 'WH-3' is not enabled for this channel",upsert,price-list-uk,hold
+1483,HF-GRANITE-7439,"image url returned 404 at fetch time",archive,price-list-trade,retry
+1486,HF-MARBLE-7226,"lead_time_days out of range (got 0, expected 1-90)",archive,price-list-trade,retry
+1489,HF-TRAV-6280,"currency GBP does not match the price list currency EUR",archive,price-list-trade,hold
+1492,HF-LIME-2716,"image url returned 404 at fetch time",upsert,price-list-eu,skip
+1495,HF-SLATE-5853,"stock_location 'WH-3' is not enabled for this channel",archive,price-list-trade,skip
+1498,HF-TRAV-3620,"tax_class 'reduced' withdrawn on 2026-08-01",upsert,price-list-uk,skip
+1501,HF-VINYL-3450,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-uk,hold
+1504,HF-PORC-5357,"tax_class 'reduced' withdrawn on 2026-08-01",archive,price-list-uk,skip
+1507,HF-TRAV-6905,"image url returned 404 at fetch time",upsert,price-list-trade,hold
+1510,HF-VINYL-4244,"currency GBP does not match the price list currency EUR",create,price-list-eu,hold
+1513,HF-OAK-8631,"variant option 'finish' has no value on the parent",create,price-list-eu,hold
+1516,HF-GRANITE-1845,"currency GBP does not match the price list currency EUR",upsert,price-list-trade,hold
+1519,HF-BAMBOO-3672,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-eu,retry
+1522,HF-LIME-4510,"tax_class 'reduced' withdrawn on 2026-08-01",upsert,price-list-eu,skip
+1525,HF-OAK-3376,"tax_class 'reduced' withdrawn on 2026-08-01",archive,price-list-uk,skip
+1528,HF-BAMBOO-8428,"duplicate barcode, already held by another variant",upsert,price-list-uk,hold
+1531,HF-TRAV-1357,"currency GBP does not match the price list currency EUR",create,price-list-trade,hold
+1534,HF-GRANITE-5153,"attribute 'pack_coverage_m2' is not a number: '2,4'",archive,price-list-uk,skip
+1537,HF-PORC-1153,"stock_location 'WH-3' is not enabled for this channel",create,price-list-trade,skip
+1540,HF-MARBLE-5836,"stock_location 'WH-3' is not enabled for this channel",create,price-list-uk,skip
+1543,HF-GRANITE-6834,"parent sku not found in this catalogue version",archive,price-list-uk,hold
+1546,HF-PORC-7159,"tax_class 'reduced' withdrawn on 2026-08-01",archive,price-list-eu,hold
+1549,HF-MARBLE-6288,"parent sku not found in this catalogue version",archive,price-list-trade,skip
+1552,HF-OAK-2020,"image url returned 404 at fetch time",archive,price-list-trade,skip
+1555,HF-PORC-5060,"attribute 'pack_coverage_m2' is not a number: '2,4'",upsert,price-list-trade,skip
+1558,HF-GRANITE-2681,"price_ex_vat missing and no fallback on the variant",upsert,price-list-uk,hold
+1561,HF-LIME-2281,"price_ex_vat missing and no fallback on the variant",create,price-list-eu,retry
+1564,HF-MARBLE-1218,"duplicate barcode, already held by another variant",archive,price-list-uk,hold
+1567,HF-OAK-3005,"image url returned 404 at fetch time",upsert,price-list-trade,hold
+1570,HF-VINYL-8031,"attribute 'pack_coverage_m2' is not a number: '2,4'",upsert,price-list-eu,retry
+1573,HF-PORC-5246,"price_ex_vat missing and no fallback on the variant",archive,price-list-uk,hold
+1576,HF-SLATE-2947,"currency GBP does not match the price list currency EUR",create,price-list-trade,retry
+1579,HF-TRAV-6044,"parent sku not found in this catalogue version",archive,price-list-eu,skip
+1582,HF-SLATE-7153,"tax_class 'reduced' withdrawn on 2026-08-01",upsert,price-list-trade,hold
+1585,HF-OAK-1160,"price_ex_vat missing and no fallback on the variant",create,price-list-eu,retry
+1588,HF-OAK-2092,"lead_time_days out of range (got 0, expected 1-90)",archive,price-list-uk,skip
+1591,HF-OAK-6097,"lead_time_days out of range (got 0, expected 1-90)",create,price-list-eu,hold
+1594,HF-TERRA-6833,"variant option 'finish' has no value on the parent",upsert,price-list-uk,retry
+1597,HF-OAK-4517,"image url returned 404 at fetch time",archive,price-list-eu,skip
+1600,HF-BAMBOO-8407,"image url returned 404 at fetch time",archive,price-list-uk,hold
+1603,HF-TRAV-7449,"parent sku not found in this catalogue version",create,price-list-uk,skip
+1606,HF-TRAV-8731,"image url returned 404 at fetch time",create,price-list-trade,hold
+1609,HF-GRANITE-5017,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-eu,hold
+1612,HF-BAMBOO-2800,"parent sku not found in this catalogue version",create,price-list-uk,retry
+1615,HF-MARBLE-3204,"currency GBP does not match the price list currency EUR",upsert,price-list-uk,retry
+1618,HF-OAK-4239,"tax_class 'reduced' withdrawn on 2026-08-01",create,price-list-trade,retry
+1621,HF-OAK-4972,"currency GBP does not match the price list currency EUR",create,price-list-uk,retry
+1624,HF-PORC-1075,"lead_time_days out of range (got 0, expected 1-90)",create,price-list-eu,skip
+1627,HF-BAMBOO-6929,"attribute 'pack_coverage_m2' is not a number: '2,4'",upsert,price-list-trade,retry
+1630,HF-MARBLE-4543,"lead_time_days out of range (got 0, expected 1-90)",upsert,price-list-uk,retry
+1633,HF-SLATE-6909,"parent sku not found in this catalogue version",archive,price-list-uk,hold
+1636,HF-MARBLE-5903,"lead_time_days out of range (got 0, expected 1-90)",create,price-list-trade,hold
+1639,HF-PORC-2210,"variant option 'finish' has no value on the parent",archive,price-list-trade,hold

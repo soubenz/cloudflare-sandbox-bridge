@@ -1,0 +1,15 @@
+# Two aliases, one scripted provider process with two "deployments" (just
+# two different URL paths, /a/v1 and /b/v1 -- see
+# workspace/services/fake_provider.py). A caller only ever names the alias;
+# LiteLLM decides which deployment actually answers.
+model_list:
+  - model_name: support
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/a/v1
+      api_key: unused
+  - model_name: fast
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/b/v1
+      api_key: unused
