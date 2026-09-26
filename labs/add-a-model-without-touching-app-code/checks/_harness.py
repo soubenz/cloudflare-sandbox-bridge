@@ -233,11 +233,44 @@ def _psql(sql):
     return proc.returncode, proc.stdout, proc.stderr
 
 
+def _kill_anything_on_port(port):
+    """Best-effort: kill whatever is bound to `port`, so a process a prior
+    run's wrong-answer sync orphaned (found live: relaunching LiteLLM
+    itself, bound to the same port, outside anything this harness tracks)
+    can't block this run from binding it again. Never raises -- a clean
+    port is the common case and this is only a safety net."""
+    from shutil import which
+    if which("fuser"):
+        subprocess.run(["fuser", "-k", "-TERM", "%s/tcp" % port], capture_output=True, timeout=5)
+        time.sleep(0.3)
+        subprocess.run(["fuser", "-k", "-KILL", "%s/tcp" % port], capture_output=True, timeout=5)
+        return
+    try:
+        out = subprocess.run(["ss", "-ltnp"], capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return
+    needle = ":%s " % port
+    for line in out.splitlines():
+        if needle not in line:
+            continue
+        for m in __import__("re").finditer(r"pid=(\d+)", line):
+            try:
+                os.kill(int(m.group(1)), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+
 def _recreate_grading_db():
     # DROP before CREATE, every run -- a leftover DB from a run that never
-    # got to clean up (a killed harness, a crashed container) must not
-    # leak state into this run.
-    rc, out, err = _psql("DROP DATABASE IF EXISTS %s;" % GRADER_DB_NAME)
+    # got to clean up (a killed harness, a crashed container, or -- found
+    # live while testing this lab -- a wrong-answer sync.py that restarts
+    # LiteLLM by relaunching it as an untracked process, which then keeps
+    # its own connection to `grading` open forever) must not leak state
+    # into this run. WITH (FORCE) (Postgres 13+) terminates any backends
+    # still connected to the target database before dropping it, so an
+    # orphaned process from a prior run's misbehaving sync can't wedge
+    # every run after it.
+    rc, out, err = _psql("DROP DATABASE IF EXISTS %s WITH (FORCE);" % GRADER_DB_NAME)
     if rc != 0:
         raise RuntimeError("could not drop grading db: %s" % (err or out))
     # From the image's pre-migrated template (images/gateway/build-pg-template.sh):
@@ -401,6 +434,8 @@ def _build_results():
             _stop_proc(proc, log_f)
 
     try:
+        _kill_anything_on_port(GRADER_LITELLM_PORT)
+        _kill_anything_on_port(GRADER_MLFLOW_PORT)
         _recreate_grading_db()
 
         litellm_proc, litellm_log_f = _start_grader_litellm(os.path.join(HERE, "grader-litellm.log"))
