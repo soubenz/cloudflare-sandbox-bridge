@@ -1,0 +1,107 @@
+# Gateway-family smoke lab. Exists to prove that LiteLLM, Postgres and a
+# scripted model provider all boot and work together inside a lab session
+# the way test/fixtures/labs/gateway-hello does for Prometheus + Grafana.
+# Not a real Opalix lab.
+#
+# Three things here are not obvious and are load-bearing (see docs/spike.md,
+# "LiteLLM proxy (T4)" and "LiteLLM under a path prefix (T5)" for the
+# evidence):
+#
+#  1. Postgres is mandatory, not a default -- LiteLLM's virtual-key/team/
+#     spend features are backed by a Prisma schema with a hard-coded
+#     `provider = "postgresql"`, so DATABASE_URL must be a real postgres://
+#     URL (T4 Q1). Postgres also refuses to run as root, so its argv below
+#     does the whole dance -- initdb (once) then exec postgres -- as the
+#     `postgres` OS user via `runuser`, even though the service itself is
+#     launched as root like every other service in this manifest. The data
+#     directory lives under /tmp because /workspace is chowned to `learner`,
+#     not `postgres`.
+#  2. `litellm`'s own admin UI (`/ui/`) always requires a login -- username
+#     `admin`, password the master key or UI_PASSWORD -- and nothing turns
+#     that off (T5 Q4). Under the no-login rule in docs/lab-authoring.md,
+#     that means `ui: false` on the litellm service: it is never a tab, and
+#     this fixture doesn't ship a substitute page for it either, since
+#     proving the API boots and routes correctly doesn't need one.
+#  3. `SERVER_ROOT_PATH` (the proxy prefix) makes every API path answer
+#     correctly whether or not the request actually carries the prefix
+#     (T5 Q1) -- so the checks below call LiteLLM at its bare
+#     127.0.0.1:4000 address from inside the container, same as
+#     gateway-hello's checks do for Prometheus and Grafana. The env var is
+#     still set, matching what a real lab would need for anything a
+#     learner opens through the session proxy.
+#
+# A fresh database runs all 171 of LiteLLM's bundled migrations on its
+# first boot, which is why litellm's healthcheck timeout is the schema
+# maximum (120s) rather than the usual default.
+slug: gateway-litellm-hello
+version: 1.0.0
+title: "LiteLLM gateway smoke test"
+type: scale
+summary: "LiteLLM in front of two model deployments, backed by a real Postgres and a scripted fake provider. A guided tour proving the gateway image's LLM stack boots and routes, not a problem to solve."
+difficulty: intro
+family: gateway
+timeout_minutes: 60
+idle_minutes: 10
+env:
+  LITELLM_URL: "http://127.0.0.1:4000"
+  PROVIDER_URL: "http://127.0.0.1:8961"
+  LITELLM_MASTER_KEY: "sk-opalix-fixture-master"
+services:
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then mkdir -p /tmp/pg && chown postgres:postgres /tmp/pg && runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+  - name: provider
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    port: 8961
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: litellm
+    # ui: false -- see note 2 above: the admin UI always requires a login,
+    # so under the no-login rule it is never proxied as a tab.
+    argv: ["litellm", "--config", "/workspace/gateway/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-fixture-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # A fresh database runs all of LiteLLM's migrations on first boot,
+      # which takes a while (docs/spike.md T4 Q5: ~20-22s even on an
+      # already-migrated DB) -- use the schema's max rather than default 30.
+      timeout_s: 120
+    ui: false
+    depends_on: [postgres, provider]
+pressure: []
+checks:
+  - name: litellm-ready
+    script: litellm-ready.sh
+    timeout_s: 60
+    weight: 1
+  - name: alias-routes
+    script: alias-routes.sh
+    timeout_s: 60
+    weight: 1
+hints:
+  - after_minutes: 12
+    text: "LiteLLM's config maps each alias to one deployment of the scripted provider -- 'support' goes to deployment a, 'fast' goes to deployment b. Check /workspace/gateway/config.yaml."
+egress:
+  allow: []
