@@ -18,7 +18,12 @@
 # contextforge is `ui: false` here, same as LiteLLM in every Module 1
 # lab, and `view` (workspace/view.py) is the `ui: true` tab instead -- a
 # small stdlib read-only page that calls ContextForge's own REST API the
-# same non-browser way register.py does.
+# same non-browser way register.py does. (A second, independent reason
+# ContextForge's admin UI could never be the tab anyway, per the same
+# investigation's later finding while building lab 5: its templates
+# hard-code absolute asset paths with no reverse-proxy path-prefix
+# support, so a request shaped like this platform's own proxied path
+# 404s regardless of the login redirect.)
 #
 # Settled: what "a health check" means here (catalogue: "Typed inputs,
 # real errors, pagination, and a health check").
@@ -177,16 +182,57 @@ services:
       timeout_s: 30
     ui: false
     depends_on: []
+  # This lab's substitute for ContextForge's own (login-gated) admin UI:
+  # a small read-only stdlib page, workspace/view.py. It never accepts a
+  # write and calls ContextForge's REST API the same non-browser way
+  # register.py does.
+  - name: view
+    argv: ["python3", "-B", "/workspace/view.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "8992"
+      VIEW_PREFIX: "{{service.prefix}}"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+    port: 8992
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: [contextforge]
 
 pressure: []
 
 checks:
-  # Placeholder for part 1 -- see checks/placeholder.sh. Always fails,
-  # which is correct: nothing has fixed tool_server.py yet.
-  - name: placeholder
-    script: placeholder.sh
-    timeout_s: 30
+  # Shared setup (own throwaway ContextForge instance + a fresh subprocess
+  # of the learner's own tool_server.py, on their own ports) lives in
+  # _harness.py; each check reads the same recorded facts. See its module
+  # docstring for the full design and this lab's own report for the
+  # proof runs (untouched skeleton: fails errors-are-clean-not-leaky and
+  # pagination-is-correct with clear messages, passes the other two;
+  # reference solution: passes all four, 3 consecutive runs; a variant
+  # with a clean page_size/order_id check but a bare, uncaught
+  # `int(cursor)` fails errors-are-clean-not-leaky specifically).
+  - name: typed-inputs-are-enforced
+    script: typed-inputs-are-enforced.sh
+    timeout_s: 120
     weight: 1
+    parallel: false
+  - name: errors-are-clean-not-leaky
+    script: errors-are-clean-not-leaky.sh
+    timeout_s: 120
+    weight: 2
+    parallel: false
+  - name: pagination-is-correct
+    script: pagination-is-correct.sh
+    timeout_s: 120
+    weight: 2
+    parallel: false
+  - name: registers-cleanly
+    script: registers-cleanly.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
 
 hints:
   # ~15% of timeout_minutes.
@@ -199,11 +245,13 @@ hints:
   # ~30% of timeout_minutes.
   - after_minutes: 27
     text: >-
-      list_orders's cursor is meant to be round-tripped: whatever
-      nextCursor your own call returns becomes the cursor the caller
-      sends back next time. If list_orders returns the same page
-      regardless of what cursor came in, nothing before it is actually
-      being read to decide where to start.
+      list_orders's cursor/nextCursor pair is meant to be round-tripped:
+      whatever nextCursor your own call returns becomes the cursor
+      argument the caller passes back on the next call, and that's how
+      it knows where to resume. If list_orders returns the same page
+      and the same (or no) nextCursor regardless of what cursor came in,
+      nothing before it is actually being read to decide where to start
+      or when to stop.
   # ~45% of timeout_minutes.
   - after_minutes: 40
     text: >-
@@ -214,8 +262,10 @@ hints:
       that is type-valid but doesn't make sense (page_size <= 0, a
       cursor past the end of the dataset) won't raise anything on its
       own either -- Python's list slicing just returns something odd,
-      silently. Both need an explicit check with your own message,
-      raised as mcp.server.fastmcp.exceptions.ToolError.
+      silently. Both need an explicit check with your own message, raised
+      as `raise mcp.server.fastmcp.exceptions.ToolError("...")` -- that's
+      what turns "something went wrong somewhere" into a real, readable
+      MCP error.
 
 egress:
   allow: []
