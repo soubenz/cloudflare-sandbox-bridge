@@ -4,6 +4,36 @@
  * always carries white text; the lighter blue is the accent's stand-in on
  * navy, where cobalt itself would not have the contrast.
  */
+/*
+ * Fonts are self-hosted (public/fonts, SIL Open Font License, see
+ * fonts/OFL.txt) so no page makes a request to a third party. Each is the
+ * Latin subset of the variable font, which covers every weight in use.
+ */
+@font-face {
+  font-family: 'Funnel Display';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 800;
+  src: url('/fonts/funnel-display-latin-wght-normal.woff2') format('woff2-variations'), url('/fonts/funnel-display-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'Funnel Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 800;
+  src: url('/fonts/funnel-sans-latin-wght-normal.woff2') format('woff2-variations'), url('/fonts/funnel-sans-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations'), url('/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
 :root {
   --bg: #f2f4fa;
   --dot: #d2d7e8;
@@ -371,6 +401,26 @@ ul { margin: 0; padding: 0; list-style: none; }
 .thanks { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; gap: 24px; padding-block: 64px; }
 .thanks .lede { max-width: 560px; }
 
+/* ---------- legal pages ---------- */
+.legal-page {
+  margin-top: -76px; padding: 156px 0 112px;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--dot) 1.2px, transparent 1.2px);
+  background-size: 24px 24px;
+}
+.legal { max-width: 760px; display: flex; flex-direction: column; gap: 16px; }
+.legal > h1 { margin: 8px 0 0; }
+.legal .legal-updated { margin: 0; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.legal .lede { margin: 8px 0 0; font-size: clamp(17px, 1.45vw, 20px); color: var(--ink-2); }
+.legal h2 { margin: 40px 0 0; font-family: var(--display); font-size: 28px; line-height: 1.15; letter-spacing: -0.02em; }
+.legal h3 { margin: 12px 0 0; font-size: 18px; }
+.legal p, .legal ul { margin: 0; color: var(--ink-2); font-size: 17px; line-height: 1.6; }
+.legal ul { list-style: disc; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.legal li::marker { color: var(--accent); }
+.legal strong { color: var(--ink); }
+.legal a { color: var(--accent); font-weight: 600; }
+.placeholder { padding: 1px 6px; border-radius: 6px; background: var(--accent-soft); color: var(--ink); font-family: var(--mono); font-size: 0.88em; }
+
 /* ================= responsive ================= */
 @media (max-width: 1180px) {
   .nav-links { display: none; }
@@ -445,6 +495,9 @@ ul { margin: 0; padding: 0; list-style: none; }
   .faq-list details p { padding: 0 18px 18px; font-size: 14px; }
   .join { padding-bottom: 72px; }
   .form-page { padding: 112px 0 72px; }
+  .legal-page { padding: 112px 0 72px; }
+  .legal h2 { margin-top: 28px; font-size: 23px; }
+  .legal p, .legal ul { font-size: 16px; }
   .form-card { padding: 22px; border-radius: 22px; }
   .plan-options { grid-template-columns: 1fr; }
   .join-inner { align-items: stretch; text-align: left; }

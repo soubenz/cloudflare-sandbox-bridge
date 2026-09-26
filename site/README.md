@@ -12,6 +12,12 @@ Cloudflare Worker, separate from the dashboard and the sandbox API.
 - `src/worker.ts` handles `POST /api/waitlist`. Everything else is served
   straight from `public/` without running the Worker.
 - `public/404.html` catches links to pages that don't exist yet.
+- `public/privacy.html` is the privacy policy. It describes exactly what the
+  waitlist stores, so change it before the Worker starts storing anything new.
+- `public/fonts/` holds the three variable fonts (Funnel Display, Funnel Sans,
+  JetBrains Mono), copied from the `@fontsource-variable` dev dependencies.
+  They are self-hosted so pages make no requests to anyone but this site.
+  Their licence is `public/fonts/OFL.txt`.
 
 ## Waitlist
 
@@ -52,7 +58,8 @@ prints in its summary. That copy sends `X-Robots-Tag: noindex` (from
 
 To move to opalix.ai: point the domain's nameservers at Cloudflare, add
 opalix.ai and www.opalix.ai as custom domains on the `opalix-site` Worker,
-then delete `public/_headers`.
+then remove the `X-Robots-Tag: noindex` rule from `public/_headers` (keep
+the font caching rule).
 
 ## Links still to wire
 
@@ -64,4 +71,12 @@ show the 404 page.
 | `/try` | The free lab |
 | `/signin` | Sign in |
 | `/feedback` | Beta feedback |
-| `/privacy` | Privacy policy |
+
+## Before promoting the site
+
+- Replace `[COMPANY NAME]` and `[REGISTERED ADDRESS]` in `public/privacy.html`
+  with the legal entity that runs Opalix.
+- Make sure privacy@opalix.ai delivers. Once opalix.ai's DNS is on
+  Cloudflare, Email Routing can forward it to an existing inbox for free.
+- Have someone qualified review the privacy page. It matches what the site
+  does, but it isn't legal advice.
