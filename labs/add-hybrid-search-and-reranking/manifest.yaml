@@ -1,0 +1,185 @@
+# A build lab: pgvector, not Qdrant -- decided and justified here because
+# every sibling lab in this family gets to make the same call, so the
+# reasoning belongs where it's checked, not just in a report.
+#
+# pgvector sits inside the SAME Postgres this family already runs
+# (docs/lab-authoring.md's precedent labs; $SCRATCH/retrieval-inv/FINDINGS.md
+# confirms PGDG's postgresql-14-pgvector 0.8.6-1.pgdg22.04+2 installs clean
+# on this image's real PG14, both <-> and <=> proven live, negligible
+# footprint -- no new process). Postgres also ships a REAL, independent
+# full-text engine (tsvector/ts_rank) in the same server the vectors live
+# in -- so "keyword search" and "vector search" are two queries against ONE
+# store with ONE id space, not two services with two id spaces that a
+# learner would first have to reconcile before they could even think about
+# fusion. Qdrant has no native full-text scoring at all (confirmed in the
+# feasibility investigation) -- a Qdrant-based version of this lab would
+# need a hand-rolled term-overlap stand-in for "keyword search" NEXT TO the
+# real vector engine, meaning half the lesson would be built on a fake
+# signal instead of two real ones. That tradeoff might be worth it for a
+# lab about running a second service (see lab 5, Qdrant's alias/reindex
+# mechanism) -- it is not worth it here, where the whole point is combining
+# two signals without making either one worse. Decision: pgvector.
+#
+# There is no real embedding model reachable at runtime in this family
+# (confirmed offline, no egress needed or wanted here) or, for that matter,
+# in most of this platform's other labs -- so "vector search" here runs on
+# a deterministic pseudo-embedding (workspace/search/embedding.py): a fixed
+# table maps short lists of trigger phrases to fixed pseudo-random unit
+# vectors per concept, and a document's embedding is the (normalized) sum
+# of every concept its text triggers. This is a stand-in for a real
+# embedding model in the same spirit as this platform's fake_provider.py
+# stand-ins for a real LLM elsewhere in this repo -- documented, auditable,
+# and exercising REAL vector math (a real pgvector column, real `<=>`
+# cosine distance) once the vector exists, which is the part of the lesson
+# that matters. It has one deliberate, load-bearing property: it captures
+# TOPIC, not exact identifiers -- two documents that differ only in an
+# error code (E-47 vs E-52) embed IDENTICALLY, because neither code is
+# itself a trigger phrase. That is not a shortcoming of the stand-in; it is
+# the exact failure mode real embedding models have too, and it is what
+# makes the keyword-only check a real, necessary check rather than a
+# redundant one.
+#
+# The corpus (workspace/search/corpus.py, 27 short Aurora-T3-Pro support
+# articles across ~14 topics) and all four grading queries were tuned
+# against REAL measured ts_rank and cosine-similarity numbers, not designed
+# on paper -- see this lab's own build report for the exact numbers proving
+# each of the three checks discriminates a different failure mode, and one
+# real, worth-recording finding from that process: pgvector's raw cosine
+# similarity and Postgres's raw ts_rank do not merely differ in scale by
+# some fixed factor that a naive implementation could get lucky on --
+# ts_rank on this corpus tops out under ~0.05, while cosine similarity has
+# a structural floor well above zero for almost any two documents (a
+# property of summing a handful of high-dimensional unit vectors), so a
+# fusion that adds the two raw numbers together doesn't just favor vector
+# search on one cherry-picked query -- on this corpus it favors vector
+# search on EVERY query, silently, which is exactly why the dominance
+# check's decoy (sched-1) needed to be built to beat the correct answer
+# (api-1) specifically on keyword's home turf, not just anywhere.
+#
+# `search`'s own startup (workspace/search/db.py, called from app.py) is
+# what creates the `vector` extension, the `documents` table and seeds the
+# corpus -- idempotent, so the console's Restart button re-running it
+# against an already-seeded database is a no-op. Postgres itself has no UI
+# of its own to expose (docs/lab-authoring.md); this lab's `search` service
+# is a plain JSON API, not a page, so nothing here is a `ui: true` tab.
+slug: add-hybrid-search-and-reranking
+version: 1.0.0
+title: "Add hybrid search and reranking"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  A search endpoint runs a real keyword search and a real vector search
+  side by side but only concatenates the results. Build the fusion step
+  that combines them into one correctly ranked, deduplicated list.
+objectives:
+  - "Combine a real full-text search and a real vector search into one ranked list without duplicating a document that matches both"
+  - "Recognize when two signals are numerically off-scale and combine them by something other than raw magnitude (e.g. rank, not raw score)"
+  - "Tell apart a query only vector search can answer, a query only keyword search can answer, and a query where getting the combination wrong actually changes the top result"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+
+services:
+  - name: postgres
+    # Same shape as every other gateway-family lab's postgres service
+    # (docs/lab-authoring.md's precedent labs): a data dir under /tmp
+    # because /workspace is chowned to `learner`, System V shared memory
+    # pinned because lab containers have no /dev/shm
+    # (images/gateway/build-pg-template.sh). No pre-migrated template is
+    # needed here -- pgvector's own migration is just `CREATE EXTENSION`,
+    # which workspace/search/db.py runs itself at startup, so a plain
+    # `initdb` (once, on first boot) is enough.
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres; echo 'dynamic_shared_memory_type = sysv' >> /tmp/pg/postgresql.conf; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+
+  - name: search
+    # THE LEARNER'S OWN SERVICE. workspace/search/app.py wires two real
+    # searches (db.py: ts_rank keyword search, pgvector cosine search)
+    # through workspace/search/fusion.py -- editing fusion.py and hitting
+    # Restart on this entry is how you iterate. db.py's own startup step
+    # creates the `vector` extension, the schema and the corpus the first
+    # time this runs.
+    argv: ["python3", "-B", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8970"]
+    cwd: /workspace/search
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+    port: 8970
+    healthcheck:
+      type: http
+      path: /health
+      # Startup creates the extension/table and seeds 27 short documents
+      # the first time only -- generous margin for a slow container.
+      timeout_s: 60
+    ui: false
+    depends_on: [postgres]
+
+pressure: []
+
+checks:
+  # All three share one grader-run's worth of setup (its own fresh Postgres
+  # database, its own subprocess of the search service against your CURRENT
+  # fusion.py) -- see checks/_harness.py. Sequential on purpose: whichever
+  # check runs first pays the setup cost and the other two just read its
+  # result.
+  - name: vector-only-query-still-works
+    script: vector-only-query-still-works.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  - name: keyword-only-query-still-works
+    script: keyword-only-query-still-works.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  - name: no-duplicate-or-dominated-results
+    script: no-duplicate-or-dominated-results.sh
+    timeout_s: 120
+    weight: 2
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      /search already runs a real keyword search (Postgres ts_rank) and a
+      real vector search (pgvector cosine distance) and hands both result
+      lists to fusion.fuse(...) -- that function is the only thing you
+      need to change. Look at what it does today before changing it: it
+      keeps every result from both lists, including a document that shows
+      up in both, and sorts the combined list by whatever `score` field
+      each result already carries.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Two documents can describe the same problem in nearly identical
+      words and still need to end up ranked in a specific order -- ts_rank
+      and pgvector's cosine distance are correct, real numbers, but they
+      are not on the same scale as each other, and adding them together
+      does not mean what it looks like it means.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      A ranking method that only looks at WHERE a result sits in its own
+      list (1st, 2nd, 3rd...) rather than the raw number attached to it
+      sidesteps the scale problem entirely, and a dict keyed by document id
+      sidesteps the duplicate problem for free -- reciprocal rank fusion
+      (summing 1/(k + rank) per list a document appears in, a fixed k like
+      60 is a common default) is one well-known way to do both at once,
+      but it is not the only way; a normalized (e.g. min-max per list)
+      weighted combination of the two scores is another.
+
+egress:
+  allow: []
