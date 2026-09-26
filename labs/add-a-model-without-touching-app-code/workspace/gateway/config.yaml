@@ -2,7 +2,7 @@ model_list:
   - model_name: support-legacy
     litellm_params:
       model: openai/fake-model
-      api_base: http://127.0.0.1:58961/a/v1
+      api_base: http://127.0.0.1:8961/a/v1
       api_key: unused
 general_settings:
   store_model_in_db: true

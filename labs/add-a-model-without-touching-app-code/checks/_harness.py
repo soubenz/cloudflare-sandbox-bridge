@@ -498,7 +498,7 @@ def _build_results():
         results["baseline_elapsed_s"] = elapsed
 
         ldep, _lstatus, _lbody = _chat_deployment_retrying(LEGACY_TEAM_KEY)
-        results["legacy_observations"].append({"phase": "baseline", "deployment": ldep})
+        results["legacy_observations"].append({"phase": "baseline", "deployment": ldep, "status": _lstatus, "body": str(_lbody)[:300]})
 
         # --- phase 1: champion move, deployment a -> c ("the new model") ---
         client.set_registered_model_alias(REGISTERED_MODEL, "champion", versions["c"])
@@ -510,7 +510,7 @@ def _build_results():
         results["move_final_deployment"] = dep
 
         ldep, _lstatus, _lbody = _chat_deployment_retrying(LEGACY_TEAM_KEY)
-        results["legacy_observations"].append({"phase": "after_move", "deployment": ldep})
+        results["legacy_observations"].append({"phase": "after_move", "deployment": ldep, "status": _lstatus, "body": str(_lbody)[:300]})
 
         # --- phase 2: staged rollout -- challenger (deployment b) at 25% ---
         client.set_model_version_tag(REGISTERED_MODEL, versions["b"], "traffic_percent", "25")
@@ -524,7 +524,7 @@ def _build_results():
         results["challenger_share"] = (counts.get("b", 0) / total) if total else None
 
         ldep, _lstatus, _lbody = _chat_deployment_retrying(LEGACY_TEAM_KEY)
-        results["legacy_observations"].append({"phase": "challenger_active", "deployment": ldep})
+        results["legacy_observations"].append({"phase": "challenger_active", "deployment": ldep, "status": _lstatus, "body": str(_lbody)[:300]})
 
         # --- phase 3: end the rollout -- back to champion alone ---
         client.delete_registered_model_alias(REGISTERED_MODEL, "challenger")
@@ -536,7 +536,7 @@ def _build_results():
         results["after_removal_champion_share"] = (counts2.get("c", 0) / total2) if total2 else None
 
         ldep, _lstatus, _lbody = _chat_deployment_retrying(LEGACY_TEAM_KEY)
-        results["legacy_observations"].append({"phase": "after_removal", "deployment": ldep})
+        results["legacy_observations"].append({"phase": "after_removal", "deployment": ldep, "status": _lstatus, "body": str(_lbody)[:300]})
 
         # --- was the grader's own LiteLLM ever restarted, start to finish? ---
         etimes_final = _proc_etimes(litellm_pid)
@@ -689,9 +689,10 @@ def check_pinned_team_stays_put():
         if first.get("deployment") is None:
             _finish(
                 False,
-                "the pinned team's key could not be reached during %r, even after retries -- "
-                "this could be a grading-infrastructure problem rather than something in your "
-                "workspace" % first.get("phase"),
+                "the pinned team's key could not be reached during %r, even after retries "
+                "(last status=%r body=%r) -- this could be a grading-infrastructure problem "
+                "rather than something in your workspace"
+                % (first.get("phase"), first.get("status"), first.get("body")),
             )
         _finish(
             False,
