@@ -16,8 +16,15 @@ npm run dev:site      # http://localhost:8789
 npm run deploy:site   # needs a Cloudflare account
 ```
 
-Deploying is not part of the CI workflow yet. Attach the opalix.ai route in
-Cloudflare when the page should go live.
+Every push to main that touches `site/` deploys it through
+`.github/workflows/deploy-site.yml`. Until opalix.ai's DNS is on Cloudflare,
+the site lives at its temporary `workers.dev` address, which the workflow run
+prints in its summary. That copy sends `X-Robots-Tag: noindex` (from
+`public/_headers`) so search engines skip it.
+
+To move to opalix.ai: point the domain's nameservers at Cloudflare, add
+opalix.ai and www.opalix.ai as custom domains on the `opalix-site` Worker,
+then delete `public/_headers`.
 
 ## Links still to wire
 

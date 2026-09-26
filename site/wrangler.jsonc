@@ -11,8 +11,14 @@
     // Paths the page links to before they exist (/join, /labs/<slug>, ...)
     // get the friendly 404 instead of a bare error.
     "not_found_handling": "404-page"
-  }
-  // Not wired into .github/workflows/deploy.yml yet. Deploy by hand with
-  // `npm run deploy:site`, and attach the opalix.ai route in the Cloudflare
-  // dashboard (or add "routes" here) when it should go live.
+  },
+
+  // Temporary home until opalix.ai's DNS is on Cloudflare:
+  // https://opalix-site.<account-subdomain>.workers.dev
+  // When the domain moves, add it as a custom domain on this Worker, then
+  // delete public/_headers so the real site can be indexed.
+  "workers_dev": true
+
+  // Deployed by .github/workflows/deploy-site.yml on every push to main
+  // that touches site/, or by hand with `npm run deploy:site`.
 }

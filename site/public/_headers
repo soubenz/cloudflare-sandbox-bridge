@@ -1,0 +1,5 @@
+# Temporary: the site is served from workers.dev until opalix.ai points at
+# Cloudflare. Keep that copy out of search results so it never competes with
+# the real domain. Delete this rule when opalix.ai goes live.
+/*
+  X-Robots-Tag: noindex
