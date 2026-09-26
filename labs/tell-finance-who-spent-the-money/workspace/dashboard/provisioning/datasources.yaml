@@ -1,0 +1,15 @@
+apiVersion: 1
+
+datasources:
+  - name: LiteLLM Spend DB
+    uid: litellm-postgres
+    type: postgres
+    access: proxy
+    url: 127.0.0.1:5432
+    database: postgres
+    user: postgres
+    jsonData:
+      sslmode: "disable"
+      postgresVersion: 1600
+    isDefault: true
+    editable: true

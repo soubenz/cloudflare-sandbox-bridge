@@ -1,0 +1,277 @@
+# A build lab: nothing is broken in the stack itself -- postgres, litellm
+# and grafana all boot and route correctly from minute zero. What's
+# missing is one honest query. workspace/dashboard/dashboard.json is a
+# real, live Grafana dashboard (provisioned from a file, anonymous auth,
+# no login) with two panels: "Spend by team" (correct from the start) and
+# "Spend by feature" (reads `metadata->>'feature'`, a field this lab's
+# traffic never sets -- every row falls into a single "unknown" bucket).
+# The learner's job is entirely inside that one JSON file's second panel
+# query; nothing else here needs to change.
+#
+# Proven live, locally, against LiteLLM 1.102.1 + Prisma + Postgres 16 and
+# Grafana 11.4.0 (this repo's proven venv at
+# $SCRATCH/litellm-t4/venv, and this lab's own scratchpad session) before
+# writing this manifest. The load-bearing facts:
+#
+#  1. "Feature" has to travel as a request TAG, not a metadata field --
+#     confirmed live. LiteLLM 1.102.1 reads request tags from a
+#     TOP-LEVEL `"tags": [...]` field on the chat-completions body (or an
+#     `x-litellm-tags` header) into LiteLLM_SpendLogs.request_tags (a
+#     jsonb array); a call sent with `metadata: {"tags": [...]}` instead
+#     left no trace of it there at all. LiteLLM also auto-adds its own
+#     `"User-Agent: ..."` entries to that same array on every call, so a
+#     correct query has to pick the `feature:`-prefixed entry out, not
+#     treat every array element as a feature (this is exactly the shape
+#     of litellm's own bundled `DailyTagSpend` view --
+#     litellm/proxy/db/create_views.py -- read for the idiom, not
+#     reused as-is, since it explodes every tag).
+#  2. Retries never double-count, but a failed attempt still logs real
+#     tokens. Confirmed live with a real injected provider failure and a
+#     real `num_retries: 2` (gateway/config.yaml): a call that fails once
+#     and succeeds on LiteLLM's own retry produces exactly ONE row in
+#     LiteLLM_SpendLogs (status success, the one real spend). A call that
+#     fails every attempt produces exactly one row too (status failure,
+#     spend 0.0) -- but that row's own prompt_tokens is real and non-zero
+#     (LiteLLM estimates it from the request itself once the provider
+#     never returns a usage block). So `SUM(spend)` is exactly right by
+#     construction, with no status filter needed anywhere -- but a query
+#     that estimates cost from `prompt_tokens`/`completion_tokens`
+#     instead of reading `spend` silently bills for a call that was never
+#     actually completed. Measured live: with this lab's own fixed
+#     traffic plan, that swap overcounts team-platform's true $0.410 by
+#     $0.070 -- a real, distinct, provable wrong answer, not a corner
+#     case.
+#  3. Postgres is mandatory for the same reason as every other LiteLLM
+#     lab in this family (its virtual-key/team/spend layer is a Prisma
+#     schema hard-coded to `provider = "postgresql"`) -- template-copy
+#     argv copied verbatim from labs/hard-budget-per-team's own manifest,
+#     itself copied from test/fixtures/labs/gateway-litellm-hello.
+#  4. `litellm` stays `ui: false` (its own admin UI always requires a
+#     login, and nothing turns that off -- docs/spike.md, "LiteLLM under
+#     a path prefix", Q4). `grafana` is `ui: true` with the same
+#     anonymous-auth block proven in test/fixtures/labs/gateway-hello and
+#     confirmed live again for this lab's exact config: `GET
+#     /api/dashboards/uid/finance-spend-attribution` returns
+#     `"createdBy":"Anonymous"` and full edit/admin permissions with no
+#     cookie and no login redirect at any point.
+#  5. `traffic` is the untouchable grader-driven traffic generator
+#     (workspace/services/traffic.py) -- idle until `POST /run`, which
+#     replays one fixed, deterministic 17-call plan (three teams, three
+#     features, one retry that recovers, one that doesn't) every time
+#     it's called, regardless of what a previous run left in the
+#     database. checks/_harness.py truncates LiteLLM_SpendLogs and calls
+#     `/run` itself; nothing about grading depends on trusting this
+#     service's own source, only on what it actually does when driven --
+#     see that file's own header for why.
+slug: tell-finance-who-spent-the-money
+version: 1.0.0
+title: "Tell finance who spent the money"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  Three teams share one LiteLLM gateway across three product features.
+  Finance wants to know exactly who spent what, and the dashboard that's
+  supposed to answer that only ever says "team", never "feature" -- and
+  the one number it does show doesn't match a single team's real bill.
+objectives:
+  - "Read LiteLLM's own spend log table directly, instead of trusting a dashboard's first draft"
+  - "Attribute spend correctly by team AND by a request-level feature tag, not just one or the other"
+  - "Use the gateway's actually-logged spend for a query's cost, not a token-count estimate that a retried or failed call can throw off"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  LITELLM_URL: "http://127.0.0.1:4000"
+  LITELLM_MASTER_KEY: "sk-opalix-finance-master"
+  GATEWAY_KEYS_FILE: "/workspace/gateway/keys.json"
+  PROVIDER_URL: "http://127.0.0.1:8961"
+  GRAFANA_URL: "http://127.0.0.1:3001"
+
+services:
+  # Copied from test/fixtures/labs/gateway-litellm-hello / every sibling
+  # gateway lab's own postgres service -- see that fixture's manifest for
+  # why each line of this argv exists (template copied in once, then exec
+  # as the postgres OS user via runuser, data dir under /tmp because
+  # /workspace is chowned to `learner`).
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+
+  - name: provider
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8961"
+    port: 8961
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+
+  - name: litellm
+    # ui: false -- the admin UI always requires a login (see header
+    # comment, point 4); grafana is this lab's tab instead. The seed step
+    # runs in the background and writes gateway/keys.json once the proxy
+    # is actually answering -- idempotent, so a restart finds all three
+    # teams and keys already in place and changes nothing (see
+    # gateway/seed_teams.py).
+    argv:
+      [
+        "sh", "-c",
+        "python3 -B /workspace/gateway/seed_teams.py & exec litellm --config /workspace/gateway/config.yaml --port 4000 --host 0.0.0.0",
+      ]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-finance-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh).
+      DISABLE_SCHEMA_UPDATE: "True"
+      PROVIDER_BASE_URL: "http://127.0.0.1:8961/v1"
+      LITELLM_URL: "http://127.0.0.1:4000"
+      GATEWAY_KEYS_FILE: "/workspace/gateway/keys.json"
+      PYTHONDONTWRITEBYTECODE: "1"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # Pre-migrated DB boot is ~13-33s live (docs/spike.md, "Gateway boot
+      # with a pre-migrated database"); 90s leaves room for a slow
+      # container without hiding a real failure.
+      timeout_s: 90
+    ui: false
+    depends_on: [postgres, provider]
+
+  - name: traffic
+    # THE SERVICE THE LEARNER MUST NOT CHANGE (see its own header
+    # comment). Idle until `POST /run` -- no background loop, so it never
+    # competes with a learner's own manual testing against the same
+    # gateway. checks/_harness.py is the only thing that calls it during
+    # grading; a learner can call it too (curl -X POST
+    # http://127.0.0.1:8965/run) to generate real, known traffic to look
+    # at in Grafana while iterating.
+    argv: ["python3", "-B", "/workspace/services/traffic.py"]
+    cwd: /workspace
+    env:
+      TRAFFIC_PORT: "8965"
+      LITELLM_URL: "http://127.0.0.1:4000"
+      PROVIDER_URL: "http://127.0.0.1:8961"
+      GATEWAY_KEYS_FILE: "/workspace/gateway/keys.json"
+    port: 8965
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [litellm]
+
+  - name: grafana
+    # Anonymous-auth block proven in test/fixtures/labs/gateway-hello,
+    # reused exactly (see header comment, point 4) -- port 3001 is
+    # already baked into /etc/grafana/grafana.ini by images/gateway/Dockerfile,
+    # so no GF_SERVER_HTTP_PORT override here, matching that fixture.
+    # This argv's one job beyond starting grafana-server is copying this
+    # lab's own datasource + dashboard-provider YAML into
+    # /etc/grafana/provisioning/ once at boot (those two tiny files are
+    # this lab's own, not baked into the base image); the dashboard
+    # provider then points straight at /workspace/dashboard, so editing
+    # workspace/dashboard/dashboard.json is picked up live within its own
+    # updateIntervalSeconds (10s) -- no grafana restart needed to see a
+    # query change reflected in the tab, confirmed live.
+    argv:
+      [
+        "sh", "-c",
+        "mkdir -p /etc/grafana/provisioning/datasources /etc/grafana/provisioning/dashboards && cp /workspace/dashboard/provisioning/datasources.yaml /etc/grafana/provisioning/datasources/opalix-datasources.yaml && cp /workspace/dashboard/provisioning/dashboards.yaml /etc/grafana/provisioning/dashboards/opalix-dashboards.yaml && exec /usr/sbin/grafana-server --homepath=/usr/share/grafana --config=/etc/grafana/grafana.ini",
+      ]
+    cwd: /usr/share/grafana
+    env:
+      GF_SERVER_ROOT_URL: "{{session.base_url}}{{service.prefix}}/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_PATHS_DATA: /var/lib/grafana
+      GF_PATHS_LOGS: /var/log/grafana
+      GF_PATHS_PLUGINS: /var/lib/grafana/plugins
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    port: 3001
+    healthcheck:
+      type: http
+      path: "{{service.prefix}}/api/health"
+      timeout_s: 90
+    ui: true
+    depends_on: [postgres, traffic]
+
+pressure: []
+
+checks:
+  # All three share one grading run's own traffic: whichever check runs
+  # first truncates LiteLLM_SpendLogs, calls the traffic service's own
+  # POST /run once, waits past LiteLLM's batched-spend-write window, and
+  # reads the learner's CURRENT workspace/dashboard/dashboard.json to run
+  # its two panel queries through Grafana's own query API
+  # (`POST /api/ds/query`) -- see checks/_harness.py. Sequential on
+  # purpose: whichever runs first pays that setup cost and the other two
+  # just read its result.
+  - name: spend-by-team-matches-the-bill
+    script: spend-by-team-matches-the-bill.sh
+    timeout_s: 200
+    weight: 1
+    parallel: false
+  - name: spend-by-feature-matches-the-bill
+    script: spend-by-feature-matches-the-bill.sh
+    timeout_s: 200
+    weight: 2
+    parallel: false
+  - name: retried-requests-are-not-double-counted
+    script: retried-requests-are-not-double-counted.sh
+    timeout_s: 200
+    weight: 1
+    parallel: false
+
+hints:
+  - after_minutes: 14
+    text: >-
+      Call `curl -X POST http://127.0.0.1:8965/run` yourself, wait about
+      20 seconds, then look at the Grafana tab. "Spend by team" already
+      looks right. Query `LiteLLM_SpendLogs` directly (psql, or a new
+      Grafana panel) for one row and look at every column it actually
+      has -- is there really a column called `feature`?
+  - after_minutes: 27
+    text: >-
+      `request_tags` is a JSON array, not a single value, and every call
+      also carries LiteLLM's own auto-added `User-Agent: ...` entries in
+      it alongside the one this lab's traffic sets
+      (`feature:<name>`). `jsonb_array_elements_text(request_tags)` turns
+      that array into one row per element -- pick out the element that
+      starts with `feature:` rather than grouping by all of them.
+  - after_minutes: 45
+    text: >-
+      `LiteLLM_SpendLogs.spend` is the dollar amount LiteLLM actually
+      billed for a call -- already 0 for a call that never got a real
+      answer, no matter how many prompt or completion tokens got logged
+      for it. Group and SUM that column directly; don't reconstruct cost
+      from `prompt_tokens`/`completion_tokens` and a price per token,
+      which double-bills a call that failed after using up its retries
+      (call `curl -X POST http://127.0.0.1:8965/run` again and look at
+      team-platform's own rows for one that failed).
+
+egress:
+  allow: []

@@ -1,0 +1,37 @@
+# Explicit pricing under `model_info` (not `litellm_params`) -- LiteLLM
+# 1.102.1 uses this for the real per-call spend it writes to
+# LiteLLM_SpendLogs.spend (confirmed live while building this lab; see
+# labs/hard-budget-per-team/workspace/gateway/config.yaml's own note for
+# the same finding). $0.002/$0.004 per token, deliberately not equal to
+# each other, so a query that quietly swaps prompt-cost and completion-
+# cost would still be catchable by eye, and not equal to
+# hard-budget-per-team's $0.001/$0.001 either, so nothing here is a copy
+# of that lab's own numbers.
+model_list:
+  - model_name: assistant
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/PROVIDER_BASE_URL
+      api_key: unused
+      # Real, working retries -- confirmed live: a call whose first
+      # attempt gets a 500 from the provider and whose second attempt
+      # succeeds produces exactly ONE row in LiteLLM_SpendLogs (status
+      # success, the real spend). Only when every attempt fails does a
+      # row appear for the failed call itself (status failure, spend 0,
+      # but a REAL, non-zero prompt_tokens -- the request was still sent
+      # and still cost the provider tokens to read, even though nothing
+      # was ever billed for it). Both facts matter for
+      # workspace/dashboard/dashboard.json.
+      num_retries: 2
+    model_info:
+      input_cost_per_token: 0.002
+      output_cost_per_token: 0.004
+
+litellm_settings:
+  # Never blocks on the network for the model cost map (docs/spike.md,
+  # "LiteLLM proxy (T4)", Q2a) -- pricing for `assistant` comes entirely
+  # from model_info above regardless.
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

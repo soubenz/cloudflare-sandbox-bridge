@@ -1,0 +1,41 @@
+{
+  "uid": "finance-spend-attribution",
+  "title": "Tell finance who spent the money",
+  "schemaVersion": 39,
+  "version": 2,
+  "editable": true,
+  "timezone": "utc",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Spend by team",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "litellm-postgres" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "litellm-postgres" },
+          "format": "table",
+          "rawSql": "SELECT team_id, SUM(spend) AS total_spend FROM \"LiteLLM_SpendLogs\" GROUP BY team_id ORDER BY team_id;"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Spend by feature",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "litellm-postgres" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "litellm-postgres" },
+          "format": "table",
+          "rawSql": "SELECT regexp_replace(tag.value, '^feature:', '') AS feature, SUM(s.spend) AS total_spend FROM \"LiteLLM_SpendLogs\" s, jsonb_array_elements_text(s.request_tags) AS tag(value) WHERE tag.value LIKE 'feature:%' GROUP BY 1 ORDER BY 1;"
+        }
+      ]
+    }
+  ]
+}
