@@ -181,6 +181,14 @@ services:
     depends_on: [postgres, provider]
 
   - name: mlflow
+    # MLFLOW_SERVER_ALLOWED_HOSTS: "*" -- MLflow 3.16 validates the Host
+    # header on every request (DNS-rebinding protection,
+    # mlflow/server/security_utils.py) and refuses anything outside
+    # localhost/private-IP patterns by default. The session proxy forwards
+    # the public API host as-is, so every request 403'd with "Invalid Host
+    # header" until this was set (confirmed live, 26 Sep 2026). Safe here:
+    # this port is reachable only through the session proxy, which is
+    # itself the access control.
     # --static-prefix is strict both ways here (see header comment, point
     # 5) -- every path, including the one the healthcheck uses, needs the
     # prefix, so it's baked into argv and into healthcheck.path below via
@@ -198,6 +206,7 @@ services:
     cwd: /workspace
     env:
       MLFLOW_TRACKING_URI: "http://127.0.0.1:8964{{service.prefix}}"
+      MLFLOW_SERVER_ALLOWED_HOSTS: "*"
       PROVIDER_URL: "http://127.0.0.1:8961"
       REGISTERED_MODEL: "support-router"
       LITELLM_MODEL_NAME: "support"
