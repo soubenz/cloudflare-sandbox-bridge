@@ -143,6 +143,26 @@ def _chat_deployment(key, base=GRADER_LITELLM_URL):
     return None, status, body
 
 
+def _chat_deployment_retrying(key, base=GRADER_LITELLM_URL, attempts=3, delay=1.5):
+    """Like _chat_deployment, but tolerates a single transient failure
+    (a timed-out or reset connection under real container load) rather
+    than treating it as the pinned team's routing being broken. Only
+    retries when no deployment could be read at all -- a call that comes
+    back with a real, wrong deployment is never retried away, since that
+    would be a genuine pinning failure, not a network hiccup. Found live,
+    26 Sep 2026: a single un-retried probe right after LiteLLM's own team
+    and key creation failed once on a 0.5-vCPU container under the same
+    load as the baseline poll loop and the learner's own sync process."""
+    dep = status = body = None
+    for i in range(attempts):
+        dep, status, body = _chat_deployment(key, base=base)
+        if dep is not None:
+            return dep, status, body
+        if i < attempts - 1:
+            time.sleep(delay)
+    return dep, status, body
+
+
 def _wait_until_value(get_value, want, timeout, interval=0.5):
     """Polls get_value() until it returns `want` or the timeout elapses.
     Returns (achieved, elapsed_s, last_value)."""
@@ -477,7 +497,7 @@ def _build_results():
         results["baseline_deployment"] = dep
         results["baseline_elapsed_s"] = elapsed
 
-        ldep, _, _ = _chat_deployment(LEGACY_TEAM_KEY)
+        ldep, _lstatus, _lbody = _chat_deployment_retrying(LEGACY_TEAM_KEY)
         results["legacy_observations"].append({"phase": "baseline", "deployment": ldep})
 
         # --- phase 1: champion move, deployment a -> c ("the new model") ---
@@ -489,7 +509,7 @@ def _build_results():
         results["move_elapsed_s"] = elapsed
         results["move_final_deployment"] = dep
 
-        ldep, _, _ = _chat_deployment(LEGACY_TEAM_KEY)
+        ldep, _lstatus, _lbody = _chat_deployment_retrying(LEGACY_TEAM_KEY)
         results["legacy_observations"].append({"phase": "after_move", "deployment": ldep})
 
         # --- phase 2: staged rollout -- challenger (deployment b) at 25% ---
@@ -503,7 +523,7 @@ def _build_results():
         results["challenger_calls_total"] = total
         results["challenger_share"] = (counts.get("b", 0) / total) if total else None
 
-        ldep, _, _ = _chat_deployment(LEGACY_TEAM_KEY)
+        ldep, _lstatus, _lbody = _chat_deployment_retrying(LEGACY_TEAM_KEY)
         results["legacy_observations"].append({"phase": "challenger_active", "deployment": ldep})
 
         # --- phase 3: end the rollout -- back to champion alone ---
@@ -515,7 +535,7 @@ def _build_results():
         results["after_removal_counts"] = dict(counts2)
         results["after_removal_champion_share"] = (counts2.get("c", 0) / total2) if total2 else None
 
-        ldep, _, _ = _chat_deployment(LEGACY_TEAM_KEY)
+        ldep, _lstatus, _lbody = _chat_deployment_retrying(LEGACY_TEAM_KEY)
         results["legacy_observations"].append({"phase": "after_removal", "deployment": ldep})
 
         # --- was the grader's own LiteLLM ever restarted, start to finish? ---
@@ -665,11 +685,19 @@ def check_pinned_team_stays_put():
         _finish(False, "the pinned team's key could not be probed at every phase of this run (grading-infrastructure problem)")
     bad = [o for o in obs if o.get("deployment") != "a"]
     if bad:
+        first = bad[0]
+        if first.get("deployment") is None:
+            _finish(
+                False,
+                "the pinned team's key could not be reached during %r, even after retries -- "
+                "this could be a grading-infrastructure problem rather than something in your "
+                "workspace" % first.get("phase"),
+            )
         _finish(
             False,
             "the pinned team's key reached deployment %r during %r, while the rest of the "
             "catalogue changed -- it must always reach the deployment it was pinned to"
-            % (bad[0].get("deployment"), bad[0].get("phase")),
+            % (first.get("deployment"), first.get("phase")),
         )
     _finish(
         True,
