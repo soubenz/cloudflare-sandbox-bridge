@@ -25,7 +25,7 @@ services:
     argv:
       [
         "python3", "-c",
-        "import http.server,socketserver\nclass H(http.server.SimpleHTTPRequestHandler):\n def do_GET(self):\n  self.path='/index.html'\n  return super().do_GET()\nsocketserver.TCPServer(('0.0.0.0',8000),H).serve_forever()",
+        "import http.server,socketserver\nclass H(http.server.SimpleHTTPRequestHandler):\n def do_GET(self):\n  self.path='/index.html'\n  return super().do_GET()\nhttp.server.HTTPServer(('0.0.0.0',8000),H).serve_forever()",
       ]
     cwd: /workspace
     port: 8000

@@ -267,6 +267,8 @@ function enterSession() {
   $('fileList').innerHTML = '';
   $('serviceTabs').innerHTML = '';
   $('serviceLabel').hidden = true;
+  $('serviceList').innerHTML = '';
+  $('servicesBlock').hidden = true;
   $('serviceFrame').removeAttribute('src');
   $('noticeList').innerHTML = '';
   $('noticeEmpty').hidden = false;
@@ -356,6 +358,7 @@ function handleEvent(type, tone, data) {
   if (type === 'hint') renderHint(data);
   if (type === 'check.finished' || type === 'check.result') refreshChecks();
   if (type === 'container.restarted') onContainerRestarted();
+  if (type === 'service.health' && data?.service && data?.health) setServiceHealth(data.service, data.health);
 }
 
 /**
@@ -546,6 +549,7 @@ async function onRunning(status) {
   state.expiresAt = meta.expires_at ?? null;
   startExpiryTimer();
   renderServiceTabs();
+  renderServiceList(status.services);
   refreshFiles();
   loadBrief();
   bootStep('terminal');
@@ -825,6 +829,7 @@ function onEnded(reason) {
   $('termStatus').hidden = false;
   $('btnSaveFile').disabled = true;
   $('btnNewFile').disabled = true;
+  for (const b of $('serviceList').querySelectorAll('button')) b.disabled = true;
 }
 
 /** An ended session leaves a dead workspace on screen; this is the way out. */
@@ -1279,6 +1284,71 @@ function renderServiceTabs() {
     tab.textContent = name;
     tab.addEventListener('click', () => openService(name, tab));
     host.append(tab);
+  }
+}
+
+/**
+ * Every service the lab runs, each with a Restart button. The tabs cover
+ * only `ui: true` services, but a learner who edits a service's config has
+ * to restart it for the change to apply, and the terminal runs
+ * unprivileged, so it can't. The API restarts the service from its manifest
+ * spec and answers once it is healthy again (or has given up).
+ */
+function renderServiceList(services) {
+  const names = Object.keys(services ?? {});
+  $('servicesBlock').hidden = !names.length;
+  const host = $('serviceList');
+  host.innerHTML = '';
+  for (const name of names) {
+    const li = document.createElement('li');
+    li.dataset.service = name;
+    const label = document.createElement('span');
+    label.className = 'svc-name';
+    label.textContent = name;
+    const health = document.createElement('span');
+    health.className = 'svc-health';
+    const button = document.createElement('button');
+    button.className = 'btn btn-tiny';
+    button.textContent = 'Restart';
+    button.title = `Stop ${name} and start it again, so it picks up changed files`;
+    button.addEventListener('click', () => restartService(name, button));
+    li.append(label, health, button);
+    host.append(li);
+    setServiceHealth(name, services[name]?.health ?? 'unknown');
+  }
+}
+
+function setServiceHealth(name, health) {
+  const li = [...$('serviceList').children].find((el) => el.dataset.service === name);
+  const el = li?.querySelector('.svc-health');
+  if (!el) return;
+  el.dataset.health = health;
+  el.textContent = health;
+}
+
+async function restartService(name, button) {
+  if (!state.session) return;
+  button.disabled = true;
+  button.textContent = 'Restarting…';
+  button.setAttribute('aria-busy', 'true');
+  setServiceHealth(name, 'restarting');
+  try {
+    const runtime = await api.restartService(state.session.id, state.session.token, name);
+    const health = runtime?.health ?? 'unknown';
+    setServiceHealth(name, health);
+    if (health === 'healthy') toast(`${name} restarted.`, 'good');
+    else toast(`${name} restarted but is ${health}. If you changed its files, check them and restart it again.`, 'bad');
+    // A tab already showing this service is showing the old process's page.
+    if (state.service === name && $('viewService').classList.contains('view-active')) {
+      openService(name, $('serviceTabs').querySelector('.tab-active') ?? undefined, { reload: true });
+    }
+  } catch (err) {
+    setServiceHealth(name, 'unknown');
+    toast(`Could not restart ${name} — ${err.message}`, 'bad');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Restart';
+    button.removeAttribute('aria-busy');
   }
 }
 

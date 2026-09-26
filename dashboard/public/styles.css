@@ -394,6 +394,16 @@ kbd {
 .files .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files .size { margin-left: auto; padding-left: var(--s2); color: var(--ink-muted); font-size: var(--fs-xs); flex-shrink: 0; }
 
+.svc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.svc-list li { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-sm); }
+.svc-list .svc-name { font-family: var(--mono); color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.svc-list .svc-health { color: var(--ink-muted); font-size: var(--fs-xs); }
+.svc-list .svc-health::before { content: "●"; margin-right: 4px; }
+.svc-list .svc-health[data-health="healthy"] { color: var(--good); }
+.svc-list .svc-health[data-health="unhealthy"] { color: var(--bad); }
+.svc-list .svc-health[data-health="restarting"] { color: var(--warn); }
+.svc-list .btn { margin-left: auto; }
+
 /* ---------- tabs and views ---------- */
 .tabs {
   display: flex; align-items: stretch; gap: 2px;

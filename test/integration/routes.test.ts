@@ -93,9 +93,13 @@ describeIfConfigured('sandbox API routes', () => {
 
     it('restarts a service and increments its restart count', async () => {
       const before = (await session.status(sessionId)).services.echo!.restarts;
-      await session.restartService(sessionId, 'echo');
+      const restarted = await session.restartService(sessionId, 'echo');
       const after = (await session.status(sessionId)).services.echo!.restarts;
       expect(after).toBe(before + 1);
+      // The service has served the proxy tests above by now. A server that
+      // can't rebind a port with connections in TIME_WAIT comes back dead,
+      // which the restart count alone never showed.
+      expect(restarted.health).toBe('healthy');
     }, 60_000);
 
     it('404s an unknown service', async () => {

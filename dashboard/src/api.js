@@ -85,6 +85,8 @@ export const api = {
   status: (id, token) => request(`/sessions/${id}`, { token }),
   end: (id, token, snapshot = false) =>
     request(`/sessions/${id}?snapshot=${snapshot ? 1 : 0}`, { method: 'DELETE', token }),
+  restartService: (id, token, name) =>
+    request(`/sessions/${id}/services/${encodeURIComponent(name)}/restart`, { method: 'POST', token }),
   snapshot: (id, token) => request(`/sessions/${id}/snapshot`, { method: 'POST', token }),
   runChecks: (id, token) => request(`/sessions/${id}/checks`, { method: 'POST', body: {}, token }),
 

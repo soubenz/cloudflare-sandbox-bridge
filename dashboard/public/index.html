@@ -86,6 +86,13 @@
       <div id="checksPanel" class="block-body" aria-live="polite"><p class="muted small">Not run yet. Run checks to grade your work so far.</p></div>
     </section>
 
+    <!-- Every service the lab runs, including the ones with no tab, so a
+         learner who changed a service's config can restart it. -->
+    <section class="block" id="servicesBlock" hidden>
+      <h2>Services</h2>
+      <ul class="svc-list" id="serviceList" aria-live="polite"></ul>
+    </section>
+
     <section class="block">
       <h2>Hints</h2>
       <div id="hintsPanel" class="block-body" aria-live="polite"><p class="muted small">Hints unlock on a timer as the lab goes on.</p></div>
