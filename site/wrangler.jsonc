@@ -1,0 +1,18 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "opalix-site",
+  "compatibility_date": "2026-09-22",
+
+  // The public marketing site for opalix.ai: static files only, no Worker
+  // code. It is separate from the dashboard (the password-gated lab
+  // console) and from the sandbox API, and talks to neither.
+  "assets": {
+    "directory": "./public",
+    // Paths the page links to before they exist (/join, /labs/<slug>, ...)
+    // get the friendly 404 instead of a bare error.
+    "not_found_handling": "404-page"
+  }
+  // Not wired into .github/workflows/deploy.yml yet. Deploy by hand with
+  // `npm run deploy:site`, and attach the opalix.ai route in the Cloudflare
+  // dashboard (or add "routes" here) when it should go live.
+}
