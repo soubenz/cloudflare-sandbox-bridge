@@ -34,6 +34,14 @@ PSQL="runuser -u postgres -- $PGBIN/psql -h 127.0.0.1 -p $PORT -U postgres -v ON
 
 install -d -o postgres -g postgres -m 700 "$DATA_DIR"
 runuser -u postgres -- "$PGBIN/initdb" -D "$DATA_DIR" --auth=trust -U postgres >/dev/null
+# initdb picks POSIX shared memory when the machine it runs on has
+# /dev/shm, and the image builder does. Lab containers don't, and Postgres
+# then dies at startup with `could not open shared memory segment
+# "/PostgreSQL.<n>"` (seen live, 26 Sep 2026). When initdb itself ran
+# inside a lab container it chose System V, which works there, so pin
+# that. Later settings in postgresql.conf win. The build's own start below
+# uses it, so a builder that can't do System V fails here, not in a lab.
+echo "dynamic_shared_memory_type = sysv" >> "$DATA_DIR/postgresql.conf"
 runuser -u postgres -- "$PGBIN/pg_ctl" -D "$DATA_DIR" -w \
   -o "-c listen_addresses=127.0.0.1 -p $PORT -k /tmp" -l /tmp/pg-template-build.log start
 
@@ -46,6 +54,8 @@ EXTRAS="$(python3 -c "import litellm_proxy_extras, os; print(os.path.dirname(lit
 $PSQL "CREATE DATABASE litellm_template TEMPLATE postgres" >/dev/null
 
 # Fail the build loudly rather than ship a template LiteLLM would reject.
+[ "$($PSQL "SHOW dynamic_shared_memory_type")" = sysv ] \
+  || { echo "dynamic_shared_memory_type is not sysv" >&2; exit 1; }
 for db in postgres litellm_template; do
   applied="$($PSQL "SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL" -d "$db")"
   [ "$applied" -gt 100 ] || { echo "only $applied migrations applied in $db" >&2; exit 1; }
