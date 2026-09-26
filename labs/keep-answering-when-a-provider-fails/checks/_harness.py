@@ -68,8 +68,15 @@ FAULT_PROXY_URL = os.environ.get("FAULT_PROXY_URL", "http://127.0.0.1:8963").rst
 
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "sk-opalix-lab-master")
 
-READY_TIMEOUT_S = 60  # this lab needs no database, so boot is ~10s locally
-CALL_TIMEOUT_S = 15
+# No database, so boot is ~10 s locally; a live container on half a vCPU
+# runs LiteLLM's boot about 2.5x slower.
+READY_TIMEOUT_S = 120
+# Just above MAX_CALL_LATENCY_S: a call that slow already fails
+# retries-are-bounded, so waiting longer only risks the whole run
+# outliving the check's 300 s budget. At 15 s, the "retries only" wrong
+# answer took 244 s locally and would have timed out live instead of
+# failing with a message.
+CALL_TIMEOUT_S = 6
 
 # --------------------------------------------------------------- traffic
 # design (see the manifest / this lab's Step A research for the live
