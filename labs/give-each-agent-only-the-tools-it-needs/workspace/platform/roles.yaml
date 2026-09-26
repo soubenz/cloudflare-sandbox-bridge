@@ -1,0 +1,79 @@
+# The platform's own record of which role should see which tools.
+#
+# You don't edit this to make the lab pass -- you make ContextForge match
+# it. `setup.py` reads this file; its job is to leave ContextForge in a
+# state where each role below can reach exactly its own tools and nothing
+# else, enforced by the gateway itself.
+#
+# Each tool is named "<server>.<tool>": <server> is one of the three tool
+# servers in tool_servers/ (each registered with ContextForge as its own
+# gateway -- see bootstrap_ungoverned.py for how that already happened),
+# <tool> is that server's own tool function name, exactly as it appears in
+# that file. What ContextForge itself calls a given tool once registered
+# (its own globally-unique tool name/id) is a separate question you'll
+# need to answer by looking at what's actually registered -- this file
+# only records the platform's intent, not ContextForge's internal naming.
+#
+# Every tool that exists is listed under at least one role below. If a
+# tool were missing from all three lists, that would be a bug in this
+# file, not a fourth, unlisted role.
+
+roles:
+  support-agent:
+    # Read-only, across every tool server. Never a write, never the one
+    # admin tool.
+    tools:
+      - server: knowledge
+        tool: search_kb
+      - server: knowledge
+        tool: get_kb_article
+      - server: tickets
+        tool: list_tickets
+      - server: tickets
+        tool: get_ticket
+      - server: accounts
+        tool: get_account
+
+  ops-agent:
+    # Everything support-agent can see, plus the mutating tools -- but
+    # still not the one admin-only tool.
+    tools:
+      - server: knowledge
+        tool: search_kb
+      - server: knowledge
+        tool: get_kb_article
+      - server: tickets
+        tool: list_tickets
+      - server: tickets
+        tool: get_ticket
+      - server: accounts
+        tool: get_account
+      - server: tickets
+        tool: create_ticket
+      - server: tickets
+        tool: update_ticket_status
+      - server: accounts
+        tool: issue_refund
+
+  admin:
+    # Every tool that exists on any of the three servers, including the
+    # one destructive, admin-only tool.
+    tools:
+      - server: knowledge
+        tool: search_kb
+      - server: knowledge
+        tool: get_kb_article
+      - server: tickets
+        tool: list_tickets
+      - server: tickets
+        tool: get_ticket
+      - server: accounts
+        tool: get_account
+      - server: tickets
+        tool: create_ticket
+      - server: tickets
+        tool: update_ticket_status
+      - server: accounts
+        tool: issue_refund
+      - server: accounts
+        tool: delete_account
