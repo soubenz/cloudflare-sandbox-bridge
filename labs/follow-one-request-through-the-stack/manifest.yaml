@@ -1,0 +1,130 @@
+# Module 4 ("Observability and cost"), lab 1 in
+# docs/catalogue-path-2-ai-platform.md (explore, gateway family).
+#
+# type: explore -- nothing is broken and nothing is missing (see
+# docs/lab-authoring.md, "type: explore is a guided tour, not a puzzle").
+# One service is running: Jaeger, a real distributed-tracing backend, holding
+# exactly one real, pre-seeded trace -- a support-agent request that goes
+# through a gateway, an LLM call, a vector-store lookup, and a cache write.
+# The learner reads the trace's real span durations, real attributes
+# (including token counts) and real parent-child hierarchy in Jaeger's own
+# UI, then answers three questions in workspace/answers.json.
+#
+# Real tools, no substitutions, per $SCRATCH/otel-inv/FINDINGS.md (read in
+# full before this manifest was written):
+#   - Jaeger v2.21.0, not Tempo -- FINDINGS.md S1.7: genuinely lighter (~60 MB
+#     idle vs Tempo+Grafana's ~260 MB combined, since Tempo ships no UI of its
+#     own), and its own REST query API is simpler and more robust than the
+#     one path this module would otherwise need through Grafana (Tempo
+#     free-text search over Grafana's REST API is a confirmed gap in this
+#     Grafana version -- FINDINGS.md S1.4).
+#   - Jaeger v2's query API moved to /api/v3/... -- the old
+#     /api/services /api/traces v1 paths 404 in this version (FINDINGS.md
+#     S1.3), and every check in this lab (checks/_harness.py) uses v3.
+#   - A real YAML config (workspace/jaeger/config.yaml) -- Jaeger v2's
+#     all-in-one is itself built on the OTel Collector framework, so the old
+#     SPAN_STORAGE_TYPE-style env-var flags no longer exist (FINDINGS.md
+#     S1.1). In-memory storage: nothing here needs a trace to survive a
+#     restart, and a restart re-seeds a fresh one anyway.
+#
+# This manifest assumes two platform (image) changes the main session makes
+# later, same posture as every other module's own lab-vs-image split (proven
+# locally in FINDINGS.md against local binaries/venvs, not against this
+# image):
+#   1. The real Jaeger v2.21.0 binary installed at /opt/opalix/bin/jaeger
+#      (Apache-2.0, a single ~105 MiB static binary -- FINDINGS.md S0, S1.6).
+#   2. opentelemetry-sdk and opentelemetry-exporter-otlp-proto-http available
+#      to the image's base python3 (the seed script's only two dependencies;
+#      neither package appears anywhere in FINDINGS.md's own conflict
+#      investigation, unlike Phoenix's confirmed `mcp`-package clash with
+#      litellm[proxy] in Module 3 -- this is a documented assumption, not a
+#      confirmed-safe combination, since that specific pairing (these two
+#      otel packages installed alongside litellm's own pins) was never tested
+#      live). Every one of Module 4's other labs needs the same two packages
+#      for its own toy services, so a single shared base-env install (rather
+#      than N per-lab venvs) is assumed here.
+#
+# No-login, verified live for this manifest's EXACT config (not just trusted
+# from FINDINGS.md's general finding, per docs/lab-authoring.md's own
+# instruction) -- see this lab's build report: GET / on Jaeger's query port
+# returns 200 with real UI HTML, no auth header, no redirect; so does the
+# trace-detail page (/trace/{id}) a learner actually clicks into.
+#
+# Ports, per FINDINGS.md's port convention: this manifest has no
+# otelcol-contrib collector in front of Jaeger (that's lab 2/3's job, not
+# this one), so Jaeger's own OTLP receiver keeps the canonical 4317 (gRPC) /
+# 4318 (HTTP) rather than being re-pointed to make room for a collector.
+# Jaeger's query/UI stays on the canonical 16686 (HTTP) / 16685 (gRPC).
+slug: follow-one-request-through-the-stack
+version: 1.0.0
+title: "Follow one request through the stack"
+type: explore
+family: gateway
+summary: >-
+  A single real distributed trace, already captured in Jaeger: one support
+  request through a gateway, an LLM call, a vector-store lookup, and a cache
+  write. Read it to find exactly where the time -- and the tokens -- went.
+objectives:
+  - "Read real span durations in a trace and find the one that dominates the total"
+  - "Read real span attributes to find where an LLM call's token usage is recorded"
+  - "Follow a trace's real parent-child span hierarchy, including a span nested two levels deep"
+difficulty: intro
+timeout_minutes: 60
+idle_minutes: 10
+
+env:
+  JAEGER_URL: "http://127.0.0.1:16686"
+
+services:
+  - name: jaeger
+    # seed_trace.py runs once in the background alongside jaeger's own boot
+    # (same shape as seed_documents.py in Module 3's see-why-a-document-
+    # matched): it polls jaeger's own query API itself before sending
+    # anything, so nothing here has to wait for it before starting jaeger,
+    # and a restart of this same service (which re-runs this whole argv)
+    # naturally re-seeds a fresh trace into jaeger's own now-empty in-memory
+    # storage -- the desired behavior, not a bug.
+    argv:
+      [
+        "sh", "-c",
+        "python3 -B /workspace/services/seed_trace.py & exec /opt/opalix/bin/jaeger --config /workspace/jaeger/config.yaml",
+      ]
+    cwd: /workspace
+    env:
+      OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318/v1/traces"
+      JAEGER_QUERY_URL: "http://127.0.0.1:16686"
+    port: 16686
+    healthcheck:
+      type: http
+      path: /
+      timeout_s: 60
+    ui: true
+    depends_on: []
+
+pressure: []
+
+checks:
+  - name: jaeger-is-up
+    script: jaeger-is-up.sh
+    timeout_s: 60
+    weight: 1
+  # The graded check: derives the true answer to each of the brief's three
+  # questions from the live trace as Jaeger's own /api/v3/... API reports it
+  # right now (never a hard-coded value) and compares them against
+  # /workspace/answers.json.
+  - name: answers-match-the-trace
+    script: answers-match-the-trace.sh
+    timeout_s: 60
+    weight: 2
+
+hints:
+  - after_minutes: 10
+    text: >-
+      Open the jaeger tab, click "Find Traces" (service opalix-gateway, no
+      other filters needed), and open the one trace shown. Expand every row:
+      the widest bar is your first answer, its Tags panel has the token
+      counts for your second, and the row indented directly under
+      "vector_db.query" (not under the top-level request) is your third.
+
+egress:
+  allow: []

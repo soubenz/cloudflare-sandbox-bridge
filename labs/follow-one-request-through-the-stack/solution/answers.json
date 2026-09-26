@@ -1,0 +1,5 @@
+{
+  "longest_span_name": "litellm.completion",
+  "llm_total_tokens": 755,
+  "cache_get_parent_span": "vector_db.query"
+}

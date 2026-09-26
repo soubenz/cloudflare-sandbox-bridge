@@ -1,0 +1,60 @@
+# Real Jaeger v2 all-in-one config (jaegertracing/jaeger v2.21.0). Jaeger v2's
+# all-in-one is itself built on the OTel Collector framework -- there is no
+# SPAN_STORAGE_TYPE-style simple flag any more, a real YAML config like this
+# one is mandatory (see $SCRATCH/otel-inv/FINDINGS.md S1.1). In-memory
+# storage only: this lab never needs the trace to survive a jaeger restart,
+# and a restart re-seeds a fresh one anyway (services/seed_trace.py, backed
+# by jaeger's own manifest-level depends_on).
+#
+# Trimmed from the investigation's own all-in-one.yaml: only the otlp
+# receiver is wired (this lab's seed script is the only thing that ever
+# sends spans, over real OTLP -- never the jaeger/zipkin legacy protocols),
+# and the remote_sampling/healthcheckv2/expvar/zpages extensions are dropped
+# since nothing here uses them. Verified live that this trimmed config still
+# validates and boots (see this lab's own build report: `jaeger --config
+# config.yaml validate` and a real run against these exact ports).
+#
+# Ports, per $SCRATCH/otel-inv/FINDINGS.md's port convention: this manifest
+# has no otelcol-contrib collector in front (lab 2/3's job, not this one),
+# so jaeger's own OTLP receiver keeps the canonical 4317/4318 rather than
+# being re-pointed to make room for a collector.
+service:
+  extensions: [jaeger_storage, jaeger_query]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+  telemetry:
+    logs:
+      level: info
+
+extensions:
+  jaeger_query:
+    http:
+      endpoint: "0.0.0.0:16686"
+    grpc:
+      endpoint: "0.0.0.0:16685"
+    storage:
+      traces: some_storage
+
+  jaeger_storage:
+    backends:
+      some_storage:
+        memory:
+          max_traces: 100000
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+processors:
+  batch:
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: some_storage
