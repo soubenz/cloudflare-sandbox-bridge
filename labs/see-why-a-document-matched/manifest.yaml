@@ -1,0 +1,219 @@
+# Module 3 ("Retrieval as a service"), lab 1 (explore, gateway family).
+#
+# type: explore -- nothing is broken and nothing is missing (see
+# docs/lab-authoring.md, "type: explore is a guided tour, not a puzzle").
+# The learner runs real queries against a real pgvector-backed retrieval
+# service, reads real distance/similarity scores, inspects a real
+# OpenInference RETRIEVER-kind trace in Phoenix, and answers three graded
+# questions in workspace/answers.json.
+#
+# Real tools, no substitutions (per $SCRATCH/retrieval-inv/FINDINGS.md):
+# pgvector 0.8.6 on the image's existing PostgreSQL 14, and Arize Phoenix
+# 20.16.0 in its own isolated venv. This manifest assumes three platform
+# (image) changes the main session makes later, same order as every prior
+# module -- proven locally against local venvs/Postgres, not against this
+# image:
+#   1. PGDG's `postgresql-14-pgvector` (0.8.6-1.pgdg22.04+2) installed
+#      alongside the image's existing `postgresql-14` package (jammy's own
+#      universe has no pgvector package at any suite -- FINDINGS.md).
+#   2. Arize Phoenix installed into its own isolated venv at
+#      /opt/opalix/venvs/phoenix (a real `mcp` package version conflict
+#      with litellm[proxy]'s pin breaks Phoenix if it shares the image's
+#      main Python environment -- FINDINGS.md), with the CPython WASM
+#      binary Phoenix otherwise fetches from github.com at every boot
+#      pre-downloaded at image build time to
+#      /opt/opalix/assets/phoenix-wasm/pyodide.wasm (same
+#      build-time-fetch shape already used in this image for Grafana/
+#      Prometheus/the Prisma CLI).
+#   3. This lab's own small `app` service (FastAPI + psycopg2 +
+#      OpenTelemetry) installed into its own isolated venv at
+#      /opt/opalix/venvs/see-why-a-document-matched. Not a confirmed
+#      conflict the way Phoenix's `mcp` clash is (FINDINGS.md never tested
+#      this combination) -- a defensive choice given the image's shared
+#      stack already pins litellm/prisma/mlflow, made the same way
+#      FINDINGS.md's own footprint table already priced in ("~15-20 MB if
+#      a fully separate venv").
+# `postgres` itself needs no template: a fresh `initdb` plus this lab's own
+# `CREATE EXTENSION vector` and a 24-row seed measured well under a second
+# end to end locally (see this lab's own report), unlike LiteLLM's 171
+# migrations in the Module 1 gateway fixture -- no pre-baked data directory
+# needed here.
+#
+# Load-bearing correction to FINDINGS.md, verified live for this manifest's
+# exact config (per docs/lab-authoring.md's own instruction not to assume
+# the general no-login finding still holds for a specific config): Phoenix
+# does clear the no-login bar by itself, but its own UI cannot be exposed
+# directly as a `ui: true` tab under this platform's proxy, which "forwards
+# the full path... unchanged" (docs/lab-authoring.md). Phoenix's own
+# `PHOENIX_HOST_ROOT_PATH` setting (confirmed to exist and to be exactly
+# the Grafana-`GF_SERVER_ROOT_URL`-shaped tool for this) makes Phoenix
+# *generate* correctly-prefixed links and its frontend's `basename` -- but
+# its request *routing* still expects the incoming path to already have
+# that prefix stripped (standard ASGI `root_path` semantics: a reverse
+# proxy in front is expected to strip it, and root_path is only used for
+# outbound URL generation). Proven live: with `PHOENIX_HOST_ROOT_PATH` set
+# and a request for that same prefixed path sent straight to Phoenix
+# (exactly what this platform's proxy does), GraphQL/OTLP POST routes
+# 405 under the prefix, and GET routes for its own JS bundle 200 with the
+# wrong content (Phoenix's SPA-fallback route serves index.html for any
+# unmatched GET path, including the bundle's own path) -- so the page loads
+# but the app underneath never runs. Fix, also proven live: `phoenix-view`
+# below is a thin stdlib reverse proxy (workspace/services/
+# phoenix_view_proxy.py) that strips the prefix before forwarding to
+# Phoenix's real, un-prefixed port and passes the response back unchanged
+# -- assets, GraphQL, and the SPA all verified working end to end through
+# it. `phoenix` itself stays `ui: false` (matching the shape every other
+# gateway-family lab uses for a UI that needs help to work under this
+# proxy); `phoenix-view` is the actual tab.
+slug: see-why-a-document-matched
+version: 1.0.0
+title: "See why a document matched"
+type: explore
+family: gateway
+summary: >-
+  A houseplant-care FAQ in Postgres with pgvector, and a query service that
+  traces every search to Phoenix as a real OpenInference retriever span. A
+  guided tour of a vector search's own distance scores and its real trace.
+objectives:
+  - "Run a real pgvector cosine-distance search and read its distance/similarity scores"
+  - "Compare a query against a near-duplicate phrasing of it"
+  - "Read a real OpenInference RETRIEVER-kind trace in Phoenix"
+  - "Tell a genuine close match from an out-of-corpus query by its score"
+difficulty: intro
+timeout_minutes: 60
+idle_minutes: 10
+
+env:
+  APP_URL: "http://127.0.0.1:8010"
+  PHOENIX_URL: "http://127.0.0.1:6006"
+  PHOENIX_VIEW_URL: "http://127.0.0.1:6007"
+
+services:
+  - name: postgres
+    # Fresh initdb, not a copied template (see the comment above) --
+    # idempotent across a restart of this same service, same as every
+    # other gateway-family lab's postgres.
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then install -d -o postgres -g postgres -m 700 /tmp/pg; runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres >/dev/null; echo 'dynamic_shared_memory_type = sysv' >> /tmp/pg/postgresql.conf; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+  - name: phoenix
+    # ui: false -- see the load-bearing comment above: Phoenix's own UI
+    # cannot be exposed directly as a tab under this platform's proxy.
+    # `phoenix-view` below is the actual tab.
+    argv: ["/opt/opalix/venvs/phoenix/bin/python", "-m", "phoenix.server.main", "serve"]
+    cwd: /workspace
+    env:
+      PHOENIX_WORKING_DIR: "/tmp/phoenix-data"
+      PHOENIX_SQL_DATABASE_URL: "sqlite:////tmp/phoenix-data/phoenix.db"
+      PHOENIX_PORT: "6006"
+      PHOENIX_HOST: "127.0.0.1"
+      # Must equal phoenix-view's own {{service.prefix}} exactly, so links
+      # Phoenix generates (asset hrefs, its frontend's basename) match what
+      # the browser will actually request through that tab. Built the same
+      # way {{service.prefix}} itself is documented to be shaped
+      # (docs/lab-authoring.md: "{{service.prefix}} ... used anywhere else
+      # it renders with an empty service name, giving
+      # /sessions/{id}/services/") since {{service.prefix}} only resolves
+      # inside its own services[] entry, not across entries.
+      PHOENIX_HOST_ROOT_PATH: "/sessions/{{session.id}}/services/phoenix-view"
+      # PHOENIX_ENABLE_AUTH is deliberately never set here -- unset is the
+      # only value that keeps auth off (FINDINGS.md).
+      PHOENIX_TELEMETRY_ENABLED: "false"
+      PHOENIX_DISABLE_AGENT_ASSISTANT: "true"
+      PHOENIX_WASM_BINARY_PATH: "/opt/opalix/assets/phoenix-wasm/pyodide.wasm"
+    port: 6006
+    healthcheck:
+      type: http
+      path: /
+      # Cold start ~12-14s live in FINDINGS.md (SQLite migrations plus
+      # eager pandas/scipy/sklearn imports); 90s leaves room for a slow
+      # container without hiding a real failure.
+      timeout_s: 90
+    ui: false
+    depends_on: []
+  - name: phoenix-view
+    # The real tab. Strips {{service.prefix}} and forwards everything else
+    # unchanged to Phoenix's real port -- see phoenix_view_proxy.py's own
+    # docstring and the load-bearing comment above for exactly why this
+    # exists and how it was verified live.
+    argv: ["python3", "-B", "/workspace/services/phoenix_view_proxy.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "6007"
+      VIEW_PREFIX: "{{service.prefix}}"
+      PHOENIX_UPSTREAM_URL: "http://127.0.0.1:6006"
+    port: 6007
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: true
+    depends_on: [phoenix]
+  - name: app
+    # seed_documents.py runs once in the background alongside the app's own
+    # boot (same pattern as seed_contextforge.py in Module 2's
+    # see-how-tools-reach-an-agent): it polls Postgres itself, so nothing
+    # here has to wait for it before starting, and is idempotent, so a
+    # restart of this same service (which re-runs this whole argv) finds
+    # the schema and the 24 seeded documents already in place and changes
+    # nothing.
+    argv:
+      [
+        "sh", "-c",
+        "/opt/opalix/venvs/see-why-a-document-matched/bin/python -B /workspace/services/seed_documents.py & exec /opt/opalix/venvs/see-why-a-document-matched/bin/python -B /workspace/services/app.py",
+      ]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      # Bare, unprefixed -- a container-internal call straight to
+      # Phoenix's real port, never through phoenix-view (that proxy exists
+      # only to make Phoenix's browser UI work as a tab).
+      PHOENIX_OTLP_ENDPOINT: "http://127.0.0.1:6006/v1/traces"
+      APP_PORT: "8010"
+    port: 8010
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 60
+    ui: false
+    depends_on: [postgres, phoenix]
+
+pressure: []
+
+checks:
+  - name: services-are-up
+    script: services-are-up.sh
+    timeout_s: 60
+    weight: 1
+  # The graded check: derives the true answer to each of the brief's three
+  # questions from two real /query calls against the live app (never a
+  # hard-coded value) and compares them against /workspace/answers.json.
+  - name: answers-match-the-service
+    script: answers-match-the-service.sh
+    timeout_s: 60
+    weight: 2
+
+hints:
+  - after_minutes: 10
+    text: >-
+      Run `python3 -B query.py "How often should I water my succulents?"`
+      from a terminal -- the top row is your first answer, and counting how
+      many rows have a distance below 0.72 is your second. For the third,
+      run `python3 -B query.py "What's the boiling point of tungsten in
+      Kelvin?" --top-k 24` and check whether any row's distance is below
+      0.65. Open the phoenix-view tab afterwards and find the
+      `retrieve_documents` span for one of your calls -- it lists every
+      document that came back with its real score, exactly like query.py
+      printed.
+
+egress:
+  allow: []
