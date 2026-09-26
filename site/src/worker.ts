@@ -27,6 +27,8 @@ export interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
   WAITLIST_LIMIT?: RateLimiter;
+  /** Set on PR preview versions (see .github/workflows/preview-site.yml). Never set in production. */
+  PREVIEW?: string;
 }
 
 function seeOther(request: Request, path: string): Response {
@@ -56,6 +58,10 @@ async function handleWaitlist(request: Request, env: Env): Promise<Response> {
   // A bot that filled the hidden field is shown success and stored nowhere.
   if (parsed.kind === 'honeypot') return seeOther(request, THANKS_PATH);
   if (parsed.kind === 'invalid') return back(request, parsed.error, parsed.plan);
+
+  // Preview versions share production's bindings, so they must never write
+  // to the real waitlist. Everything up to here behaves exactly as live.
+  if (env.PREVIEW) return seeOther(request, THANKS_PATH);
 
   const country = typeof request.cf?.country === 'string' ? request.cf.country : null;
   try {
