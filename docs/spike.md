@@ -1273,3 +1273,54 @@ if it should not persist.
   graders inside the container can call `http://127.0.0.1:4000/...`
   directly. Keep `SERVER_ROOT_PATH` set anyway, so anything a learner
   opens through the proxy resolves.
+
+## The LiteLLM stack in a live session (T7 and T9, 26 Sep 2026)
+
+Measured against the live deployment after the gateway image gained
+Postgres and a pinned LiteLLM (deploys #45 and #47).
+
+**Image sizes** (CI's `docker image ls`, deploy #47): gateway **2.86 GB**,
+up from 2.16 GB. The new layers are Postgres from apt (452 MB for the apt
+layer, which also holds curl, python3-pip and tmux), `litellm[proxy]` plus
+prisma (622 MB) and `prisma generate`'s engines and client (437 MB). The
+agent image is unchanged at **2.17 GB**.
+
+**The fixture** (`test/fixtures/labs/gateway-litellm-hello`: Postgres,
+the scripted provider, LiteLLM) on `standard-1`, two fresh sessions:
+
+| | run 1 | run 2 |
+|---|---|---|
+| start to `running` | 77.3 s | 77.2 s |
+| memory used, whole container | 550 MB | 544 MB |
+| LiteLLM RSS | 421 MB | 421 MB |
+| Postgres, all processes | about 150 MB | about 150 MB |
+| Prisma query engine | 24 MB | 24 MB |
+| full check run (2 checks) | 1.8 s | 1.9 s |
+
+`labs test` on the fixture: both checks pass on a fresh session, which is
+the expected verdict for a tour fixture ("no task in it"). No healthcheck
+or check came near its timeout. Memory is not a constraint: 4 GiB has
+about 3.4 GB available with the whole stack up.
+
+**Boot time is the constraint.** 77 s is the sum of the services'
+sequential healthchecks, and most of it is LiteLLM's first boot on a
+fresh database running all 171 bundled migrations on half a vCPU (the
+same boot is 23-26 s on a dev machine). Every Module 1 lab boots this way,
+and the console's boot dialog promises "sometimes up to 30" seconds. The
+obvious lever is migrating a template database at image build time and
+copying it into place at boot, so a session never runs migrations.
+Not done yet.
+
+**A deploy lesson.** `wrangler deploy --containers-rollout=immediate`
+returns once the container application points at the new image, but
+Cloudflare was still rolling it out for about two minutes after (the app's
+`updated_at` moved from 11:05 to 11:07). A pool drain inside that window
+refilled with containers on the *previous* image, and the httpx test
+failed against them. Draining again after the rollout settled fixed it:
+the egress suite then passed 8/8, including httpx reaching the AI Gateway
+from the learner's shell. Drain after the rollout settles, not straight
+after the deploy step returns.
+
+A second hazard from the same hour: a push to `main` from another session
+redeployed `main`'s older Worker and images over this branch's deploy.
+Whichever deploy finishes last is what is live.
