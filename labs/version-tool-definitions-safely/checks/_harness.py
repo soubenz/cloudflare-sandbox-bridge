@@ -34,7 +34,7 @@ What "driving the scenario" actually does, in order:
      probe, not a mathematical proof: a two-step "remove old, add new"
      implementation has a real gap between its two HTTP calls, and dense
      polling from several threads gives this a real chance of landing a
-     sample inside that gap, but a sufoperationsfficiently fast pair of
+     sample inside that gap, but a sufficiently fast pair of
      calls could still be missed. Documented here rather than overclaimed.
   4. Record a post-cutover caller.py run (expected to fail -- proves a
      real cutover happened).
