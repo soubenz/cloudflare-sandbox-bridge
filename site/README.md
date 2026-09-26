@@ -33,10 +33,8 @@ show the 404 page.
 
 | Path | Meant for |
 |---|---|
-| `/join` | Beta sign-up |
+| `/try` | The free lab |
+| `/waitlist` | Waitlist for the other labs and the paid plans |
 | `/signin` | Sign in |
-| `/labs/duplicate-emails`, `/labs/weekend-bill` | The public page for each live lab |
-| `/manager-note` | The one-page note an engineer forwards to a manager |
-| `/pilot` | Team pilot request |
 | `/feedback` | Beta feedback |
 | `/privacy` | Privacy policy |
