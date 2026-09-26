@@ -14,6 +14,18 @@ earlier "Phase 1 | 35" table; both totals are left exactly as written.
 
 Build order agreed 25 Sep 2026: module 1 first, in table order.
 
+Phase-1 count resolved 26 Sep 2026 (user): go with 21. The tables give 22
+(five unmarked labs each in modules 1-4, one each in 6 and 7) unless one is
+cut. Cut: Module 4's "Give every team its own view without its own stack"
+(Langfuse) -- it was already flagged in this repo's build plan as
+conflicting with the house no-login rule (Langfuse ships real accounts,
+orgs and projects with a login page by default, no documented anonymous
+mode), so it is the one phase-1 lab most likely to need rework or a
+substitute tool regardless. Deferred to phase 2. Module 4's phase-1 set is
+therefore its other four: the trace explore lab, propagation, telemetry
+pipelines, and LiteLLM spend attribution with Grafana. Modules 1-3 keep
+all five each (5+5+5+4+1+1 = 21).
+
 Built and verified live (26 Sep 2026). Each passes `labs test`: the
 untouched workspace fails and solution/ passes. Each also fails every
 planted wrong answer, on the intended check, against a live session.
