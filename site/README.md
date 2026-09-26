@@ -43,6 +43,19 @@ npx wrangler d1 execute opalix --remote \
   --command "SELECT email, plan, role, source, datetime(created_at/1000, 'unixepoch') AS joined FROM waitlist ORDER BY created_at"
 ```
 
+## Working on the site
+
+Work happens on the `dev-landing-page` branch, never directly on main.
+
+1. Commit to `dev-landing-page` and open a pull request to main.
+2. `.github/workflows/preview-site.yml` uploads a preview for the PR at
+   `https://pr-<number>-opalix-site.<account-subdomain>.workers.dev` and
+   comments the link on the PR. It updates on every push. The preview is a
+   Worker version, not a deployment, so production is untouched. Its
+   waitlist form validates but stores nothing (`PREVIEW=true`), and D1
+   migrations are not applied until merge.
+3. Merging the PR deploys production through `deploy-site.yml`.
+
 ## Preview and deploy
 
 ```sh

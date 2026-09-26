@@ -39,7 +39,13 @@
   // When the domain moves, add it as a custom domain on this Worker, then
   // remove the noindex rule from public/_headers so the real site can be
   // indexed.
-  "workers_dev": true
+  "workers_dev": true,
+
+  // Pull requests upload a preview version (not a deployment) with
+  // PREVIEW=true, served at https://pr-<number>-opalix-site.<account-subdomain>.workers.dev.
+  // See .github/workflows/preview-site.yml. Production never sets PREVIEW;
+  // with it set, the waitlist form validates but stores nothing.
+  "preview_urls": true
 
   // Deployed by .github/workflows/deploy-site.yml on every push to main
   // that touches site/ or migrations/, or by hand with `npm run deploy:site`.
