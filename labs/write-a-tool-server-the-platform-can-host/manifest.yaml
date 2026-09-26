@@ -1,8 +1,24 @@
-# Path 2, Module 2, lab 4 (build, agent family). Part 1 of this lab: the
-# design below is proven live against a scratchpad reference
-# implementation (own venv, mcp-contextforge-gateway==1.0.10, Python
-# 3.12, mcp==1.30.0 -- see this lab's own report for the transcript).
-# checks/ is a placeholder; the real outcome-based grader is part 2.
+# Path 2, Module 2, lab 4 (build, agent family). Design proven live
+# against a scratchpad reference implementation (own venv,
+# mcp-contextforge-gateway==1.0.10, Python 3.12, mcp==1.30.0 -- see this
+# lab's own report for the transcript) and against the real
+# checks/_harness.py grader below.
+#
+# CORRECTED after part 1: AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true
+# does NOT give a real anonymous admin UI for a browser tab. Reproduced
+# live with `curl -H "Accept: text/html" -L .../admin/` -- it 302s to a
+# real /admin/login form with a <form>, a Login field and a Password
+# field. mcpgateway/middleware/rbac.py only takes the unauthenticated-
+# admin bypass path when the request does NOT look like a browser (no
+# `text/html` in Accept, no htmx header, no same-origin /admin referer);
+# a plain non-browser call (register.py's urllib request, or curl with no
+# special headers, which sends no Accept at all) does bypass cleanly, but
+# the console's iframe always sends a real browser Accept header, so a
+# `ui: true` contextforge tab would show a learner a login screen. Fixed:
+# contextforge is `ui: false` here, same as LiteLLM in every Module 1
+# lab, and `view` (workspace/view.py) is the `ui: true` tab instead -- a
+# small stdlib read-only page that calls ContextForge's own REST API the
+# same non-browser way register.py does.
 #
 # Settled: what "a health check" means here (catalogue: "Typed inputs,
 # real errors, pagination, and a health check").
@@ -133,7 +149,10 @@ services:
       type: http
       path: /health
       timeout_s: 60
-    ui: true
+    # ui: false -- ContextForge's own admin UI always redirects a real
+    # browser to a login form (see the header comment). `view` below is
+    # the tab instead.
+    ui: false
     depends_on: []
   # The learner's own tool server. `ui: false` -- an MCP streamable-http
   # endpoint only answers JSON-RPC POSTs (a bare GET is 406, confirmed

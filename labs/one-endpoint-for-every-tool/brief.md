@@ -25,11 +25,14 @@ ContextForge with `platform/catalogue.yaml`. As shipped, it does nothing.
 | `platform/catalogue.yaml` | The platform's own record of what should exist: which tool servers, and exactly which tools from them belong in the one public bundle. You don't edit this to make the lab pass -- you make the gateway match it. |
 | `platform/setup.py` | Reads catalogue.yaml and is supposed to reconcile ContextForge with it, then write `platform/client.json`. Its docstring says what it must leave behind; none of it is implemented yet. |
 | `services/*.py` | The three teams' own tool servers. You don't edit these either -- they're the given scenario, not the task. |
-| ContextForge **admin** tab | Its real dashboard -- gateways, virtual servers, tools, tokens. Everything `setup.py` needs to do, you can also see (and try by hand) here first. |
+| **view** tab | Read-only: every registered gateway, the virtual server(s) that exist and what each bundles, and every client token (never a usable secret). |
 
 `CONTEXTFORGE_URL`, `INVENTORY_URL`, `BILLING_URL`, and `SEARCH_URL` are
 all in your environment -- `setup.py` reads them, and so can you, from a
-terminal, with `curl`.
+terminal, with `curl`. ContextForge's own admin dashboard is not exposed
+as a tab in this lab (it requires a login this lab doesn't set up) -- the
+same `/v1/gateways`, `/v1/servers`, and `/v1/tokens` API it's built on is
+still there for you to call directly.
 
 ## Your task
 

@@ -56,6 +56,12 @@
 #     token with the same fixed name on every run needs to account for
 #     that (see workspace/platform/setup.py's own docstring; this is
 #     intentionally left as part of the task, not spelled out there).
+#  8. A browser-shaped request (Accept: text/html -- what a real tab, and
+#     the session console's own iframe, both send) hits a genuine
+#     /admin/login form; only a script/server-side call without that
+#     header gets the anonymous-admin bypass. Confirmed live with
+#     `curl -H "Accept: text/html" -L .../admin`. See the note below on
+#     why `contextforge` is `ui: false`.
 #
 # No Postgres: ContextForge's own state (gateways, servers, tokens) is
 # SQLite-backed and that's sufficient for this lab; kept under /tmp, not

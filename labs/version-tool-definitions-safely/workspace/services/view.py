@@ -3,16 +3,20 @@
 front and center -- exactly which tool `price-lookup` currently serves.
 
 ContextForge's OWN admin UI is not this lab's tab, and that needs a word:
-it has no login (AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true is
-real and confirmed live), but its templates hard-code absolute asset paths
-(e.g. `/static/js/...`) and it has no reverse-proxy path-prefix support of
-its own -- confirmed live, by asking a running instance for its own admin
-page under a `/sessions/<id>/services/...`-shaped path: 404. Under this
-platform's proxy, which forwards a `ui: true` service's full path
-unchanged (see docs/lab-authoring.md), that 404s for real, the same way a
-home-grown page would if it ignored its own prefix -- so it stays
-`ui: false`, and this page is the substitute, same pattern this repo
-already uses for LiteLLM's own always-login-gated UI.
+ALLOW_UNAUTHENTICATED_ADMIN=true does NOT bypass login for a real browser
+tab -- confirmed from source (mcpgateway/middleware/rbac.py,
+get_current_user): a request whose Accept header contains `text/html` (any
+real browser navigation) is 302-redirected to a real `/admin/login` form
+before that bypass is ever reached; it only fires for a request that
+doesn't look like a browser. Independently, its templates also hard-code
+absolute asset paths (e.g. `/static/js/...`) and it has no reverse-proxy
+path-prefix support of its own -- confirmed live, by asking a running
+instance for its own admin page under a `/sessions/<id>/services/...`
+-shaped path: 404, where the unprefixed path 200s. Either fact alone rules
+out a bare `ui: true` on ContextForge itself under this platform's
+no-login rule, so it stays `ui: false`, and this page is the substitute,
+same pattern this repo already uses for LiteLLM's own always-login-gated
+UI.
 
 Everything here is read server-side with no credential the learner needs
 to hold; nothing here accepts a write.
