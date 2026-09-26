@@ -1,0 +1,202 @@
+# Path 2, Module 2, lab 4 (build, agent family). Part 1 of this lab: the
+# design below is proven live against a scratchpad reference
+# implementation (own venv, mcp-contextforge-gateway==1.0.10, Python
+# 3.12, mcp==1.30.0 -- see this lab's own report for the transcript).
+# checks/ is a placeholder; the real outcome-based grader is part 2.
+#
+# Settled: what "a health check" means here (catalogue: "Typed inputs,
+# real errors, pagination, and a health check").
+#
+# ContextForge has no separate HTTP health-check route for a registered
+# tool server, and this lab does not add one. Reachability is the MCP
+# handshake itself: ContextForge's own gateway_service.py runs its
+# periodic health check on a STREAMABLEHTTP gateway by opening a fresh
+# MCP session and calling `session.initialize()` -- its own comment
+# reads "Health checks are system operations with no downstream MCP
+# session... the probe is cheap and verifies that an initialize
+# round-trip works." That is the same handshake POST /gateways performs
+# synchronously at registration time (initialize, then tools/list),
+# which is how it fills in `reachable` and `toolCount` on the spot --
+# confirmed live: registering this lab's own reference tool server
+# returned `"reachable": true, "toolCount": 2` immediately, before any
+# periodic recheck could have run.
+#
+# Concretely: a GET on the tool server's own /mcp path (what a bespoke
+# HTTP /health route would look like) returns 406 Not Acceptable -- an
+# MCP streamable-http server only understands the JSON-RPC handshake, not
+# a bare GET -- confirmed live against workspace/tool_server.py. So the
+# platform-level healthcheck below is `type: tcp` (did the process open
+# the port at all), not `type: http`; the MCP-level reachability check
+# that actually matters is ContextForge's own initialize handshake, which
+# this lab's grader exercises by registering the tool server the same
+# way register.py does and reading back `reachable`/`toolCount`, not by
+# adding a route that doesn't exist in the spec.
+#
+# Other settled facts, each confirmed live against this lab's own
+# reference implementation (not the general ContextForge investigation,
+# which only established the mechanism existed, not this lab's specific
+# contract):
+#
+#  1. Typed inputs: a plain Python type hint on a `@mcp.tool()` function
+#     (`order_id: int`, `cursor: str | None`, `page_size: int`) becomes
+#     the tool's real inputSchema, word for word -- confirmed by reading
+#     it back from ContextForge's own GET /tools after registration.
+#  2. Real errors, two distinct mechanisms, both live: a bare Python
+#     exception in a tool function is already caught by the `mcp` SDK's
+#     own call_tool handler and comes back as CallToolResult(isError=True),
+#     but with the *raw* exception string as the message (confirmed:
+#     get_order on an id past the end of the dataset returns
+#     'list index out of range', not a domain message). A value that is
+#     type-valid but nonsensical (page_size=-3, an out-of-range cursor)
+#     raises nothing on its own -- Python's list slicing tolerates a
+#     negative or huge index silently -- so the untouched skeleton
+#     returns a *wrong* page with isError:false; the fix is an explicit
+#     check that raises mcp.server.fastmcp.exceptions.ToolError with a
+#     clean message. The grader tells these apart: isError:true alone
+#     is not enough to pass, the message must not be a leaked Python
+#     exception either.
+#  3. Pagination: mcp.types.PaginatedResult's own `cursor` request field
+#     / `nextCursor` response field is the SDK's real cursor convention
+#     (used for tools/list, resources/list, etc contains itself); this
+#     lab's list_orders tool reuses that same naming for a tool-level
+#     result rather than the (different) list-endpoint pagination it was
+#     designed for, because MCP has no separate spec concept for
+#     paginating a tool's own return value. Confirmed live: walking
+#     list_orders with its own nextCursor across a 55-row dataset visits
+#     all 55 ids exactly once in 6 pages (10,10,10,10,10,5), then reports
+#     no further cursor.
+#  4. Registration: ContextForge does not poll for or auto-discover a
+#     tool server on its own -- POST /gateways is the one call that
+#     starts the whole thing (initialize, tools/list, storing the
+#     schemas), so this lab ships that call as a workspace/register.py
+#     step the learner runs themselves, matching ContextForge's real,
+#     push-based registration flow rather than inventing an auto-register
+#     mechanism it doesn't have.
+#  5. Two env quirks not documented anywhere obvious, both hit live
+#     standing this exact manifest up: MCPGATEWAY_ADMIN_API_ENABLED must
+#     be set (default false) alongside MCPGATEWAY_UI_ENABLED for POST
+#     /gateways etc. to exist at all; and SSRF_ALLOW_LOCALHOST must be
+#     true or ContextForge's own SSRF guard refuses to register a gateway
+#     whose URL is 127.0.0.1 -- which every tool server in this sandbox
+#     necessarily is.
+#
+# The five *_PASSWORD/*_SECRET values below are fixed, disposable,
+# lab-only strings (generated once with `python -m
+# mcpgateway.scripts.init_secrets --stdout`) -- ContextForge refuses to
+# boot with its own default/placeholder secrets, but nothing in this
+# sandbox needs them to be unguessable.
+slug: write-a-tool-server-the-platform-can-host
+version: 1.0.0
+title: "Write a tool server the platform can host"
+type: build
+family: agent
+summary: >-
+  ContextForge is up and empty. Fix and complete your own MCP tool
+  server -- typed inputs, real errors instead of silent wrong answers,
+  and correct cursor-based pagination over a 55-row dataset -- then
+  register it so ContextForge discovers it and calls it for real.
+objectives:
+  - "Expose tools whose input schema comes from real Python type hints, not stringly-typed parameters"
+  - "Return a real MCP error (isError: true, a clean message) for input that is bad, not a crash or a silently wrong answer"
+  - "Implement cursor-based pagination that walks an entire dataset with no duplicates and no gaps"
+difficulty: core
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+  TOOL_SERVER_PORT: "8990"
+
+services:
+  - name: contextforge
+    argv: ["mcpgateway", "--host", "0.0.0.0", "--port", "4744"]
+    cwd: /workspace
+    env:
+      AUTH_REQUIRED: "false"
+      ALLOW_UNAUTHENTICATED_ADMIN: "true"
+      MCPGATEWAY_UI_ENABLED: "true"
+      # Default false -- without this, POST /gateways (and every other
+      # admin API route) 404s even though the UI itself loads fine.
+      MCPGATEWAY_ADMIN_API_ENABLED: "true"
+      # Without this, POST /gateways 422s on any 127.0.0.1/localhost URL
+      # -- ContextForge's own SSRF guard, and every tool server here is
+      # local by construction.
+      SSRF_ALLOW_LOCALHOST: "true"
+      DATABASE_URL: "sqlite:////tmp/contextforge-lab/mcp.db"
+      JWT_SECRET_KEY: "_DnBwb7LmRkX3QZaMLEGngj9VTVjt67ASCS2d3GBMRE"
+      AUTH_ENCRYPTION_SECRET: "eHBjKPY21ol8QWstof0PHefa7-PVTZE2fr_ICOvTVhw"
+      PLATFORM_ADMIN_PASSWORD: "KF8V_vKf96CMLMwupsGTPpK4"
+      BASIC_AUTH_PASSWORD: "n9WTuvvaijBD38-X3snnEdtl"
+      DEFAULT_USER_PASSWORD: "PZy7Rp7NYkfdJOVnMc5s_68G"
+    port: 4744
+    healthcheck:
+      type: http
+      path: /health
+      timeout_s: 60
+    ui: true
+    depends_on: []
+  # The learner's own tool server. `ui: false` -- an MCP streamable-http
+  # endpoint only answers JSON-RPC POSTs (a bare GET is 406, confirmed
+  # live), so there is no browsable page to proxy here; this is a plain,
+  # unproxied services[] entry specifically so the platform's own
+  # process supervisor runs it directly (not backgrounded by a wrapper
+  # script) and the learner can restart it from the Services panel after
+  # every edit, or after a bad call takes it down while they're testing.
+  - name: tool-server
+    argv: ["python3", "-B", "/workspace/tool_server.py"]
+    cwd: /workspace
+    env:
+      TOOL_SERVER_PORT: "8990"
+    port: 8990
+    healthcheck:
+      # type: http would need a real HTTP health route; this server has
+      # none (see the header comment) -- a GET on its one path, /mcp,
+      # returns 406 even when the server is completely healthy. `tcp`
+      # (the schema default) only confirms the port is open, which is
+      # the right-shaped check for a JSON-RPC-only endpoint.
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+
+pressure: []
+
+checks:
+  # Placeholder for part 1 -- see checks/placeholder.sh. Always fails,
+  # which is correct: nothing has fixed tool_server.py yet.
+  - name: placeholder
+    script: placeholder.sh
+    timeout_s: 30
+    weight: 1
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 13
+    text: >-
+      get_order's order_id is a real field on each order dict, not a
+      position in the list -- something that indexes ORDERS directly
+      with it is answering "what's the Nth order" instead of "what's the
+      order with this id", and those only agree by accident.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      list_orders's cursor is meant to be round-tripped: whatever
+      nextCursor your own call returns becomes the cursor the caller
+      sends back next time. If list_orders returns the same page
+      regardless of what cursor came in, nothing before it is actually
+      being read to decide where to start.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      A tool function that raises any exception already comes back
+      isError:true -- the mcp SDK's own call_tool handler catches it.
+      That's not the same as a clean error: the message a caller sees
+      will be the raw Python exception, not something you wrote. A value
+      that is type-valid but doesn't make sense (page_size <= 0, a
+      cursor past the end of the dataset) won't raise anything on its
+      own either -- Python's list slicing just returns something odd,
+      silently. Both need an explicit check with your own message,
+      raised as mcp.server.fastmcp.exceptions.ToolError.
+
+egress:
+  allow: []

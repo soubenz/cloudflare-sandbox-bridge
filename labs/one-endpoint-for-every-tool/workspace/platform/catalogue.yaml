@@ -1,0 +1,34 @@
+# The platform's own record of what should be true. You don't edit this to
+# make the lab pass -- you make the gateway match it.
+#
+# Three teams built three MCP tool servers, independently, with no platform
+# involved. Each is listed below under `tool_servers`, by the name the
+# gateway should register it under. Each one's actual URL is in your
+# environment (INVENTORY_URL, BILLING_URL, SEARCH_URL) -- never hard-code
+# one, the grader points these at its own copies of the same servers.
+#
+# `public_bundle` is the one thing every caller should be able to reach
+# through a single endpoint: exactly these tools, from whichever servers
+# they came from, and nothing else. Every tool a server exposes that is
+# *not* listed here must stay unreachable through that shared endpoint --
+# most servers only expose tools that belong in the bundle, but billing
+# also runs `refund_charge`, which moves money and was built for on-call
+# use, never for a general caller. It is deliberately left out below.
+
+tool_servers:
+  - inventory
+  - billing
+  - search
+
+public_bundle:
+  name: public-tools
+  description: "Every tool a general caller may reach, from any team's server, through one endpoint."
+  tools:
+    - server: inventory
+      tool: lookup_stock
+    - server: billing
+      tool: charge_lookup
+    - server: search
+      tool: search_docs
+  # billing.refund_charge is intentionally NOT listed above -- see
+  # services/billing_server.py's own docstring for why.

@@ -1,0 +1,236 @@
+# A build lab, not break-fix: there is no planted one-liner. Three teams
+# each built their own MCP tool server -- inventory, billing, search -- with
+# no platform involved. All three are up and listening on their own ports.
+# ContextForge is also up, but nothing is registered with it yet: no
+# gateway, no virtual server, no token. There is no single endpoint a
+# caller can reach any of these tools through, and no way to hand any
+# caller less than "everything" -- because right now there is nothing to
+# hand them at all. platform/setup.py is supposed to fix all of that by
+# reconciling the gateway with platform/catalogue.yaml; as shipped, it does
+# nothing.
+#
+# Everything here is proven live against mcp-contextforge-gateway 1.0.10
+# under Python 3.12 (docs/spike.md-equivalent local proof for this lab; see
+# the module-2 ContextForge feasibility investigation), and several of the
+# load-bearing facts are worth restating because the obvious calls don't
+# work first try:
+#
+#  1. With AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true, this is
+#     true of the entire /v1/* management API, not just the admin
+#     dashboard -- registering a gateway, creating a virtual server, and
+#     minting a token all work with no Authorization header at all. There
+#     is no master key in this lab because there is nothing to hold one.
+#  2. SSRF protection blocks a gateway URL that points at 127.0.0.1/
+#     localhost by default -- SSRF_ALLOW_LOCALHOST=true turns that off. It
+#     has to be on here since every tool server in this lab is loopback,
+#     inside the same container.
+#  3. A federated tool's name is `<gateway-name>-<tool-name>` with
+#     underscores turned to hyphens (registering a gateway named
+#     `billing` that exposes a tool called `charge_lookup` produces the
+#     federated tool `billing-charge-lookup`) -- confirmed live, not
+#     assumed from the docs.
+#  4. Creating a virtual server takes a POST body shaped
+#     `{"server": {"name": ..., "associated_tools": [...]}}` -- the field
+#     is `associated_tools` (snake_case tool IDs), not the camelCase
+#     `associatedTools` the read-back response shows; sending the response
+#     shape back verbatim silently creates an empty bundle instead of
+#     erroring.
+#  5. Minting a token takes `{"scope": {"server_id": ..., "permissions":
+#     [...]}}`, not top-level `server_id`/`resource_scopes` fields (those
+#     names exist only in the read-back response, same trap as #4).
+#     REQUIRE_TOKEN_EXPIRATION is on by default, so `expires_in_days` is
+#     required too.
+#  6. Tool filtering is enforced on every path that matters, confirmed
+#     live: `tools/list` on a virtual server's own MCP endpoint only ever
+#     lists the tools actually bundled into it; a direct `tools/call` for
+#     a tool that exists on the gateway but isn't in that bundle is
+#     refused ("Tool not found") rather than silently allowed; and a
+#     scoped token is refused outright (403) against a *different* virtual
+#     server's endpoint, and against every admin-plane endpoint
+#     (listing gateways, creating another virtual server, minting another
+#     token) -- a scoped client token cannot escalate itself.
+#  7. DELETE /v1/tokens/{id} revokes, it does not free the token's name for
+#     reuse by the same user -- a reconciliation script that re-mints a
+#     token with the same fixed name on every run needs to account for
+#     that (see workspace/platform/setup.py's own docstring; this is
+#     intentionally left as part of the task, not spelled out there).
+#
+# No Postgres: ContextForge's own state (gateways, servers, tokens) is
+# SQLite-backed and that's sufficient for this lab; kept under /tmp, not
+# /workspace, purely so the learner's workspace stays free of a database
+# file that isn't theirs to look at.
+#
+# ContextForge's own admin UI needs no login under AUTH_REQUIRED=false +
+# ALLOW_UNAUTHENTICATED_ADMIN=true (confirmed live: GET /admin redirects to
+# /admin/ and serves the real dashboard, no login form, no redirect to a
+# sign-in page) -- so it is `ui: true` directly, the same admin surface the
+# learner's own platform/setup.py talks to.
+
+slug: one-endpoint-for-every-tool
+version: 1.0.0
+title: "Put every tool server behind one endpoint"
+type: build
+family: agent
+difficulty: core
+summary: >-
+  Three teams built three MCP tool servers with no platform involved, and
+  billing's server exposes an on-call-only tool alongside its public one.
+  ContextForge is up but nothing is registered with it. Reconcile the
+  gateway with platform/catalogue.yaml: one virtual server, exactly the
+  tools that should be public, and one client token that can reach only
+  that bundle.
+objectives:
+  - "Federate independently-built MCP tool servers behind one gateway, as opposed to handing every caller a different address"
+  - "Bundle exactly the tools a caller should reach into one virtual server, deliberately leaving a sensitive tool out"
+  - "Mint a client token scoped to one virtual server, and show it is refused for anything outside that bundle"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+  INVENTORY_URL: "http://127.0.0.1:8901/mcp"
+  BILLING_URL: "http://127.0.0.1:8902/mcp"
+  SEARCH_URL: "http://127.0.0.1:8903/mcp"
+
+services:
+  - name: inventory
+    # The inventory team's own tool server -- see services/inventory_server.py.
+    argv: ["python3", "-B", "/workspace/services/inventory_server.py"]
+    cwd: /workspace
+    env:
+      INVENTORY_PORT: "8901"
+    port: 8901
+    healthcheck:
+      type: tcp
+      timeout_s: 20
+    ui: false
+    depends_on: []
+  - name: billing
+    # The billing team's own tool server -- see services/billing_server.py.
+    # Exposes two tools; only one belongs in the public bundle.
+    argv: ["python3", "-B", "/workspace/services/billing_server.py"]
+    cwd: /workspace
+    env:
+      BILLING_PORT: "8902"
+    port: 8902
+    healthcheck:
+      type: tcp
+      timeout_s: 20
+    ui: false
+    depends_on: []
+  - name: search
+    # The search team's own tool server -- see services/search_server.py.
+    argv: ["python3", "-B", "/workspace/services/search_server.py"]
+    cwd: /workspace
+    env:
+      SEARCH_PORT: "8903"
+    port: 8903
+    healthcheck:
+      type: tcp
+      timeout_s: 20
+    ui: false
+    depends_on: []
+  - name: contextforge
+    # ui: true -- AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true
+    # gives a real, un-gated admin dashboard (confirmed live: no login
+    # form ever renders). The same anonymous-admin context also covers the
+    # /v1/* management API platform/setup.py calls -- no master key exists
+    # in this lab because nothing needs to hold one.
+    argv: ["mcpgateway", "--host", "0.0.0.0", "--port", "4744"]
+    cwd: /workspace
+    env:
+      AUTH_REQUIRED: "false"
+      ALLOW_UNAUTHENTICATED_ADMIN: "true"
+      MCPGATEWAY_UI_ENABLED: "true"
+      MCPGATEWAY_ADMIN_API_ENABLED: "true"
+      # Every tool server in this lab is loopback, inside this same
+      # container -- SSRF protection blocks that by default.
+      SSRF_ALLOW_LOCALHOST: "true"
+      # Without this, a bad request body comes back as the opaque "An
+      # error occurred, please try again." -- true in production, but this
+      # is a training environment and the real field-level message (e.g.
+      # which field failed, and why) is exactly what makes API mistakes
+      # fixable here.
+      EXPOSE_ERROR_DETAILS: "true"
+      DATABASE_URL: "sqlite:////tmp/contextforge/mcp.db"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      # Fixed, lab-only secrets (this gateway holds no real credentials) --
+      # each satisfies ContextForge's own minimum-length/entropy checks, so
+      # boot doesn't refuse to start. Never reused outside this lab.
+      JWT_SECRET_KEY: "GXBv511pOnefep_S43RPIOyPVRl1NphIidIc9C3QceM"
+      AUTH_ENCRYPTION_SECRET: "gK1CFrDLkafMjPk6HsmUhC0BJLGqDaW-jG0EL2AivAs"
+      BASIC_AUTH_PASSWORD: "J40SRm3gOwrvRU_Ka8102aGT"
+      PLATFORM_ADMIN_PASSWORD: "WECQplHNcv0pe937pcr3IXxS"
+      DEFAULT_USER_PASSWORD: "Wz-Hl4DmrOJ083ga4KvcQhd4"
+    port: 4744
+    healthcheck:
+      type: http
+      path: /health
+      # First boot runs ContextForge's own migrations against a fresh
+      # SQLite file -- proven live at ~10-11s cold; 60s leaves headroom
+      # for a slower container without hiding a real failure.
+      timeout_s: 60
+    ui: true
+    depends_on: [inventory, billing, search]
+
+pressure: []
+
+checks:
+  - name: bundle-reaches-exactly-its-tools
+    script: bundle-reaches-exactly-its-tools.sh
+    timeout_s: 180
+    weight: 2
+    parallel: false
+  - name: excluded-tool-stays-out
+    script: excluded-tool-stays-out.sh
+    timeout_s: 180
+    weight: 2
+    parallel: false
+  # The anti-cheat: stops the first two being satisfied by handing out a
+  # token that can do more than the lab asks for (e.g. one that can also
+  # reach the gateway's admin-plane, or a second virtual server).
+  - name: client-token-cannot-escalate
+    script: client-token-cannot-escalate.sh
+    timeout_s: 180
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      Three separate things have to happen, in this order: each tool
+      server in platform/catalogue.yaml's tool_servers list gets
+      registered as a gateway (POST /v1/gateways, using its URL from your
+      environment -- CONTEXTFORGE_URL is the gateway's own address, never
+      hard-code either); then one virtual server gets created bundling
+      exactly the tools catalogue.yaml's public_bundle names; then one
+      token gets minted scoped to that virtual server. Nothing here is
+      undocumented API -- it's the same /v1/gateways, /v1/servers,
+      /v1/tokens surface the admin dashboard itself uses.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      A registered gateway's tools don't necessarily show up in the same
+      response that registers it -- GET /v1/tools/?gateway_id=<id> is
+      where you confirm they've actually been federated before you try to
+      reference them by ID. And a federated tool's name follows a fixed
+      pattern from the gateway's name and the tool's own name -- printing
+      out what GET /v1/tools/ actually returns for each of your three
+      gateways is faster than guessing it.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      Two traps in the request bodies themselves: creating a virtual
+      server needs the tool IDs under a field called `associated_tools`,
+      not the `associatedTools` name the *read-back* response uses for the
+      same data -- sending the response shape back verbatim creates a
+      virtual server with an empty bundle, no error. And minting a scoped
+      token needs `server_id` and `permissions` nested under a `scope`
+      object, plus an `expires_in_days` (token expiration is required by
+      this gateway's policy) -- not top-level `server_id`/`resource_scopes`
+      fields, which is what that endpoint's own response happens to look
+      like too.
+
+egress:
+  allow: []
