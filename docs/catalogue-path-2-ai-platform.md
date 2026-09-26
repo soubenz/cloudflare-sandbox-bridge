@@ -13,6 +13,18 @@ still show five unmarked labs in every module, and five each for modules
 earlier "Phase 1 | 35" table; both totals are left exactly as written.
 
 Build order agreed 25 Sep 2026: module 1 first, in table order.
+
+Built and verified live (26 Sep 2026). Each passes `labs test`: the
+untouched workspace fails and solution/ passes. Each also fails every
+planted wrong answer, on the intended check, against a live session.
+- labs/see-what-a-gateway-does (explore): 2 wrong answers.
+- labs/one-endpoint-one-key: 3 wrong answers.
+- labs/hard-budget-per-team: 3 wrong answers. LiteLLM's
+  fail_closed_budget_enforcement setting alone also passes; it is a
+  legitimate fix.
+- labs/keep-answering-when-a-provider-fails: 4 wrong answers.
+Not built yet: "Add a model to the catalogue without touching app code"
+(needs MLflow in the gateway image; feasible, awaiting the user's go-ahead).
 -->
 
 # Opalix Path 2: Building an AI Platform
