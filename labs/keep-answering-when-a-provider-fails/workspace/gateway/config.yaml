@@ -1,0 +1,11 @@
+# The `support` alias, exactly as it was configured before this morning:
+# one deployment, reached only through the fault proxy in front of it, no
+# retries and no fallback. If deployment a is down, `support` is down.
+model_list:
+  - model_name: support
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8963
+      api_key: unused
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

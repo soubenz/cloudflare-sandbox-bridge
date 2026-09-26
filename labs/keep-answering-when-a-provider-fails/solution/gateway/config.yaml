@@ -1,0 +1,47 @@
+# Reference solution. `support` is now a two-deployment model group --
+# deployment a (via the fault proxy, unchanged) and deployment b (direct,
+# a different path on the same scripted provider) -- rather than a single
+# deployment plus a `fallbacks:` entry. See Step A's research notes for
+# why: a single-deployment model group is, by litellm 1.102.1's own router
+# logic, exempt from percent-fail cooldown unless `allowed_fails` is set
+# to something other than litellm's own internal default (3) -- an
+# unmarked landmine (`allowed_fails: 3` looks like a deliberate, sane
+# choice and silently gets none of the protection). A two-deployment
+# group never depends on that coincidence: the single-deployment
+# exemption cannot apply to it at all, regardless of which `allowed_fails`
+# value is chosen.
+#
+#   - `weight` (there is no `order` litellm_param -- it doesn't exist, and
+#     would be silently forwarded into the outgoing provider call) makes
+#     a strongly preferred while both are healthy.
+#   - `enable_weighted_failover: true` (default False) is what keeps the
+#     very FIRST call of an outage from failing outright: without it, a
+#     retry can re-pick the same still-failing deployment before its fail
+#     count crosses `allowed_fails`, wasting the retry and still handing
+#     the customer an error.
+#   - `allowed_fails` / `cooldown_time` bound how many times a is
+#     bothered during an outage and how long it rests before being tried
+#     again.
+model_list:
+  - model_name: support
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8963
+      api_key: unused
+      weight: 100
+  - model_name: support
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/b/v1
+      api_key: unused
+      weight: 1
+router_settings:
+  routing_strategy: simple-shuffle
+  enable_weighted_failover: true
+  allowed_fails: 2
+  cooldown_time: 20
+  num_retries: 1
+litellm_settings:
+  drop_params: true
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

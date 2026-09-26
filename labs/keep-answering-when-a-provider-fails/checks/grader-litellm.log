@@ -1,0 +1,596 @@
+INFO:     Started server process [24493]
+INFO:     Waiting for application startup.
+
+   ██╗     ██╗████████╗███████╗██╗     ██╗     ███╗   ███╗
+   ██║     ██║╚══██╔══╝██╔════╝██║     ██║     ████╗ ████║
+   ██║     ██║   ██║   █████╗  ██║     ██║     ██╔████╔██║
+   ██║     ██║   ██║   ██╔══╝  ██║     ██║     ██║╚██╔╝██║
+   ███████╗██║   ██║   ███████╗███████╗███████╗██║ ╚═╝ ██║
+   ╚══════╝╚═╝   ╚═╝   ╚══════╝╚══════╝╚══════╝╚═╝     ╚═╝
+
+
+[1;37m#------------------------------------------------------------#[0m
+[1;37m#                                                            #[0m
+[1;37m#       'This feature doesn't meet my needs because...'       #[0m
+[1;37m#        https://github.com/BerriAI/litellm/issues/new        #[0m
+[1;37m#                                                            #[0m
+[1;37m#------------------------------------------------------------#[0m
+
+ Thank you for using LiteLLM! - Krrish & Ishaan
+
+
+
+[1;31mGive Feedback / Get Help: https://github.com/BerriAI/litellm/issues/new[0m
+
+
+[32mLiteLLM: Proxy initialized with Config, Set models:[0m
+[32m    support[0m
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:44100 (Press CTRL+C to quit)
+INFO:     127.0.0.1:33920 - "GET /health/readiness HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33930 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33944 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33960 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33968 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33984 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+11:52:51 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:33994 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:53:00 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:51996 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:53:09 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:32830 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:53:19 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:41124 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:53:28 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:37620 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:53:37 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:55886 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:53:47 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:54322 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:53:56 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:40896 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:54:05 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:40902 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:54:13 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:59956 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:54:23 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:38340 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:54:32 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:60972 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:54:41 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:45422 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:54:51 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:52574 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:55:00 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:44794 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:55:10 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:45884 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable
+11:55:20 - LiteLLM Proxy:ERROR: common_request_processing.py:1460 - litellm.proxy.proxy_server._handle_llm_api_exception(): Exception occured - litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+Traceback (most recent call last):
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 946, in acompletion
+    headers, response = await self.make_openai_chat_completion_request(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/logging_utils.py", line 336, in async_wrapper
+    result: Final = await func(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 503, in make_openai_chat_completion_request
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/llms/openai/openai.py", line 479, in make_openai_chat_completion_request
+    raw_response = await openai_aclient.chat.completions.with_raw_response.create(**data, timeout=timeout)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_legacy_response.py", line 386, in wrapped
+    return cast(LegacyAPIResponse[R], await func(*args, **kwargs))
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/resources/chat/completions/completions.py", line 2907, in create
+    return await self._post(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/openai/_base_client.py", line 1992, in post
+    return await self.... (litellm_truncated skipped 7814 chars. Truncation is a stdout logging safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.) and at DEBUG level. To increase the truncation limit, set `MAX_STRING_LENGTH_STDOUT_LOG` in your env.) ...pad/litellm-t4/venv/lib/python3.10/site-packages/litellm/router.py", line 3607, in _acompletion
+    response = await _response
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 2152, in wrapper_async
+    raise e
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/utils.py", line 1964, in wrapper_async
+    result = await original_function(*args, **kwargs)
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/main.py", line 701, in acompletion
+    raise exception_type(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2678, in exception_type
+    raise e  # it's already mapped
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 2439, in exception_type
+    _map_openai_exception(
+  File "/tmp/claude-0/-home-user-cloudflare-sandbox-bridge/df72f384-93f2-5786-ae80-e07aea773876/scratchpad/litellm-t4/venv/lib/python3.10/site-packages/litellm/litellm_core_utils/exception_mapping_utils.py", line 465, in _map_openai_exception
+    raise ServiceUnavailableError(
+litellm.exceptions.ServiceUnavailableError: litellm.ServiceUnavailableError: ServiceUnavailableError: OpenAIException - deployment a is unavailable (fault proxy: mode=down). Received Model Group=support
+Available Model Group Fallbacks=None LiteLLM Retried: 3 times, LiteLLM Max Retries: 3
+INFO:     127.0.0.1:46460 - "POST /v1/chat/completions HTTP/1.1" 503 Service Unavailable

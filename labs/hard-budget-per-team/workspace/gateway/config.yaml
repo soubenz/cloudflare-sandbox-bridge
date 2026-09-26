@@ -1,0 +1,24 @@
+# One alias, priced explicitly under `model_info` -- confirmed live (this
+# lab's own build notes) that LiteLLM 1.102.1 both (a) uses this for the
+# real per-call spend it logs, and (b) is the placement its own pre-call
+# cost estimator reads from. Pricing under `litellm_params` instead is
+# picked up for (a) but NOT for (b), so an estimator that needs to see it
+# (yours, in hooks/budget_guard.py) should read the same place: model_info.
+model_list:
+  - model_name: assistant
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/PROVIDER_BASE_URL
+      api_key: unused
+    model_info:
+      input_cost_per_token: 0.001
+      output_cost_per_token: 0.001
+
+litellm_settings:
+  # A relative dotted path is resolved against this file's own directory:
+  # hooks.budget_guard -> <this dir>/hooks/budget_guard.py, then the named
+  # instance is imported from it. Nothing here needs installing.
+  callbacks: ["hooks.budget_guard.budget_guard_instance"]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

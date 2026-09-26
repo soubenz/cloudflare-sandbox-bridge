@@ -1,0 +1,206 @@
+# A build lab, not break-fix: there is no planted one-liner. The gateway
+# starts up correctly, platform/teams.yaml describes two teams and one
+# delegated admin, and platform/setup.py is a skeleton whose docstring
+# states what it must leave behind, not how.
+# The task is to make the running gateway actually match teams.yaml.
+#
+# Everything here is proven live against LiteLLM 1.102.1 with no enterprise
+# licence (docs/spike.md, "LiteLLM proxy (T4)"), and the load-bearing facts
+# are worth restating because the obvious design doesn't work:
+#
+#  1. A key limited to specific model aliases works out of the box
+#     (POST /key/generate with `models`, or inherited from a team's own
+#     `models` list) -- a key tries an alias it wasn't given and gets 403
+#     key_model_access_denied / team_model_access_denied. This is the whole
+#     mechanism behind `internal-eval`: it is in gateway/config.yaml and in
+#     no team's model list, so no key this lab hands out can ever reach it,
+#     however that key was created.
+#  2. Teams work, with their own `models` restriction, out of the box.
+#  3. The literal thing "a team admin who can self-serve keys" sounds like
+#     -- `role: "admin"` on POST /team/member_add -- is Enterprise-only and
+#     refuses with a "premium feature" error, licence or not. The free
+#     mechanism that gets the same practical result (a plain team member
+#     who can call /key/generate for their own team, refused for any other
+#     team, refused on any proxy-admin-only endpoint) is granting
+#     `team_member_permissions` via POST /team/permissions_update, which
+#     has no premium check in its code path. This lab teaches exactly that
+#     mechanism, on purpose, in place of the role field a learner would
+#     otherwise reach for first.
+#  4. GET /key/info?key=... exists and never returns a key's usable secret
+#     again once it has been created (LiteLLM stores only a hash) -- what
+#     it gives back for display is `key_alias` and a `key_name` computed
+#     once at creation time in the fixed shape "sk-...<last 4 chars>". The
+#     view tab is built on exactly that: it can show every key's alias and
+#     last four characters without ever being able to leak one.
+#
+# Postgres is mandatory here for the same reason as gateway-litellm-hello
+# (LiteLLM's virtual-key/team/spend layer is backed by a Prisma schema
+# hard-coded to `provider = "postgresql"`) -- see that fixture's manifest
+# for the full initdb/runuser dance, copied verbatim below.
+#
+# `litellm`'s own admin UI always requires a login and nothing turns that
+# off, so per the no-login rule it is `ui: false` and never a tab; `view`
+# is this lab's own small read-only substitute (workspace/services/view.py)
+# -- teams and their allowed models, keys (alias + masked last-4 + team,
+# never a usable key), and the provider's own call log, all read server
+# side with the master key. It never accepts a write.
+#
+# checks/_harness.py never reads the learner's code. Each of the three
+# checks shares one grader-run's worth of setup: its OWN LiteLLM against a
+# throwaway `grading` database (dropped and recreated every run), the
+# learner's current gateway/config.yaml, the learner's own
+# platform/setup.py run against it, and then real HTTP calls with whatever
+# keys came out. The learner's own gateway (services.litellm above) is
+# never touched by grading.
+slug: one-endpoint-one-key
+version: 1.0.0
+title: "Give every team one endpoint and one key"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  Two teams share one LiteLLM gateway and should reach only the models
+  they were granted. One team needs its own admin who can hand out its
+  keys without becoming a platform admin. Reconcile the gateway with
+  platform/teams.yaml.
+objectives:
+  - "Scope a virtual key to exactly the model aliases its team was granted, and nothing else"
+  - "Delegate self-serve key creation to one team's own member without granting platform-admin power"
+  - "Show a key's real boundary from what the gateway's own team/key/user records say, not from what a caller claims about itself"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  LITELLM_URL: "http://127.0.0.1:4000"
+  PROVIDER_URL: "http://127.0.0.1:8961"
+  LITELLM_MASTER_KEY: "sk-opalix-one-key-master"
+
+services:
+  # Copied from test/fixtures/labs/gateway-litellm-hello/ -- see that
+  # fixture's manifest for why each line of this argv exists (initdb once,
+  # then exec as the postgres OS user via runuser, data dir under /tmp
+  # because /workspace is chowned to `learner`).
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then mkdir -p /tmp/pg && chown postgres:postgres /tmp/pg && runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+  - name: provider
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8961"
+    port: 8961
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: litellm
+    # ui: false -- the admin UI always requires a login (docs/spike.md,
+    # "LiteLLM under a path prefix (T5)", Q4); `view` below is the tab.
+    argv: ["litellm", "--config", "/workspace/gateway/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-one-key-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # A fresh database runs all of LiteLLM's migrations on first boot
+      # (docs/spike.md T4 Q5: ~20-28s even on an already-migrated DB in
+      # this spike's sandbox) -- use the schema's max rather than default 30.
+      timeout_s: 120
+    ui: false
+    depends_on: [postgres, provider]
+  - name: view
+    # This lab's substitute for LiteLLM's own (login-gated) admin UI: a
+    # small read-only stdlib page, workspace/services/view.py. It never
+    # accepts a write and never returns a usable key.
+    argv: ["python3", "-B", "/workspace/services/view.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "8962"
+      LITELLM_URL: "http://127.0.0.1:4000"
+      LITELLM_MASTER_KEY: "sk-opalix-one-key-master"
+      PROVIDER_URL: "http://127.0.0.1:8961"
+    port: 8962
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: [litellm, provider]
+
+pressure: []
+
+checks:
+  # None of these read platform/setup.py. Each one shares one grader-run's
+  # worth of setup with the other two (its own fresh LiteLLM against a
+  # throwaway database, the learner's own setup.py run against it, then
+  # real HTTP calls with whatever keys came out) -- see checks/_harness.py.
+  # Sequential on purpose: whichever check runs first pays the ~20-30s
+  # setup cost and the other two just read its result.
+  - name: team-keys-reach-only-their-models
+    script: team-keys-reach-only-their-models.sh
+    timeout_s: 240
+    weight: 2
+    parallel: false
+  - name: team-admin-stays-in-its-lane
+    script: team-admin-stays-in-its-lane.sh
+    timeout_s: 240
+    weight: 2
+    parallel: false
+  # The anti-cheat: stops the other two being satisfied the easy way (hand
+  # every team the master key, or make billing_admin an actual platform
+  # admin -- both would otherwise pass "reaches its own models" and "can
+  # self-serve" trivially).
+  - name: no-one-holds-the-master-key
+    script: no-one-holds-the-master-key.sh
+    timeout_s: 240
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      Two different things limit what a key can reach: the team it belongs
+      to, and the key itself. A team created with a list of models passes
+      that limit to every key generated for it. LiteLLM's team and key
+      management endpoints (POST /team/new, POST /key/generate) are
+      documented behaviour, not something this lab hides.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Giving billing-admin the built-in "admin" role on POST
+      /team/member_add looks like the obvious way to let them self-serve
+      keys for their own team. It will refuse with a "premium feature"
+      error -- that is not a bug in your request, this gateway has no
+      Enterprise licence and never will. The free mechanism for the same
+      practical outcome is a per-team permission grant, not a per-member
+      role.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      POST /team/permissions_update, with a `team_member_permissions` list
+      that includes "/key/generate", granted once for the billing team.
+      After that, a plain ("user"-role) member of that team can call
+      POST /key/generate for their own team_id with their own key -- and
+      still gets refused for any other team_id, and still gets refused on
+      admin-only endpoints like GET /user/list.
+
+egress:
+  allow: []
