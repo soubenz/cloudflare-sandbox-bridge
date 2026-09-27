@@ -76,9 +76,32 @@ def make_provider(service_name):
     return provider
 
 
-def main():
-    wait_for_jaeger()
+def trace_is_stored(trace_id, timeout_s=15):
+    """Polls Jaeger's own v3 query API for this exact trace_id. Jaeger v2's
+    query service and its OTLP receiver are separate components inside the
+    same process (it's built on the OTel Collector framework) and don't
+    necessarily become ready in lockstep -- confirmed live, 27 Sep 2026: a
+    boot-time send that passed wait_for_jaeger() (the query API answering
+    200) still vanished, because the collector's receiver pipeline wasn't
+    accepting spans yet. The exporter has no way to report that failure
+    back to this script (SimpleSpanProcessor.on_end swallows export
+    errors), so the only reliable signal is asking Jaeger itself whether
+    the trace actually landed."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(
+                "%s/api/v3/traces/%s" % (JAEGER_QUERY_URL, trace_id), timeout=3
+            ) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:  # noqa: BLE001 -- not found yet, or not ready yet; either way, keep polling
+            pass
+        time.sleep(1)
+    return False
 
+
+def send_one_trace():
     gateway_provider = make_provider("opalix-gateway")
     llm_provider = make_provider("opalix-llm-worker")
     vector_provider = make_provider("opalix-vector-store")
@@ -192,7 +215,24 @@ def main():
     for provider in (gateway_provider, llm_provider, vector_provider, cache_provider):
         provider.shutdown()
 
-    print("seeded 1 trace, 6 spans across 4 services, trace_id=%s" % trace_id, flush=True)
+    return trace_id
+
+
+def main(max_attempts=3):
+    wait_for_jaeger()
+
+    for attempt in range(1, max_attempts + 1):
+        trace_id = send_one_trace()
+        if trace_is_stored(trace_id):
+            print("seeded 1 trace, 6 spans across 4 services, trace_id=%s" % trace_id, flush=True)
+            return
+        print(
+            "attempt %d/%d: trace_id=%s was sent but never became queryable -- "
+            "retrying (jaeger's otlp receiver may not have been ready yet)"
+            % (attempt, max_attempts, trace_id),
+            flush=True,
+        )
+    raise RuntimeError("gave up after %d attempts: no seeded trace ever became queryable" % max_attempts)
 
 
 if __name__ == "__main__":
