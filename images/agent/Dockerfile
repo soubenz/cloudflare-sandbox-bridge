@@ -82,7 +82,21 @@ ENV GF_PLUGINS_PREINSTALL_DISABLED=true
 # `python3 -m pip`, not bare `pip`: the base image's Python (the SDK's
 # python-build-standalone interpreter) does not put a `pip` binary on PATH,
 # confirmed by a real CI build failure (23 Sep 2026, "pip: not found").
-RUN python3 -m pip install --no-cache-dir "litellm[proxy]"
+#
+# `"mcp<2"` alongside the deliberately-unpinned litellm[proxy] (see the
+# file header on why this stays floating): a live verification run found
+# this shared environment had resolved mcp 2.2.0 (litellm 1.103.0's own
+# mcp constraint had loosened past the gateway image's pinned
+# litellm==1.102.1, which still declares `mcp>=1.28.1,<2.0` -- see
+# images/gateway/Dockerfile's own note on that). Every Module 2 tool
+# server (weather_tool_server.py, calculator_tool_server.py, and every
+# other labs/*/workspace/**/*_server.py invoked via plain `python3`, not
+# the ContextForge venv) imports `mcp.server.fastmcp.FastMCP`, the v1 API
+# -- renamed to `MCPServer` in mcp 2.x, confirmed live via the exact
+# ModuleNotFoundError naming the rename. Pinning the major version here,
+# not editing any lab, keeps litellm itself free to float as intended
+# while fixing the actual break.
+RUN python3 -m pip install --no-cache-dir "litellm[proxy]" "mcp<2"
 
 # Python's httpx/requests (unlike curl and urllib) verify against
 # certifi's bundled CA list, not the system store, so they ignore the CA
