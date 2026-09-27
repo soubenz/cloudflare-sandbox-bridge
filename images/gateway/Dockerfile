@@ -346,9 +346,23 @@ ENV MLFLOW_DISABLE_AGENT_HINT=1
 # stops a separate `github.com` fetch attempt (a WASM sandbox runtime) at
 # every boot -- confirmed NOT gated by the more obvious
 # PHOENIX_ALLOWED_SANDBOX_PROVIDERS=NONE (a real gap in Phoenix's own env
-# coverage); Phoenix uses the path as-is with no verification when it's
-# explicitly set, so a placeholder file is enough, matching the
-# investigation's own proof.
+# coverage).
+#
+# CORRECTION (live verification, 27 Sep 2026): the claim two lines above
+# used to end "...so a placeholder file is enough" -- wrong, and it took a
+# real session to find out. Phoenix's own
+# phoenix/server/sandbox/_download.py validates the file at this path is
+# non-empty before using it and raises a hard ValueError if it isn't,
+# crashing the whole server at boot (diagnosed by temporarily redirecting
+# the service's stdout to a world-readable log file, since the platform's
+# own log-tail capture came back empty both on the original crash and on
+# a stuck restart). An empty placeholder was never "enough" -- nothing
+# ever exercised this path with PHOENIX_WORKING_DIR actually set (a
+# Postgres-backed session, this lab's own shape) until now. Fixed by
+# fetching the exact binary and pinned release Phoenix's own downloader
+# would otherwise fetch at runtime, with the same SHA256 it already
+# hardcodes for verification -- so this is the identical artifact, just
+# pre-fetched at build time instead of on every boot.
 # Paths -- /opt/opalix/venvs/phoenix and /opt/opalix/assets/phoenix-wasm/
 # -- match what the Module 3 lab-building agents independently converged
 # on and already shipped inside labs/see-why-a-document-matched/manifest.yaml
@@ -364,7 +378,10 @@ RUN python3 -m venv /opt/opalix/venvs/phoenix \
     && ln -s /opt/opalix/venvs/phoenix/bin/phoenix /usr/local/bin/phoenix \
     && test -x /usr/local/bin/phoenix \
     && mkdir -p /opt/opalix/assets/phoenix-wasm \
-    && : > /opt/opalix/assets/phoenix-wasm/pyodide.wasm
+    && curl -fsSL \
+       "https://github.com/vmware-labs/webassembly-language-runtimes/releases/download/python%2F3.12.0%2B20231211-040d5a6/python-3.12.0.wasm" \
+       -o /opt/opalix/assets/phoenix-wasm/pyodide.wasm \
+    && echo "e5dc5a398b07b54ea8fdb503bf68fb583d533f10ec3f930963e02b9505f7a763  /opt/opalix/assets/phoenix-wasm/pyodide.wasm" | sha256sum -c -
 ENV PHOENIX_TELEMETRY_ENABLED=false
 ENV PHOENIX_DISABLE_AGENT_ASSISTANT=true
 ENV PHOENIX_WASM_BINARY_PATH=/opt/opalix/assets/phoenix-wasm/pyodide.wasm
