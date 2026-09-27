@@ -1,6 +1,15 @@
 # syntax=docker/dockerfile:1
-# Gateway lab family: LiteLLM + Grafana + Prometheus + a load-generation tool.
+# Gateway lab family: LiteLLM + Grafana + Prometheus + a load-generation tool
+# + pgvector + Qdrant + Arize Phoenix (Path 2 Module 3) + Jaeger + the OTel
+# Collector (Path 2 Module 4).
 #
+# Qdrant ships as a binary inside its own official image, not an apt
+# package or a plain GitHub release this Dockerfile can just curl (unlike
+# Jaeger/otelcol-contrib below) — pulled here as a separate build stage and
+# copied out, proven against real Qdrant 1.19.1 in the Module 3 feasibility
+# investigation (scratchpad retrieval-inv/FINDINGS.md).
+FROM qdrant/qdrant:v1.19.1 AS qdrant-src
+
 # `next` is the floating preview tag matching package.json's
 # @cloudflare/sandbox dependency ("next") — see images/agent/Dockerfile's
 # comment for why this floats rather than pins, and the same 23 Sep 2026
@@ -23,13 +32,43 @@ FROM docker.io/cloudflare/sandbox:next
 # DEBIAN_FRONTEND=noninteractive on this one command only: postgresql pulls
 # in tzdata, which otherwise stops the build waiting for a timezone answer.
 # Scoped to the RUN, not an ENV, so it doesn't leak into lab containers.
+#
+# gnupg: needed below to add the PGDG apt repo's signing key (pgvector).
+# libunwind8/liblzma5: Qdrant's binary is dynamically linked against both
+# (confirmed via `ldd`, Module 3 feasibility investigation) and neither is
+# pulled in by anything else installed here -- liblzma5 is normally already
+# present on jammy, but named explicitly rather than relied on.
+# python3-venv: Ubuntu splits venv support out of the base `python3`
+# package (`python3 -m venv` fails with "ensurepip is not available"
+# otherwise) -- the same reason images/agent/Dockerfile installs
+# `python3.12-venv` alongside `python3.12` for ContextForge. Needed here
+# for Arize Phoenix's own isolated venv, further below.
 RUN for attempt in 1 2 3; do \
       apt-get update -o Acquire::Retries=3 && break || { echo "apt-get update failed (attempt $attempt)"; sleep 10; }; \
     done \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
-    curl ca-certificates sudo python3 python3-pip musl tmux postgresql \
+    curl ca-certificates sudo python3 python3-pip python3-venv musl tmux postgresql gnupg libunwind8 liblzma5 \
     && rm -rf /var/lib/apt/lists/* \
     && test -x "$(ls /usr/lib/postgresql/*/bin/initdb | head -1)"
+
+# pgvector, for Path 2 Module 3's retrieval labs. Ubuntu 22.04 (jammy)'s own
+# universe has NO pgvector package at any suite (jammy/jammy-updates/jammy-
+# backports) -- confirmed against packages.ubuntu.com's own index; pgvector
+# only entered Ubuntu's own archive at noble (24.04). The PGDG apt repo is
+# the only real path for a package matching this image's PG14, and it has
+# one: postgresql-14-pgvector 0.8.6-1.pgdg22.04+2 (confirmed against PGDG's
+# own published jammy-pgdg package index). CREATE EXTENSION vector, both
+# distance operators, and both IVFFlat and HNSW indexes were all proven
+# live against a real PG14 in the Module 3 feasibility investigation
+# (scratchpad retrieval-inv/FINDINGS.md); build-pg-template.sh below
+# re-proves CREATE EXTENSION at image build time against this image's own
+# Postgres, not just the investigation's.
+RUN curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt jammy-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update -o Acquire::Retries=3 \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=3 postgresql-14-pgvector \
+    && rm -rf /var/lib/apt/lists/* \
+    && dpkg -l postgresql-14-pgvector | grep -q '^ii'
 
 # The learner's shell runs inside tmux so it survives the PTY connection
 # dropping (a closed browser tab, a Durable Object eviction): the container's
@@ -87,6 +126,65 @@ RUN curl -fsSL "https://github.com/prometheus/prometheus/releases/download/v${PR
     && mv /opt/prometheus-${PROMETHEUS_VERSION}.linux-amd64 /opt/prometheus \
     && rm -f /tmp/prom.tgz
 
+# Qdrant, for Path 2 Module 3's retrieval labs. Copied from the qdrant-src
+# stage declared at the top of this file (its own binary is dynamically
+# linked, needs libunwind8/liblzma5, both installed above) rather than an
+# apt package (none exists) or a hand-guessed release-tarball URL. The
+# dashboard's static assets come along too, since Qdrant's dashboard is
+# `ui: true` directly in every lab that uses it -- confirmed live with no
+# `api_key` configured, no login screen ever renders (Module 3 feasibility
+# investigation, scratchpad retrieval-inv/FINDINGS.md). The version
+# assertion fails the build loudly if the pinned image tag ever stops
+# resolving to a real binary at this path.
+COPY --from=qdrant-src /qdrant/qdrant /usr/local/bin/qdrant
+COPY --from=qdrant-src /qdrant/static /opt/opalix/qdrant-static
+RUN chmod +x /usr/local/bin/qdrant \
+    && /usr/local/bin/qdrant --version
+# Qdrant resolves its dashboard's static assets relative to its own
+# working directory by default (its packaged image runs with CWD at
+# /qdrant, alongside /qdrant/static) -- but a lab's own manifest sets its
+# qdrant service's `cwd` to /workspace, not wherever this Dockerfile put
+# the binary. Rather than depend on every Qdrant-using lab's own
+# config.yaml remembering to override this, set it once here as an env
+# default: Qdrant's own `QDRANT__<SECTION>__<KEY>` env-var convention
+# (the same mechanism proven for QDRANT__TELEMETRY_DISABLED in the Module
+# 3 feasibility investigation) overrides its YAML config regardless of
+# what a lab's own config.yaml does or doesn't set.
+ENV QDRANT__SERVICE__STATIC_CONTENT_DIR=/opt/opalix/qdrant-static
+
+# Jaeger, for Path 2 Module 4's tracing labs. Recommended over Grafana
+# Tempo with real evidence, not a guess: Jaeger alone does everything a
+# learner needs (~60 MB idle, its own UI, no login by default, confirmed
+# live), where Tempo ships no UI of its own and would need Grafana on top
+# for anything a learner actually looks at. Jaeger v2's all-in-one is
+# itself built on the OTel Collector framework and needs a real YAML
+# config (no more simple env-var flags) -- each lab's own manifest
+# supplies that config as a workspace file. Full findings: scratchpad
+# otel-inv/FINDINGS.md.
+ARG JAEGER_VERSION=2.21.0
+RUN curl -fsSL "https://github.com/jaegertracing/jaeger/releases/download/v${JAEGER_VERSION}/jaeger-${JAEGER_VERSION}-linux-amd64.tar.gz" -o /tmp/jaeger.tgz \
+    && tar -xzf /tmp/jaeger.tgz -C /opt \
+    && mv "/opt/jaeger-${JAEGER_VERSION}-linux-amd64" /opt/jaeger \
+    && ln -s /opt/jaeger/jaeger /usr/local/bin/jaeger \
+    && rm -f /tmp/jaeger.tgz \
+    && test -x /usr/local/bin/jaeger
+
+# The OTel Collector, contrib distribution -- confirmed mandatory, not a
+# preference: `tail_sampling` (the only error-aware sampling processor,
+# the exact primitive Module 4's "keep every error trace" lab needs) only
+# exists in contrib, confirmed by direct component enumeration against
+# both distributions. Real ~390 MiB, not a mistake -- it bundles far more
+# receivers/processors/exporters than any one lab uses; a custom trimmed
+# OCB build was considered and not attempted (scratchpad otel-inv/FINDINGS.md).
+ARG OTELCOL_VERSION=0.161.0
+RUN curl -fsSL "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/otelcol-contrib_${OTELCOL_VERSION}_linux_amd64.tar.gz" -o /tmp/otelcol.tgz \
+    && mkdir -p /opt/otelcol-contrib \
+    && tar -xzf /tmp/otelcol.tgz -C /opt/otelcol-contrib \
+    && ln -s /opt/otelcol-contrib/otelcol-contrib /usr/local/bin/otelcol-contrib \
+    && rm -f /tmp/otelcol.tgz \
+    && test -x /usr/local/bin/otelcol-contrib \
+    && /usr/local/bin/otelcol-contrib components | grep -q tail_sampling
+
 # --break-system-packages does not exist on this base image's pip3
 # (22.0.2, from Ubuntu 22.04's python3-pip) -- that flag only exists on
 # pip 23.0.1+ / newer Ubuntu releases that enforce PEP 668. Confirmed by a
@@ -126,6 +224,44 @@ RUN pip3 install --no-cache-dir "mlflow==3.16.1" "litellm[proxy]==1.102.1" "pris
 ENV MLFLOW_DISABLE_TELEMETRY=1
 ENV MLFLOW_SERVER_ENABLE_JOB_EXECUTION=false
 ENV MLFLOW_DISABLE_AGENT_HINT=1
+
+# Arize Phoenix, for Path 2 Module 3's retrieval-quality labs. Its own
+# isolated venv, not this image's shared pip environment -- a real,
+# reproduced incompatibility forces this, the same shape as ContextForge
+# needing its own Python 3.12 in images/agent/Dockerfile:
+# `litellm[proxy]==1.102.1`'s `proxy` extra declares `mcp>=1.28.1,<2.0`,
+# while arize-phoenix needs `mcp>=2.x` (imports `AuthorizationCodeResult`
+# from `mcp.shared.auth`, only present in mcp 2.x); sharing an environment
+# silently downgrades mcp to satisfy litellm and Phoenix then hard-crashes
+# at import with an ImportError -- reproduced live (scratchpad
+# retrieval-inv/FINDINGS.md). Uses this image's own default python3
+# (Ubuntu 22.04's 3.10) -- unlike ContextForge, Phoenix needs no second
+# interpreter, only isolation from litellm's own mcp pin.
+#
+# Four env vars, each confirmed live and none optional (same posture as
+# the MLflow flags above): PHOENIX_ENABLE_AUTH is left unset on purpose --
+# it defaults off, and setting it to anything is what turns a login screen
+# on. PHOENIX_TELEMETRY_ENABLED=false drops a Scarf.sh/FullStory pixel
+# from served pages (a privacy default, not an offline-capability fix --
+# it's the learner's browser that would fetch it, not the container).
+# PHOENIX_DISABLE_AGENT_ASSISTANT=true stops a hosted-MCP outbound call an
+# "agent assistant" makes by default on every boot. PHOENIX_WASM_BINARY_PATH
+# stops a separate `github.com` fetch attempt (a WASM sandbox runtime) at
+# every boot -- confirmed NOT gated by the more obvious
+# PHOENIX_ALLOWED_SANDBOX_PROVIDERS=NONE (a real gap in Phoenix's own env
+# coverage); Phoenix uses the path as-is with no verification when it's
+# explicitly set, so a placeholder file is enough, matching the
+# investigation's own proof.
+RUN python3 -m venv /opt/phoenix-venv \
+    && /opt/phoenix-venv/bin/pip install --no-cache-dir "arize-phoenix==20.16.0" \
+    && /opt/phoenix-venv/bin/pip show arize-phoenix | grep -qx 'Version: 20.16.0' \
+    && ln -s /opt/phoenix-venv/bin/phoenix /usr/local/bin/phoenix \
+    && test -x /usr/local/bin/phoenix \
+    && mkdir -p /opt/opalix \
+    && : > /opt/opalix/phoenix-wasm-placeholder.bin
+ENV PHOENIX_TELEMETRY_ENABLED=false
+ENV PHOENIX_DISABLE_AGENT_ASSISTANT=true
+ENV PHOENIX_WASM_BINARY_PATH=/opt/opalix/phoenix-wasm-placeholder.bin
 
 # `prisma generate` must run at build time, against the schema shipped
 # inside litellm_proxy_extras, because it's the one step in this whole

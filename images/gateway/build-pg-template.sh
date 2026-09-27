@@ -53,6 +53,17 @@ EXTRAS="$(python3 -c "import litellm_proxy_extras, os; print(os.path.dirname(lit
 
 $PSQL "CREATE DATABASE litellm_template TEMPLATE postgres" >/dev/null
 
+# pgvector: proven live in both template databases at build time, not just
+# taken on faith from the Module 3 feasibility investigation. CREATE
+# EXTENSION here (before either database is ever templated further by a
+# lab's own grader) means every lab and grader that copies this data dir
+# already has the extension available with no per-session cost.
+for db in postgres litellm_template; do
+  $PSQL "CREATE EXTENSION IF NOT EXISTS vector" -d "$db" >/dev/null
+  ext="$($PSQL "SELECT count(*) FROM pg_extension WHERE extname = 'vector'" -d "$db")"
+  [ "$ext" = 1 ] || { echo "pgvector extension missing in $db" >&2; exit 1; }
+done
+
 # Fail the build loudly rather than ship a template LiteLLM would reject.
 [ "$($PSQL "SHOW dynamic_shared_memory_type")" = sysv ] \
   || { echo "dynamic_shared_memory_type is not sysv" >&2; exit 1; }
@@ -61,6 +72,6 @@ for db in postgres litellm_template; do
   [ "$applied" -gt 100 ] || { echo "only $applied migrations applied in $db" >&2; exit 1; }
   tables="$($PSQL "SELECT count(*) FROM information_schema.tables WHERE table_name = 'LiteLLM_TeamTable'" -d "$db")"
   [ "$tables" = 1 ] || { echo "LiteLLM_TeamTable missing in $db" >&2; exit 1; }
-  echo "$db: $applied migrations applied"
+  echo "$db: $applied migrations applied, pgvector present"
 done
 rm -f /tmp/pg-template-build.log
