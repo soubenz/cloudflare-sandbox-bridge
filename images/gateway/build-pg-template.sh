@@ -33,7 +33,18 @@ PORT="${PG_TEMPLATE_BUILD_PORT:-5432}"  # overridable only for a local dry run
 PSQL="runuser -u postgres -- $PGBIN/psql -h 127.0.0.1 -p $PORT -U postgres -v ON_ERROR_STOP=1 -Atc"
 
 install -d -o postgres -g postgres -m 700 "$DATA_DIR"
-runuser -u postgres -- "$PGBIN/initdb" -D "$DATA_DIR" --auth=trust -U postgres >/dev/null
+# --encoding/--locale explicit: this builder's own LANG/LC_ALL are unset, so
+# initdb otherwise falls back to SQL_ASCII (confirmed live, 27 Sep 2026,
+# `SHOW client_encoding` on a session container returned exactly that).
+# psycopg2 tolerates SQL_ASCII by decoding text columns permissively; psycopg3
+# does not, and returns raw `bytes` for any text-typed result instead of
+# `str` -- surfaced as `psycopg.errors.UndefinedFunction: function
+# to_tsquery(unknown, bytea) does not exist` the moment a psycopg3-based lab
+# passed one of those bytes values back into a query. C.utf8 needs no
+# `locale-gen` (glibc ships it by default), unlike a named locale such as
+# en_US.UTF-8.
+runuser -u postgres -- "$PGBIN/initdb" -D "$DATA_DIR" --auth=trust -U postgres \
+    --encoding=UTF8 --locale=C.utf8 >/dev/null
 # initdb picks POSIX shared memory when the machine it runs on has
 # /dev/shm, and the image builder does. Lab containers don't, and Postgres
 # then dies at startup with `could not open shared memory segment
@@ -67,6 +78,8 @@ done
 # Fail the build loudly rather than ship a template LiteLLM would reject.
 [ "$($PSQL "SHOW dynamic_shared_memory_type")" = sysv ] \
   || { echo "dynamic_shared_memory_type is not sysv" >&2; exit 1; }
+[ "$($PSQL "SHOW client_encoding")" = UTF8 ] \
+  || { echo "client_encoding is not UTF8 (psycopg3 returns raw bytes for text under SQL_ASCII)" >&2; exit 1; }
 for db in postgres litellm_template; do
   applied="$($PSQL "SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL" -d "$db")"
   [ "$applied" -gt 100 ] || { echo "only $applied migrations applied in $db" >&2; exit 1; }
