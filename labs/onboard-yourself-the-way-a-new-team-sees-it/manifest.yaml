@@ -1,0 +1,289 @@
+# Path 2, Module 6 in docs/catalogue-path-2-ai-platform.md ("Onboard
+# yourself the way a new team sees it", explore).
+#
+# type: explore -- nothing is broken and nothing is missing (see
+# docs/lab-authoring.md, "type: explore is a guided tour, not a puzzle").
+# This is a meta-lab about THIS platform's own onboarding path: a fictional
+# new team needs (1) a LiteLLM virtual key scoped to specific model
+# aliases, and (2) a tool server registered with ContextForge and exposed
+# through a virtual server, then (3) one real call that exercises both --
+# an LLM call through the new key, followed by a tool call through the new
+# ContextForge access. workspace/onboard.py is a real, working script that
+# does exactly this against the live services below; the exploring is
+# running it (whole, or one step at a time with --step N), reading the
+# view tab before and after, and timing what each step actually costs.
+#
+# No new tool feasibility investigation here: this reuses LiteLLM+Postgres
+# wiring already proven in labs/one-endpoint-one-key (gateway/config.yaml's
+# two-alias/fake-provider shape, the postgres template-copy dance, the
+# view tab's "never a usable key" read pattern) and ContextForge wiring
+# already proven in labs/see-how-tools-reach-an-agent (AUTH_REQUIRED=false
+# + ALLOW_UNAUTHENTICATED_ADMIN=true + EMAIL_AUTH_ENABLED=false +
+# SSRF_ALLOW_LOCALHOST=true + RATE_LIMITING_ENABLED=false, the fixed
+# JWT_SECRET_KEY/AUTH_ENCRYPTION_SECRET generated once offline, the
+# gateway-registration/virtual-server/tools-call shapes, and why
+# ContextForge's own admin UI can never be a ui:true tab either). Every
+# service config below is copied from one of those two labs, not
+# re-derived.
+#
+# One platform-image note, stated plainly rather than worked around here:
+# ContextForge needs Python 3.12 (see-how-tools-reach-an-agent's own header
+# comment), which images/agent/Dockerfile installs into its own venv
+# alongside that image's default 3.11 -- images/gateway/Dockerfile, as of
+# this lab, does not yet have that venv. This manifest is written for
+# family: gateway per this lab's catalogue placement (an onboarding lab
+# belongs with the gateway-family platform tooling, not with the agent
+# runtime), which means shipping it assumes the same python3.12 +
+# mcp-contextforge-gateway==1.0.10 venv addition proven for the agent image
+# also lands on the gateway image -- a platform change outside this lab
+# directory (same pattern as the agent image's own addition: "a platform
+# change the main session makes later"). Everything in this lab directory
+# was verified live in a local stand-in of exactly this manifest's services
+# (own Postgres, own python3.12 venv with mcp-contextforge-gateway==1.0.10,
+# same versions and same env shape) rather than via a real family:gateway
+# container, since this lab was authored before that image change landed.
+#
+# Two teams' worth of "the platform as it exists today", pre-seeded so a
+# new team finds a gateway that already has other teams and tools on it,
+# the same way a real new hire's first login would:
+#  - LiteLLM: seed_litellm.py creates `platform-core`, scoped to
+#    `legacy-writer` only. `fast-draft` (the second alias in
+#    gateway/config.yaml) is never granted to anyone until onboard.py runs.
+#  - ContextForge: seed_contextforge.py registers `calculator-tools` (one
+#    of this lab's two toy MCP tool servers) and exposes it through
+#    `legacy-tools`. `weather-tools`, the other toy tool server, stays
+#    unregistered until onboard.py's step 3.
+slug: onboard-yourself-the-way-a-new-team-sees-it
+version: 1.0.0
+title: "Onboard yourself the way a new team sees it"
+type: explore
+family: gateway
+summary: >-
+  A fictional new team needs a scoped LiteLLM key and a working
+  ContextForge tool before it can make one real call. Follow the current
+  onboarding path with onboard.py, read the view tab before and after, and
+  note every step that costs time.
+objectives:
+  - "Scope a new LiteLLM virtual key to exactly the model aliases a team was granted"
+  - "Register a tool server with ContextForge and expose it through a virtual server"
+  - "Make one real end-to-end call that uses both a new gateway key and a new tool registration"
+  - "Count how many separate systems an onboarding path actually touches, and time each step"
+difficulty: intro
+timeout_minutes: 60
+idle_minutes: 10
+
+env:
+  LITELLM_URL: "http://127.0.0.1:4000"
+  LITELLM_MASTER_KEY: "sk-opalix-onboard-master"
+  CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+  WEATHER_TOOL_URL: "http://127.0.0.1:7745/mcp"
+  CALC_TOOL_URL: "http://127.0.0.1:7746/mcp"
+  PROVIDER_URL: "http://127.0.0.1:8961"
+
+services:
+  # Copied from labs/one-endpoint-one-key (itself copied from
+  # test/fixtures/labs/gateway-litellm-hello) -- see that lab's manifest
+  # for why each line of this argv exists (template copied in once, then
+  # exec as the postgres OS user via runuser, data dir under /tmp because
+  # /workspace is chowned to `learner`).
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+  - name: provider
+    # A scripted stand-in for a model provider (workspace/services/fake_provider.py,
+    # copied verbatim from one-endpoint-one-key) -- two "deployments" on one
+    # process, /a/v1 and /b/v1, one per alias in gateway/config.yaml.
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8961"
+    port: 8961
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: weather-tools
+    # A toy MCP tool server (workspace/tools/weather_tool_server.py, copied
+    # verbatim from see-how-tools-reach-an-agent) -- get_weather and
+    # get_forecast, both made-up. Nobody registers this with ContextForge
+    # until onboard.py's step 3: this is the new team's OWN tool server.
+    argv: ["python3", "-B", "/workspace/tools/weather_tool_server.py"]
+    cwd: /workspace
+    env:
+      WEATHER_TOOL_HOST: "127.0.0.1"
+      WEATHER_TOOL_PORT: "7745"
+    port: 7745
+    # No separate /health route on an MCP tool server -- reachability is
+    # the MCP initialize+tools/list handshake itself, so a plain TCP check
+    # is what "up" means here (see-how-tools-reach-an-agent's own note).
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: calculator-tools
+    # The SECOND toy MCP tool server -- add, subtract, multiply. This one
+    # IS already registered with ContextForge before the learner starts
+    # (seed_contextforge.py, below): "the platform as it exists today".
+    argv: ["python3", "-B", "/workspace/tools/calculator_tool_server.py"]
+    cwd: /workspace
+    env:
+      CALC_TOOL_HOST: "127.0.0.1"
+      CALC_TOOL_PORT: "7746"
+    port: 7746
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: litellm
+    # ui: false -- the admin UI always requires a login (one-endpoint-one-key,
+    # hard-budget-per-team); `view` below is the tab. seed_litellm.py runs
+    # once in the background alongside the gateway's own boot: it polls
+    # /health/readiness itself, so nothing here has to wait for the proxy
+    # before starting it, and is idempotent, so a restart of this same
+    # service (which re-runs this whole argv) finds platform-core and its
+    # key already in place and changes nothing.
+    argv:
+      [
+        "sh", "-c",
+        "python3 -B /workspace/gateway/seed_litellm.py & exec litellm --config /workspace/gateway/config.yaml --port 4000 --host 0.0.0.0",
+      ]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-onboard-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh).
+      DISABLE_SCHEMA_UPDATE: "True"
+      LITELLM_URL: "http://127.0.0.1:4000"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # The database starts pre-migrated, so LiteLLM boots in ~25-33s live
+      # (one-endpoint-one-key's own budget); 90s leaves room for a slow
+      # container without hiding a real failure.
+      timeout_s: 90
+    ui: false
+    depends_on: [postgres, provider]
+  - name: contextforge
+    # ui: false -- a real browser is redirected to a login form regardless
+    # of ALLOW_UNAUTHENTICATED_ADMIN (see-how-tools-reach-an-agent's own
+    # finding); `view` below is this lab's tab for both gateways at once.
+    # seed_contextforge.py runs in the background the same way: it polls
+    # /health itself, and is idempotent, so a restart finds calculator-tools
+    # and legacy-tools already in place and changes nothing.
+    argv:
+      [
+        "sh", "-c",
+        "python3 -B /workspace/contextforge/seed_contextforge.py & exec python3.12 -m mcpgateway",
+      ]
+    cwd: /workspace
+    env:
+      HOST: "0.0.0.0"
+      PORT: "4744"
+      # No login, ever (docs/lab-authoring.md's no-login rule): auth is off
+      # outright, and unauthenticated requests get full admin context --
+      # for a script, not for a browser tab.
+      AUTH_REQUIRED: "false"
+      ALLOW_UNAUTHENTICATED_ADMIN: "true"
+      # Off so the email/password login stack (and its password-strength
+      # checks) never comes into play at all.
+      EMAIL_AUTH_ENABLED: "false"
+      # Every service here is loopback-only; without this, registering
+      # either toy tool server as a gateway is refused by ContextForge's
+      # own SSRF protection.
+      SSRF_ALLOW_LOCALHOST: "true"
+      # Off so dense grader polling (this lab's own checks, plus a learner
+      # re-running onboard.py) can never trip ContextForge's real rate
+      # limiter and its 15-minute account lockout.
+      RATE_LIMITING_ENABLED: "false"
+      # Generated once, locally, offline, via ContextForge's own
+      # `python -m mcpgateway.scripts.init_secrets` (see-how-tools-reach-an-agent) --
+      # fixed lab values, never regenerated by the learner.
+      JWT_SECRET_KEY: "A9NdC6L_0Ewg3WT0vZuj-JEStFhflsDFELOTK6deBO8"
+      AUTH_ENCRYPTION_SECRET: "hcakHJdD7TEiesCMThCGZaRAQgKcSiVDXkm8D7kLcoo"
+      DATABASE_URL: "sqlite:////workspace/contextforge.db"
+      CACHE_TYPE: "database"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+      CALC_TOOL_URL: "http://127.0.0.1:7746/mcp"
+    port: 4744
+    healthcheck:
+      type: http
+      path: /health
+      # Live boot (migrations included, fresh SQLite) is ~12-16s
+      # (see-how-tools-reach-an-agent's own budget); 90s leaves room for a
+      # slow container without hiding a real failure.
+      timeout_s: 90
+    ui: false
+    depends_on: [calculator-tools, weather-tools]
+  - name: view
+    # This lab's substitute for BOTH admin UIs at once: a small read-only
+    # stdlib page (workspace/view_service.py) showing LiteLLM's teams, keys
+    # and model aliases, and ContextForge's registered tool servers,
+    # discovered tools and virtual servers -- what a new team sees when it
+    # starts looking around, and the same page to check again after
+    # onboard.py runs.
+    argv: ["python3", "-B", "/workspace/view_service.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "8963"
+      LITELLM_URL: "http://127.0.0.1:4000"
+      LITELLM_MASTER_KEY: "sk-opalix-onboard-master"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+      GATEWAY_CONFIG_PATH: "/workspace/gateway/config.yaml"
+    port: 8963
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: [litellm, contextforge]
+
+pressure: []
+
+checks:
+  - name: stack-is-up
+    script: stack-is-up.sh
+    timeout_s: 60
+    weight: 1
+    parallel: false
+  # The graded check: re-runs the real onboarding sequence itself (under
+  # its own names, independent of what onboard.py did) and compares the
+  # three live facts it gets back against /workspace/answers.json.
+  - name: answers-match-the-live-onboarding
+    script: answers-match-the-live-onboarding.sh
+    timeout_s: 60
+    weight: 2
+    parallel: false
+
+hints:
+  # ~15-20% of a 60-minute timeout, per docs/lab-authoring.md's
+  # one-hint-for-intro rule.
+  - after_minutes: 10
+    text: >-
+      Run `python3 -B onboard.py` from a terminal -- it is a real, working
+      script, not a stub, and prints a timestamp and a duration for each of
+      its 5 steps. Open the view tab before and after: the new team
+      (`new-team`) and its key show up on the left, the new tool server
+      (`weather-tools`) and its own virtual server (`new-team-tools`) show
+      up on the right. `python3 -B onboard.py --status` prints what it has
+      already done without making any calls.
+
+egress:
+  allow: []

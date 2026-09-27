@@ -1,0 +1,37 @@
+# Two aliases, one scripted provider process with two "deployments" (just
+# two different URL paths, /a/v1 and /b/v1 -- see
+# workspace/services/fake_provider.py, copied verbatim from
+# labs/one-endpoint-one-key). A caller only ever names the alias; LiteLLM
+# decides which deployment actually answers.
+#
+# `legacy-writer` is "the platform as it exists today": seed_litellm.py
+# grants it to a pre-existing team (`platform-core`) before the learner ever
+# touches anything, the same way a real new team would find a gateway that
+# already has other teams and other aliases on it. `fast-draft` is the
+# alias the learner's own onboarding actually grants to their new team --
+# nobody has it until workspace/onboard.py runs. Exactly like
+# one-endpoint-one-key's `internal-eval`, a key scoped to fast-draft alone
+# gets a real 403 (key_model_access_denied / team_model_access_denied) if it
+# ever tries legacy-writer, and that is the live fact this lab's second
+# graded question tests.
+model_list:
+  - model_name: legacy-writer
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/a/v1
+      api_key: unused
+  - model_name: fast-draft
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/b/v1
+      api_key: unused
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Asked for explicitly (task brief): lets a model be registered at
+  # runtime through the management API, not just at boot from this file.
+  # Nothing in this lab actually adds one that way -- both aliases above are
+  # already in model_list -- it's here so the gateway behaves the way a real
+  # platform's gateway would (new aliases showing up between deploys,
+  # without a restart) rather than because onboard.py needs it.
+  store_model_in_db: true
