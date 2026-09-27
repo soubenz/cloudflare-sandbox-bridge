@@ -92,10 +92,18 @@ services:
     # needed here -- pgvector's own migration is just `CREATE EXTENSION`,
     # which workspace/search/db.py runs itself at startup, so a plain
     # `initdb` (once, on first boot) is enough.
+    #
+    # --encoding/--locale explicit: this container's LANG/LC_ALL are
+    # unset, so a bare initdb silently defaults to SQL_ASCII (confirmed
+    # live, 27 Sep 2026). workspace/search/db.py uses psycopg (v3), which
+    # -- unlike psycopg2 -- refuses to decode text columns under
+    # SQL_ASCII and returns raw `bytes` instead, breaking every query
+    # that threads a text result back into a parameter (`to_tsquery`
+    # here). C.utf8 needs no locale-gen (glibc ships it by default).
     argv:
       [
         "sh", "-c",
-        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres; echo 'dynamic_shared_memory_type = sysv' >> /tmp/pg/postgresql.conf; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres --encoding=UTF8 --locale=C.utf8; echo 'dynamic_shared_memory_type = sysv' >> /tmp/pg/postgresql.conf; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
       ]
     cwd: /workspace
     port: 5432

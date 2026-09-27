@@ -93,10 +93,18 @@ services:
     # Fresh initdb, not a copied template (see the comment above) --
     # idempotent across a restart of this same service, same as every
     # other gateway-family lab's postgres.
+    #
+    # --encoding/--locale explicit: this container's LANG/LC_ALL are
+    # unset, so a bare initdb silently defaults to SQL_ASCII (confirmed
+    # live, 27 Sep 2026, in a sibling lab -- psycopg (v3) refuses to
+    # decode text columns under SQL_ASCII and returns raw `bytes`
+    # instead). This lab's own code uses psycopg2, which tolerates it,
+    # but there's no reason to leave the same landmine armed here.
+    # C.utf8 needs no locale-gen (glibc ships it by default).
     argv:
       [
         "sh", "-c",
-        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then install -d -o postgres -g postgres -m 700 /tmp/pg; runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres >/dev/null; echo 'dynamic_shared_memory_type = sysv' >> /tmp/pg/postgresql.conf; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then install -d -o postgres -g postgres -m 700 /tmp/pg; runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres --encoding=UTF8 --locale=C.utf8 >/dev/null; echo 'dynamic_shared_memory_type = sysv' >> /tmp/pg/postgresql.conf; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
       ]
     cwd: /workspace
     port: 5432
