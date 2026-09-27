@@ -166,7 +166,7 @@ RUN ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
 # earlier "verified live" pass covered the other three labs' use of the
 # `mcpgateway` command, not these two.
 #
-# Two real CI build failures (27 Sep 2026) before landing on the actual
+# Three real CI build failures (27 Sep 2026) before landing on the actual
 # fix, each teaching something the last one didn't:
 #
 # 1. A bare `ln -s /opt/contextforge-venv/bin/python3.12
@@ -185,17 +185,28 @@ RUN ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
 #    (`/opt/contextforge-venv/bin/python3.12`, step "mcpgateway-server"
 #    above) activates the venv correctly even though that file is itself
 #    a symlink to /usr/bin/python3.12; invoking the same underlying
-#    binary through any OTHER symlink does not. So any plain `ln -s`
-#    placed outside the venv's own bin/ directory can never work here,
-#    whichever path it shadows, and shadowing /usr/bin/python3.12
-#    specifically closes the loop back on itself once the venv's own
-#    symlink is followed.
+#    binary through any OTHER symlink does not.
+# 3. Replacing the symlinks with a wrapper script that `exec`s
+#    /opt/contextforge-venv/bin/python3.12 looked right and passed
+#    locally, but hung a real CI build for the full 50-minute job timeout
+#    with zero output -- a silent infinite loop, not a slow step. Cause:
+#    that venv path is STILL a symlink to /usr/bin/python3.12 (from step
+#    1 above). `rm -f /usr/bin/python3.12` then `cp`-ing the wrapper to
+#    that same path made the symlink resolve to the wrapper itself, so
+#    the wrapper's own `exec` line re-invoked the wrapper, forever
+#    (`exec` replaces the process image, so this never crashes or grows a
+#    stack -- it just spins).
 #
-# Fix: a real wrapper script, not a symlink, at both shadowed paths. Its
-# `exec` line hardcodes the venv's own path as the invoked program, so
-# CPython always finds pyvenv.cfg relative to that exact path regardless
-# of how the wrapper itself was reached.
-RUN rm -f /usr/bin/python3.12 \
+# Real fix: decouple the venv's own interpreter path from /usr/bin
+# entirely before shadowing anything there. A private, real copy of the
+# interpreter (not a symlink) is made first; the venv's bin/python3.12
+# symlink is repointed at that copy, which nothing here ever overwrites
+# again; only then is /usr/bin/python3.12 safe to replace. `mcpgateway`
+# and `mcpgateway-server`'s own shebangs still name
+# /opt/contextforge-venv/bin/python3.12 unchanged, so they keep working.
+RUN cp -L /opt/contextforge-venv/bin/python3.12 /opt/contextforge-venv/python3.12-real \
+    && ln -sf /opt/contextforge-venv/python3.12-real /opt/contextforge-venv/bin/python3.12 \
+    && rm -f /usr/bin/python3.12 \
     && printf '#!/bin/sh\nexec /opt/contextforge-venv/bin/python3.12 "$@"\n' > /usr/local/bin/python3.12 \
     && chmod +x /usr/local/bin/python3.12 \
     && cp /usr/local/bin/python3.12 /usr/bin/python3.12 \

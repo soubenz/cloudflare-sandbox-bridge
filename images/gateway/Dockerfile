@@ -203,7 +203,7 @@ RUN curl -fsSL "https://github.com/open-telemetry/opentelemetry-collector-releas
 # file's own comments for the full reasoning, not repeated here.
 #
 # The python3.12 shadowing below is a wrapper script, not a symlink --
-# two real CI build failures on the agent image (27 Sep 2026) before
+# three real CI build failures on the agent image (27 Sep 2026) before
 # landing on this. A /usr/local/bin-only symlink still raised
 # ModuleNotFoundError (not a PATH-ordering issue as first assumed); a
 # symlink overwriting /usr/bin/python3.12 too then failed with "Too many
@@ -212,8 +212,16 @@ RUN curl -fsSL "https://github.com/open-telemetry/opentelemetry-collector-releas
 # so any plain symlink placed outside the venv's own bin/ directory
 # either misses the venv's site-packages (CPython's pyvenv.cfg lookup
 # keys off the literal invoked path, not the realpath) or, when it
-# targets /usr/bin/python3.12, closes a symlink loop. A wrapper script
-# whose `exec` line hardcodes the venv's own path sidesteps both: needed
+# targets /usr/bin/python3.12, closes a symlink loop. A first wrapper-
+# script attempt then HUNG a real CI build for its full job timeout with
+# zero output: the venv's bin/python3.12 was still a symlink to
+# /usr/bin/python3.12, so overwriting that path with the wrapper made the
+# symlink resolve back to the wrapper itself, and its own `exec` line
+# re-invoked it forever (`exec` replaces the process image, so this loops
+# silently rather than crashing or growing a stack). Fixed by decoupling
+# the venv's interpreter path from /usr/bin entirely first: a private
+# real copy of the interpreter is made and the venv's own symlink is
+# repointed at it, before /usr/bin/python3.12 is touched at all. Needed
 # because a lab invoking `python3.12 -m mcpgateway` directly -- exactly
 # what this lab does -- would otherwise fail the same way.
 RUN apt-get update -o Acquire::Retries=3 \
@@ -229,6 +237,8 @@ RUN apt-get update -o Acquire::Retries=3 \
     && /opt/contextforge-venv/bin/pip show mcp-contextforge-gateway | grep -qx 'Version: 1.0.10' \
     && ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
     && ln -s /opt/contextforge-venv/bin/mcpgateway-server /usr/local/bin/mcpgateway-server \
+    && cp -L /opt/contextforge-venv/bin/python3.12 /opt/contextforge-venv/python3.12-real \
+    && ln -sf /opt/contextforge-venv/python3.12-real /opt/contextforge-venv/bin/python3.12 \
     && rm -f /usr/bin/python3.12 \
     && printf '#!/bin/sh\nexec /opt/contextforge-venv/bin/python3.12 "$@"\n' > /usr/local/bin/python3.12 \
     && chmod +x /usr/local/bin/python3.12 \
