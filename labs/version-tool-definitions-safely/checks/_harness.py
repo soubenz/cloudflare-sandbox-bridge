@@ -74,7 +74,14 @@ CF = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744")
 V2_TOOL_SERVER_URL = os.environ.get("TOOL_SERVER_V2_URL", "http://127.0.0.1:65102/mcp")
 
 REGISTRATION_POLL_TIMEOUT_S = 60   # generous: covers a slow register_v2()
-REGISTRATION_TAIL_S = 2.0          # keep polling caller.py a little past register_v2() returning
+# Was 2.0. Live verification (27 Sep 2026) found this reproducibly too short:
+# caller.py itself measures 1.2-1.7s per run (see ROLLBACK_BOUND_S's own
+# comment below), and register_v2() completes in well under a second (a
+# single REST call), so two polling threads landed only 2 runs in the window
+# -- one short of the 3-sample floor -- identically across two separate live
+# sessions, not a one-off flake. Raised with real margin, not a minimal bump,
+# since a second undershoot costs another full live round-trip to catch.
+REGISTRATION_TAIL_S = 6.0          # keep polling caller.py a little past register_v2() returning
 ROLLBACK_BOUND_S = 8.0             # generous margin: the PUT itself measured 0.04-0.15s live, and even
                                     # polling caller.py (its own process-start + several HTTP round trips)
                                     # to confirm it, end to end, measured 1.2-1.7s across three full runs
@@ -241,7 +248,7 @@ def _build_results():
         while not stop_polling.is_set():
             reg_results.append(_run_caller())
 
-    callers = [threading.Thread(target=_poll_caller_during_registration, daemon=True) for _ in range(2)]
+    callers = [threading.Thread(target=_poll_caller_during_registration, daemon=True) for _ in range(3)]
     samplers = [threading.Thread(target=_sample_associated_tools, args=(original_server_id, reg_tool_samples, stop_polling), daemon=True) for _ in range(SAMPLER_THREADS)]
     for t in callers + samplers:
         t.start()
