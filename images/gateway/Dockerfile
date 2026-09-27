@@ -282,8 +282,18 @@ RUN pip3 install --no-cache-dir "litellm[proxy]==1.102.1" "prisma==0.15.0" locus
 # was installed anywhere in this image. psycopg2-binary bundles its own
 # libpq, so it needs nothing beyond the `postgresql` package already
 # installed above.
-RUN pip3 install --no-cache-dir fastapi "uvicorn[standard]" psycopg2-binary \
-    && python3 -c "import fastapi, uvicorn, psycopg2"
+#
+# psycopg[binary] (v3) added separately: a later live run found
+# add-hybrid-search-and-reranking's own workspace/search/db.py imports
+# plain `psycopg`, not `psycopg2` -- a different package under the same
+# name family, confirmed live with ModuleNotFoundError: No module named
+# 'psycopg'. Its actual calls (connect/cursor/execute/fetchone, %s
+# placeholders) are plain DB-API and would run identically under
+# psycopg2, but that file is given lab infrastructure, not something to
+# rewrite to match its siblings' choice -- installing the package it
+# actually names is the smaller, more faithful fix.
+RUN pip3 install --no-cache-dir fastapi "uvicorn[standard]" psycopg2-binary "psycopg[binary]" \
+    && python3 -c "import fastapi, uvicorn, psycopg2, psycopg"
 
 # flask/requests + the OTel SDK and its Flask/requests auto-instrumentation,
 # for Path 2 Module 4's tracing labs: a live verification run found three
