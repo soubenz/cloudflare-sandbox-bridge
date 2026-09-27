@@ -312,7 +312,7 @@ ENV PHOENIX_WASM_BINARY_PATH=/opt/opalix/assets/phoenix-wasm/pyodide.wasm
 RUN python3 -m venv /opt/opalix/venvs/see-why-a-document-matched \
     && /opt/opalix/venvs/see-why-a-document-matched/bin/pip install --no-cache-dir \
     fastapi "uvicorn[standard]" psycopg2-binary opentelemetry-sdk \
-    opentelemetry-exporter-otlp-proto-http openinference-semconv \
+    opentelemetry-exporter-otlp-proto-http openinference-semantic-conventions \
     && /opt/opalix/venvs/see-why-a-document-matched/bin/python -c "import fastapi, uvicorn, psycopg2, opentelemetry.sdk.trace, openinference.semconv.trace"
 
 # `prisma generate` must run at build time, against the schema shipped
