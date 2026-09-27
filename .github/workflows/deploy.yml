@@ -16,7 +16,16 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Was 30. Two real runs (27 Sep 2026, run #68 attempts 1 and 2) hit this
+    # exact ceiling on the Dry-run step alone, cancelled at 29m47s and
+    # 29m50s -- not a hang (no loop or prompt anywhere in either Dockerfile),
+    # just two full image rebuilds that have grown past a 30-minute budget
+    # now that the gateway image duplicates the agent image's deadsnakes +
+    # ContextForge install on top of its own pgvector/Qdrant/Phoenix/
+    # Jaeger/otelcol-contrib additions. Raised with real headroom rather
+    # than a minimal bump, since a third timeout would cost another
+    # multi-attempt cycle to diagnose again.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
