@@ -168,6 +168,14 @@ RUN curl -fsSL "https://github.com/jaegertracing/jaeger/releases/download/v${JAE
     && ln -s /opt/jaeger/jaeger /usr/local/bin/jaeger \
     && rm -f /tmp/jaeger.tgz \
     && test -x /usr/local/bin/jaeger
+# Two Module 4 labs invoke this binary bare ("jaeger", relying on the
+# /usr/local/bin symlink above); a live verification run found a third
+# (labs/follow-one-request-through-the-stack) hardcodes
+# /opt/opalix/bin/jaeger instead -- the path its own build agent happened
+# to install to locally. Rather than pick one true path and break
+# whichever labs assumed the other, both are satisfied: the same binary,
+# reachable both ways.
+RUN mkdir -p /opt/opalix/bin && ln -s /usr/local/bin/jaeger /opt/opalix/bin/jaeger
 
 # The OTel Collector, contrib distribution -- confirmed mandatory, not a
 # preference: `tail_sampling` (the only error-aware sampling processor,
@@ -210,6 +218,18 @@ RUN pip3 install --no-cache-dir "litellm[proxy]==1.102.1" "prisma==0.15.0" locus
 # installed above.
 RUN pip3 install --no-cache-dir fastapi "uvicorn[standard]" psycopg2-binary \
     && python3 -c "import fastapi, uvicorn, psycopg2"
+
+# flask/requests + the OTel SDK and its Flask/requests auto-instrumentation,
+# for Path 2 Module 4's tracing labs: a live verification run found three
+# of that module's own services (labs/follow-one-request-through-the-stack's
+# seed_trace.py, labs/see-one-request-across-every-service's gateway/worker/
+# storage) invoke plain python3 directly against these packages, none of
+# which existed anywhere in this image -- same shared-environment
+# convention as fastapi/psycopg2 above, not an isolated venv.
+RUN pip3 install --no-cache-dir flask requests opentelemetry-sdk \
+    opentelemetry-exporter-otlp-proto-http opentelemetry-instrumentation-flask \
+    opentelemetry-instrumentation-requests \
+    && python3 -c "import flask, requests, opentelemetry.sdk.trace, opentelemetry.instrumentation.flask, opentelemetry.instrumentation.requests"
 
 # MLflow, for Path 2's model-catalogue lab: its model registry's aliases
 # drive which provider model a LiteLLM alias points to. Pinned to 3.16.1,
