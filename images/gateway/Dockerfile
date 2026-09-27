@@ -193,6 +193,37 @@ RUN curl -fsSL "https://github.com/open-telemetry/opentelemetry-collector-releas
     && test -x /usr/local/bin/otelcol-contrib \
     && /usr/local/bin/otelcol-contrib components | grep -q tail_sampling
 
+# ContextForge (mcp-contextforge-gateway), for Path 2 Module 6's onboarding
+# lab (labs/onboard-yourself-the-way-a-new-team-sees-it), which is
+# family: gateway but needs the tool-gateway ContextForge already proven
+# for Module 2's agent-family labs. Same exact setup as
+# images/agent/Dockerfile (pinned 1.0.10, Python 3.12 from deadsnakes in
+# its own venv since no version with the multi-tenancy features these
+# labs need supports this image's own default Python either) -- see that
+# file's own comments for the full reasoning, not repeated here. Includes
+# the /usr/local/bin/python3.12 symlink from the start this time (a real
+# bug found in the agent image only after live verification: bare
+# python3.12 on PATH resolves to the system deadsnakes interpreter, not
+# this venv's, so a lab invoking `python3.12 -m mcpgateway` directly --
+# exactly what this lab does -- would otherwise fail with
+# ModuleNotFoundError).
+RUN apt-get update -o Acquire::Retries=3 \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
+    software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update -o Acquire::Retries=3 \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
+    python3.12 python3.12-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3.12 -m venv /opt/contextforge-venv \
+    && /opt/contextforge-venv/bin/pip install --no-cache-dir "mcp-contextforge-gateway==1.0.10" \
+    && /opt/contextforge-venv/bin/pip show mcp-contextforge-gateway | grep -qx 'Version: 1.0.10' \
+    && ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
+    && ln -s /opt/contextforge-venv/bin/mcpgateway-server /usr/local/bin/mcpgateway-server \
+    && ln -s /opt/contextforge-venv/bin/python3.12 /usr/local/bin/python3.12 \
+    && test -x /usr/local/bin/mcpgateway && test -x /usr/local/bin/mcpgateway-server \
+    && python3.12 -c "import mcpgateway; print(mcpgateway.__version__)"
+
 # --break-system-packages does not exist on this base image's pip3
 # (22.0.2, from Ubuntu 22.04's python3-pip) -- that flag only exists on
 # pip 23.0.1+ / newer Ubuntu releases that enforce PEP 668. Confirmed by a

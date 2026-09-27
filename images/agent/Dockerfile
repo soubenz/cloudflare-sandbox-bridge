@@ -155,6 +155,23 @@ RUN ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
     && test -x /usr/local/bin/mcpgateway && test -x /usr/local/bin/mcpgateway-server \
     && /opt/contextforge-venv/bin/python3.12 -c "import mcpgateway; print(mcpgateway.__version__)"
 
+# Two of this module's five labs (see-how-tools-reach-an-agent,
+# version-tool-definitions-safely) invoke `python3.12 -m mcpgateway`
+# directly instead of the `mcpgateway` console script above -- a live
+# verification run found this fails outright: bare `python3.12` on PATH
+# resolves to the system deadsnakes interpreter (from apt, no site-packages
+# of its own touched), not this venv's, so `-m mcpgateway` raises
+# ModuleNotFoundError and the service never comes up. Neither lab had ever
+# actually been run in a real container before this was caught -- the
+# earlier "verified live" pass covered the other three labs' use of the
+# `mcpgateway` command, not these two. Fixed by making the bare command
+# resolve correctly instead of editing either lab: /usr/local/bin precedes
+# /usr/bin in the default PATH, so this symlink shadows the system
+# python3.12 for anything in this image that invokes it -- safe, since
+# nothing else in this image needs Python 3.12 for any other purpose.
+RUN ln -s /opt/contextforge-venv/bin/python3.12 /usr/local/bin/python3.12 \
+    && python3.12 -c "import mcpgateway; print(mcpgateway.__version__)"
+
 # --- Unprivileged learner user; the terminal and workspace files run as this user ---
 RUN useradd -m -s /bin/bash learner \
     && mkdir -p /workspace /opt/lab \
