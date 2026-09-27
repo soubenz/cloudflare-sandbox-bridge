@@ -200,6 +200,17 @@ RUN curl -fsSL "https://github.com/open-telemetry/opentelemetry-collector-releas
 RUN pip3 install --no-cache-dir "litellm[proxy]==1.102.1" "prisma==0.15.0" locust \
     && pip3 show litellm | grep -qx 'Version: 1.102.1'
 
+# fastapi/uvicorn/psycopg2-binary, for Path 2 Module 3's pgvector labs: a
+# live verification run caught two labs' own learner-facing services
+# (labs/offer-a-retrieval-service-teams-dont-build's `platform`,
+# labs/add-hybrid-search-and-reranking's `search`) invoking plain
+# `python3`/`python3 -m uvicorn` directly, not an isolated venv -- neither
+# was installed anywhere in this image. psycopg2-binary bundles its own
+# libpq, so it needs nothing beyond the `postgresql` package already
+# installed above.
+RUN pip3 install --no-cache-dir fastapi "uvicorn[standard]" psycopg2-binary \
+    && python3 -c "import fastapi, uvicorn, psycopg2"
+
 # MLflow, for Path 2's model-catalogue lab: its model registry's aliases
 # drive which provider model a LiteLLM alias points to. Pinned to 3.16.1,
 # the version the feasibility run proved alongside litellm 1.102.1 and
@@ -252,16 +263,37 @@ ENV MLFLOW_DISABLE_AGENT_HINT=1
 # coverage); Phoenix uses the path as-is with no verification when it's
 # explicitly set, so a placeholder file is enough, matching the
 # investigation's own proof.
-RUN python3 -m venv /opt/phoenix-venv \
-    && /opt/phoenix-venv/bin/pip install --no-cache-dir "arize-phoenix==20.16.0" \
-    && /opt/phoenix-venv/bin/pip show arize-phoenix | grep -qx 'Version: 20.16.0' \
-    && ln -s /opt/phoenix-venv/bin/phoenix /usr/local/bin/phoenix \
+# Paths -- /opt/opalix/venvs/phoenix and /opt/opalix/assets/phoenix-wasm/
+# -- match what the Module 3 lab-building agents independently converged
+# on and already shipped inside labs/see-why-a-document-matched/manifest.yaml
+# (`argv: ["/opt/opalix/venvs/phoenix/bin/python", ...]`), rather than the
+# other way around: a live verification run caught this image using
+# /opt/phoenix-venv instead and failing with a plain ENOENT at session
+# start, exactly the kind of image/lab integration mismatch live testing
+# exists to catch. Conforming the image to the already-tested lab, not
+# editing the lab to match a path nothing else depends on.
+RUN python3 -m venv /opt/opalix/venvs/phoenix \
+    && /opt/opalix/venvs/phoenix/bin/pip install --no-cache-dir "arize-phoenix==20.16.0" \
+    && /opt/opalix/venvs/phoenix/bin/pip show arize-phoenix | grep -qx 'Version: 20.16.0' \
+    && ln -s /opt/opalix/venvs/phoenix/bin/phoenix /usr/local/bin/phoenix \
     && test -x /usr/local/bin/phoenix \
-    && mkdir -p /opt/opalix \
-    && : > /opt/opalix/phoenix-wasm-placeholder.bin
+    && mkdir -p /opt/opalix/assets/phoenix-wasm \
+    && : > /opt/opalix/assets/phoenix-wasm/pyodide.wasm
 ENV PHOENIX_TELEMETRY_ENABLED=false
 ENV PHOENIX_DISABLE_AGENT_ASSISTANT=true
-ENV PHOENIX_WASM_BINARY_PATH=/opt/opalix/phoenix-wasm-placeholder.bin
+ENV PHOENIX_WASM_BINARY_PATH=/opt/opalix/assets/phoenix-wasm/pyodide.wasm
+
+# labs/see-why-a-document-matched's own `app` service assumes its own
+# isolated venv at this exact path (defensive, per its own manifest
+# comment, against an unconfirmed conflict with the shared environment
+# above -- never actually tested against this real image at build time).
+# Same conform-the-image-to-the-tested-lab reasoning as Phoenix's path
+# fix above.
+RUN python3 -m venv /opt/opalix/venvs/see-why-a-document-matched \
+    && /opt/opalix/venvs/see-why-a-document-matched/bin/pip install --no-cache-dir \
+    fastapi "uvicorn[standard]" psycopg2-binary opentelemetry-sdk \
+    opentelemetry-exporter-otlp-proto-http openinference-semconv \
+    && /opt/opalix/venvs/see-why-a-document-matched/bin/python -c "import fastapi, uvicorn, psycopg2, opentelemetry.sdk.trace, openinference.semconv.trace"
 
 # `prisma generate` must run at build time, against the schema shipped
 # inside litellm_proxy_extras, because it's the one step in this whole
