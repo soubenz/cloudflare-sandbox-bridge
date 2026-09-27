@@ -200,13 +200,16 @@ RUN curl -fsSL "https://github.com/open-telemetry/opentelemetry-collector-releas
 # images/agent/Dockerfile (pinned 1.0.10, Python 3.12 from deadsnakes in
 # its own venv since no version with the multi-tenancy features these
 # labs need supports this image's own default Python either) -- see that
-# file's own comments for the full reasoning, not repeated here. Includes
-# the /usr/local/bin/python3.12 symlink from the start this time (a real
-# bug found in the agent image only after live verification: bare
-# python3.12 on PATH resolves to the system deadsnakes interpreter, not
-# this venv's, so a lab invoking `python3.12 -m mcpgateway` directly --
-# exactly what this lab does -- would otherwise fail with
-# ModuleNotFoundError).
+# file's own comments for the full reasoning, not repeated here.
+#
+# The python3.12 shadowing below overwrites /usr/bin/python3.12 directly,
+# not just /usr/local/bin -- a real CI build failure on the agent image
+# (27 Sep 2026) proved this base's PATH resolves /usr/bin ahead of
+# /usr/local/bin, the opposite of what a /usr/local/bin-only symlink
+# assumes, so that alone still resolved bare `python3.12` to the system
+# deadsnakes interpreter and raised ModuleNotFoundError. Needed because a
+# lab invoking `python3.12 -m mcpgateway` directly -- exactly what this
+# lab does -- would otherwise fail the same way.
 RUN apt-get update -o Acquire::Retries=3 \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
     software-properties-common \
@@ -220,7 +223,9 @@ RUN apt-get update -o Acquire::Retries=3 \
     && /opt/contextforge-venv/bin/pip show mcp-contextforge-gateway | grep -qx 'Version: 1.0.10' \
     && ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
     && ln -s /opt/contextforge-venv/bin/mcpgateway-server /usr/local/bin/mcpgateway-server \
+    && rm -f /usr/bin/python3.12 \
     && ln -s /opt/contextforge-venv/bin/python3.12 /usr/local/bin/python3.12 \
+    && ln -s /opt/contextforge-venv/bin/python3.12 /usr/bin/python3.12 \
     && test -x /usr/local/bin/mcpgateway && test -x /usr/local/bin/mcpgateway-server \
     && python3.12 -c "import mcpgateway; print(mcpgateway.__version__)"
 

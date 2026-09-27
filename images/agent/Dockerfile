@@ -164,12 +164,23 @@ RUN ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
 # ModuleNotFoundError and the service never comes up. Neither lab had ever
 # actually been run in a real container before this was caught -- the
 # earlier "verified live" pass covered the other three labs' use of the
-# `mcpgateway` command, not these two. Fixed by making the bare command
-# resolve correctly instead of editing either lab: /usr/local/bin precedes
-# /usr/bin in the default PATH, so this symlink shadows the system
-# python3.12 for anything in this image that invokes it -- safe, since
-# nothing else in this image needs Python 3.12 for any other purpose.
-RUN ln -s /opt/contextforge-venv/bin/python3.12 /usr/local/bin/python3.12 \
+# `mcpgateway` command, not these two.
+#
+# First fix attempt (a /usr/local/bin/python3.12 symlink alone, on the
+# assumption that /usr/local/bin precedes /usr/bin in the default PATH)
+# failed a real CI build (27 Sep 2026): the import check right after
+# creating that symlink still raised the same ModuleNotFoundError, proving
+# this base image resolves bare `python3.12` to /usr/bin/python3.12 first,
+# not /usr/local/bin -- the opposite of the assumed order. Rather than
+# depend on PATH ordering at all, this now overwrites the system binary's
+# own path directly: /usr/bin/python3.12 is removed and replaced with the
+# same symlink, so bare `python3.12` resolves to the venv's interpreter
+# regardless of which of the two directories PATH searches first. Safe,
+# since nothing else in this image needs Python 3.12 for any other
+# purpose once this venv exists.
+RUN rm -f /usr/bin/python3.12 \
+    && ln -s /opt/contextforge-venv/bin/python3.12 /usr/local/bin/python3.12 \
+    && ln -s /opt/contextforge-venv/bin/python3.12 /usr/bin/python3.12 \
     && python3.12 -c "import mcpgateway; print(mcpgateway.__version__)"
 
 # --- Unprivileged learner user; the terminal and workspace files run as this user ---
