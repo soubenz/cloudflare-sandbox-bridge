@@ -166,21 +166,39 @@ RUN ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
 # earlier "verified live" pass covered the other three labs' use of the
 # `mcpgateway` command, not these two.
 #
-# First fix attempt (a /usr/local/bin/python3.12 symlink alone, on the
-# assumption that /usr/local/bin precedes /usr/bin in the default PATH)
-# failed a real CI build (27 Sep 2026): the import check right after
-# creating that symlink still raised the same ModuleNotFoundError, proving
-# this base image resolves bare `python3.12` to /usr/bin/python3.12 first,
-# not /usr/local/bin -- the opposite of the assumed order. Rather than
-# depend on PATH ordering at all, this now overwrites the system binary's
-# own path directly: /usr/bin/python3.12 is removed and replaced with the
-# same symlink, so bare `python3.12` resolves to the venv's interpreter
-# regardless of which of the two directories PATH searches first. Safe,
-# since nothing else in this image needs Python 3.12 for any other
-# purpose once this venv exists.
+# Two real CI build failures (27 Sep 2026) before landing on the actual
+# fix, each teaching something the last one didn't:
+#
+# 1. A bare `ln -s /opt/contextforge-venv/bin/python3.12
+#    /usr/local/bin/python3.12` alone still raised ModuleNotFoundError on
+#    the import check right after creating it -- not a PATH-ordering
+#    problem as first assumed.
+# 2. Overwriting /usr/bin/python3.12 with the same symlink (to rule out
+#    PATH order entirely) failed differently: "Too many levels of
+#    symbolic links". The real cause, visible only once that error named
+#    it: `python3.12 -m venv` makes bin/python3.12 itself a symlink to
+#    the *system* interpreter (/usr/bin/python3.12), not a real binary.
+#    CPython's own venv activation (finding pyvenv.cfg / this venv's
+#    site-packages) keys off the literal path used to invoke the
+#    interpreter, not the realpath it resolves to -- confirmed directly:
+#    invoking via the venv's own path
+#    (`/opt/contextforge-venv/bin/python3.12`, step "mcpgateway-server"
+#    above) activates the venv correctly even though that file is itself
+#    a symlink to /usr/bin/python3.12; invoking the same underlying
+#    binary through any OTHER symlink does not. So any plain `ln -s`
+#    placed outside the venv's own bin/ directory can never work here,
+#    whichever path it shadows, and shadowing /usr/bin/python3.12
+#    specifically closes the loop back on itself once the venv's own
+#    symlink is followed.
+#
+# Fix: a real wrapper script, not a symlink, at both shadowed paths. Its
+# `exec` line hardcodes the venv's own path as the invoked program, so
+# CPython always finds pyvenv.cfg relative to that exact path regardless
+# of how the wrapper itself was reached.
 RUN rm -f /usr/bin/python3.12 \
-    && ln -s /opt/contextforge-venv/bin/python3.12 /usr/local/bin/python3.12 \
-    && ln -s /opt/contextforge-venv/bin/python3.12 /usr/bin/python3.12 \
+    && printf '#!/bin/sh\nexec /opt/contextforge-venv/bin/python3.12 "$@"\n' > /usr/local/bin/python3.12 \
+    && chmod +x /usr/local/bin/python3.12 \
+    && cp /usr/local/bin/python3.12 /usr/bin/python3.12 \
     && python3.12 -c "import mcpgateway; print(mcpgateway.__version__)"
 
 # --- Unprivileged learner user; the terminal and workspace files run as this user ---
