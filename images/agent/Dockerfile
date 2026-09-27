@@ -164,6 +164,20 @@ RUN apt-get update -o Acquire::Retries=3 \
 # installed; this adds only what that doesn't cover, that the package's
 # top-level module is actually importable (catches missing/broken
 # dependencies bytecode-compiled wrong, etc.) without constructing app config.
+# ContextForge's own start_jq_pool() forks a ProcessPoolExecutor at boot
+# by default (jq_filter_execution="subprocess"), and Python's
+# multiprocessing needs a POSIX semaphore backed by /dev/shm to do that --
+# confirmed live: it crashes with a bare `FileNotFoundError` from
+# `multiprocessing/synchronize.py`'s `SemLock`, well past the build-time
+# import check above (this only fires once the app actually starts), and
+# the health check just reports a plain port timeout with no hint why.
+# Lab containers have no /dev/shm (the same underlying gap the Postgres
+# `dynamic_shared_memory_type = sysv` workaround exists for elsewhere in
+# this image). `inprocess` mode runs jq filters without the fork sandbox
+# -- an accepted trade for a training environment with no real jq-filter
+# security boundary to protect, not a decision any lab should have to
+# make in every manifest.
+ENV JQ_FILTER_EXECUTION=inprocess
 RUN ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
     && ln -s /opt/contextforge-venv/bin/mcpgateway-server /usr/local/bin/mcpgateway-server \
     && test -x /usr/local/bin/mcpgateway && test -x /usr/local/bin/mcpgateway-server \

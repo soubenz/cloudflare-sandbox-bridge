@@ -202,6 +202,19 @@ RUN curl -fsSL "https://github.com/open-telemetry/opentelemetry-collector-releas
 # labs need supports this image's own default Python either) -- see that
 # file's own comments for the full reasoning, not repeated here.
 #
+# ContextForge's own start_jq_pool() forks a ProcessPoolExecutor at boot
+# by default, which needs a POSIX semaphore backed by /dev/shm --
+# confirmed live on the agent image (a bare FileNotFoundError from
+# multiprocessing/synchronize.py's SemLock, well past the build-time
+# import check below, surfacing at the app's actual startup as an
+# unexplained port-timeout). Lab containers have no /dev/shm (the same
+# gap the Postgres dynamic_shared_memory_type=sysv workaround exists for
+# elsewhere in this image). `inprocess` mode skips the fork sandbox
+# entirely -- an accepted trade here, since there's no real jq-filter
+# security boundary to protect in a training environment, and not a
+# decision any lab should have to make in every manifest.
+ENV JQ_FILTER_EXECUTION=inprocess
+
 # The python3.12 shadowing below is a wrapper script, not a symlink --
 # three real CI build failures on the agent image (27 Sep 2026) before
 # landing on this. A /usr/local/bin-only symlink still raised
