@@ -1,0 +1,289 @@
+# Catalogue's "Follow a single request across providers, regions and
+# logs" (Explore, gateway family, intro difficulty). type: explore --
+# nothing is broken and nothing is missing (docs/lab-authoring.md,
+# "type: explore is a guided tour, not a puzzle"). A real LiteLLM gateway
+# fronts three "regional" deployments of the same fake model
+# (support-us, support-apac, support-eu, tagged region/data_residency_zone
+# under model_info), one of which (support-eu) genuinely routes through a
+# second real hop (a regional-proxy stand-in) before reaching its own real
+# provider. Every real call is traced end to end over real OTLP into a real
+# Jaeger, AND logged the normal way by LiteLLM's own spend log
+# (LiteLLM_SpendLogs, real Postgres) -- two independent, live-checkable
+# views of the same request. The learner sends real requests and answers
+# three questions in workspace/answers.json, graded by re-deriving the
+# truth from fresh, live requests every time (checks/_harness.py) -- never
+# a hard-coded key.
+#
+# Reused wholesale rather than re-derived, per this lab's own brief:
+#   - Jaeger v2.21.0 config (workspace/jaeger/config.yaml): copied in shape
+#     from labs/follow-one-request-through-the-stack/workspace/jaeger/
+#     config.yaml (that lab's header comment documents why: v2's all-in-one
+#     needs a real YAML config, in-memory storage is right here too, and
+#     its query API is v3 (the old v1 paths 404 in this version)). No
+#     otelcol-contrib in front (unlike labs/see-one-request-across-every-
+#     service) -- every service here exports straight to jaeger's own OTLP
+#     receiver, so jaeger keeps the canonical 4317/4318/16686 ports.
+#     No-login re-verified live for this exact config (see this lab's own
+#     build report): GET / and GET /trace/{id} both return 200, real HTML,
+#     no auth header, no redirect, no cookie.
+#   - Postgres + LiteLLM wiring: the same proven template-copy Postgres
+#     argv and DISABLE_SCHEMA_UPDATE/pre-migrated-template pattern as
+#     labs/hard-budget-per-team and labs/tell-finance-who-spent-the-money.
+#     litellm stays ui: false (its own admin UI always requires a login,
+#     and nothing turns that off) -- there is no separate view tab either,
+#     since this lab's whole point is Jaeger's own UI (ui: true) plus a
+#     direct psql read, both already no-login/no-extra-page.
+#   - Real multi-hop W3C context propagation for support-eu's second hop
+#     (regional-proxy-eu -> its own real provider): plain
+#     opentelemetry-instrumentation-flask / -requests, the exact proven
+#     pattern from labs/see-one-request-across-every-service.
+#
+# What this lab verified live, freshly, rather than assuming (its own
+# build report has the full transcript):
+#
+#  1. LiteLLM 1.102.1 DOES support tagging a model_list deployment with an
+#     arbitrary region: arbitrary custom keys placed under a model_list
+#     entry's `model_info` (region, data_residency_zone,
+#     opalix_hop_count here) are not stripped -- they come back verbatim
+#     from a real `GET /v1/model/info` call, alongside LiteLLM's own many
+#     built-in pricing fields. LiteLLM has no purpose-built "region"
+#     concept of its own; this is exactly what model_info's free-form
+#     extra-field support is for, and every one of this lab's checks reads
+#     it live rather than trusting the config file alone.
+#
+#  2. Getting litellm's OWN outbound provider calls to genuinely carry a
+#     real W3C traceparent (so a downstream hop's span is a real child,
+#     not a disconnected second trace) took two real, load-bearing facts,
+#     neither obvious from litellm's docs, both confirmed live:
+#       a. `opentelemetry-instrument litellm --config ...` (the standard
+#          zero-code auto-instrumentation wrapper) breaks litellm's own
+#          Prisma client import at startup (its rewritten PYTHONPATH
+#          causes `ModuleNotFoundError: No module named 'prisma'` --
+#          confirmed absent when the exact same litellm command is run
+#          without the wrapper). The fix
+#          (workspace/gateway/run_instrumented_litellm.py) imports
+#          litellm.proxy.proxy_server:app directly, applies
+#          FastAPIInstrumentor and HTTPXClientInstrumentor to it in
+#          process, and serves it with a plain uvicorn.run() -- same
+#          instrumentation libraries, no wrapper subprocess.
+#       b. LiteLLM 1.102.1 defaults every outbound provider call to its
+#          own aiohttp-backed httpx transport (`LiteLLMAiohttpTransport`,
+#          "for higher throughput"), which never goes through httpx's own
+#          `AsyncHTTPTransport` -- the class
+#          opentelemetry-instrumentation-httpx actually patches. A span
+#          for the call still appears either way; only with
+#          `DISABLE_AIOHTTP_TRANSPORT=True` set does the outbound request
+#          actually carry a `Traceparent` header. Confirmed by capturing
+#          the literal headers a downstream stand-in received with and
+#          without this env var.
+#     Both packages this needed beyond the two already assumed for every
+#     other Module 4 lab (opentelemetry-instrumentation-flask, -requests)
+#     -- opentelemetry-instrumentation-fastapi and
+#     opentelemetry-instrumentation-httpx, both pinned to the same 0.66b0
+#     already proven for the flask/requests pair -- were verified live
+#     (`pip install` + `pip check`) to have zero dependency conflict with
+#     litellm[proxy]==1.102.1 or with each other; this is this lab's own
+#     addition to the shared image assumption every Module 4 lab documents.
+#
+#  3. Every fake provider stamps a genuinely fresh id
+#     (`chatcmpl-fake-<region>-<random>`) on every single call -- never a
+#     fixed per-region constant -- which is the one thread that ties three
+#     independent, live views of the SAME request together: the response's
+#     own `id`, the `opalix.response_id` span attribute a trace search in
+#     Jaeger matches on, and the `request_id` LiteLLM's own spend log
+#     records for that exact call. checks/_harness.py uses all three.
+slug: prove-where-one-requests-data-went
+version: 1.0.0
+title: "Prove where one request's data went"
+type: explore
+family: gateway
+difficulty: intro
+summary: >-
+  A real LiteLLM gateway fronts three "regional" fake-model deployments --
+  one of them two real hops deep. Send a request, then prove from a real
+  Jaeger trace and LiteLLM's own real log, not from what the config merely
+  claims, exactly which regions its data actually touched.
+objectives:
+  - "Read a real distributed trace's service list and span attributes to find which regions a request actually reached"
+  - "Tell a gateway's own first-hop log (api_base, model_group) apart from the full multi-hop journey only a trace shows"
+  - "Check a real data-residency/containment property against a live trace instead of trusting a config file's stated intent"
+timeout_minutes: 60
+idle_minutes: 10
+
+env:
+  JAEGER_URL: "http://127.0.0.1:16686"
+  LITELLM_URL: "http://127.0.0.1:4000"
+  LITELLM_MASTER_KEY: "sk-opalix-prd-master"
+  DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+  OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318"
+
+services:
+  - name: jaeger
+    argv: ["jaeger", "--config", "file:/workspace/jaeger/config.yaml"]
+    cwd: /workspace
+    port: 16686
+    healthcheck:
+      type: http
+      path: /
+      timeout_s: 60
+    ui: true
+    depends_on: []
+
+  # Copied from test/fixtures/labs/gateway-litellm-hello / every sibling
+  # gateway lab's own postgres service -- template-copy argv, data dir
+  # under /tmp because /workspace is chowned to `learner`.
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+
+  - name: provider-us
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8971"
+      SERVICE_NAME: "opalix-provider-us"
+      OPALIX_REGION: "us"
+    port: 8971
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [jaeger]
+
+  - name: provider-apac
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8972"
+      SERVICE_NAME: "opalix-provider-apac"
+      OPALIX_REGION: "apac"
+    port: 8972
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [jaeger]
+
+  - name: provider-eu
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8973"
+      SERVICE_NAME: "opalix-provider-eu"
+      OPALIX_REGION: "eu"
+    port: 8973
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [jaeger]
+
+  # support-eu's second real hop: litellm's own api_base for support-eu
+  # points here, not at provider-eu directly (see workspace/gateway/
+  # config.yaml). Real Flask, real opentelemetry-instrumentation-flask/
+  # -requests on both sides of this hop -- see workspace/services/
+  # regional_proxy.py's own header comment.
+  - name: regional-proxy-eu
+    argv: ["python3", "-B", "/workspace/services/regional_proxy.py"]
+    cwd: /workspace
+    env:
+      PROXY_PORT: "8974"
+      SERVICE_NAME: "opalix-regional-proxy-eu"
+      OPALIX_REGION: "eu"
+      UPSTREAM_PROVIDER_URL: "http://127.0.0.1:8973"
+    port: 8974
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [jaeger, provider-eu]
+
+  - name: litellm
+    # ui: false -- the admin UI always requires a login, same as every
+    # sibling LiteLLM lab in this family; jaeger's own UI plus a direct
+    # psql read are this lab's two views instead. Runs under
+    # run_instrumented_litellm.py, not the bare `litellm` CLI -- see that
+    # file's own header comment for exactly why (real FastAPI + httpx
+    # auto-instrumentation, applied in-process).
+    argv: ["python3", "-B", "/workspace/gateway/run_instrumented_litellm.py"]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-prd-master"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh), same
+      # as every sibling LiteLLM lab.
+      DISABLE_SCHEMA_UPDATE: "True"
+      # Load-bearing (see header comment, point 2b): without this,
+      # litellm's own outbound provider calls carry no traceparent at all,
+      # and every downstream hop roots a disconnected trace of its own.
+      DISABLE_AIOHTTP_TRANSPORT: "True"
+      PYTHONDONTWRITEBYTECODE: "1"
+      CONFIG_FILE_PATH: "/workspace/gateway/config.yaml"
+      LITELLM_PORT: "4000"
+      OTEL_SERVICE_NAME: "opalix-litellm"
+      OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318"
+      PROVIDER_US_URL: "http://127.0.0.1:8971"
+      PROVIDER_APAC_URL: "http://127.0.0.1:8972"
+      REGIONAL_PROXY_EU_URL: "http://127.0.0.1:8974"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # Pre-migrated DB boot is ~13-33s live in every sibling LiteLLM lab's
+      # own build notes; 90s leaves room for a slow container without
+      # hiding a real failure.
+      timeout_s: 90
+    ui: false
+    depends_on: [postgres, jaeger, provider-us, provider-apac, regional-proxy-eu]
+
+pressure: []
+
+checks:
+  - name: services-are-up
+    script: services-are-up.sh
+    timeout_s: 60
+    weight: 1
+  - name: answers-match-live-traces
+    script: answers-match-live-traces.sh
+    # Generous: LiteLLM batches its own spend-log write (~10-15s + jitter),
+    # and this check polls for it (up to 45s) concurrently for both of its
+    # own two fired calls, then polls jaeger similarly (up to 30s) --
+    # verified live these both land well inside this budget.
+    timeout_s: 150
+    weight: 2
+
+# Intro difficulty: exactly one hint, at ~15% of timeout_minutes
+# (docs/lab-authoring.md).
+hints:
+  - after_minutes: 9
+    text: >-
+      Run `python3 -B /workspace/send_request.py support-eu` and
+      `python3 -B /workspace/send_request.py support-us` from a terminal,
+      note each response's own `id`, then open the jaeger tab and click
+      Find Traces (service opalix-litellm). Open the newest trace for each
+      call and expand every row: count the distinct services in
+      support-eu's trace for your second answer, and read the
+      `opalix.region` tag on support-us's own provider span for your
+      first. For the third, compare every `opalix.region` tag in
+      support-eu's trace against support-eu's own declared region (`curl
+      -H "Authorization: Bearer $LITELLM_MASTER_KEY"
+      http://127.0.0.1:4000/v1/model/info`).
+
+egress:
+  allow: []

@@ -1,0 +1,58 @@
+# Three "regional deployments" of the same fake model, distinguished by
+# custom fields under model_info. Verified live against real LiteLLM 1.102.1
+# (this lab's own build report) that arbitrary custom keys placed under
+# model_info -- region, data_residency_zone, opalix_hop_count here -- are
+# not stripped: they come back verbatim from a real GET /v1/model/info call,
+# alongside LiteLLM's own many built-in pricing fields. LiteLLM has no
+# purpose-built "region" concept of its own for a deployment (nothing in its
+# schema treats "region" specially); this is exactly what model_info's own
+# free-form-extra-fields support is for, and it is genuinely queryable at
+# grading time -- never a fact this lab merely asserts in a comment.
+#
+# support-eu is the one alias that is genuinely two real hops: its api_base
+# points at a regional-proxy stand-in (workspace/services/regional_proxy.py),
+# not directly at the real fake provider that regional proxy itself calls
+# on. support-us and support-apac are one real hop each, straight to their
+# own fake provider. Every hop is real Flask + real OTel SDK
+# auto-instrumentation (opentelemetry-instrumentation-flask /
+# -requests) -- see the header comments on those two files for exactly how
+# each hop's span connects to the one before it.
+#
+# Pricing is 0 for every model here on purpose -- this lab is about where a
+# request's data went, not what it cost (see
+# labs/hard-budget-per-team/workspace/gateway/config.yaml for a lab where
+# the price is the point).
+model_list:
+  - model_name: support-us
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/PROVIDER_US_URL
+      api_key: unused
+    model_info:
+      region: us
+      data_residency_zone: "us-east"
+      opalix_hop_count: 1
+  - model_name: support-apac
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/PROVIDER_APAC_URL
+      api_key: unused
+    model_info:
+      region: apac
+      data_residency_zone: "apac-southeast"
+      opalix_hop_count: 1
+  - model_name: support-eu
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/REGIONAL_PROXY_EU_URL
+      api_key: unused
+    model_info:
+      region: eu
+      data_residency_zone: "eu-central"
+      opalix_hop_count: 2
+
+litellm_settings:
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

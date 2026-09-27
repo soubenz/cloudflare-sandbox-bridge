@@ -1,0 +1,62 @@
+# Real Jaeger v2 all-in-one config (jaegertracing/jaeger v2.21.0), copied
+# verbatim in shape from labs/follow-one-request-through-the-stack/workspace/
+# jaeger/config.yaml -- that lab's own header comment documents why this
+# exact trimmed shape is used (Jaeger v2's all-in-one is itself built on the
+# OTel Collector framework, so there is no SPAN_STORAGE_TYPE-style flag any
+# more; a real YAML config like this one is mandatory) and why in-memory
+# storage is the right call here too: nothing in this lab ever needs a trace
+# to survive a jaeger restart.
+#
+# No otelcol-contrib in front of jaeger in this lab (unlike
+# labs/see-one-request-across-every-service) -- every one of this lab's own
+# services (opalix-litellm, the three opalix-provider-* stand-ins, and
+# opalix-regional-proxy-eu) exports straight to jaeger's own OTLP receiver --
+# so, per the same port convention those sibling labs document, jaeger's OTLP
+# receiver keeps the canonical 4317 (gRPC) / 4318 (HTTP) rather than being
+# re-pointed to make room for a collector, and its query/UI stays on the
+# canonical 16686 (HTTP) / 16685 (gRPC).
+#
+# No-login verified live for this exact config (docs/lab-authoring.md's
+# no-login rule, verified rather than assumed): GET / and GET /trace/{id} on
+# jaeger's query port both return 200 with real UI HTML, no auth header, no
+# redirect, no cookie -- see this lab's own build report.
+service:
+  extensions: [jaeger_storage, jaeger_query]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+  telemetry:
+    logs:
+      level: info
+
+extensions:
+  jaeger_query:
+    http:
+      endpoint: "0.0.0.0:16686"
+    grpc:
+      endpoint: "0.0.0.0:16685"
+    storage:
+      traces: some_storage
+
+  jaeger_storage:
+    backends:
+      some_storage:
+        memory:
+          max_traces: 100000
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+processors:
+  batch:
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: some_storage
