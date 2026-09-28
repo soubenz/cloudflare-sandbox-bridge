@@ -96,7 +96,7 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
         slug?: string;
         type?: string;
         title?: string;
-        services?: { name?: string; healthcheck?: { timeout_s?: number } }[];
+        services?: { name?: string; argv?: string[]; cwd?: string; healthcheck?: { timeout_s?: number } }[];
       };
       const slug = manifest.slug;
       if (!slug) throw new Error(`${manifestPath} has no slug`);
@@ -144,14 +144,24 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
           // app started with `app.run()`) keeps executing whatever was in
           // memory when it started, exactly like a real learner's own
           // in-browser editor requires a Restart click before an edit takes
-          // effect. Every service argv in this platform is designed to be
-          // idempotent across a restart (docs/lab-authoring.md), so
-          // restarting all of them here is safe and mirrors what a learner
-          // actually has to do after editing a service's own file.
-          const serviceNames = (manifest.services ?? []).map((s) => s.name).filter((n): n is string => !!n);
-          if (serviceNames.length > 0) {
-            console.log(`\nRestarting services so the solution's file edits take effect: ${serviceNames.join(', ')}...`);
-            for (const name of serviceNames) {
+          // effect. Only restart a service whose own argv actually
+          // references one of the written files (its entrypoint script, not
+          // a config file some other service merely reads) -- restarting
+          // every service unconditionally hit a real, pre-existing platform
+          // bug live (`/services/:name/restart` on Grafana:
+          // ProcessWaitTimeoutError, ~5s SIGTERM wait not honoured) and
+          // broke an otherwise-passing lab (tell-finance-who-spent-the-money)
+          // whose solution only ever edits a dashboard JSON file nothing's
+          // argv points at.
+          const solutionRelPaths = solutionFiles.map((rel) => rel.split('/').join('/'));
+          const affectedServices = (manifest.services ?? []).filter((s) => {
+            const argv = s.argv ?? [];
+            return solutionRelPaths.some((rel) => argv.some((a) => typeof a === 'string' && a.includes(rel)));
+          });
+          if (affectedServices.length > 0) {
+            const names = affectedServices.map((s) => s.name).filter((n): n is string => !!n);
+            console.log(`\nRestarting services whose own entrypoint the solution edited: ${names.join(', ')}...`);
+            for (const name of names) {
               await authed.restartService(started.id, name);
             }
           }
