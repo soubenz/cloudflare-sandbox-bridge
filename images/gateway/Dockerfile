@@ -302,10 +302,20 @@ RUN pip3 install --no-cache-dir fastapi "uvicorn[standard]" psycopg2-binary "psy
 # storage) invoke plain python3 directly against these packages, none of
 # which existed anywhere in this image -- same shared-environment
 # convention as fastapi/psycopg2 above, not an isolated venv.
+#
+# opentelemetry-instrumentation-fastapi/-httpx: a further live verification
+# run (labs/prove-where-one-requests-data-went) found LiteLLM's own proxy
+# process (workspace/gateway/run_instrumented_litellm.py) crashes at import
+# with ModuleNotFoundError -- it instruments LiteLLM's real FastAPI app and
+# its own outbound httpx client (the FastAPI/httpx equivalents of the
+# Flask/requests instrumentation above, since LiteLLM's proxy is a FastAPI
+# app whose provider calls go through httpx, not Flask/requests), and
+# neither package existed in this image either.
 RUN pip3 install --no-cache-dir flask requests opentelemetry-sdk \
     opentelemetry-exporter-otlp-proto-http opentelemetry-instrumentation-flask \
-    opentelemetry-instrumentation-requests \
-    && python3 -c "import flask, requests, opentelemetry.sdk.trace, opentelemetry.instrumentation.flask, opentelemetry.instrumentation.requests"
+    opentelemetry-instrumentation-requests opentelemetry-instrumentation-fastapi \
+    opentelemetry-instrumentation-httpx \
+    && python3 -c "import flask, requests, opentelemetry.sdk.trace, opentelemetry.instrumentation.flask, opentelemetry.instrumentation.requests, opentelemetry.instrumentation.fastapi, opentelemetry.instrumentation.httpx"
 
 # MLflow, for Path 2's model-catalogue lab: its model registry's aliases
 # drive which provider model a LiteLLM alias points to. Pinned to 3.16.1,
