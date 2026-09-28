@@ -96,7 +96,7 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
         slug?: string;
         type?: string;
         title?: string;
-        services?: { healthcheck?: { timeout_s?: number } }[];
+        services?: { name?: string; healthcheck?: { timeout_s?: number } }[];
       };
       const slug = manifest.slug;
       if (!slug) throw new Error(`${manifestPath} has no slug`);
@@ -137,6 +137,23 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
             const content = readFileSync(join(solutionDir, ...rel.split('/')), 'utf8');
             await authed.writeFile(started.id, encodeWorkspacePath(rel), content);
             console.log(`  PUT /workspace/${rel} (${Buffer.byteLength(content)} bytes)`);
+          }
+
+          // Writing a file never reloads an already-running process: a
+          // service that reads its own source once at boot (e.g. a Flask
+          // app started with `app.run()`) keeps executing whatever was in
+          // memory when it started, exactly like a real learner's own
+          // in-browser editor requires a Restart click before an edit takes
+          // effect. Every service argv in this platform is designed to be
+          // idempotent across a restart (docs/lab-authoring.md), so
+          // restarting all of them here is safe and mirrors what a learner
+          // actually has to do after editing a service's own file.
+          const serviceNames = (manifest.services ?? []).map((s) => s.name).filter((n): n is string => !!n);
+          if (serviceNames.length > 0) {
+            console.log(`\nRestarting services so the solution's file edits take effect: ${serviceNames.join(', ')}...`);
+            for (const name of serviceNames) {
+              await authed.restartService(started.id, name);
+            }
           }
 
           console.log('\nPost-solution checks (every one must PASS):');
