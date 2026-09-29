@@ -1,0 +1,191 @@
+# Module 7, Build (gateway family). Catalogue's own "what makes it hard":
+# "Providers and tools that may be reached, and nothing else."
+#
+# The platform-level egress fence (enableInternet: false + a static
+# allowedHosts list + per-manifest egress.allow[], src/families/egress.ts /
+# gateway-lab.ts) already keeps this whole container off the open internet
+# -- but that fence is configured in THIS manifest, which is fixed lab
+# infrastructure, not a workspace file a learner can edit as part of
+# solving a build lab (same as every other lab here). This lab is about an
+# application-level egress control the learner builds themselves, sitting
+# in front of whatever a tool-calling agent is allowed to reach WITHIN the
+# hosts the platform fence already lets the container talk to -- here,
+# entirely between sibling services on this container's own loopback, so
+# the lesson holds with no live network at all.
+#
+# Design: workspace/agent/agent.py (given, a stand-in for an LLM-driven
+# agent's own outbound tool calls) makes every one of its outbound calls as
+# a real HTTP forward-proxy request to workspace/egress/proxy.py -- an
+# absolute-URI request line naming the real destination, e.g.
+# `POST http://approved-tool.internal:8991/run HTTP/1.1`. That is the more
+# realistic of the two enforcement points this catalogue entry could have
+# used (network-level isolation was the other option): everything in one
+# Opalix container is sibling processes sharing one loopback with no
+# per-service network namespace, so there is no real firewall boundary to
+# put between the agent and a tool service at the network layer inside a
+# single container -- an HTTP forward proxy the agent's own outbound calls
+# are actually routed through, with a REAL allow/deny decision and a REAL
+# 403, is the boundary that can actually be enforced and actually tested
+# here, the same reasoning that makes ContextForge the enforcement point in
+# give-each-agent-only-the-tools-it-needs rather than a network ACL.
+#
+# The planted bug (checks/_harness.py has the full write-up): proxy.py's
+# `_is_allowed()` decides using the client-supplied `Host` header, while
+# `_forward()` connects to the destination parsed straight off the request
+# line -- two different values a caller controls independently. A request
+# whose Host header names the approved tool but whose request line names
+# the not-approved service is let through on the shipped skeleton and
+# refused once `_is_allowed()` is fixed to decide from the same value that
+# gets connected to. Confirmed both ways locally before shipping this lab
+# (see this session's own verification run).
+slug: control-what-can-leave-the-platform
+version: 1.0.0
+title: "Control what can leave the platform"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  A tool-calling agent routes every outbound call through your egress
+  proxy. It reaches the one tool it's approved for -- and, right now, a
+  crafted request can talk it into reaching a service that was never
+  approved at all. Make the proxy's allow/deny decision trustworthy.
+objectives:
+  - "Give the agent a real path to the one tool it's approved for, enforced by a proxy in front of it, not by the agent's own good behavior"
+  - "Refuse a disallowed destination outright, with a real rejection a caller can't talk its way around"
+  - "Tell a Host header a caller supplies apart from the destination a request actually names and actually reaches"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  EGRESS_PROXY_URL: "http://127.0.0.1:8993"
+  APPROVED_TOOL_URL: "http://127.0.0.1:8991"
+  NOT_APPROVED_URL: "http://127.0.0.1:8992"
+  APPROVED_TOOL_HOST: "approved-tool.internal:8991"
+  NOT_APPROVED_HOST: "not-approved.internal:8992"
+
+services:
+  - name: approved-tool
+    argv: ["python3", "-B", "/workspace/tools/approved_tool.py"]
+    cwd: /workspace
+    env:
+      APPROVED_TOOL_PORT: "8991"
+    port: 8991
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+
+  - name: not-approved
+    argv: ["python3", "-B", "/workspace/tools/not_approved.py"]
+    cwd: /workspace
+    env:
+      NOT_APPROVED_PORT: "8992"
+    port: 8992
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+
+  - name: egress-proxy
+    argv: ["python3", "-B", "/workspace/egress/proxy.py"]
+    cwd: /workspace
+    env:
+      EGRESS_PROXY_PORT: "8993"
+      EGRESS_ALLOWLIST_PATH: "/workspace/egress/allowlist.txt"
+    port: 8993
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [approved-tool, not-approved]
+
+  - name: view
+    # Small stdlib, read-only page -- under the house no-login rule, this
+    # is the ui:true tab; egress-proxy and both tool services stay
+    # ui:false (same shape as every other gateway-family lab's `view`).
+    argv: ["python3", "-B", "/workspace/view.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "8994"
+      VIEW_PREFIX: "{{service.prefix}}"
+      EGRESS_PROXY_URL: "http://127.0.0.1:8993"
+      APPROVED_TOOL_URL: "http://127.0.0.1:8991"
+      NOT_APPROVED_URL: "http://127.0.0.1:8992"
+    port: 8994
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: true
+    depends_on: [approved-tool, not-approved, egress-proxy]
+
+pressure: []
+
+checks:
+  # None of these read the learner's proxy.py as text. Each shares one
+  # grading run's own probes -- the learner's *current* workspace/egress/
+  # proxy.py and workspace/tools/*.py, run fresh on the grader's own ports,
+  # driven with three hand-built raw HTTP requests -- with the other two.
+  # Sequential on purpose: whichever runs first pays the setup cost and the
+  # other two just read its result. See checks/_harness.py.
+  - name: approved-tool-is-reachable
+    script: approved-tool-is-reachable.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  - name: not-approved-tool-is-refused
+    script: not-approved-tool-is-refused.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  # The check that actually exercises the planted bypass -- see
+  # checks/_harness.py's module docstring and this lab's own verification
+  # notes for what it proves and why it's weighted higher than the other
+  # two: a fix that only satisfies the first two checks (i.e. gets the
+  # ordinary cases right) but leaves the Host-header/real-target mismatch
+  # open has not actually fixed this lab's bug.
+  - name: host-header-cannot-smuggle-a-destination
+    script: host-header-cannot-smuggle-a-destination.sh
+    timeout_s: 120
+    weight: 2
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      Run `python3 agent/agent.py approved-tool "test"` and then
+      `python3 agent/agent.py not-approved "test"` from /workspace, and
+      watch the view tab while you do -- it shows every decision the
+      egress proxy made, and what each tool service actually received.
+      One of those two calls should already behave correctly; this lab is
+      about a way to reach the other one anyway that neither of those two
+      plain calls will show you.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      In workspace/egress/proxy.py, `_handle_proxied_request` computes two
+      separate things from an incoming request: `target_host_port` (via
+      `_target_from_request_line`) and `header_host` (the `Host` header).
+      `_forward()` only ever uses one of those to decide where to actually
+      open a connection. Check which one `_is_allowed()` uses to decide
+      whether to allow the request at all -- is it the same one?
+  # ~45% of timeout_minutes -- names the trick outright.
+  - after_minutes: 41
+    text: >-
+      A caller sending a request through this proxy controls the `Host`
+      header and the request line's own destination completely
+      independently of each other -- nothing requires them to name the
+      same thing. `_is_allowed()` currently checks `header_host` against
+      the allowlist, but `_forward()` connects to `target_host_port`. Make
+      the allow/deny decision use `target_host_port` instead -- the same
+      value that actually gets connected to -- and stop reading
+      `header_host` for anything security-relevant at all.
+
+egress:
+  allow: []

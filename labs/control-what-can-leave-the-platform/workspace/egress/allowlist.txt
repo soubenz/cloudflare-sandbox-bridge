@@ -1,0 +1,9 @@
+# Exact "host:port" destinations the egress proxy may forward a request to.
+# One entry per line; "#" starts a comment. Everything not listed here must
+# be refused -- that includes destinations that merely look similar to an
+# allowed one.
+#
+# This file already lists the one tool the agent is supposed to reach.
+# Your job for this lab is not this file -- it's making proxy.py actually
+# enforce it correctly.
+approved-tool.internal:8991
