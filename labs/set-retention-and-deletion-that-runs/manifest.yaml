@@ -1,0 +1,186 @@
+# Module 7 ("Build"), catalogue row: "Set retention and deletion that
+# actually run" (Build, stack note: "Langfuse or OTel, object storage" --
+# Langfuse was already rejected elsewhere in this repo, Module 4, for
+# conflicting with the no-login rule (its own UI always requires signing
+# in), so this lab uses OTel/Jaeger-adjacent infrastructure instead, per
+# the catalogue's own "or OTel" alternative).
+#
+# THE OPEN QUESTION THIS LAB SETTLES FIRST, WITH LIVE EVIDENCE (this lab's
+# own build report has the full transcript; summary here):
+#
+#   Does Jaeger v2 (the same real v2.21.0 binary this repo already runs in
+#   labs/follow-one-request-through-the-stack and
+#   labs/prove-where-one-requests-data-went) have ANY way to delete one
+#   trace, or one customer's traces, by id?
+#
+#   No. Verified live, 29 Sep 2026, against a real running v2.21.0 with the
+#   same all-in-one config those two labs use (in-memory storage):
+#     - `curl -X DELETE http://127.0.0.1:16686/api/v3/traces/{id}` against a
+#       trace that GET /api/v3/traces/{id} had just confirmed existed
+#       returns a bare `404 page not found` -- not even a 405, i.e. the
+#       route does not exist at all, the same as `curl -X OPTIONS` on the
+#       exact same URL.
+#     - There is no v1 fallback either: `curl -X DELETE
+#       /api/traces/{id}` also 404s.
+#     - Reading the binary's own storage v2 Go interfaces (`strings` +
+#       `go tool nm` against the same binary) turns up a TraceReader
+#       interface with exactly one real read method
+#       (FindTraceSummaries-shaped) and NO DeleteTrace/PurgeTrace method
+#       anywhere, in ANY backend (memory, badger, cassandra, elasticsearch,
+#       clickhouse, grpc). The only "_ttl" config keys that exist at all
+#       (trace_ttl, dependencies_ttl, span_store_write_cache_ttl) are
+#       global, time-based expiry knobs on a whole backend -- "traces older
+#       than N days disappear eventually" -- never a "delete THIS trace, or
+#       this customer's traces, right now" primitive.
+#     - Swapping the storage backend doesn't change this: badger's and
+#       clickhouse's own TTL settings are the identical global-expiry
+#       shape, not a per-id delete call, because the delete call this task
+#       needs simply isn't part of any jaeger-v2 storage backend's
+#       interface for any of them to implement.
+#     - Persistent local storage (badger/clickhouse) is moot in this
+#       platform's per-session containers regardless: no volume survives a
+#       session, so whatever Jaeger held is gone with the container anyway.
+#
+#   Conclusion, per this lab's own instructions: don't force the lesson
+#   onto Jaeger. "Delete this customer's traces" is redesigned to mean
+#   deleting from a store this platform actually controls end to end: a
+#   real SQLite table of real span-shaped rows (service_name, span_name,
+#   start/end timestamps, gen_ai.*/cache.* attributes), seeded and swept
+#   directly -- the same "local stand-in for a backing service" posture
+#   docs/lab-authoring.md's own Postgres convention already uses elsewhere
+#   in this repo (e.g. labs/build-the-ingestion-pipeline). This lab does
+#   not run Jaeger itself at all: there is nothing for a learner to gain
+#   from a UI tab showing a trace store that, by design, can never be the
+#   thing their deletion script is graded against.
+#
+# THE THREE REAL PLACES a customer's data lands after the seed step runs
+# (workspace/services/retention_api.py, boot-time convenience seed + a
+# small read-only audit API a learner can curl -- see its own header
+# comment for the full design note):
+#   1. TRACE_DB_PATH -- SQLite, real span rows, one customer_id column
+#   2. EXPORT_DIR    -- one real JSON export-bundle file per customer under
+#      /tmp, plus EXPORT_INDEX_PATH listing who currently has one (a local
+#      filesystem stand-in for object storage, same convention as every
+#      other /tmp-backed "external" service in this repo)
+#   3. CACHE_DB_PATH -- SQLite, cached embeddings/responses, one
+#      customer_id column
+#
+# THE PLANTED BUG (workspace/retention/delete_customer.py, an otherwise
+# complete, real implementation -- not a stub): all three deletion routines
+# share one `_belongs_to()` helper that matches with
+# `candidate_id.startswith(customer_id)` instead of exact equality, dressed
+# up with a plausible-sounding comment about tolerating formatting drift.
+# Three seeded customers make this a REAL over-deletion bug, not a
+# theoretical one: cust_4471 ("Northwind Trading Co", the customer being
+# deleted) is a literal string prefix of cust_44718 ("Northwind Labs Inc",
+# an entirely unrelated customer) -- nothing in the seeded data flags
+# cust_44718 as special in any way. Deleting cust_4471 with the buggy
+# helper silently deletes cust_44718 too, in all three stores and the
+# export index. cust_2003 ("Globex Corp") shares no prefix with anything
+# and is the unrelated control. checks/other-customers-are-intact.sh is the
+# check built specifically to catch this: it fails on the untouched
+# skeleton (cust_44718 loses everything) and passes once matching is exact.
+slug: set-retention-and-deletion-that-runs
+version: 1.0.0
+title: "Set retention and deletion that actually run"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  A customer's data lands in three real places: a trace/span store, an
+  export bundle, and a cache. Write the script that deletes one customer
+  from all three -- without taking another customer down with it.
+objectives:
+  - "Delete a customer's data from a real trace/span store, a real export bundle, and a real cache -- not just one of the three"
+  - "Match customer identity exactly, not by prefix or substring, so deleting one customer can never remove another's data"
+  - "Prove a deletion is complete with an auditable sweep across every real store, not by trusting the deletion script's own exit code"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  TRACE_DB_PATH: "/tmp/opalix-retention/traces.db"
+  CACHE_DB_PATH: "/tmp/opalix-retention/cache.db"
+  EXPORT_DIR: "/tmp/opalix-retention/exports"
+  EXPORT_INDEX_PATH: "/tmp/opalix-retention/exports/_index.json"
+  RETENTION_API_URL: "http://127.0.0.1:8180"
+
+services:
+  - name: retention-api
+    # Seeds the three stores once at boot (idempotent -- always the same
+    # known state), then serves a small read-only JSON API so a learner can
+    # check their own work the way a real operator would (GET /customers,
+    # GET /customers/{id}/audit) without reading any of this service's own
+    # code. checks/_harness.py never calls into this file -- it reseeds and
+    # re-sweeps with its own independent copy of the same logic (see its
+    # own header comment).
+    argv: ["python3", "-B", "/workspace/services/retention_api.py"]
+    cwd: /workspace
+    env:
+      RETENTION_API_PORT: "8180"
+    port: 8180
+    healthcheck:
+      type: http
+      path: /health
+      timeout_s: 30
+    ui: false
+    depends_on: []
+
+pressure: []
+
+checks:
+  - name: retention-api-is-up
+    script: retention-api-is-up.sh
+    timeout_s: 30
+    weight: 1
+    parallel: false
+  # Pays the real setup cost: reseeds all three stores, runs the CURRENT
+  # delete_customer.py as a real subprocess, sweeps the result. See its own
+  # header comment.
+  - name: target-customer-fully-deleted
+    script: target-customer-fully-deleted.sh
+    timeout_s: 60
+    weight: 1
+    parallel: false
+  # The over-deletion catcher -- reads the pass the previous check already
+  # ran.
+  - name: other-customers-are-intact
+    script: other-customers-are-intact.sh
+    timeout_s: 30
+    weight: 2
+    parallel: false
+  - name: deletion-is-auditable
+    script: deletion-is-auditable.sh
+    timeout_s: 30
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 13
+    text: >-
+      Run `curl -s $RETENTION_API_URL/customers/cust_4471/audit | python3 -m
+      json.tool` before and after running your script. It sweeps the trace
+      store, the cache and the export directory + index directly, so it
+      will tell you exactly which of the three still has something in it --
+      you don't have to guess from delete_customer.py's own printed count.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Once cust_4471 itself is genuinely gone from all three stores, check
+      the OTHER seeded customers too: `curl -s
+      $RETENTION_API_URL/customers`. If one of them has vanished as a side
+      effect, look at exactly how delete_customer.py decides whether a
+      stored row, cached entry or export file "belongs to" the customer
+      you're deleting -- and what two different customer ids can look like
+      to that exact same comparison.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      `"cust_44718".startswith("cust_4471")` is `True`. A customer id is an
+      opaque identifier to compare for exact equality, not a namespace
+      prefix -- fix the one helper every deletion routine shares so it
+      matches customer ids exactly, in all three stores and in the export
+      index.
+
+egress:
+  allow: []
