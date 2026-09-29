@@ -1,0 +1,214 @@
+# Path 2, Module 6 ("Build the page where teams request access"), stack:
+# simple portal + gateway API. Reuses labs/one-endpoint-one-key's proven
+# postgres/litellm shape verbatim (same template-copy/runuser dance, same
+# reason Postgres is mandatory: LiteLLM's virtual-key/team/spend layer is a
+# Prisma schema hard-coded to `provider = "postgresql"`) and adds one more
+# service, `portal` -- the actual subject of this lab.
+#
+# Catalogue's own note on what makes this hard: "Requests, approvals and
+# provisioning without a ticket queue." The three endpoints this lab's
+# portal exposes are exactly that shape: POST /requests creates a real
+# pending row and grants nothing; POST /requests/{id}/approve is the only
+# place that ever calls LiteLLM's admin API, synchronously, with a real
+# approver credential required; GET /requests/{id} shows status and, once
+# approved, the real key.
+#
+# `portal` is ui: false. It has no browser page of its own to gate behind
+# the no-login rule in the first place -- three JSON endpoints, worked with
+# curl, the same way `platform/setup.py` is worked with in
+# one-endpoint-one-key. LiteLLM's own admin UI is ui: false for the usual
+# reason (it always requires a login, and nothing in this lab turns that
+# off) and this lab ships no substitute view tab for it, unlike
+# one-endpoint-one-key's `view` -- there is nothing in LiteLLM's own state
+# a learner needs to see here that GET /requests/{id} doesn't already show
+# them about their own request.
+#
+# The one planted bug is entirely inside workspace/portal/app.py's
+# `_handle_approve`: it never checks whether a request has already been
+# approved (or is being approved right now) before calling `provision()`
+# again. `provision()` itself already looks a team up by alias before
+# deciding whether to create or extend it, so approving the same request
+# twice does NOT create a second LiteLLM team -- the non-obvious part of
+# this bug is that it still mints a second, fully-working LiteLLM key every
+# single time, tied to the same team, never revoked, and never referenced
+# by the portal's own database once the second response overwrites the
+# first key it recorded. A double-click on "approve", or a client retrying
+# a timed-out request, silently doubles a team's outstanding, valid
+# credentials. The fix (solution/portal/app.py) makes the pending ->
+# approving transition one atomic `UPDATE ... WHERE status = 'pending'`
+# and has every caller that does NOT win that race simply wait for and
+# report the one real attempt's result, instead of ever calling
+# `provision()` itself -- safe against a literal simultaneous race, not
+# just a sequential retry.
+slug: build-the-access-request-portal
+version: 1.0.0
+title: "Build the page where teams request access"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  A small portal sits in front of one LiteLLM gateway. Teams submit access
+  requests, an approver signs off, and only then should anything get
+  provisioned -- but one part of the approval flow can grant access twice.
+objectives:
+  - "Keep a request's write path (submit) and its grant path (approve) genuinely separate, with nothing provisioned in between"
+  - "Make a state-changing action idempotent under a real concurrent retry, not just a sequential one"
+  - "Prove an approval boundary (who may approve, what gets granted) against the gateway's own admin API, not the portal's own bookkeeping"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  LITELLM_URL: "http://127.0.0.1:4000"
+  LITELLM_MASTER_KEY: "sk-opalix-access-portal-master"
+  APPROVER_TOKEN: "opalix-access-portal-approver-secret"
+  PORTAL_URL: "http://127.0.0.1:8973"
+  PROVIDER_URL: "http://127.0.0.1:8971"
+
+services:
+  # Copied from test/fixtures/labs/gateway-litellm-hello / labs/one-endpoint-
+  # one-key -- see that lab's manifest for why each line of this argv
+  # exists (template copied in once, then exec as the postgres OS user via
+  # runuser, data dir under /tmp because /workspace is chowned to `learner`).
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+  - name: provider
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8971"
+    port: 8971
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: litellm
+    # ui: false -- the admin UI always requires a login (see
+    # one-endpoint-one-key's manifest / docs/spike.md for the confirmed
+    # reason). This lab ships no substitute view tab for it: the portal's
+    # own GET /requests/{id} already shows a learner everything about
+    # their own request they need to see.
+    argv: ["litellm", "--config", "/workspace/gateway/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-access-portal-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh).
+      DISABLE_SCHEMA_UPDATE: "True"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # The database starts pre-migrated, so LiteLLM boots quickly; 90s
+      # leaves room for a slow container without hiding a real failure.
+      timeout_s: 90
+    ui: false
+    depends_on: [postgres, provider]
+  - name: portal
+    # The lab's own subject. workspace/portal/app.py is the learner's file
+    # to fix; killing and restarting this service (the session's Services
+    # panel, or `POST /sessions/:id/services/portal/restart`) picks up an
+    # edit -- the same restart-after-edit workflow as any other running
+    # service in this family. Grading never depends on this live instance
+    # at all: checks/_harness.py starts its own fresh copy of the current
+    # workspace/portal/app.py against its own throwaway LiteLLM.
+    argv: ["python3", "-B", "/workspace/portal/app.py"]
+    cwd: /workspace
+    env:
+      PORTAL_PORT: "8973"
+      LITELLM_URL: "http://127.0.0.1:4000"
+      LITELLM_MASTER_KEY: "sk-opalix-access-portal-master"
+      APPROVER_TOKEN: "opalix-access-portal-approver-secret"
+      PORTAL_DB_PATH: "/tmp/access-request-portal/requests.db"
+    port: 8973
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: false
+    depends_on: [litellm]
+
+pressure: []
+
+checks:
+  # None of these read the learner's code directly -- each one shares one
+  # grader-run's worth of setup with the other three (its own fresh
+  # LiteLLM against a throwaway database, its own copy of the learner's
+  # *current* portal/app.py against a fresh SQLite database, then real HTTP
+  # calls) -- see checks/_harness.py. Sequential on purpose: whichever
+  # check runs first pays the setup cost and the other three just read its
+  # result.
+  - name: request-grants-nothing-yet
+    script: request-grants-nothing-yet.sh
+    timeout_s: 240
+    weight: 1
+    parallel: false
+  - name: approval-grants-exactly-the-requested-models
+    script: approval-grants-exactly-the-requested-models.sh
+    timeout_s: 240
+    weight: 2
+    parallel: false
+  - name: only-the-approver-can-approve
+    script: only-the-approver-can-approve.sh
+    timeout_s: 240
+    weight: 2
+    parallel: false
+  # The check the planted bug actually fails: approving the same request
+  # twice -- sequentially, and as a genuine concurrent race between two
+  # threads -- must never leave more than one team or one key behind,
+  # confirmed against LiteLLM's own admin API, never the portal's own
+  # database.
+  - name: approving-twice-does-not-double-provision
+    script: approving-twice-does-not-double-provision.sh
+    timeout_s: 240
+    weight: 2
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 13
+    text: >-
+      Submit a request, then call GET /requests/{id} on it before approving
+      anything. Then look at what /requests/{id}/approve actually does in
+      workspace/portal/app.py, specifically what it checks (or doesn't)
+      about the request's current `status` before it goes anywhere near
+      LiteLLM's admin API.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Approve the same request id twice in a row with curl. Then look at
+      LiteLLM's own /team/list and /key/list (with the master key) for that
+      team -- not just what the portal's own GET /requests/{id} reports.
+      One of those two admin-API lists will surprise you; the portal's own
+      database will not, because it only ever remembers the most recent
+      thing that happened to a request.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      A plain "if the request's status isn't already 'approved', go ahead
+      and provision it" check is still not safe -- two callers can both
+      read 'pending' before either has written anything back. The fix
+      needs the check-and-transition to happen as one atomic step the
+      database itself arbitrates (an UPDATE with the current status in its
+      WHERE clause, read by its own affected-row count), so that only ONE
+      caller for a given request ever proceeds to call LiteLLM at all;
+      every other caller for that same request should just wait for and
+      report that one attempt's result.
+
+egress:
+  allow: []

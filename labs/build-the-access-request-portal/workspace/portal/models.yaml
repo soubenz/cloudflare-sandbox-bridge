@@ -1,0 +1,10 @@
+# The models a team may request through this portal. This is the whole
+# catalog a requester ever sees -- POST /requests refuses any model name
+# that isn't listed here.
+#
+# `platform-internal` exists on the gateway (see ../gateway/config.yaml)
+# but is deliberately never listed below: no request this portal ever
+# approves can grant it, no matter what a caller asks for.
+models:
+  - docs-writer
+  - code-helper

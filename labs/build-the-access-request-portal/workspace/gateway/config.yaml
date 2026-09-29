@@ -1,0 +1,27 @@
+# Three aliases on one scripted provider process with three "deployments"
+# (just three different URL paths, /a/v1, /b/v1 and /c/v1 -- see
+# workspace/services/fake_provider.py). A caller only ever names the alias;
+# LiteLLM decides which deployment actually answers.
+#
+# `platform-internal` is not a typo and is never requestable through the
+# portal: portal/models.yaml (the portal's own catalog of what a team may
+# ask for) never lists it, and the portal's own validation refuses any
+# request that names it. It exists here only so a check can prove that an
+# approved key -- however it was minted -- still can't reach it, the same
+# anti-cheat shape as labs/one-endpoint-one-key's `internal-eval`.
+model_list:
+  - model_name: docs-writer
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8971/a/v1
+      api_key: unused
+  - model_name: code-helper
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8971/b/v1
+      api_key: unused
+  - model_name: platform-internal
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8971/c/v1
+      api_key: unused
