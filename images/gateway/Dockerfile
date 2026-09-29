@@ -418,6 +418,56 @@ RUN python3 -m venv /opt/opalix/venvs/see-why-a-document-matched \
     opentelemetry-exporter-otlp-proto-http openinference-semantic-conventions \
     && /opt/opalix/venvs/see-why-a-document-matched/bin/python -c "import fastapi, uvicorn, psycopg2, opentelemetry.sdk.trace, openinference.semconv.trace"
 
+# Presidio + spaCy, for Module 7's labs/strip-personal-data-before-it-leaves.
+# Its own isolated venv, not this image's shared pip environment --
+# CONFIRMED, not just suspected: installing litellm[proxy]==1.102.1 and
+# presidio-anonymizer==2.2.364 into the same venv produces a real pip
+# dependency-resolver conflict --
+#   presidio-anonymizer 2.2.364 requires cryptography<49.0.0,>=48.0.1,
+#   but litellm[proxy] pulls in cryptography 50.0.1 (transitively, via its
+#   own proxy extras) and pip's resolver silently keeps the newer,
+#   out-of-range one installed instead of failing the install outright.
+# That is exactly the kind of collision this image's shared environment
+# already juggles between litellm and mlflow (see the MLflow block above)
+# and a THIRD heavy, separately-pinned dependency tree is not worth adding
+# to it, especially one (spaCy's own C-extension stack: numpy, thinc,
+# blis, murmurhash, preshed, cymem) that risks an ABI mismatch rather than
+# just a version-string mismatch if it silently shares a numpy with
+# whatever litellm/mlflow already loaded into the same interpreter.
+#
+# hooks/pii_guard.py reaches this install with a small sys.path shim (see
+# that file's own top-of-file comment) rather than needing this installed
+# into litellm's own venv at all -- so this venv's site-packages only ever
+# need to be *importable* from the litellm process, never *installed
+# alongside* litellm's own dependencies. This is the same
+# isolate-the-risky-dependency shape as ContextForge's own Python 3.12 venv
+# in images/agent/Dockerfile and this image's own Phoenix block above, just
+# without a wrapper binary, since nothing needs to invoke a `presidio` CLI
+# the way `phoenix` or `mcpgateway` are invoked directly.
+#
+# en_core_web_sm and es_core_news_sm are pre-downloaded here, at build
+# time, and loaded once as a smoke test -- exactly like Phoenix's WASM
+# binary and this project's other model/binary pre-fetches, because lab
+# containers have no network at runtime (the egress fence) and a bare
+# `AnalyzerEngine()` with no explicit model config would otherwise try to
+# download spaCy's 400MB en_core_web_lg over the network on first use and
+# fail outright. Both models are small (~15MB and ~16MB) -- confirmed live
+# in this session's own feasibility investigation, along with confirming
+# real PERSON/EMAIL_ADDRESS/PHONE_NUMBER/CREDIT_CARD/US_SSN detection in
+# both English and Spanish text using exactly these two models, and
+# confirming the whole pipeline needs no network at all once they're on
+# disk (tested inside a real `unshare --net` namespace).
+RUN python3 -m venv /opt/opalix/venvs/presidio \
+    && /opt/opalix/venvs/presidio/bin/pip install --no-cache-dir \
+       "presidio-analyzer==2.2.364" "presidio-anonymizer==2.2.364" "spacy==3.8.16" \
+    && /opt/opalix/venvs/presidio/bin/python -m spacy download en_core_web_sm \
+    && /opt/opalix/venvs/presidio/bin/python -m spacy download es_core_news_sm \
+    && /opt/opalix/venvs/presidio/bin/python -c "\
+import presidio_analyzer, presidio_anonymizer, spacy; \
+spacy.load('en_core_web_sm'); \
+spacy.load('es_core_news_sm'); \
+print('presidio + both spacy models import and load cleanly')"
+
 # `prisma generate` must run at build time, against the schema shipped
 # inside litellm_proxy_extras, because it's the one step in this whole
 # install that reaches the network: it downloads a Node-based Prisma CLI
