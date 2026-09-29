@@ -1,0 +1,30 @@
+# Three aliases, one scripted provider process with two "deployments" (just
+# two different URL paths, /a/v1 and /b/v1 -- see
+# workspace/services/fake_provider.py). A caller only ever names the alias;
+# LiteLLM decides which deployment actually answers.
+#
+# `confidential-eval` is not a typo and not for any team: it is the
+# platform's own alias, and it is deliberately never listed in any team's
+# `models` in platform/team_catalog.yaml. A key scoped to a team can only
+# ever be used for that team's own allowed models -- so no key
+# platform/onboard.py hands out, however it was created, can ever call
+# `confidential-eval` through this gateway.
+model_list:
+  - model_name: standard
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/a/v1
+      api_key: unused
+  - model_name: priority
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/b/v1
+      api_key: unused
+  - model_name: confidential-eval
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/a/v1
+      api_key: unused
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

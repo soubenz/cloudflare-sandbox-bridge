@@ -1,0 +1,37 @@
+# The platform's own record of every team that may be onboarded, and what
+# each one should be able to reach once it is. Onboarding a team means
+# running `python3 -B platform/onboard.py <team-name>` for a name listed
+# under `teams:` below -- it must not invent a team that isn't here, and it
+# must not grant a team anything beyond what its own entry lists.
+#
+# `tool_servers` is platform-wide infrastructure: every MCP tool server the
+# platform already runs (see workspace/services/*.py), independent of any
+# one team. Onboarding a team never builds one of these -- it only ever
+# bundles a *subset* of what's already there into that team's own virtual
+# server.
+
+tool_servers:
+  - wiki
+  - tickets
+
+teams:
+  growth:
+    models: [standard, priority]
+    budget_usd: 25.0
+    tools:
+      - server: wiki
+        tool: search_wiki
+      - server: tickets
+        tool: create_ticket
+
+  data-science:
+    models: [standard]
+    budget_usd: 10.0
+    tools:
+      - server: wiki
+        tool: search_wiki
+
+# tickets.escalate_and_page_oncall is intentionally NOT listed under any
+# team above -- see services/tickets_server.py's own docstring for why.
+# confidential-eval (gateway/config.yaml) is intentionally not listed under
+# any team's `models` either.

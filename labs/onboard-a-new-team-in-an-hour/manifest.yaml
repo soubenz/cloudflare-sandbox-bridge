@@ -1,0 +1,264 @@
+# A build lab, not break-fix: platform/onboard.py is a working script, not
+# a TODO stub -- it really does create a LiteLLM team, its budget, a
+# model-scoped key, register every tool server with ContextForge, and write
+# a real credentials.json + example.py for the team. It has exactly one
+# planted mistake, in the one place none of the other three labs' own
+# TODO-driven setup.py had to get right on their own: when it builds the
+# list of ContextForge tool ids to bundle into a *new* team's own virtual
+# server, it bundles every tool the platform has ever federated instead of
+# filtering down to the tools team_catalog.yaml actually lists for that one
+# team. A team onboarded this way gets a working example for its own
+# tools (so the happy path looks fine) but its client token can also reach
+# every other team's tools, and the one tool no team was ever granted
+# (tickets.escalate_and_page_oncall). See workspace/platform/onboard.py's
+# own comment at that line, and solution/platform/onboard.py's fix
+# (find_tool_id, filtered by this team's own team_catalog.yaml entry).
+#
+# This lab combines the two admin APIs labs/one-endpoint-one-key and
+# labs/one-endpoint-for-every-tool each proved separately: LiteLLM
+# 1.102.1's team/key/budget endpoints, and ContextForge 1.0.10's
+# gateway/virtual-server/token endpoints. Every fact those two labs'
+# manifests document about those APIs (team keys inherit their team's
+# model list; a federated tool's name is derived from the gateway's name
+# and the tool's own name; a virtual server's `associated_tools` field is
+# snake_case and NOT the same as the `associatedTools` the read-back
+# response shows; minting a token needs `scope: {server_id, permissions}`
+# plus `expires_in_days`; DELETE on a token revokes but never frees its
+# name) applies identically here and is not re-derived -- see those two
+# labs' own manifest header comments for the live proof. Both gateways
+# were confirmed live, together, in the same container, while writing this
+# lab (docs for Path 2 Module 6's onboarding investigation).
+#
+# Postgres is mandatory for LiteLLM's team/key/budget layer, same as every
+# other LiteLLM-based lab (Prisma schema hard-coded to
+# provider = "postgresql"). Neither gateway's own admin UI is a safe
+# `ui: true` tab under the no-login rule -- LiteLLM's always requires a
+# login, and a browser-shaped request to ContextForge's dashboard is
+# redirected to a real /admin/login form even with the anonymous-admin
+# bypass on for scripts (see one-endpoint-for-every-tool's manifest for the
+# live proof of that second one) -- so both are `ui: false` and `view`
+# (workspace/services/view.py) is this lab's own read-only substitute.
+
+slug: onboard-a-new-team-in-an-hour
+version: 1.0.0
+title: "Onboard a new team in under an hour"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  Onboarding a new team means a model key, a budget and scoped tool access
+  in one command -- as shipped, it hands a new team a working example, but
+  also every other team's tools.
+objectives:
+  - "Provision a LiteLLM team, its budget and a model-scoped key from one script, against the platform's own admin API"
+  - "Provision ContextForge tool access scoped to exactly one team's own tool list, not to everything the gateway has ever federated"
+  - "Ship a real, immediately-runnable example alongside the credentials it depends on, so a new team member never has to configure anything by hand"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  LITELLM_URL: "http://127.0.0.1:4000"
+  LITELLM_MASTER_KEY: "sk-opalix-onboard-master"
+  CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+  WIKI_URL: "http://127.0.0.1:8901/mcp"
+  TICKETS_URL: "http://127.0.0.1:8902/mcp"
+
+services:
+  # Copied from test/fixtures/labs/gateway-litellm-hello/ -- see that
+  # fixture's manifest for why each line of this argv exists (template
+  # copied in once, then exec as the postgres OS user via runuser, data
+  # dir under /tmp because /workspace is chowned to `learner`).
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+  - name: provider
+    # A scripted stand-in for a model provider -- see services/fake_provider.py.
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8961"
+    port: 8961
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: wiki
+    # The docs team's own MCP tool server -- see services/wiki_server.py.
+    argv: ["python3", "-B", "/workspace/services/wiki_server.py"]
+    cwd: /workspace
+    env:
+      WIKI_PORT: "8901"
+    port: 8901
+    healthcheck:
+      type: tcp
+      timeout_s: 20
+    ui: false
+    depends_on: []
+  - name: tickets
+    # The support team's own MCP tool server -- see services/tickets_server.py.
+    # Exposes two tools; only one belongs in any team's onboarding bundle.
+    argv: ["python3", "-B", "/workspace/services/tickets_server.py"]
+    cwd: /workspace
+    env:
+      TICKETS_PORT: "8902"
+    port: 8902
+    healthcheck:
+      type: tcp
+      timeout_s: 20
+    ui: false
+    depends_on: []
+  - name: litellm
+    # ui: false -- the admin UI always requires a login; `view` is the tab.
+    argv: ["litellm", "--config", "/workspace/gateway/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-onboard-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh).
+      DISABLE_SCHEMA_UPDATE: "True"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # The database starts pre-migrated, so LiteLLM boots in ~25-33s live
+      # (docs/spike.md, "Gateway boot with a pre-migrated database"); 90s
+      # leaves room for a slow container without hiding a real failure.
+      timeout_s: 90
+    ui: false
+    depends_on: [postgres, provider]
+  - name: contextforge
+    # ui: false -- its own admin dashboard redirects a browser to a real
+    # login form even with the anonymous-admin bypass on (see
+    # one-endpoint-for-every-tool's manifest for the live proof); `view` is
+    # the tab instead. The bypass IS real for a script/server-side call
+    # with no browser-shaped Accept header -- exactly what
+    # platform/onboard.py and services/view.py both rely on.
+    argv: ["mcpgateway", "--host", "0.0.0.0", "--port", "4744"]
+    cwd: /workspace
+    env:
+      AUTH_REQUIRED: "false"
+      ALLOW_UNAUTHENTICATED_ADMIN: "true"
+      MCPGATEWAY_UI_ENABLED: "true"
+      MCPGATEWAY_ADMIN_API_ENABLED: "true"
+      # Every tool server in this lab is loopback, inside this same
+      # container -- SSRF protection blocks that by default.
+      SSRF_ALLOW_LOCALHOST: "true"
+      # Without this, a bad request body comes back as the opaque "An
+      # error occurred, please try again." -- a training environment
+      # should show the real field-level message instead.
+      EXPOSE_ERROR_DETAILS: "true"
+      DATABASE_URL: "sqlite:////tmp/contextforge/mcp.db"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      # Fixed, lab-only secrets (this gateway holds no real credentials) --
+      # each satisfies ContextForge's own minimum-length/entropy checks.
+      # Never reused outside this lab.
+      JWT_SECRET_KEY: "T2Yqk1PznW1hqkYQeSTPvxXZ0aFhFkTQ4WKQuNBn7yQ"
+      AUTH_ENCRYPTION_SECRET: "6cQm8-yQ2Yv1_p6C1ZKUqOe1CqRXG9RC5nZlH0Cw3ns"
+      BASIC_AUTH_PASSWORD: "Kx83RmNq1YvR0m5aVeTdQpLZ"
+      PLATFORM_ADMIN_PASSWORD: "Wb2VqLpX8mR0eYcAaHkUfTsD"
+      DEFAULT_USER_PASSWORD: "Fh6QpAaYnB4vLc0mRkTeXsWd"
+    port: 4744
+    healthcheck:
+      type: http
+      path: /health
+      # First boot runs ContextForge's own migrations against a fresh
+      # SQLite file -- proven live at ~10-11s cold in the sibling lab; 60s
+      # leaves headroom for a slower container without hiding a real
+      # failure.
+      timeout_s: 60
+    ui: false
+    depends_on: [wiki, tickets]
+  - name: view
+    # This lab's read-only substitute for both gateways' own (login-gated
+    # or bypass-unsafe) admin surfaces -- services/view.py. Never accepts a
+    # write and never returns a usable key or token.
+    argv: ["python3", "-B", "/workspace/services/view.py"]
+    cwd: /workspace
+    env:
+      VIEW_PORT: "8904"
+      LITELLM_URL: "http://127.0.0.1:4000"
+      LITELLM_MASTER_KEY: "sk-opalix-onboard-master"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+    port: 8904
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: [litellm, contextforge]
+
+pressure: []
+
+checks:
+  # None of these read platform/onboard.py. Each one shares one grader
+  # run's worth of setup (its own LiteLLM + its own ContextForge, both
+  # against fresh throwaway state, pointed at the learner's *current*
+  # workspace/gateway/config.yaml and platform/, then the learner's own
+  # onboard.py run for two different catalogue teams) -- see
+  # checks/_harness.py. Sequential on purpose: whichever check runs first
+  # pays that setup cost and the other two just read its result.
+  - name: onboarded-team-gets-what-it-needs
+    script: onboarded-team-gets-what-it-needs.sh
+    timeout_s: 240
+    weight: 2
+    parallel: false
+  # The crux: catches the planted mistake directly.
+  - name: onboarding-does-not-leak-across-teams
+    script: onboarding-does-not-leak-across-teams.sh
+    timeout_s: 240
+    weight: 2
+    parallel: false
+  - name: each-team-gets-its-own-real-budget
+    script: each-team-gets-its-own-real-budget.sh
+    timeout_s: 240
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      Run `python3 -B platform/onboard.py growth`, then open the view tab
+      and platform/onboarded/growth/. A LiteLLM team, a key, a
+      ContextForge virtual server and a working example.py should all
+      exist. Now run `python3 -B platform/onboard.py data-science` too,
+      and compare what each team's own virtual server actually bundles
+      against what platform/team_catalog.yaml says each one should have.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Both team's example.py will work fine on their own -- that's not
+      where the mistake shows up. Use the view tab's "ContextForge
+      federated tools" table and "virtual servers" table together: how
+      many tools does the gateway know about in total, and how many does
+      each team's own virtual server actually bundle? One number should
+      be smaller than the other, per team.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      Look at the loop that builds `tool_ids` for a team's virtual server
+      in platform/onboard.py: it feeds `ensure_virtual_server` every tool
+      currently federated onto the gateway, not the specific
+      `server`/`tool` pairs team_catalog.yaml lists under *that team's
+      own* `tools` entry. Resolve each of that team's own entries to a
+      real tool id first (matching on the tool's `federationSource` and
+      `originalName`, the same way you'd look up any other federated
+      tool), and bundle only those.
+
+egress:
+  allow: []
