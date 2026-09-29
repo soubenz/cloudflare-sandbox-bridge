@@ -23,7 +23,11 @@ model_list:
       model: openai/fake-model
       api_base: os.environ/REGIONAL_PROXY_EU_URL
       api_key: unused
-      weight: 100
+      # Weighted 5000:1 against the planted bug's own deployment below,
+      # not just 100:1 -- this lab's own checks demand ZERO leakage even
+      # while everything is healthy (not just "mostly EU"), so the healthy
+      # path needs to be effectively deterministic, not just "very likely".
+      weight: 5000
     model_info:
       region: eu
       data_residency_zone: "eu-only"

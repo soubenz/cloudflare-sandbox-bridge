@@ -23,7 +23,7 @@ model_list:
       model: openai/fake-model
       api_base: os.environ/REGIONAL_PROXY_EU_URL
       api_key: unused
-      weight: 100
+      weight: 5000
     model_info:
       region: eu
       data_residency_zone: "eu-only"
