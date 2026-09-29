@@ -1,0 +1,44 @@
+# Jaeger v2.21.0 all-in-one, in-memory storage + the v3 query API. The OTLP
+# receiver here is moved to 14317/14318 -- NOT the canonical 4317/4318 --
+# because otelcol-contrib sits in front of Jaeger in this lab and needs
+# 4317/4318 for itself.
+service:
+  extensions: [jaeger_storage, jaeger_query]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+  telemetry:
+    resource:
+      service.name: jaeger
+    metrics:
+      level: none
+    logs:
+      level: info
+
+extensions:
+  jaeger_query:
+    storage:
+      traces: some_storage
+
+  jaeger_storage:
+    backends:
+      some_storage:
+        memory:
+          max_traces: 100000
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:14317"
+      http:
+        endpoint: "0.0.0.0:14318"
+
+processors:
+  batch:
+
+exporters:
+  jaeger_storage_exporter:
+    trace_storage: some_storage

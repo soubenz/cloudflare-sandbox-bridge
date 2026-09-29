@@ -1,0 +1,19 @@
+# Two aliases on one gateway. `feature-model` is the one the template
+# service calls -- reached only through the fault proxy in front of it, so
+# the grader can make it hang on demand without touching this file.
+# `other-team-model` stands in for some *other* feature team's own alias on
+# the same shared gateway: it never has an outage, and the template's own
+# credential (see gateway/seed_key.py) must not be able to reach it.
+model_list:
+  - model_name: feature-model
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8973
+      api_key: unused
+  - model_name: other-team-model
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8971/b/v1
+      api_key: unused
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

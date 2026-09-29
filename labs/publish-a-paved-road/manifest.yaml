@@ -1,0 +1,291 @@
+# Module 6 ("Build"), gateway family. Catalogue's own "what makes it hard":
+# defaults that make the safe path the fast path.
+#
+# --- The scenario ---------------------------------------------------------
+# workspace/template/ is the starter "AI feature" service every new feature
+# team is meant to copy as their own starting point: real Flask, real HTTP,
+# one route (/answer) that calls out through the shared LiteLLM gateway for
+# a model response. The whole point of a paved road is that a team copying
+# it gets three safe defaults for free, without doing anything themselves:
+#
+#   1. a bounded timeout + a bounded retry on the outbound call to the
+#      gateway, so one hung provider can never block the feature forever;
+#   2. a credential scoped to exactly the one alias this service needs,
+#      never the gateway's master key;
+#   3. real tracing, wired to the same OTel Collector / Jaeger stack every
+#      other service on this platform already reports to.
+#
+# (1) and (2) are genuinely done right in the skeleton. (3) looks done
+# right -- it imports the real SDK, builds a real TracerProvider, attaches
+# a real OTLP exporter -- but never calls trace.set_tracer_provider(...)
+# before pulling a tracer with trace.get_tracer(...). Nothing here raises
+# or logs an error: every span the app "creates" (and every span its own
+# Flask/requests auto-instrumentation tries to create) resolves against the
+# SDK's default no-op tracer provider instead and is thrown away. A team
+# that copies this file gets a service that looks fully instrumented and
+# exports nothing, ever -- the exact "provider.get_tracer vs
+# trace.get_tracer" trap this platform's other Module 4 tracing labs
+# document and guard against explicitly (see e.g.
+# labs/see-one-request-across-every-service/workspace/services/gateway.py's
+# own comment on this). The fix is one line: register the provider before
+# anything asks for a tracer. See solution/template/app.py.
+#
+# --- Why a real fault-capable provider, not a mock -------------------------
+# The timeout+retry default is real and it needs a real way to prove it:
+# fault_proxy.py (workspace/services/, the same shape proven live in
+# labs/keep-answering-when-a-provider-fails) sits in front of deployment a
+# on the scripted provider and can be put into `slow` mode on demand --
+# sleeping 30s before answering, long enough that anything without its own
+# bounded timeout would hang for the whole sleep or longer. The grader
+# drives this the same way keep-answering-when-a-provider-fails' own
+# checks do: the fault proxy's admin endpoint, never the template's code.
+#
+# --- Why a second alias and a real scoped-key check -------------------------
+# `other-team-model` (workspace/gateway/config.yaml) stands in for some
+# *other* feature team's own alias on the same shared gateway -- reached
+# directly, never through the fault proxy, never having an outage. The
+# template's own credential (minted by workspace/gateway/seed_key.py with
+# LiteLLM's own master key, at session start, the same POST /key/generate
+# with a `models` restriction proven in labs/one-endpoint-one-key) must
+# authenticate as itself and reach `feature-model` -- and must be refused
+# for `other-team-model` and for the master key's own admin-only endpoints.
+# Grading confirms this against LiteLLM's own GET /key/info and a real
+# chat-completions call with that exact key, never by reading the
+# credential's shape and assuming it means what it says. It also proves the
+# RUNNING template actually authenticates with that exact credential, not
+# just that a correctly-scoped one happens to sit on disk next to a service
+# that might really be using something else: it blocks credentials.json's
+# own key at the gateway (POST /key/block) and fires a real call straight
+# through the template's own /answer -- a "wrong fix" that quietly swaps in
+# the master key still answers normally while that key is blocked, which is
+# exactly what catches it.
+#
+# --- Postgres, and the no-login rule ---------------------------------------
+# Postgres is mandatory here (LiteLLM's virtual-key layer is backed by a
+# Prisma schema hard-coded to `provider = "postgresql"`) -- same
+# template-copy/runuser dance as labs/one-endpoint-one-key's own manifest.
+# `litellm` stays `ui: false` (its own admin UI always requires a login);
+# nothing here needed to replace it with a view tab -- Jaeger's own UI
+# needs no login either (proven in this module's other tracing labs) and
+# is this lab's one tab.
+#
+# --- Grading (checks/_harness.py) ------------------------------------------
+# Outcome-based, shared-run harness (same shape as
+# labs/see-one-request-across-every-service/checks/_harness.py): fires real
+# requests straight through the ALREADY-RUNNING template service -- one
+# normal call, one against a provider the grader has put into `slow` mode
+# -- reads real facts back from the already-running Jaeger and LiteLLM, and
+# writes one shared results.json the other checks just read. Nothing here
+# reads workspace/template/app.py's source.
+slug: publish-a-paved-road
+version: 1.0.0
+title: "Publish a paved road for a new AI feature"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  workspace/template/ is the starter service every AI feature team copies.
+  It should already do the right thing by default -- a bounded timeout, a
+  scoped credential, and tracing wired to Jaeger -- but one default only
+  looks safe.
+objectives:
+  - "Tell a service that looks fully instrumented from one that actually exports a single span"
+  - "Confirm real spans for an ordinary call actually reach Jaeger, not just that the SDK imports cleanly"
+  - "Leave the other paved-road defaults exactly as they are: the bounded timeout+retry and the scoped credential are already correct"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  PROVIDER_URL: "http://127.0.0.1:8971"
+  FAULT_PROXY_URL: "http://127.0.0.1:8973"
+  LITELLM_URL: "http://127.0.0.1:4000"
+  LITELLM_MASTER_KEY: "sk-opalix-ppr-master"
+  TEMPLATE_URL: "http://127.0.0.1:8980"
+  JAEGER_QUERY_URL: "http://127.0.0.1:16686"
+  OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318"
+  CREDENTIALS_FILE: "/workspace/template/credentials.json"
+  MODEL_NAME: "feature-model"
+  # Manifest-level so checks/_harness.py (which only sees manifest-level
+  # env, never a service's own env overrides) agrees with the fault-proxy
+  # service below on exactly how long a hang lasts.
+  FAULT_SLOW_SECONDS: "30"
+
+services:
+  # Copied from test/fixtures/labs/gateway-litellm-hello/ -- template copied
+  # in once, then exec as the postgres OS user via runuser, data dir under
+  # /tmp because /workspace is chowned to `learner`.
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+
+  - name: provider
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8971"
+    port: 8971
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+
+  - name: fault-proxy
+    argv: ["python3", "-B", "/workspace/services/fault_proxy.py"]
+    cwd: /workspace
+    env:
+      FAULT_PROXY_PORT: "8973"
+      UPSTREAM_URL: "http://127.0.0.1:8971/a/v1"
+      FAULT_SLOW_SECONDS: "30"
+    port: 8973
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [provider]
+
+  - name: litellm
+    # ui: false -- litellm's own admin UI always requires a login.
+    argv: ["litellm", "--config", "/workspace/gateway/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-ppr-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh).
+      DISABLE_SCHEMA_UPDATE: "True"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      timeout_s: 90
+    ui: false
+    depends_on: [postgres, fault-proxy]
+
+  - name: seed
+    # Mints the template's own scoped credential once litellm is ready.
+    # /healthz only answers 200 once a real credential is on disk -- see
+    # workspace/gateway/seed_key.py.
+    argv: ["python3", "-B", "/workspace/gateway/seed_key.py"]
+    cwd: /workspace
+    env:
+      LITELLM_URL: "http://127.0.0.1:4000"
+      LITELLM_MASTER_KEY: "sk-opalix-ppr-master"
+      CREDENTIALS_FILE: "/workspace/template/credentials.json"
+      MODEL_NAME: "feature-model"
+      SEED_PORT: "8974"
+    port: 8974
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 90
+    ui: false
+    depends_on: [litellm]
+
+  - name: otelcol
+    argv: ["otelcol-contrib", "--config", "file:/workspace/otelcol-config.yaml"]
+    cwd: /workspace
+    port: 4317
+    healthcheck:
+      type: tcp
+      timeout_s: 30
+    ui: false
+    depends_on: []
+
+  - name: jaeger
+    argv: ["jaeger", "--config", "file:/workspace/jaeger/jaeger-config.yaml"]
+    cwd: /workspace
+    port: 16686
+    healthcheck:
+      type: http
+      path: /
+      timeout_s: 30
+    ui: true
+    depends_on: []
+
+  - name: template
+    # The skeleton you fix. See brief.md.
+    argv: ["python3", "-B", "/workspace/template/app.py"]
+    cwd: /workspace
+    env:
+      OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318"
+      LITELLM_URL: "http://127.0.0.1:4000"
+      MODEL_NAME: "feature-model"
+      CREDENTIALS_FILE: "/workspace/template/credentials.json"
+      TEMPLATE_PORT: "8980"
+    port: 8980
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 60
+    ui: false
+    depends_on: [seed, otelcol]
+
+pressure: []
+
+checks:
+  # Sequential on purpose (same reasoning as this module's other shared-run
+  # labs): whichever check runs first pays the cost of the two fired
+  # requests and the Jaeger poll; the other two just read its result.
+  - name: a-hung-provider-does-not-block-the-feature
+    script: a-hung-provider-does-not-block-the-feature.sh
+    timeout_s: 240
+    weight: 1
+    parallel: false
+  - name: normal-calls-show-up-in-jaeger
+    script: normal-calls-show-up-in-jaeger.sh
+    timeout_s: 240
+    weight: 2
+    parallel: false
+  - name: the-templates-credential-is-scoped
+    script: the-templates-credential-is-scoped.sh
+    timeout_s: 240
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 13
+    text: >-
+      POST a question to the template's own /answer endpoint (see brief.md
+      for the exact call), then open the jaeger tab and search for
+      service opalix-template. Nothing about the request fails -- so
+      where do you look if the call itself works fine but nothing shows up?
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      workspace/template/app.py builds a real TracerProvider and attaches a
+      real OTLP exporter to it -- so the exporter isn't the problem. Check
+      whether that provider is ever actually registered as the one the
+      OpenTelemetry API hands out. If nothing in this file ever calls
+      trace.set_tracer_provider(...), every tracer this file (and its own
+      Flask/requests auto-instrumentation) gets back is the SDK's default
+      no-op one -- and a no-op tracer never raises an error, it just throws
+      every span away.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      Register the provider you already built --
+      `trace.set_tracer_provider(provider)` -- once, before anything calls
+      trace.get_tracer(...) for the first time (module import order matters
+      here, not just where the request-handling code runs). Getting the
+      tracer itself from `provider.get_tracer(...)` afterward, the same way
+      this platform's other tracing labs do it, makes it obvious at a
+      glance that the tracer actually comes from the provider you built.
+
+egress:
+  allow: []
