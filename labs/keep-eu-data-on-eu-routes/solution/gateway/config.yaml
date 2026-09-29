@@ -1,0 +1,72 @@
+# Reference solution. The fix is a deletion, not an addition: eu-data-only
+# goes back to being a single-deployment model group. Verified live
+# (this lab's own build/verification run) that this is sufficient by
+# itself -- LiteLLM 1.102.1's router has nowhere else to send a call for a
+# model group with exactly one deployment. No `fallbacks:` entry exists
+# naming eu-data-only either, so there is no second path, configured or
+# accidental, for this alias to take out of the EU. When provider-eu (via
+# regional-proxy-eu) is down, a call through eu-data-only gets a real
+# 503/429 back -- never a silent answer from another region -- and
+# provider-us/provider-apac's own request logs stay at zero for the whole
+# outage.
+#
+# global-support is untouched: it keeps its three real deployments (eu
+# preferred by weight, us/apac as genuine cross-region fallbacks), so
+# router_settings' shared allowed_fails/cooldown_time/enable_weighted_
+# failover keep doing for it exactly what they do in labs/keep-answering-
+# when-a-provider-fails -- proving the fix is specific to eu-data-only, not
+# a platform-wide "no fallback" setting that would also break
+# global-support's own resiliency.
+model_list:
+  - model_name: eu-data-only
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/REGIONAL_PROXY_EU_URL
+      api_key: unused
+      weight: 100
+    model_info:
+      region: eu
+      data_residency_zone: "eu-only"
+
+  - model_name: global-support
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/REGIONAL_PROXY_EU_URL
+      api_key: unused
+      weight: 100
+    model_info:
+      region: eu
+      data_residency_zone: "unrestricted"
+
+  - model_name: global-support
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/PROVIDER_US_URL
+      api_key: unused
+      weight: 1
+    model_info:
+      region: us
+      data_residency_zone: "unrestricted"
+
+  - model_name: global-support
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/PROVIDER_APAC_URL
+      api_key: unused
+      weight: 1
+    model_info:
+      region: apac
+      data_residency_zone: "unrestricted"
+
+router_settings:
+  routing_strategy: simple-shuffle
+  enable_weighted_failover: true
+  allowed_fails: 2
+  cooldown_time: 20
+  num_retries: 1
+
+litellm_settings:
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

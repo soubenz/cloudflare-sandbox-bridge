@@ -1,0 +1,88 @@
+# Two aliases on the same gateway:
+#
+#   eu-data-only   -- for data that must never leave the EU. Reaches
+#                      provider-eu only through regional-proxy-eu (the same
+#                      second real hop labs/prove-where-one-requests-data-
+#                      went built for support-eu).
+#   global-support -- for everything else. May reach any region, and is
+#                      expected to fail over across regions when one is down
+#                      (weight strongly prefers eu while it's healthy).
+#
+# Both are real LiteLLM model groups (one model_name, one or more
+# deployments) -- the exact mechanism labs/keep-answering-when-a-provider-
+# fails uses to give `support` a second, cross-provider path when its one
+# deployment has an outage. That lab's own reference solution is reused
+# here for global-support's resiliency: `weight` biases normal traffic
+# toward the preferred deployment, and `enable_weighted_failover` (in
+# router_settings, below) is what keeps the very first call of an outage
+# from failing outright by letting a retry re-pick a different deployment
+# rather than the one that just failed.
+model_list:
+  - model_name: eu-data-only
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/REGIONAL_PROXY_EU_URL
+      api_key: unused
+      weight: 100
+    model_info:
+      region: eu
+      data_residency_zone: "eu-only"
+
+  # Added "for resiliency" the same way global-support below gets its
+  # second path -- every other alias on this gateway has a fallback
+  # deployment, so this one got one too. It is reachable, and healthy, and
+  # a real deployment on this same provider process -- nothing about it
+  # looks wrong in a diff. It is just the wrong region for an alias whose
+  # whole point is that its data never leaves the EU.
+  - model_name: eu-data-only
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/PROVIDER_US_URL
+      api_key: unused
+      weight: 1
+    model_info:
+      region: us
+      data_residency_zone: "unrestricted"
+
+  - model_name: global-support
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/REGIONAL_PROXY_EU_URL
+      api_key: unused
+      weight: 100
+    model_info:
+      region: eu
+      data_residency_zone: "unrestricted"
+
+  - model_name: global-support
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/PROVIDER_US_URL
+      api_key: unused
+      weight: 1
+    model_info:
+      region: us
+      data_residency_zone: "unrestricted"
+
+  - model_name: global-support
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/PROVIDER_APAC_URL
+      api_key: unused
+      weight: 1
+    model_info:
+      region: apac
+      data_residency_zone: "unrestricted"
+
+router_settings:
+  routing_strategy: simple-shuffle
+  enable_weighted_failover: true
+  allowed_fails: 2
+  cooldown_time: 20
+  num_retries: 1
+
+litellm_settings:
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

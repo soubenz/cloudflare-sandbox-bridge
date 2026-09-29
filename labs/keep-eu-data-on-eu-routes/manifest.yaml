@@ -1,0 +1,254 @@
+# Catalogue's "Keep EU data on EU routes" (Build, gateway family, LiteLLM
+# routing rules). Catalogue's own note on what makes it hard: "Routing by
+# data class, with a provable trail."
+#
+# Reuses labs/prove-where-one-requests-data-went's exact regional
+# infrastructure as its starting point -- provider-us, provider-apac,
+# provider-eu, regional-proxy-eu, litellm (under the same
+# run_instrumented_litellm.py, for the same real OTel trace into the same
+# jaeger), jaeger itself -- adapted for this lab in two ways:
+#
+#   1. No postgres. Verified live (this lab's own build) that LiteLLM
+#      1.102.1 boots and serves fine with no DATABASE_URL at all, in ~3-8s
+#      locally, as long as every model comes from this static config.yaml
+#      (same fact labs/keep-answering-when-a-provider-fails's own manifest
+#      documents). This lab needs no virtual keys/teams/spend, so the
+#      ~13-33s pre-migrated-Postgres boot prove-where-one-requests-data-
+#      went pays for its own second check isn't worth paying here.
+#   2. fake_provider.py (every one of the three providers) gained real
+#      on-demand fault injection and its own request log -- see that
+#      file's own header comment. provider-eu is the one this lab's checks
+#      actually fail on demand; regional-proxy-eu is untouched, reused
+#      wholesale, still the real second hop in front of provider-eu.
+#
+# Two model groups on the one gateway (workspace/gateway/config.yaml):
+#   eu-data-only    -- must only ever reach provider-eu, via
+#                       regional-proxy-eu.
+#   global-support  -- may reach any region, and is expected to fail over
+#                       when one is down (the exact two-deployment,
+#                       weight + enable_weighted_failover + allowed_fails +
+#                       cooldown_time pattern labs/keep-answering-when-a-
+#                       provider-fails's own reference solution proved).
+#
+# The planted bug (see workspace/gateway/config.yaml's own comment): a
+# second model_list entry was added under the SAME model_name
+# "eu-data-only", pointing at provider-us -- the identical "give every
+# alias a second deployment for resiliency" pattern that is the *right*
+# fix for global-support, applied to an alias where it silently creates a
+# non-EU escape hatch. Verified live (this lab's own build) that with
+# provider-eu down, every eu-data-only call is served by provider-us
+# instead -- a real, reproducible leak, not a hypothetical one.
+#
+# The fix (solution/gateway/config.yaml) is a deletion, not an addition:
+# eu-data-only goes back to being a single-deployment model group. Verified
+# live that this is sufficient by itself -- LiteLLM 1.102.1's router has
+# nowhere else to send a call for a model group with exactly one
+# deployment, and no `fallbacks:` entry names eu-data-only either, so
+# there is no second path, configured or accidental. A call during the
+# outage gets a real 503 (immediate refusal) then 429 ("No deployments
+# available", once cooldown_time's shared router_settings puts the sole
+# deployment in cooldown) -- never a silent 200 from another region.
+slug: keep-eu-data-on-eu-routes
+version: 1.0.0
+title: "Keep EU data on EU routes"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  Customer data tagged EU-only must never reach a non-EU model provider --
+  including when the EU provider is down. Fix the one alias that's supposed
+  to guarantee that, without breaking failover for every other alias that
+  doesn't have this constraint.
+objectives:
+  - "Give one alias's routing a hard region constraint that a naive per-deployment fallback would otherwise quietly break"
+  - "Keep real cross-region failover working for every other alias, so fixing one alias doesn't cost the platform its overall resiliency"
+  - "Prove, from real traces and each provider's own request log, exactly which region actually served a call of each kind"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  JAEGER_URL: "http://127.0.0.1:16686"
+  LITELLM_URL: "http://127.0.0.1:4000"
+  LITELLM_MASTER_KEY: "sk-opalix-eu-master"
+  OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318"
+  PROVIDER_US_URL: "http://127.0.0.1:8971"
+  PROVIDER_APAC_URL: "http://127.0.0.1:8972"
+  PROVIDER_EU_URL: "http://127.0.0.1:8973"
+  REGIONAL_PROXY_EU_URL: "http://127.0.0.1:8974"
+
+services:
+  - name: jaeger
+    argv: ["jaeger", "--config", "file:/workspace/jaeger/config.yaml"]
+    cwd: /workspace
+    port: 16686
+    healthcheck:
+      type: http
+      path: /
+      timeout_s: 60
+    ui: true
+    depends_on: []
+
+  - name: provider-us
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8971"
+      SERVICE_NAME: "opalix-provider-us"
+      OPALIX_REGION: "us"
+    port: 8971
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [jaeger]
+
+  - name: provider-apac
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8972"
+      SERVICE_NAME: "opalix-provider-apac"
+      OPALIX_REGION: "apac"
+    port: 8972
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [jaeger]
+
+  - name: provider-eu
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8973"
+      SERVICE_NAME: "opalix-provider-eu"
+      OPALIX_REGION: "eu"
+    port: 8973
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [jaeger]
+
+  # The EU path's second real hop, reused unchanged from
+  # prove-where-one-requests-data-went. Every alias allowed to touch EU
+  # data reaches provider-eu only through here.
+  - name: regional-proxy-eu
+    argv: ["python3", "-B", "/workspace/services/regional_proxy.py"]
+    cwd: /workspace
+    env:
+      PROXY_PORT: "8974"
+      SERVICE_NAME: "opalix-regional-proxy-eu"
+      OPALIX_REGION: "eu"
+      UPSTREAM_PROVIDER_URL: "http://127.0.0.1:8973"
+    port: 8974
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: [jaeger, provider-eu]
+
+  - name: litellm
+    # ui: false -- the admin UI always requires a login (no sibling gateway
+    # lab in this repo turns that off); this lab's own scripts
+    # (send_request.py, traffic.py, eu_outage.py) plus the jaeger tab are
+    # its two real, no-login views instead.
+    argv: ["python3", "-B", "/workspace/gateway/run_instrumented_litellm.py"]
+    cwd: /workspace
+    env:
+      LITELLM_MASTER_KEY: "sk-opalix-eu-master"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # Load-bearing (see the header comment above and
+      # run_instrumented_litellm.py's own): without this, litellm's own
+      # outbound provider calls carry no traceparent at all, and every
+      # downstream hop roots a disconnected trace of its own.
+      DISABLE_AIOHTTP_TRANSPORT: "True"
+      PYTHONDONTWRITEBYTECODE: "1"
+      CONFIG_FILE_PATH: "/workspace/gateway/config.yaml"
+      LITELLM_PORT: "4000"
+      OTEL_SERVICE_NAME: "opalix-litellm"
+      OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318"
+      PROVIDER_US_URL: "http://127.0.0.1:8971"
+      PROVIDER_APAC_URL: "http://127.0.0.1:8972"
+      REGIONAL_PROXY_EU_URL: "http://127.0.0.1:8974"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # No Postgres to migrate here (see header comment) -- live boot is
+      # ~3-8s; still generous for a slower, 0.5-vCPU container.
+      timeout_s: 60
+    ui: false
+    depends_on: [jaeger, provider-us, provider-apac, regional-proxy-eu]
+
+pressure: []
+
+checks:
+  # None of these read the learner's config.yaml as text, and none of them
+  # touch the learner's own running litellm (port 4000) directly for their
+  # traffic -- see checks/_harness.py for the shared grading run (its own
+  # throwaway litellm, against the learner's *current* config.yaml) all
+  # five of these share, and every threshold's justification.
+  - name: services-are-up
+    script: services-are-up.sh
+    timeout_s: 60
+    weight: 1
+    parallel: false
+  - name: eu-only-alias-stays-in-region
+    script: eu-only-alias-stays-in-region.sh
+    timeout_s: 180
+    weight: 2
+    parallel: false
+  - name: eu-outage-fails-closed
+    script: eu-outage-fails-closed.sh
+    timeout_s: 180
+    weight: 2
+    parallel: false
+  - name: unrestricted-alias-fails-over
+    script: unrestricted-alias-fails-over.sh
+    timeout_s: 180
+    weight: 2
+    parallel: false
+  - name: audit-trail-for-both-aliases
+    script: audit-trail-for-both-aliases.sh
+    timeout_s: 180
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      Run `python3 eu_outage.py on`, then in another terminal
+      `python3 traffic.py eu-data-only` and `python3 traffic.py
+      global-support`. Watch which region actually answers each one (the
+      response id's own region prefix tells you) while provider-eu is
+      down. One of these two aliases should be refusing every call right
+      now; if it's answering anyway, look at which provider actually
+      logged the request (curl each provider's own `/log`, ports 8971/
+      8972/8973) -- not what litellm's config claims it should be doing.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Open workspace/gateway/config.yaml and look for TWO model_list
+      entries sharing the same model_name. global-support having two is
+      correct -- that's exactly what gives it somewhere else to go.
+      eu-data-only having two is the bug: one of the two lets it reach a
+      region that was never supposed to be reachable at all, healthy
+      provider-eu or not.
+  # ~45% of timeout_minutes.
+  - after_minutes: 41
+    text: >-
+      LiteLLM has no special "this alias must never leave a region" flag.
+      What it does have is this: a model group with only ONE deployment
+      has nowhere else to send a failing call, regardless of
+      router_settings. The fix for eu-data-only isn't a setting to add --
+      it's the extra deployment to remove. Restart litellm from the
+      Services panel after you edit the file.
+
+egress:
+  allow: []
