@@ -88,6 +88,74 @@ plain REST in this Grafana version (needs WebSocket streaming) -- moot
 given the Jaeger recommendation. Full findings: scratchpad
 `otel-inv/FINDINGS.md`, also folded into the product plan file's section
 30.
+
+ALL 21 PHASE-1 LABS BUILT AND VERIFIED LIVE (29 Sep 2026). Every lab in
+every module below -- Module 1's five (`see-what-a-gateway-does`,
+`one-endpoint-one-key`, `hard-budget-per-team`,
+`keep-answering-when-a-provider-fails`,
+`add-a-model-without-touching-app-code`), Module 2's five
+(`see-how-tools-reach-an-agent`, `one-endpoint-for-every-tool`,
+`give-each-agent-only-the-tools-it-needs`,
+`write-a-tool-server-the-platform-can-host`,
+`version-tool-definitions-safely`), Module 3's five
+(`see-why-a-document-matched`, `offer-a-retrieval-service-teams-dont-build`,
+`build-the-ingestion-pipeline`, `add-hybrid-search-and-reranking`,
+`keep-the-index-fresh-without-downtime`), Module 4's four
+(`follow-one-request-through-the-stack`,
+`see-one-request-across-every-service`,
+`collect-telemetry-without-losing-the-errors`,
+`tell-finance-who-spent-the-money`), and one lab each from Module 6
+(`onboard-yourself-the-way-a-new-team-sees-it`) and Module 7
+(`prove-where-one-requests-data-went`) -- has run `labs test` against a
+real deployed session: the untouched workspace fails at least one check,
+and `solution/` passes every check.
+
+Getting here found and fixed several real bugs the initial builds missed,
+each caught only by running against a live container, not by review:
+
+- **Image gaps** (Modules 3 and 4): Phoenix's venv/WASM paths didn't match
+  what the labs expected; fastapi/uvicorn/psycopg2-binary and
+  flask/requests/OTel instrumentation were entirely missing from the
+  shared Python environment several labs' own services import directly;
+  Jaeger's binary path was inconsistent across sibling labs; a wrong PyPI
+  package name (`openinference-semconv`) was caught in CI before it ever
+  reached a live container.
+- **`python3.12` bare-command shadowing**, the most consequential single
+  find: Module 2 (and Module 6's onboarding lab, which reuses the same
+  pattern) invoke `python3.12 -m mcpgateway` directly, and bare
+  `python3.12` on `PATH` resolved to the system interpreter, not the
+  ContextForge venv's own -- meaning **Module 2 had never actually been
+  confirmed live at all** before this was found; only its build-time
+  import-check was ever verified. Fixed by symlinking
+  `/usr/local/bin/python3.12` to the venv's interpreter in both images.
+- **A Jaeger boot-time trace-seeding race**
+  (`follow-one-request-through-the-stack`): the seed script's own
+  readiness check polled Jaeger's query API, which can come up before its
+  separate OTLP receiver does, so a boot-time send could be silently
+  dropped. Fixed by polling `/api/v3/traces/{trace_id}` after sending and
+  retrying before giving up.
+- **A platform-wide `labs test` bug**: writing a solution file via PUT
+  never reloads an already-running process, so a solution that fixes a
+  long-running server's own source (unlike every earlier lab's solution,
+  each a script re-invoked fresh per grader run) kept executing the
+  unfixed code after "applying" the solution --
+  `see-one-request-across-every-service` failed identically before and
+  after. Fixed in `cli/src/commands/labs.ts` by restarting only the
+  service whose own `argv` references an edited file (restarting every
+  service unconditionally hit a real, separate, pre-existing bug in the
+  `/services/:name/restart` route -- Grafana doesn't honour its ~5s
+  SIGTERM wait -- and broke an otherwise-passing lab; that route bug is
+  still open, unfixed, and would still bite a real learner restarting
+  Grafana by hand from the console).
+- **`opentelemetry-instrumentation-fastapi`/`-httpx` missing**
+  (`prove-where-one-requests-data-went`): its LiteLLM proxy process
+  crashed at import, since only the Flask/requests instrumentation
+  siblings existed in the image -- this lab instruments LiteLLM's actual
+  FastAPI app and outbound httpx client instead.
+
+Phase 1 for Path 2 is functionally complete. What follows is a product
+decision (start phase 2 content, or work elsewhere), not more live
+verification.
 -->
 
 # Opalix Path 2: Building an AI Platform
