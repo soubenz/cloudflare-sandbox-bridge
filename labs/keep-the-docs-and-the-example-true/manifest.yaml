@@ -1,0 +1,204 @@
+# Build lab: nothing about the gateway is broken. workspace/docs/QUICKSTART.md
+# is a short, real onboarding doc, and every one of its three examples is
+# true against this gateway as shipped -- proven live below, and re-proven
+# every time this lab's own checks run. The task is
+# workspace/docs/verify_docs.py: it's a skeleton that only checks its three
+# documented commands are well-formed shell (`bash -n`), never actually
+# runs them, so a QUICKSTART.md that's completely wrong about the gateway's
+# behavior still "passes". Making it actually execute the doc's examples
+# against the live gateway and compare the real output to what the doc
+# claims is the whole task.
+#
+# `team-chat` -- the one alias every example in QUICKSTART.md calls -- is
+# deliberately not in gateway/config.yaml's model_list. It's added once at
+# boot by gateway/seed_model.py, through LiteLLM's own admin API
+# (POST /model/new), which makes it a database-backed model rather than a
+# config-file one. That distinction is load-bearing and was proven live
+# against LiteLLM 1.102.1 before this lab was built this way:
+# POST /model/update and POST /model/delete both refuse outright for a
+# model that came from the static config file ("Model in config. Store
+# model in db via `/model/new` to edit.") -- so a config-file model can
+# never be the one checks/_harness.py renames and restores to prove
+# verify_docs.py is a real check. `platform-internal`, QUICKSTART.md's
+# third example, stays in the static file for exactly that reason: it's
+# meant to never move, as the fixed control the drift test doesn't touch.
+#
+# Also proven live before writing checks/_harness.py: GET /v1/models,
+# called with a key scoped to specific models, echoes that key's own
+# static `models` list back -- not the router's live registry -- so it
+# still lists an alias that was renamed out from under it a moment ago.
+# That's why QUICKSTART.md's third example checks scope with a refusal
+# (calling `platform-internal` and expecting 403) instead of a model
+# listing, and why the harness renames `team-chat` and re-runs a real
+# /chat/completions call rather than trusting /v1/models to reflect the
+# change.
+#
+# Postgres is mandatory for the same reason as the other two gateway labs
+# (LiteLLM's virtual-key and model-registry layer is backed by a Prisma
+# schema hard-coded to `provider = "postgresql"`) -- see
+# labs/one-endpoint-one-key/manifest.yaml for the full template-copy/runuser
+# dance, copied verbatim below. LiteLLM's own admin UI always requires a
+# login and nothing turns that off, so per the no-login rule it stays
+# `ui: false`; this lab has no tab of its own either -- the learner's whole
+# interface to the gateway is `curl`, the same as QUICKSTART.md's own
+# examples.
+#
+# checks/_harness.py never reads the learner's verify_docs.py source. It
+# runs it as a real subprocess against the gateway that's already running
+# in this session -- the exact one QUICKSTART.md's examples talk to, not a
+# second throwaway copy, because this lab's task never touches the
+# gateway's own configuration. The middle check renames `team-chat`
+# through a real admin-API call, re-runs verify_docs.py, and requires a
+# real, specific failure before renaming it back -- see that file's
+# docstring for the full sequence.
+slug: keep-the-docs-and-the-example-true
+version: 1.0.0
+title: "Keep the docs and the example true"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  A quickstart doc for teams joining the shared LiteLLM gateway ships with
+  a verifier that only checks its own examples are well-formed shell, never
+  that the gateway still behaves the way the doc says. Make it check the
+  real thing.
+objectives:
+  - "Execute a doc's own copy-pasteable examples for real, against the live system they describe"
+  - "Compare real output to a doc's specific, checkable claims instead of eyeballing it or checking syntax"
+  - "Compare only the fields a doc actually promises, not a full response that includes values that change on every call"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  LITELLM_URL: "http://127.0.0.1:4000"
+  LITELLM_MASTER_KEY: "sk-opalix-docs-master"
+
+services:
+  # Copied from test/fixtures/labs/gateway-litellm-hello/ -- see that
+  # fixture's manifest for why each line of this argv exists (template copied in once,
+  # then exec as the postgres OS user via runuser, data dir under /tmp
+  # because /workspace is chowned to `learner`).
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+  - name: provider
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_PORT: "8961"
+    port: 8961
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: litellm
+    # ui: false -- the admin UI always requires a login (docs/spike.md,
+    # "LiteLLM under a path prefix (T5)", Q4); this lab has no tab of its
+    # own either -- `curl` against $LITELLM_URL is the whole interface,
+    # the same as QUICKSTART.md's own examples.
+    #
+    # gateway/seed_model.py adds `team-chat` through the admin API once the
+    # proxy is actually answering (it polls /health/readiness itself, see
+    # that file), and is idempotent -- a restart of this same service (which
+    # re-runs this whole argv) finds `team-chat` already there and changes
+    # nothing.
+    argv:
+      [
+        "sh", "-c",
+        "python3 -B /workspace/gateway/seed_model.py & exec litellm --config /workspace/gateway/config.yaml --port 4000 --host 0.0.0.0",
+      ]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-docs-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh).
+      DISABLE_SCHEMA_UPDATE: "True"
+      LITELLM_URL: "http://127.0.0.1:4000"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # The database starts pre-migrated, so LiteLLM boots in ~25-33 s live
+      # (docs/spike.md, "Gateway boot with a pre-migrated database"); 90 s
+      # leaves room for a slow container without hiding a real failure.
+      timeout_s: 90
+    ui: false
+    depends_on: [postgres, provider]
+
+pressure: []
+
+checks:
+  # None of these read verify_docs.py's source. Each shares one grader-run's
+  # worth of setup (running the learner's own verify_docs.py as a real
+  # subprocess against the live gateway, once before and once during a
+  # real, temporary rename of the model alias its examples depend on, then
+  # twice more after it's restored) -- see checks/_harness.py. Sequential
+  # on purpose: whichever check runs first pays that cost and the other two
+  # just read its result.
+  - name: doc-example-verifies-as-true
+    script: doc-example-verifies-as-true.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  # The anti-cheat: proves verify_docs.py is actually executing
+  # QUICKSTART.md's examples against the live gateway, not reading its own
+  # source or the doc's text and rubber-stamping it.
+  - name: catches-a-renamed-model-alias
+    script: catches-a-renamed-model-alias.sh
+    timeout_s: 120
+    weight: 2
+    parallel: false
+  - name: comparison-is-not-flaky
+    script: comparison-is-not-flaky.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+
+hints:
+  # ~15% of timeout_minutes.
+  - after_minutes: 14
+    text: >-
+      Look at what `_run_block` actually does right now: `bash -n` parses a
+      script, it never runs it. If you deleted the real gateway entirely,
+      this script would still say every block "passes" -- because nothing
+      in it ever calls $LITELLM_URL. Making it actually run each block
+      (`subprocess.run`, not `bash -n`) against the gateway that's already
+      up is the first fix.
+  # ~30% of timeout_minutes.
+  - after_minutes: 27
+    text: >-
+      Block 1 does `export TEAM_KEY=...`; blocks 2 and 3 both need to see
+      it, the same way they would if a learner pasted all three into one
+      terminal, one after another. Run all three blocks as one shell
+      session -- one `bash -c` call with all three concatenated -- not
+      three separate subprocess calls, or that export never reaches the
+      blocks after it.
+  # ~45% of timeout_minutes.
+  - after_minutes: 40
+    text: >-
+      Once it's really executing the blocks, resist comparing a whole
+      response body against a fixed expected string. LiteLLM stamps every
+      response with its own `created` (a real, current Unix timestamp) --
+      a comparison that includes it will fail on a perfectly correct,
+      unchanged doc just because the clock moved. Check only the specific
+      fields QUICKSTART.md's own prose actually promises (a key's `models`
+      list, `choices[0].message.content`, an HTTP status code), not the
+      full body.
+
+egress:
+  allow: []

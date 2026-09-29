@@ -1,0 +1,28 @@
+# `platform-internal` is a platform-only alias: it is defined here, in the
+# static file config, and never listed for any team key this lab hands
+# out. It exists so QUICKSTART.md's third example has something real to
+# refuse against.
+#
+# `team-chat` -- the alias every one of QUICKSTART.md's examples actually
+# calls -- is deliberately NOT listed here. `store_model_in_db: true`
+# below plus gateway/seed_model.py (run once at boot) add it through
+# LiteLLM's own admin API (`POST /model/new`) instead, which makes it a
+# database-backed model. That distinction matters for exactly one reason,
+# proven live against LiteLLM 1.102.1 before this file was written this
+# way: `POST /model/update` and `POST /model/delete` both refuse outright
+# for a model that came from this file ("Model in config. Store model in
+# db via `/model/new` to edit.") but work on a database-backed one. A
+# database-backed `team-chat` is what lets checks/_harness.py rename it at
+# runtime, through the same admin API a real platform team would use, to
+# prove a learner's verify_docs.py is actually executing QUICKSTART.md's
+# examples rather than reading its own source.
+model_list:
+  - model_name: platform-internal
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://127.0.0.1:8961/a/v1
+      api_key: unused
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  store_model_in_db: true
