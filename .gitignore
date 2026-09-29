@@ -34,3 +34,12 @@ __pycache__/
 
 # Built by dashboard/build.mjs; the Worker bundle, not a source artifact.
 dashboard/dist-worker/
+
+# Scratch state a lab's own checks/_harness.py writes into its own checks/
+# directory while a lab author locally verifies the shared-run grader
+# pattern (results.json, results.lock, and any grader-*.{log,db} a local
+# throwaway service writes) -- real at grading time inside a session's
+# root-only, short-lived staging dir, never meant to be tracked here.
+labs/*/checks/results.json
+labs/*/checks/results.lock
+labs/*/checks/grader-*
