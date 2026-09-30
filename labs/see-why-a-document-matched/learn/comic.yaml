@@ -1,0 +1,39 @@
+title: The answer that sounded right
+panels:
+  - scene: desk
+    cast: [priya]
+    bg: sand
+    caption: Thursday, a little after eleven.
+    bubbles:
+      - { who: priya, text: "The assistant cited the wrong article again. It read fine. That is the problem." }
+    lines: ["ticket: wrong article cited", "logs: all quiet", "reply: sounds right"]
+  - scene: message
+    cast: [priya]
+    bg: rose
+    prop: document
+    sfx: PING!
+    bubbles:
+      - { who: priya, text: "A customer asked one thing. It answered from a document next door." }
+  - scene: portrait
+    cast: [maren]
+    bg: ice
+    prop: map
+    bubbles:
+      - { who: maren, text: "Before you touch Support's real index, learn to read what a retrieval service is telling you." }
+  - scene: screen
+    lines:
+      - '$ python3 -B query.py "succulent water?"'
+      - "200 24 houseplant documents, pgvector"
+      - "rank  distance  id"
+      - "1     ?         ?"
+      - "close enough? Support draws the line at 0.72"
+  - scene: duo
+    cast: [tomasz, maren]
+    bg: mint
+    bubbles:
+      - { who: tomasz, text: "The embedding is tiny on purpose, so the same text gives the same numbers. Not a real model. Sorry." }
+      - { who: maren, text: "Three answers, written down. Priya wants to know: is it the model, or the search?" }
+  - scene: you
+    bg: navy
+    caption: Your turn.
+    lines: ['$ python3 -B query.py "succulent"', "ready."]

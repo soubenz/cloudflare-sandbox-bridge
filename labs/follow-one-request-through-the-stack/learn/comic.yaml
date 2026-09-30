@@ -1,0 +1,39 @@
+title: One slow request, no explanation
+panels:
+  - scene: desk
+    cast: [priya]
+    bg: sand
+    caption: Tuesday afternoon.
+    bubbles:
+      - { who: priya, text: "This one took ages. Why?" }
+    lines: ["agent: waiting on a reply...", "waiting...", "still waiting..."]
+  - scene: message
+    cast: [jonas]
+    bg: lilac
+    prop: envelope
+    sfx: PING!
+    bubbles:
+      - { who: jonas, text: "And what did it cost? I need a number per request." }
+  - scene: portrait
+    cast: [maren]
+    bg: ice
+    prop: chart
+    bubbles:
+      - { who: maren, text: "That request was traced end to end. One request, four services, six spans. Nothing to fix. Read it." }
+  - scene: screen
+    lines:
+      - "$ open jaeger, click Find Traces"
+      - "200 1 trace, 4 services, 6 spans"
+      - "slowest span, not the top one: ?"
+      - "tokens used by the model calls: ?"
+      - "cache.get sits under: ?"
+  - scene: duo
+    cast: [maren, jonas]
+    bg: cobalt
+    bubbles:
+      - { who: maren, text: "Do not tell me it looks like the model. Read the numbers off the trace." }
+      - { who: jonas, text: "A hunch cannot go in my report. A number can." }
+  - scene: you
+    bg: navy
+    caption: Your turn.
+    lines: ["$ cat /workspace/answers.json", "ready."]
