@@ -179,6 +179,65 @@ async function labsWithProgress(env, subject) {
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
+/* --------------------------------------------------------------- learning */
+
+// The learning routes are thin: the bundle and the onboarding quiz are read
+// with the service key and handed to the browser as they are; the quiz
+// answers go the other way, and that is the one body this Worker rebuilds.
+
+/** A lab slug as the API spells them. Anything else never reaches a path. */
+const SLUG = /^[a-z0-9][a-z0-9._-]{0,80}$/;
+const ANSWER_SLUG = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
+const VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/;
+const QUESTION_ID = /^[a-z][a-z0-9-]{0,39}$/;
+const CONCEPT_ID = /^[a-z]+\.[a-z0-9]+(-[a-z0-9]+)*$/;
+/** Most answers one request may carry (the API's own cap). */
+const MAX_ANSWERS = 60;
+/** The largest answers body read, in bytes. Sixty answers are about 8 KB. */
+const MAX_ANSWERS_BYTES = 16 * 1024;
+
+/**
+ * Checks a POST /api/learn/answers body and rebuilds it from the parts that
+ * are allowed: { lab_slug?, lab_version?, answers: [{ question_id, concept,
+ * correct, phase }] }. Returns the clean body or null. Nothing else is ever
+ * copied across, so a stray key (a user id, say) cannot be forwarded by
+ * accident, and this Worker adds none of its own: no subject, no address.
+ */
+function cleanAnswersBody(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const allowed = new Set(['lab_slug', 'lab_version', 'answers']);
+  if (Object.keys(raw).some((k) => !allowed.has(k))) return null;
+  const body = {};
+  if (raw.lab_slug !== undefined) {
+    if (typeof raw.lab_slug !== 'string' || !ANSWER_SLUG.test(raw.lab_slug)) return null;
+    body.lab_slug = raw.lab_slug;
+  }
+  if (raw.lab_version !== undefined) {
+    if (typeof raw.lab_version !== 'string' || !VERSION.test(raw.lab_version)) return null;
+    body.lab_version = raw.lab_version;
+  }
+  if (!Array.isArray(raw.answers) || raw.answers.length < 1 || raw.answers.length > MAX_ANSWERS) return null;
+  body.answers = [];
+  for (const a of raw.answers) {
+    if (!a || typeof a !== 'object' || Array.isArray(a)) return null;
+    if (Object.keys(a).some((k) => k !== 'question_id' && k !== 'concept' && k !== 'correct' && k !== 'phase')) return null;
+    if (typeof a.question_id !== 'string' || !QUESTION_ID.test(a.question_id)) return null;
+    if (typeof a.concept !== 'string' || a.concept.length > 80 || !CONCEPT_ID.test(a.concept)) return null;
+    if (typeof a.correct !== 'boolean') return null;
+    if (a.phase !== 'onboarding' && a.phase !== 'diagnostic') return null;
+    body.answers.push({ question_id: a.question_id, concept: a.concept, correct: a.correct, phase: a.phase });
+  }
+  return body;
+}
+
+/** Reads a request body as text, refusing more than `max` bytes (by header first, then by what arrived). */
+async function readCapped(request, max) {
+  const declared = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > max) return null;
+  const text = await request.text();
+  return new TextEncoder().encode(text).length > max ? null : text;
+}
+
 /* ---------------------------------------------------------------- headers */
 
 /**
@@ -355,6 +414,45 @@ async function route(request, env) {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ lab: body.lab, user_id: subject }),
+        })
+      );
+    }
+
+    // The learning layer. The bundle and the quiz are the same for everyone,
+    // so nothing about the subject is sent; a 404 (no_learn, no_onboarding)
+    // passes through, which is how the console knows there is nothing to show.
+    const learnMatch = url.pathname.match(/^\/api\/learn\/([^/]+)$/);
+    if (learnMatch && learnMatch[1] !== 'answers' && request.method === 'GET') {
+      let slug = '';
+      try {
+        slug = decodeURIComponent(learnMatch[1]);
+      } catch {
+        /* a malformed escape is not a slug */
+      }
+      if (!SLUG.test(slug)) return json({ error: 'not a lab slug' }, 400);
+      return relay(await callApi(env, `/labs/${encodeURIComponent(slug)}/learn`));
+    }
+
+    if (url.pathname === '/api/onboarding' && request.method === 'GET') {
+      return relay(await callApi(env, '/learn/onboarding'));
+    }
+
+    if (url.pathname === '/api/learn/answers' && request.method === 'POST') {
+      const text = await readCapped(request, MAX_ANSWERS_BYTES);
+      if (text === null) return json({ error: 'answers body is too large' }, 413);
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        return json({ error: 'answers must be JSON' }, 400);
+      }
+      const body = cleanAnswersBody(parsed);
+      if (!body) return json({ error: 'answers body is not valid' }, 400);
+      return relay(
+        await callApi(env, '/learn/answers', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
         })
       );
     }

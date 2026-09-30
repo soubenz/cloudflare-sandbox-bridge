@@ -2,6 +2,12 @@ import { api, apiBase, configureAuth, eventsUrl, serviceUrl, serviceBaseUrl } fr
 import { attachTerminal } from './terminal.js';
 import { diffLines, collapseContext } from './diff.js';
 import { ICONS, buildLauncherModel, labStatus, moduleMetaLine, passedSlugs, summaryLine } from './launcher-model.js';
+import { createMasteryStore, normalizeLearn, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
+import { runOnboarding } from './onboarding.js';
+import { runBeforeYouBegin } from './before-you-begin.js';
+import { buildLearnTab, hasLearnContent } from './learn-tab.js';
+import { mountQuestionsForm } from './questions-form.js';
+import { SAFE_FILE } from './answers-file.js';
 // The presentation copy of every path and module: title, intro, skills, icon
 // and accent. The public /labs page reads the same file.
 import pathMeta from '../../packages/catalogue/paths.json';
@@ -138,6 +144,9 @@ function lsSet(key, value) {
   }
 }
 
+/** What this browser knows about the learner's learning (learn-model.js); never sent anywhere. */
+const mastery = createMasteryStore();
+
 // ---------------------------------------------------------------- launcher
 
 /** The catalogue, kept so a running session can show its lab's context. */
@@ -271,7 +280,11 @@ const safeId = (slug) => String(slug).replace(/[^a-z0-9_-]+/gi, '-');
 function renderLauncher(model) {
   const list = $('labList');
   list.innerHTML = '';
-  for (const path of model.paths) list.append(pathSection(path));
+  // Where the platform quiz says to begin: the first module card whose area
+  // is new to this learner. Nothing is suggested before the quiz is taken.
+  const cards = model.paths.flatMap((p) => (p.cards ? p.modules.map((m) => ({ path: p.slug, number: m.number })) : []));
+  const suggested = suggestStart(cards, mastery.get());
+  for (const path of model.paths) list.append(pathSection(path, suggested));
   renderPathNav(model);
 }
 
@@ -281,7 +294,7 @@ function renderLauncher(model) {
  * heading is a direct child of the section, and every part of the band is a
  * grid item of it, so the tinted band is one element behind them.
  */
-function pathSection(path) {
+function pathSection(path, suggested = null) {
   const id = path.other ? 'path-other' : `path-${safeId(path.slug)}`;
   const section = node('section', 'lab-group path');
   section.id = id;
@@ -314,7 +327,7 @@ function pathSection(path) {
   const body = node('div', 'path-body');
   if (path.cards) {
     const modules = node('div', 'modules');
-    for (const module of path.modules) modules.append(moduleCard(path, module, id));
+    for (const module of path.modules) modules.append(moduleCard(path, module, id, suggested));
     body.append(modules);
   } else {
     // No module card, so no h3 of its own: an invisible one keeps h2 -> h3 -> h4 unbroken.
@@ -325,7 +338,7 @@ function pathSection(path) {
   return section;
 }
 
-function moduleCard(path, module, pathId) {
+function moduleCard(path, module, pathId, suggested = null) {
   const id = `${pathId}-module-${module.number}`;
   const card = node('section', 'module');
   card.id = id;
@@ -338,6 +351,9 @@ function moduleCard(path, module, pathId) {
   const eyebrow = node('p', 'module-eyebrow');
   if (module.known) eyebrow.append(node('span', 'module-num', module.eyebrow));
   if (module.optional) eyebrow.append(node('span', 'badge badge-optional', 'Optional'));
+  if (suggested && suggested.path === path.slug && suggested.number === module.number) {
+    eyebrow.append(node('span', 'badge badge-suggested', 'Suggested start'));
+  }
   if (eyebrow.childElementCount) info.append(eyebrow);
 
   const top = node('div', 'module-head');
@@ -489,7 +505,7 @@ function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
   }
   button.addEventListener('click', () => {
     if (button.getAttribute('aria-disabled') === 'true') return;
-    startSession(lab.slug, row);
+    beginLab(lab, row);
   });
   return row;
 }
@@ -834,11 +850,243 @@ const ONBOARDED_KEY = 'opalixOnboarded';
 /** Once per browser, on the launcher; the header "?" opens it again on demand. */
 function showOnboarding() {
   const dialog = $('onboarding');
+  syncQuizButtons();
   if (!dialog.open) dialog.showModal();
 }
 
 function maybeShowOnboarding() {
   if (!lsGet(ONBOARDED_KEY)) showOnboarding();
+}
+
+// ---------------------------------------------------------------- learning
+
+/*
+ * The learning flow: the platform quiz (once, then on request), "Before you
+ * begin" between Start and the boot for a lab that has learning content, and
+ * in a session the Learn and Questions tabs. Everything a lab teaches comes
+ * from its learn bundle (GET /api/learn/:slug); a lab without one, or a
+ * bundle that cannot be fetched, behaves exactly as it did before.
+ */
+
+/** The screen that stands in for the launcher while a quiz or "Before you begin" is up. */
+let learnFlow = null;
+
+function showLearnScreen() {
+  $('launcher').hidden = true;
+  $('learnScreen').hidden = false;
+  $('learnScreen').scrollTop = 0;
+  syncQuizButtons();
+}
+
+function hideLearnScreen() {
+  learnFlow?.destroy();
+  learnFlow = null;
+  $('learnScreen').hidden = true;
+  $('learnHost').replaceChildren();
+  syncQuizButtons();
+}
+
+/** Back to the lab list from a learning screen, with focus on the page's heading. */
+function leaveLearnScreen() {
+  hideLearnScreen();
+  $('launcher').hidden = false;
+  const heading = $('launcher').querySelector('h1');
+  if (heading) {
+    heading.tabIndex = -1;
+    heading.focus();
+  }
+}
+
+/** A lab's bundle, kept a few minutes so Before you begin and the session share one fetch. */
+const learnCache = new Map();
+const LEARN_TTL_MS = 5 * 60_000;
+
+/** `{version, learn}` for a lab, or null when it has none or the fetch failed. Never throws. */
+async function fetchLearn(slug) {
+  const hit = learnCache.get(slug);
+  if (hit && Date.now() - hit.at < LEARN_TTL_MS) return hit.entry;
+  try {
+    const entry = normalizeLearn(await api.learn(slug));
+    if (entry) learnCache.set(slug, { at: Date.now(), entry });
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Start on a lab card. A lab with learning content goes through "Before you
+ * begin" first; everything else (no content, the fetch failing, a session
+ * already running that Start would only rejoin) goes straight to the boot.
+ */
+let beginning = false;
+async function beginLab(lab, card) {
+  if (beginning) return;
+  // A running lab is rejoined by Start, whatever was clicked: nothing to prepare for.
+  const resuming = !$('resumeCard').hidden;
+  if (!lab.has_learn || resuming) return startSession(lab.slug, card);
+  beginning = true;
+  const buttons = document.querySelectorAll('.lab button, .resume-card button');
+  buttons.forEach((b) => (b.disabled = true));
+  const button = card?.querySelector('.lab-start');
+  const label = button?.textContent;
+  if (button) {
+    button.textContent = 'Loading…';
+    button.setAttribute('aria-busy', 'true');
+  }
+  let entry = null;
+  try {
+    entry = await fetchLearn(lab.slug);
+  } finally {
+    buttons.forEach((b) => (b.disabled = false));
+    if (button) {
+      button.textContent = label;
+      button.removeAttribute('aria-busy');
+    }
+    beginning = false;
+  }
+  const hasScreen = entry && (entry.learn.story || entry.learn.concepts.length > 0);
+  if (!hasScreen) return startSession(lab.slug, card);
+  showLearnScreen();
+  learnFlow = runBeforeYouBegin({
+    host: $('learnHost'),
+    lab: { slug: lab.slug, title: lab.title },
+    entry,
+    store: mastery,
+    post: (body) => api.postAnswers(body),
+    onStart: () => startSession(lab.slug),
+    onBack: leaveLearnScreen,
+  });
+}
+
+// --- the platform quiz
+
+/** The quiz as the API serves it, or null: none published, or the call failed. */
+let onboardingOffer = null;
+
+async function loadOnboardingOffer() {
+  try {
+    return normalizeOnboarding(await api.onboarding());
+  } catch {
+    return null;
+  }
+}
+
+/** The two "Retake the quiz" controls show only when a quiz exists and the learner is at the launcher. */
+function syncQuizButtons() {
+  const atLauncher = !state.session && $('learnScreen').hidden;
+  $('btnRetakeQuiz').hidden = !(onboardingOffer && atLauncher);
+  $('btnOnboardingRetake').hidden = !(onboardingOffer && !state.session && $('learnScreen').hidden);
+}
+
+function showQuiz() {
+  if (!onboardingOffer || state.session) return;
+  if ($('onboarding').open) $('onboarding').close();
+  hideLearnScreen();
+  showLearnScreen();
+  learnFlow = runOnboarding({
+    host: $('learnHost'),
+    onboarding: onboardingOffer,
+    store: mastery,
+    post: (body) => api.postAnswers(body),
+    onExit: ({ completed }) => {
+      leaveLearnScreen();
+      // The launcher's "Suggested start" follows the new levels.
+      if (completed) loadLabs();
+    },
+  });
+}
+
+/**
+ * After the launcher is up: find out whether there is a quiz, show the
+ * retake control, and offer the quiz itself once (after the first-run
+ * "How this console works" dialog has been read, if that is showing).
+ */
+async function initLearning() {
+  onboardingOffer = await loadOnboardingOffer();
+  syncQuizButtons();
+  if (!onboardingOffer || state.session || onboardingFinished(mastery.get())) return;
+  const dialog = $('onboarding');
+  if (dialog.open) await new Promise((resolve) => dialog.addEventListener('close', resolve, { once: true }));
+  // Someone may have started a lab, or opened another screen, meanwhile.
+  if (state.session || !$('learnScreen').hidden || $('launcher').hidden || onboardingFinished(mastery.get())) return;
+  showQuiz();
+}
+
+// --- in a session
+
+/** What the running session shows of its lab's bundle. */
+const learnSession = { id: '', tab: null, form: null };
+
+/** Removes the Learn and Questions tabs and everything behind them. */
+function resetLearnSession() {
+  learnSession.tab?.destroy();
+  learnSession.form?.destroy();
+  learnSession.tab = null;
+  learnSession.form = null;
+  learnSession.id = '';
+  for (const id of ['tabLearn', 'tabQuestions']) $(id).hidden = true;
+  for (const id of ['viewLearn', 'viewQuestions']) $(id).classList.remove('view-active');
+}
+
+/**
+ * Builds the Learn tab (story and lessons) and, for a lab with graded fields,
+ * the Questions tab. Called once the session is running; a restart of the
+ * container reuses what is there so unsaved answers are not lost.
+ */
+async function loadLearn() {
+  const session = state.session;
+  if (!session || !state.lab?.has_learn) return;
+  if (learnSession.id === session.id) {
+    learnSession.form?.reload();
+    return;
+  }
+  const entry = await fetchLearn(session.lab);
+  if (!entry || state.session !== session || learnSession.id === session.id) return;
+  learnSession.id = session.id;
+  const { learn } = entry;
+
+  if (hasLearnContent(learn)) {
+    learnSession.tab = buildLearnTab($('learnBody'), { learn, mastery: mastery.get() });
+    $('tabLearn').hidden = false;
+  }
+
+  if (learn.fields.length > 0 && SAFE_FILE.test(learn.answers_file)) {
+    const file = learn.answers_file;
+    const current = () => state.session;
+    learnSession.form = mountQuestionsForm($('questionsBody'), {
+      fields: learn.fields,
+      file,
+      io: {
+        read: async () => {
+          const s = current();
+          try {
+            const result = await api.readFile(s.id, s.token, file);
+            return typeof result === 'string' ? result : (result?.content ?? '');
+          } catch (err) {
+            if (/^404:/.test(err.message)) return null;
+            throw err;
+          }
+        },
+        write: async (text) => {
+          const s = current();
+          await api.writeFile(s.id, s.token, file, text);
+          hideIdleBanner();
+        },
+        onWritten: (text) => {
+          // The file changed under the editor: show it, unless there are edits there to lose.
+          if (state.openFile === file && !state.dirty && state.editor) state.editor.load(text, file);
+          refreshFiles();
+        },
+      },
+      runChecks: async () => {
+        const run = await runChecks();
+        return run?.results?.length ? `Latest run: ${summaryText(tally(run.results))}` : 'The checks could not run. See the Checks panel.';
+      },
+    });
+    $('tabQuestions').hidden = false;
+    learnSession.form.reload();
+  }
 }
 
 async function startSession(slug, card) {
@@ -944,6 +1192,9 @@ function enterSession() {
   $('expiryTimer').textContent = '';
   delete $('expiryTimer').dataset.urgent;
   $('briefBody').innerHTML = '<p class="muted">Loading the brief…</p>';
+  // A new session starts without the last one's Learn and Questions tabs.
+  resetLearnSession();
+  hideLearnScreen();
   // The task, not an empty terminal: a learner arriving at a lab should be
   // looking at what they have been asked to do.
   showView('brief');
@@ -1273,7 +1524,8 @@ async function onRunning(status) {
   renderServiceTabs();
   renderServiceList(status.services);
   refreshFiles();
-  loadBrief();
+  // The Learn and Questions tabs are extras: if they cannot be built the lab is unchanged.
+  loadBrief().finally(() => loadLearn().catch((err) => console.error('Learn tabs could not be built', err)));
   bootStep('terminal');
   hideBoot();
 }
@@ -1618,6 +1870,7 @@ function onEnded(reason) {
   $('termStatus').hidden = false;
   $('btnSaveFile').disabled = true;
   $('btnNewFile').disabled = true;
+  learnSession.form?.disable();
   for (const b of $('serviceList').querySelectorAll('button')) b.disabled = true;
 }
 
@@ -1680,6 +1933,7 @@ function teardownSession() {
   hideIdleBanner();
   hideExpiryBanner();
   hideBoot();
+  resetLearnSession();
 }
 
 /** An ended session leaves a dead workspace on screen; this is the way out. */
@@ -1697,6 +1951,7 @@ function backToLabs() {
   $('launcher').hidden = false;
   $('expiryTimer').textContent = '';
   $('btnNewFile').disabled = false;
+  syncQuizButtons();
   loadLabs();
 }
 
@@ -1992,10 +2247,12 @@ async function runChecks() {
     showResultIfComplete(run, true);
     // History and hints move on with every run; the run itself is not enough.
     refreshStatus();
+    return run;
   } catch (err) {
     state.checksRunning = false;
     panel.innerHTML = `${previous}<p class="notice notice-bad small" role="alert"></p>`;
     panel.querySelector('.notice').textContent = `The checks could not run — ${err.message}`;
+    return null;
   } finally {
     state.checksRunning = false;
     for (const button of buttons) {
@@ -3152,13 +3409,15 @@ function showView(view, tabEl) {
   // without one made `$(undefined)` null and threw on `.classList`, which
   // enterSession swallowed into the launcher's error line — so no lab could
   // be started at all. Fail loudly instead of dereferencing null.
-  const map = { brief: 'viewBrief', terminal: 'viewTerminal', editor: 'viewEditor', service: 'viewService' };
+  const map = { brief: 'viewBrief', learn: 'viewLearn', questions: 'viewQuestions', terminal: 'viewTerminal', editor: 'viewEditor', service: 'viewService' };
   const target = map[view] && $(map[view]);
   if (!target) throw new Error(`showView: no view registered for "${view}"`);
   target.classList.add('view-active');
   const tab = tabEl ?? document.querySelector(`.tab[data-view="${view}"]`);
   tab?.classList.add('tab-active');
   tab?.setAttribute('aria-selected', 'true');
+  // Answers may have been edited in the editor since the form last looked.
+  if (view === 'questions') learnSession.form?.reload();
   if (view === 'terminal') {
     state.terminal?.refit();
     // Switching to the terminal is switching to typing in it.
@@ -3169,6 +3428,8 @@ function showView(view, tabEl) {
 // ---------------------------------------------------------------- wiring
 
 $('btnHelp').addEventListener('click', showOnboarding);
+$('btnRetakeQuiz').addEventListener('click', showQuiz);
+$('btnOnboardingRetake').addEventListener('click', showQuiz);
 // Escape and the button both count as having read it.
 $('onboarding').addEventListener('close', () => lsSet(ONBOARDED_KEY, '1'));
 $('btnOnboardingDone').addEventListener('click', () => {
@@ -3401,6 +3662,7 @@ function showSignedOut() {
   link.textContent = 'Sign in';
   error.append(link);
   error.hidden = false;
+  syncQuizButtons();
 }
 
 showIdentity();
@@ -3437,6 +3699,7 @@ async function resumeOrShowLabs() {
     document.body.dataset.booted = '1';
     // Only over the picker: someone already inside a lab has found their way.
     if (!state.session) maybeShowOnboarding();
+    initLearning();
   }
 }
 

@@ -26,7 +26,7 @@ async function stubLabs(page: import('@playwright/test').Page, labs: unknown[]) 
 /** A signed-in page that has already read the first-run dialog, on the launcher. */
 async function openLauncher(page: import('@playwright/test').Page, { onboarded = true } = {}) {
   await signIn(page);
-  if (onboarded) await page.addInitScript(() => localStorage.setItem('opalixOnboarded', '1'));
+  if (onboarded) await page.addInitScript(() => (localStorage.setItem('opalixOnboarded', '1'), localStorage.setItem('opalixLearn', '{"v":1,"onboarding":{"status":"skipped"}}')));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
 }

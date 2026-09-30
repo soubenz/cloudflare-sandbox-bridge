@@ -1,0 +1,77 @@
+/**
+ * The graded questions of an explore lab as a form, and the answers file the
+ * form writes (workspace/<answers_file>, usually answers.json). No DOM.
+ *
+ * The lab's checks read that file, so what goes in it has to be exactly what
+ * they expect: a number field is a JSON number or null, a text field a string
+ * or null, a choice field the chosen choice string (or null). Keys the form
+ * does not know about are left alone, and a key the learner changed in the
+ * form wins over the file, while a key they did not touch keeps whatever is in
+ * the file now (the editor may have changed it meanwhile).
+ */
+
+/** A file name in /workspace, nothing that walks out of it. */
+export const SAFE_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+/** The file's text as an object: anything that is not a JSON object (missing, invalid, an array) is empty. */
+export function parseAnswersFile(text) {
+  if (typeof text !== 'string' || !text.trim()) return {};
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * What a control holds for a field, from a raw value: the JSON value to store.
+ * Empty (or only spaces) is null for text and number; a number that does not
+ * parse is null; a choice outside the field's choices is null.
+ */
+export function fieldValue(field, raw) {
+  const s = raw == null ? '' : String(raw);
+  if (field.kind === 'number') {
+    if (!s.trim()) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (field.kind === 'choice') return (field.choices || []).includes(s) ? s : null;
+  return s.trim() === '' ? null : s;
+}
+
+/** What a control shows for a stored value (a string; '' for none or something it cannot show). */
+export function displayValue(field, stored) {
+  if (stored == null) return '';
+  if (field.kind === 'number') return typeof stored === 'number' && Number.isFinite(stored) ? String(stored) : typeof stored === 'string' ? stored : '';
+  if (field.kind === 'choice') return typeof stored === 'string' && (field.choices || []).includes(stored) ? stored : '';
+  return typeof stored === 'string' ? stored : typeof stored === 'number' ? String(stored) : '';
+}
+
+/**
+ * The object to write.
+ *   disk     what the file holds now (an object)
+ *   fields   the bundle's fields
+ *   values   { key: the control's JSON value } for every field
+ *   dirty    Set of keys the learner changed in the form
+ * Starts from `disk` (so unknown keys survive, in their order). A field's key
+ * is set from the form when the learner changed it or the file has no such
+ * key yet; otherwise the file's value stays.
+ */
+export function mergeAnswers(disk, fields, values, dirty = new Set()) {
+  const out = { ...(disk && typeof disk === 'object' && !Array.isArray(disk) ? disk : {}) };
+  for (const f of fields) {
+    if (dirty.has(f.key) || !Object.prototype.hasOwnProperty.call(out, f.key)) {
+      out[f.key] = Object.prototype.hasOwnProperty.call(values, f.key) ? values[f.key] : null;
+    }
+  }
+  return out;
+}
+
+/** The file text: two-space JSON and a final newline. */
+export const serializeAnswers = (obj) => `${JSON.stringify(obj, null, 2)}\n`;
+
+/**
+ * Radios read better than a select up to this many choices.
+ */
+export const MAX_RADIO_CHOICES = 4;

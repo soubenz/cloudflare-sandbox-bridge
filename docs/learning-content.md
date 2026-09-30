@@ -107,6 +107,24 @@ Once the lesson teaches a concept, the brief stops explaining it. The brief keep
 4. Mastery is stored in the learner's browser. Nothing is graded on it.
 5. For an explore lab, the graded questions are a form beside the terminal, with the lessons one tab away.
 
+## How the console shows it
+
+The learner console (`dashboard/`) renders all of the above in the browser. The bundle arrives through the console Worker, which reads it with the service key and never sends anything about the learner to the API:
+
+| Console route | API call | Notes |
+|---|---|---|
+| `GET /api/learn/:slug` | `GET /labs/:slug/learn` | a `404 no_learn` passes through; the console then boots the lab as it always did |
+| `GET /api/onboarding` | `GET /learn/onboarding` | a `404` or any failure means no quiz is offered |
+| `POST /api/learn/answers` | `POST /learn/answers` | only the validated body is forwarded (at most 60 answers, 16 KB), with no user, subject or address |
+
+All three need the console cookie like the other `/api` routes. The launcher's `has_learn` flag comes through `GET /api/labs` unchanged; a lab without it never asks for a bundle.
+
+- **Platform quiz** (`onboarding.js`). Shown once after the first sign-in when the quiz exists; "Skip for now" is remembered; "Retake the quiz" sits next to the help control in the header. Its answers set a level per module (strong, ok or new, from the areas in `concepts.json`), and the launcher puts a "Suggested start" chip on the first module that is new.
+- **Before you begin** (`before-you-begin.js`). Between Start and the boot: the story, the diagnostic questions for concepts not already known, then the plan. A lesson for a known or skipped concept folds to its `recap` with "Show me the lesson anyway"; the others show in full with "I know this, skip". The session starts only when "Start the lab" is pressed; "Skip all, just start the lab" is on every step. Any failure to fetch the bundle goes straight to the boot.
+- **In the session** (`learn-tab.js`, `questions-form.js`). A Learn tab with the story and every lesson (toggleable), and for a lab with `fields` a Questions tab: a form that writes `workspace/<answers_file>` as JSON after 600 ms of quiet and on Save. A write re-reads the file first and merges by key: a key the learner changed in the form wins, a key they did not touch keeps what the file holds now, and keys the form does not know are kept. Number fields store a JSON number (or `null` when empty), text a string (or `null`), choice the chosen choice string.
+- **Mastery** (`learn-model.js`) lives in the browser under `localStorage['opalixLearn']`: onboarding levels, per-concept `known` (true only when every diagnostic question about the concept was answered correctly), and the learner's own `skipped` / `forced` overrides, which always win. Nothing is sent and nothing is graded; the anonymous outcomes that do go to `POST /learn/answers` carry no identity.
+- **Lesson and story text** (`markdown.js`) is drawn straight into DOM nodes (no HTML is ever parsed): paragraphs, `##` and `###` headings, bold, italic, code, fenced code, lists, `http(s)` links and `::diagram[id]` lines. A diagram id that is not in the library becomes a short notice.
+
 ## Checklist before publishing
 
 - `labs learn-check labs/<slug>` prints `ok`.

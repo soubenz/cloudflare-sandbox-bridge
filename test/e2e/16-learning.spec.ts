@@ -1,0 +1,1284 @@
+import { createServer, type Server } from 'node:http';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { dirname, extname, join, normalize, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { test as base, expect, type Page, type Route } from '@playwright/test';
+import { parse as parseYaml } from 'yaml';
+
+/**
+ * The learning flow of the console: the platform quiz, "Before you begin",
+ * the Learn and Questions tabs, and a lab without learning content.
+ *
+ * Unlike the specs that drive a deployed console, this one needs no password,
+ * no API and no container. A small static server serves dashboard/public (the
+ * built bundle, dist included, with the CSP from public/_headers so a policy
+ * violation shows up as a console error) and every call the console makes is
+ * answered by a route stub: /api/labs, /api/onboarding, /api/learn/*, /api/start
+ * for the console Worker, and the session, files and checks endpoints for the
+ * API. The Worker's own routes are covered by test/unit/console-worker.test.ts.
+ *
+ * The content is real: the learn bundle is compiled from
+ * labs/see-what-a-gateway-does/learn and the onboarding quiz is
+ * packages/catalogue/onboarding.json, so a change to either that breaks the
+ * console shows up here.
+ *
+ * Run `npm run build:dashboard` first (the page loads dashboard/public/dist).
+ * LEARN_SHOTS_DIR chooses where the screenshots go (default test/e2e/shots/learn).
+ */
+
+const here = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(here, '../..');
+const PUBLIC = join(ROOT, 'dashboard/public');
+const API = 'https://opalix-sandbox.soubenz94.workers.dev';
+const SHOTS = process.env.LEARN_SHOTS_DIR || join(here, 'shots/learn');
+
+// --------------------------------------------------------------- the content
+
+interface Question {
+  id: string;
+  concept: string;
+  type: 'single' | 'multi';
+  prompt: string;
+  options: Array<{ id: string; text: string }>;
+  answer: string[];
+  explanation: string;
+  diagnostic?: boolean;
+}
+interface Concept {
+  id: string;
+  title: string;
+  minutes: number;
+  recap: string;
+  body: string;
+}
+interface Field {
+  key: string;
+  prompt: string;
+  kind: 'text' | 'number' | 'choice';
+  choices?: string[];
+  help?: string;
+}
+interface Bundle {
+  story?: { title: string; minutes: number; body: string };
+  concepts: Concept[];
+  questions: Question[];
+  answers_file: string;
+  fields: Field[];
+}
+
+const GATEWAY = 'see-what-a-gateway-does';
+const PLAIN = 'see-how-requests-are-routed-plain';
+const LEARN_404 = 'has-learn-but-none-published';
+const LEARN_500 = 'has-learn-but-the-fetch-fails';
+
+/**
+ * The lab's learn/ folder as the bundle the API would serve. The CLI's own
+ * compiler cannot be imported here (Playwright loads specs as plain ESM, which
+ * refuses the JSON imports the compiler's schema module makes), so this reads
+ * the same files the same way; test/unit/learn.test.ts covers the compiler.
+ */
+function compileLearn(slug: string): Bundle {
+  const dir = join(ROOT, 'labs', slug, 'learn');
+  const split = (text: string) => {
+    const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)!;
+    return { data: parseYaml(m[1]!) as Record<string, any>, body: m[2]!.trim() };
+  };
+  const story = split(readFileSync(join(dir, 'story.md'), 'utf8'));
+  const concepts = readdirSync(join(dir, 'concepts'))
+    .filter((f) => f.endsWith('.md'))
+    .sort()
+    .map((f) => {
+      const { data, body } = split(readFileSync(join(dir, 'concepts', f), 'utf8'));
+      return { id: data.id, title: data.title, minutes: data.minutes, recap: data.recap, body } as Concept;
+    });
+  const quiz = parseYaml(readFileSync(join(dir, 'quiz.yaml'), 'utf8')) as { questions: Question[] };
+  const qs = parseYaml(readFileSync(join(dir, 'questions.yaml'), 'utf8')) as { answers_file: string; fields: Field[] };
+  return {
+    story: { title: story.data.title, minutes: story.data.minutes, body: story.body },
+    concepts,
+    questions: quiz.questions.map((q) => ({ diagnostic: true, ...q })),
+    answers_file: qs.answers_file,
+    fields: qs.fields,
+  };
+}
+
+const bundle = compileLearn(GATEWAY);
+const onboarding = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/onboarding.json'), 'utf8')) as { intro: string; questions: Question[] };
+const concepts = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/concepts.json'), 'utf8')) as { areas: Record<string, { title: string; module: number }> };
+
+/** The lesson of a concept, and the diagnostic questions about it. */
+const lessonOf = (id: string) => bundle.concepts.find((c) => c.id === id)!;
+const diagnosticsOf = (id: string) => bundle.questions.filter((q) => q.concept === id && q.diagnostic !== false);
+const ALIASES = 'gateway.routing-aliases';
+const SPEND = 'gateway.usage-and-spend';
+const DIAGNOSTIC_COUNT = bundle.questions.filter((q) => q.diagnostic !== false).length;
+
+const lab = (o: Record<string, unknown>) => ({
+  version: '1.0.0',
+  type: 'explore',
+  family: 'gateway',
+  summary: `About ${o.slug}`,
+  objectives: ['do the thing'],
+  difficulty: 'intro',
+  timeout_minutes: 30,
+  estimated_minutes: 20,
+  tier: 'free',
+  path: 'ai-platform',
+  module: 1,
+  order: 1,
+  has_learn: false,
+  progress: null,
+  ...o,
+});
+
+const LABS = [
+  lab({ slug: GATEWAY, title: 'See what a gateway does', module: 1, has_learn: true }),
+  lab({ slug: LEARN_404, title: 'Has learn but none published', module: 1, order: 2, has_learn: true }),
+  lab({ slug: LEARN_500, title: 'Has learn but the fetch fails', module: 1, order: 3, has_learn: true }),
+  lab({ slug: PLAIN, title: 'See how requests are routed', module: 2, has_learn: false }),
+  lab({ slug: 'see-why-a-document-matched', title: 'See why a document matched', module: 3, has_learn: false }),
+];
+
+// ------------------------------------------------------------- a fake console
+
+type Answers = Record<string, unknown>;
+interface Stub {
+  starts: string[];
+  learnFetches: string[];
+  onboardingFetches: number;
+  posted: Array<Record<string, any>>;
+  files: Map<string, string>;
+  puts: Array<{ path: string; body: string }>;
+  checkRuns: number;
+  errors: string[];
+}
+interface StubOptions {
+  onboarding?: 'ok' | 'none' | 'error';
+  files?: Record<string, string>;
+  /** Delay before each file write answers, to hold a save in flight. */
+  putDelayMs?: number;
+  /** The lab a session that was not started through /api/start reports (default the gateway lab). */
+  lab?: string;
+}
+
+const json = (route: Route, body: unknown, status = 200, extra: Record<string, string> = {}) => {
+  const origin = route.request().headers()['origin'];
+  return route.fulfill({
+    status,
+    contentType: 'application/json',
+    headers: { ...(origin ? { 'access-control-allow-origin': origin, vary: 'Origin' } : {}), ...extra },
+    body: JSON.stringify(body),
+  });
+};
+
+const SESSION_ID = '01J9ZZZZZZZZZZZZZZZZZZZZZZ';
+
+async function stub(page: Page, opts: StubOptions = {}): Promise<Stub> {
+  const s: Stub = { starts: [], learnFetches: [], onboardingFetches: 0, posted: [], files: new Map(Object.entries(opts.files ?? {})), puts: [], checkRuns: 0, errors: [] };
+  page.on('pageerror', (err) => s.errors.push(`pageerror: ${err.message}`));
+  page.on('console', (msg) => {
+    // A stubbed 404 is logged by the browser itself; that is not a fault of the page.
+    if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) s.errors.push(msg.text());
+  });
+
+  // The console Worker's routes.
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    const path = url.pathname;
+    if (path === '/api/me') return json(route, { sub: 'console' });
+    if (path === '/api/labs') return json(route, LABS);
+    if (path === '/api/onboarding') {
+      s.onboardingFetches++;
+      if (opts.onboarding === 'none') return json(route, { error: { code: 'no_onboarding', message: 'No onboarding quiz is published' } }, 404);
+      if (opts.onboarding === 'error') return json(route, { error: 'boom' }, 500);
+      return json(route, { version: 1, ...onboarding });
+    }
+    if (path === '/api/learn/answers' && method === 'POST') {
+      s.posted.push(JSON.parse(route.request().postData() ?? '{}'));
+      return json(route, { ok: true, recorded: 1 }, 201);
+    }
+    if (path.startsWith('/api/learn/') && method === 'GET') {
+      const slug = decodeURIComponent(path.slice('/api/learn/'.length));
+      s.learnFetches.push(slug);
+      if (slug === GATEWAY) return json(route, { version: '1.0.0', learn: bundle });
+      if (slug === LEARN_500) return json(route, { error: 'boom' }, 500);
+      return json(route, { error: { code: 'no_learn', message: 'no learning content' } }, 404);
+    }
+    if (path === '/api/start' && method === 'POST') {
+      const { lab: slug } = JSON.parse(route.request().postData() ?? '{}');
+      s.starts.push(slug);
+      return json(route, { id: SESSION_ID, state: 'starting', token: 'test-token', urls: { services: {} } }, 202);
+    }
+    return json(route, { error: 'not stubbed' }, 404);
+  });
+
+  // The API the session talks to, cross-origin.
+  await page.route(`${API}/**`, async (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    const method = req.method();
+    const p = url.pathname;
+    const base = `/sessions/${SESSION_ID}`;
+    if (p === base && method === 'GET') {
+      const now = Date.now();
+      return json(route, {
+        meta: { state: 'running', lab_slug: s.starts.at(-1) ?? opts.lab ?? GATEWAY, started_at: now, expires_at: now + 3_600_000, end_reason: null },
+        services: {},
+        snapshots: [],
+        cost: { usd: 0 },
+        hints: { total: 0, schedule: [], delivered: [] },
+        checks_history: [],
+        server_time: now,
+      });
+    }
+    if (p === `${base}/events`) return; // held open: the stream simply never says anything
+    if (p === `${base}/files` && method === 'GET') {
+      const names = ['brief.md', ...[...s.files.keys()]];
+      return json(route, names.map((name) => ({ name, size: name === 'brief.md' ? 30 : (s.files.get(name)?.length ?? 0), isDirectory: false })));
+    }
+    const file = p.startsWith(`${base}/files/`) ? decodeURIComponent(p.slice(`${base}/files/`.length)) : null;
+    if (file !== null && method === 'GET') {
+      if (file === 'brief.md') return json(route, { content: '# The brief\n\nSend a few calls and compare.' });
+      const text = s.files.get(file);
+      return text === undefined ? json(route, { error: { code: 'not_found', message: `${file} does not exist` } }, 404) : json(route, { content: text });
+    }
+    if (file !== null && method === 'PUT') {
+      if (opts.putDelayMs) await new Promise((r) => setTimeout(r, opts.putDelayMs));
+      const body = req.postData() ?? '';
+      s.files.set(file, body);
+      s.puts.push({ path: file, body });
+      return json(route, { ok: true });
+    }
+    if (p === `${base}/checks` && method === 'POST') {
+      s.checkRuns++;
+      const now = Date.now();
+      return json(route, {
+        run_id: `run-${s.checkRuns}`,
+        started_at: now - 500,
+        finished_at: now,
+        results: [
+          { name: 'support answered by a', pass: true, weight: 1 },
+          { name: 'token count matches', pass: false, weight: 2, message: 'expected 11' },
+        ],
+      });
+    }
+    if (p.startsWith(base) && method !== 'GET') return json(route, {}, 200);
+    return json(route, { error: 'not stubbed' }, 404);
+  });
+
+  // The terminal's WebSocket: accepted and silent.
+  await page.routeWebSocket(/\/terminal/, () => {});
+  return s;
+}
+
+// ----------------------------------------------------------------- the server
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.map': 'application/json',
+  '.svg': 'image/svg+xml',
+};
+
+/** The CSP the deployed console sends (public/_headers), so a violation is seen here. */
+const CSP = /Content-Security-Policy:\s*(.+)/.exec(readFileSync(join(PUBLIC, '_headers'), 'utf8'))?.[1]?.trim();
+
+function serve(): Promise<{ url: string; server: Server }> {
+  const server = createServer((req, res) => {
+    const pathname = decodeURIComponent((req.url ?? '/').split('?')[0]!);
+    const rel = normalize(pathname === '/' ? '/index.html' : pathname).replace(/^(\.\.[/\\])+/, '');
+    const file = join(PUBLIC, rel);
+    if (!file.startsWith(PUBLIC) || !existsSync(file) || !statSync(file).isFile()) {
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      return res.end('not found');
+    }
+    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-store', ...(CSP ? { 'content-security-policy': CSP } : {}) });
+    res.end(readFileSync(file));
+  });
+  return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok({ url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, server })));
+}
+
+const test = base.extend<object, { staticServer: string }>({
+  staticServer: [
+    async ({}, use) => {
+      if (!existsSync(join(PUBLIC, 'dist/app.js'))) throw new Error('dashboard/public/dist/app.js is missing: run `npm run build:dashboard` first');
+      const { url, server } = await serve();
+      await use(url);
+      await new Promise((done) => server.close(done));
+    },
+    { scope: 'worker' },
+  ],
+  baseURL: async ({ staticServer }, use) => use(staticServer),
+});
+
+// -------------------------------------------------------------------- helpers
+
+type Mastery = {
+  onboarding?: { status: 'done' | 'skipped' | null; at?: number; levels?: Record<string, string> };
+  concepts?: Record<string, { known: boolean }>;
+  overrides?: Record<string, string>;
+};
+
+/** Opens the console with some of this browser's state already in place. */
+async function open(page: Page, { mastery, theme }: { mastery?: Mastery | null; theme?: 'light' | 'dark' } = {}) {
+  await page.addInitScript(
+    ([m, t]) => {
+      // The "How this console works" dialog is another spec's business.
+      localStorage.setItem('opalixOnboarded', '1');
+      // Seeded once, so a reload in the test keeps what the page stored since.
+      if (m && !sessionStorage.getItem('seeded')) {
+        localStorage.setItem('opalixLearn', m as string);
+        sessionStorage.setItem('seeded', '1');
+      }
+      if (t) localStorage.setItem('opalixTheme', t as string);
+    },
+    [mastery ? JSON.stringify({ v: 1, ...mastery }) : null, theme ?? null] as const
+  );
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('body[data-booted="1"]');
+}
+
+const stored = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('opalixLearn') ?? 'null'));
+
+/** A mastery record where the platform quiz has been skipped, so it does not interrupt. */
+const SKIPPED: Mastery = { onboarding: { status: 'skipped', at: 1, levels: {} } };
+
+const screen = (page: Page) => page.locator('#learnScreen');
+const heading = (page: Page) => screen(page).locator('[data-learn-heading]');
+
+/** Picks options for a question (right or deliberately wrong), checks, and reads the verdict. */
+async function answer(page: Page, questions: Question[], right: boolean): Promise<{ question: Question; correct: boolean }> {
+  const prompt = (await page.locator('.quiz-prompt').innerText()).trim();
+  const question = questions.find((q) => q.prompt === prompt);
+  if (!question) throw new Error(`no question with the prompt "${prompt}"`);
+  const pick = right ? question.answer : [question.options.find((o) => !question.answer.includes(o.id))!.id];
+  for (const id of pick) await page.locator(`.quiz-option[data-option="${id}"] input`).check();
+  await page.getByRole('button', { name: 'Check', exact: true }).click();
+  const feedback = page.locator('.quiz-feedback');
+  await expect(feedback).toHaveAttribute('data-result', right ? 'correct' : 'incorrect');
+  await expect(feedback).toContainText(right ? 'Correct.' : 'Not quite.');
+  await expect(feedback).toContainText(question.explanation);
+  return { question, correct: right };
+}
+
+const next = (page: Page) => page.locator('.quiz-form .learn-actions button').filter({ hasNotText: 'Check' }).click();
+
+/** Answers every question that follows, right where `right(question)` says so; returns what was answered. */
+async function runQuiz(page: Page, questions: Question[], right: (q: Question) => boolean): Promise<Question[]> {
+  const asked: Question[] = [];
+  for (;;) {
+    if (!(await page.locator('.quiz-prompt').count())) break;
+    const { question } = await answer(page, questions, right(await currentQuestion(page, questions)));
+    asked.push(question);
+    await next(page);
+  }
+  return asked;
+}
+
+async function currentQuestion(page: Page, questions: Question[]): Promise<Question> {
+  const prompt = (await page.locator('.quiz-prompt').innerText()).trim();
+  return questions.find((q) => q.prompt === prompt)!;
+}
+
+/** The page is not wider than the window; on failure, names the elements that stick out. */
+const noHorizontalScroll = async (page: Page) => {
+  const over = await page.evaluate(() => {
+    const width = window.innerWidth;
+    const wide: string[] = [];
+    // An element inside something that clips or scrolls (a code block, a tab strip) is not what widens the page.
+    const clipped = (el: Element) => {
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        const ox = getComputedStyle(p).overflowX;
+        if (ox !== 'visible' && p.getBoundingClientRect().right <= width + 0.5) return true;
+      }
+      return false;
+    };
+    for (const el of document.querySelectorAll('body *')) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.right > width + 0.5 && !clipped(el)) wide.push(`${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}.${String((el as HTMLElement).className).split(' ')[0]} right=${Math.round(r.right)}`);
+    }
+    return { extra: document.documentElement.scrollWidth - width, wide: wide.slice(0, 8) };
+  });
+  expect(over.extra, `sticking out: ${over.wide.join(', ')}`).toBeLessThanOrEqual(0);
+};
+
+/** Starts the gateway lab from its card, past the learn screens when there are any. */
+async function enterSession(page: Page) {
+  await expect(page.locator('#workspace')).toBeVisible();
+  await expect(page.locator('#statePill')).toHaveText('running');
+  await expect(page.locator('#bootModal')).toBeHidden();
+}
+
+// =========================================================================
+// the platform quiz
+// =========================================================================
+
+test.describe('the platform quiz', () => {
+  test('appears once after sign-in, walks through every question, and summarises per module', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+
+    await expect(screen(page)).toBeVisible();
+    await expect(page.locator('#launcher')).toBeHidden();
+    await expect(heading(page)).toHaveText('Find your starting point');
+    await expect(heading(page)).toBeFocused();
+    await expect(screen(page)).toContainText('no score');
+    await screenshotLayoutCheck(page);
+
+    await page.getByRole('button', { name: 'Start the quiz' }).click();
+    await expect(heading(page)).toHaveText(`Question 1 of ${onboarding.questions.length}`);
+    await expect(heading(page)).toBeFocused();
+
+    // "Skip for now" is there on every question.
+    await expect(page.getByRole('button', { name: 'Skip for now' })).toBeVisible();
+
+    // Checking with nothing chosen says so and does not move on.
+    await page.getByRole('button', { name: 'Check', exact: true }).click();
+    await expect(page.locator('.quiz-feedback')).toContainText(/Choose/);
+    await expect(heading(page)).toHaveText(`Question 1 of ${onboarding.questions.length}`);
+
+    // Single choice is radios, multiple choice is checkboxes.
+    const first = onboarding.questions[0]!;
+    const kinds = new Set<string>();
+    for (const q of onboarding.questions) kinds.add(q.type);
+    expect(kinds.has('single') && kinds.has('multi')).toBe(true);
+    await expect(page.locator('.quiz-option input').first()).toHaveAttribute('type', first.type === 'multi' ? 'checkbox' : 'radio');
+
+    // Gateway right, everything else wrong.
+    let index = 0;
+    let sawMulti = false;
+    for (;;) {
+      if (!(await page.locator('.quiz-prompt').count())) break;
+      index++;
+      await expect(heading(page)).toHaveText(`Question ${index} of ${onboarding.questions.length}`);
+      const q = await currentQuestion(page, onboarding.questions);
+      if (q.type === 'multi') {
+        sawMulti = true;
+        await expect(page.locator('.quiz-option input').first()).toHaveAttribute('type', 'checkbox');
+      }
+      await answer(page, onboarding.questions, q.concept.startsWith('gateway.'));
+      // The verdict is announced from a live region that took focus.
+      await expect(page.locator('.quiz-feedback')).toHaveAttribute('aria-live', 'polite');
+      await expect(page.locator('.quiz-feedback')).toBeFocused();
+      await next(page);
+    }
+    expect(index).toBe(onboarding.questions.length);
+    expect(sawMulti).toBe(true);
+
+    // The summary: one row per module from the concept registry, a level chip and a line each.
+    await expect(heading(page)).toHaveText('Where to start');
+    await expect(heading(page)).toBeFocused();
+    const areas = Object.entries(concepts.areas).sort((a, b) => a[1].module - b[1].module);
+    const rows = page.locator('.level-row');
+    await expect(rows).toHaveCount(areas.length);
+    for (const [area, info] of areas) {
+      const row = page.locator(`.level-row[data-area="${area}"]`);
+      await expect(row).toContainText(`Module ${info.module}`);
+      await expect(row).toContainText(info.title);
+      await expect(row.locator('.level-chip')).toHaveText(area === 'gateway' ? 'Strong' : 'New');
+      await expect(row.locator('.level-line')).toContainText(area === 'gateway' ? 'short recaps' : `Start with module ${info.module}`);
+    }
+    await expect(screen(page).locator('.learn-lede')).toHaveText('Start with module 2, Tools and MCP.');
+    // No marks, no scores, nothing graded.
+    expect(await screen(page).innerText()).not.toMatch(/\b(score|scored|grade|graded|points|percent)\b|\d+\s*%/i);
+
+    // The answers went out once, anonymously, as onboarding.
+    await expect.poll(() => s.posted.length).toBe(1);
+    const body = s.posted[0]!;
+    expect(Object.keys(body)).toEqual(['answers']);
+    expect(body.answers).toHaveLength(onboarding.questions.length);
+    for (const a of body.answers) {
+      expect(Object.keys(a).sort()).toEqual(['concept', 'correct', 'phase', 'question_id']);
+      expect(a.phase).toBe('onboarding');
+      expect(a.correct).toBe(a.concept.startsWith('gateway.'));
+    }
+    expect(JSON.stringify(body)).not.toMatch(/user|session|console|subject/i);
+
+    await page.getByRole('button', { name: 'Go to the labs' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await expect(screen(page)).toBeHidden();
+
+    // "Suggested start" lands on the first module that is new: module 2, nowhere else.
+    await expect(page.locator('.badge-suggested')).toHaveCount(1);
+    await expect(page.locator('.module[data-module="2"] .badge-suggested')).toHaveText('Suggested start');
+    await expect(page.locator('.module[data-module="1"] .badge-suggested')).toHaveCount(0);
+
+    // Stored in this browser, and never shown again by itself.
+    const m = await stored(page);
+    expect(m.onboarding.status).toBe('done');
+    expect(m.onboarding.levels.gateway).toBe('strong');
+    expect(m.onboarding.levels.mcp).toBe('new');
+    await page.reload();
+    await page.waitForSelector('body[data-booted="1"]');
+    await expect(page.locator('.lab').first()).toBeVisible();
+    await expect(screen(page)).toBeHidden();
+    await expect(page.locator('.module[data-module="2"] .badge-suggested')).toHaveCount(1);
+    expect(s.errors).toEqual([]);
+  });
+
+  test('"Skip for now" from the first screen is remembered and the quiz never comes back by itself', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await expect(heading(page)).toHaveText('Find your starting point');
+    await page.getByRole('button', { name: 'Skip for now' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await expect(screen(page)).toBeHidden();
+    expect((await stored(page)).onboarding.status).toBe('skipped');
+    expect(s.posted).toEqual([]);
+    // No "Suggested start" without a quiz.
+    await expect(page.locator('.badge-suggested')).toHaveCount(0);
+
+    await page.reload();
+    await page.waitForSelector('body[data-booted="1"]');
+    await expect(page.locator('.lab').first()).toBeVisible();
+    await expect(screen(page)).toBeHidden();
+    // Give a late offer the time it would need.
+    await page.waitForTimeout(500);
+    await expect(screen(page)).toBeHidden();
+    expect(s.errors).toEqual([]);
+  });
+
+  test('"Skip for now" in the middle of the quiz leaves, and records nothing but the skip', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await page.getByRole('button', { name: 'Start the quiz' }).click();
+    await answer(page, onboarding.questions, true);
+    await next(page);
+    await expect(heading(page)).toHaveText(`Question 2 of ${onboarding.questions.length}`);
+    await page.getByRole('button', { name: 'Skip for now' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    const m = await stored(page);
+    expect(m.onboarding.status).toBe('skipped');
+    expect(m.onboarding.levels).toEqual({});
+    expect(s.posted).toEqual([]);
+  });
+
+  test('can be retaken from the header; skipping a retake keeps the levels already earned', async ({ page }) => {
+    const levels = { gateway: 'strong', mcp: 'ok', rag: 'new' };
+    const s = await stub(page);
+    await open(page, { mastery: { onboarding: { status: 'done', at: 5, levels } } });
+    await expect(page.locator('.lab').first()).toBeVisible();
+    await expect(screen(page)).toBeHidden();
+
+    // Next to the help control.
+    const retake = page.locator('#btnRetakeQuiz');
+    await expect(retake).toBeVisible();
+    const help = await page.locator('#btnHelp').boundingBox();
+    const at = await retake.boundingBox();
+    expect(Math.abs(at!.y - help!.y)).toBeLessThan(20);
+
+    await retake.click();
+    await expect(heading(page)).toHaveText('Find your starting point');
+    await page.getByRole('button', { name: 'Skip for now' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    expect((await stored(page)).onboarding).toEqual({ status: 'done', at: 5, levels });
+    expect(s.posted).toEqual([]);
+
+    // The help dialog carries the same control.
+    await page.locator('#btnHelp').click();
+    await expect(page.locator('#btnOnboardingRetake')).toBeVisible();
+    await page.locator('#btnOnboardingRetake').click();
+    await expect(heading(page)).toHaveText('Find your starting point');
+    await expect(page.locator('#onboarding')).not.toHaveAttribute('open', '');
+  });
+
+  test('a finished retake replaces the levels and moves the suggestion', async ({ page }) => {
+    await stub(page);
+    await open(page, { mastery: { onboarding: { status: 'done', at: 5, levels: { gateway: 'new', mcp: 'strong' } } } });
+    await expect(page.locator('.module[data-module="1"] .badge-suggested')).toHaveCount(1);
+    await page.locator('#btnRetakeQuiz').click();
+    await page.getByRole('button', { name: 'Start the quiz' }).click();
+    await runQuiz(page, onboarding.questions, () => true);
+    await expect(heading(page)).toHaveText('Where to start');
+    await expect(page.locator('.level-row[data-level="new"]')).toHaveCount(0);
+    await expect(screen(page).locator('.learn-lede')).toHaveText('You can start with any module.');
+    await page.getByRole('button', { name: 'Go to the labs' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await expect(page.locator('.badge-suggested')).toHaveCount(0);
+    expect((await stored(page)).onboarding.levels.gateway).toBe('strong');
+  });
+
+  test('does not appear, and offers no retake, when there is no quiz or it cannot be read', async ({ page }) => {
+    for (const mode of ['none', 'error'] as const) {
+      const p = await page.context().newPage();
+      const s = await stub(p, { onboarding: mode });
+      await open(p);
+      await expect(p.locator('.lab').first()).toBeVisible();
+      await p.waitForTimeout(300);
+      await expect(screen(p)).toBeHidden();
+      await expect(p.locator('#btnRetakeQuiz')).toBeHidden();
+      expect(s.onboardingFetches).toBeGreaterThan(0);
+      expect(s.errors).toEqual([]);
+      await p.close();
+    }
+  });
+
+  test('the quiz waits for the first-run dialog to be read', async ({ page }) => {
+    await stub(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('body[data-booted="1"]');
+    await expect(page.locator('#onboarding')).toHaveAttribute('open', '');
+    await expect(screen(page)).toBeHidden();
+    await page.getByRole('button', { name: 'Got it' }).click();
+    await expect(heading(page)).toHaveText('Find your starting point');
+  });
+
+  test('is keyboard operable and keeps the answer in words, not colour alone', async ({ page }) => {
+    await stub(page);
+    await open(page);
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: 'Start the quiz' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(heading(page)).toHaveText(`Question 1 of ${onboarding.questions.length}`);
+    const q = onboarding.questions[0]!;
+    // Tab into the options, choose with the keyboard, check with Enter.
+    await page.locator('.quiz-option input').first().focus();
+    await page.keyboard.press('Space');
+    await page.keyboard.press('Tab');
+    const right = q.answer.length === 1 && q.answer[0] === q.options[0]!.id;
+    await page.getByRole('button', { name: 'Check', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.quiz-feedback')).toBeFocused();
+    await expect(page.locator('.quiz-feedback')).toContainText(right ? 'Correct.' : 'Not quite.');
+    // The correct option says so in text.
+    await expect(page.locator(`.quiz-option[data-option="${q.answer[0]}"] .quiz-option-flag`)).toContainText('Correct answer');
+  });
+});
+
+// =========================================================================
+// Before you begin
+// =========================================================================
+
+/** Starts the gateway lab from its card. */
+const startCard = (page: Page) => page.locator(`.lab[data-slug="${GATEWAY}"] .lab-start`).click();
+
+test.describe('Before you begin', () => {
+  test('shows the story first, and does not start the session until Start the lab is pressed', async ({ page }) => {
+    const s = await stub(page);
+    await open(page, { mastery: SKIPPED });
+    await startCard(page);
+
+    await expect(screen(page)).toBeVisible();
+    await expect(page.locator('#launcher')).toBeHidden();
+    await expect(heading(page)).toHaveText(bundle.story!.title);
+    await expect(heading(page)).toBeFocused();
+    await expect(screen(page).locator('.learn-meta')).toHaveText(`${bundle.story!.minutes} min read`);
+    // Rendered markdown, not its source.
+    await expect(screen(page).locator('.learn-prose p').first()).toBeVisible();
+    await expect(screen(page).locator('.learn-prose code').first()).toBeVisible();
+    expect(await screen(page).locator('.learn-prose').innerText()).not.toMatch(/\*\*|`/);
+    expect(s.learnFetches).toEqual([GATEWAY]);
+    expect(s.starts).toEqual([]);
+
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(heading(page)).toHaveText(`Question 1 of ${DIAGNOSTIC_COUNT}`);
+    expect(s.starts).toEqual([]);
+    await expect(page.getByRole('button', { name: 'Skip all, just start the lab' })).toBeVisible();
+    expect(s.errors).toEqual([]);
+  });
+
+  test('asks the diagnostic questions one per screen and collapses the concept that was answered fully right', async ({ page }) => {
+    const s = await stub(page);
+    await open(page, { mastery: SKIPPED });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    // Know aliases completely, miss everything else.
+    const asked = await runQuiz(page, bundle.questions, (q) => q.concept === ALIASES);
+    expect(asked.map((q) => q.id).sort()).toEqual(bundle.questions.filter((q) => q.diagnostic !== false).map((q) => q.id).sort());
+
+    await expect(heading(page)).toHaveText('Your plan for this lab');
+    await expect(heading(page)).toBeFocused();
+    const aliases = page.locator(`.lesson[data-concept="${ALIASES}"]`);
+    await expect(aliases).toHaveAttribute('data-state', 'collapsed');
+    await expect(aliases.locator('.lesson-recap')).toHaveText(lessonOf(ALIASES).recap);
+    await expect(aliases.locator('.lesson-body')).toHaveCount(0);
+    await expect(aliases.locator('.lesson-chip')).toHaveText('You know this');
+    await expect(aliases.getByRole('button', { name: 'Show me the lesson anyway' })).toBeVisible();
+    for (const c of bundle.concepts.filter((c) => c.id !== ALIASES)) {
+      const card = page.locator(`.lesson[data-concept="${c.id}"]`);
+      await expect(card).toHaveAttribute('data-state', 'expanded');
+      await expect(card.locator('.lesson-body')).toBeVisible();
+      await expect(card.getByRole('button', { name: 'I know this, skip' })).toBeVisible();
+    }
+    await expect(page.locator('.plan-summary')).toContainText('1 folded to a recap');
+
+    // The outcome is stored per concept, and posted anonymously as a diagnostic of this lab.
+    const m = await stored(page);
+    expect(m.concepts[ALIASES]).toEqual({ known: true });
+    expect(m.concepts[SPEND]).toEqual({ known: false });
+    await expect.poll(() => s.posted.length).toBe(1);
+    const body = s.posted[0]!;
+    expect(body.lab_slug).toBe(GATEWAY);
+    expect(body.lab_version).toBe('1.0.0');
+    expect(body.answers).toHaveLength(DIAGNOSTIC_COUNT);
+    expect(new Set(body.answers.map((a: any) => a.phase))).toEqual(new Set(['diagnostic']));
+    expect(Object.keys(body).sort()).toEqual(['answers', 'lab_slug', 'lab_version']);
+    expect(s.starts).toEqual([]);
+  });
+
+  test('one miss is enough to keep a concept open', async ({ page }) => {
+    await stub(page);
+    await open(page, { mastery: SKIPPED });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    // Every aliases question right except the first.
+    const aliasQs = diagnosticsOf(ALIASES);
+    expect(aliasQs.length).toBeGreaterThan(1);
+    await runQuiz(page, bundle.questions, (q) => q.concept === ALIASES && q.id !== aliasQs[0]!.id);
+    await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'expanded');
+    expect((await stored(page)).concepts[ALIASES]).toEqual({ known: false });
+  });
+
+  test('only asks about concepts that are not already known', async ({ page }) => {
+    await stub(page);
+    await open(page, { mastery: { ...SKIPPED, concepts: { [ALIASES]: { known: true } } } });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    const expected = DIAGNOSTIC_COUNT - diagnosticsOf(ALIASES).length;
+    await expect(heading(page)).toHaveText(`Question 1 of ${expected}`);
+    const asked = await runQuiz(page, bundle.questions, () => false);
+    expect(asked.some((q) => q.concept === ALIASES)).toBe(false);
+    expect(asked).toHaveLength(expected);
+    // Still known, so still folded.
+    await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
+  });
+
+  test('goes straight to the plan when every concept is already known', async ({ page }) => {
+    const known = Object.fromEntries(bundle.concepts.map((c) => [c.id, { known: true }]));
+    await stub(page);
+    await open(page, { mastery: { ...SKIPPED, concepts: known } });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(heading(page)).toHaveText('Your plan for this lab');
+    await expect(page.locator('.lesson[data-state="collapsed"]')).toHaveCount(bundle.concepts.length);
+    await expect(page.locator('.plan-summary')).toContainText('You already know what this lab needs');
+  });
+
+  test('the learner overrides: "Show me the lesson anyway" and "I know this, skip", remembered', async ({ page }) => {
+    const s = await stub(page);
+    await open(page, { mastery: SKIPPED });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await runQuiz(page, bundle.questions, (q) => q.concept === ALIASES);
+
+    const aliases = page.locator(`.lesson[data-concept="${ALIASES}"]`);
+    const spend = page.locator(`.lesson[data-concept="${SPEND}"]`);
+
+    // Open a folded lesson; its diagram and text appear, the button flips, focus stays on it.
+    await aliases.getByRole('button', { name: 'Show me the lesson anyway' }).click();
+    await expect(aliases).toHaveAttribute('data-state', 'expanded');
+    await expect(aliases.locator('.lesson-body')).toBeVisible();
+    await expect(aliases.locator('.lesson-chip')).toHaveText('Opened by you');
+    await expect(aliases.getByRole('button', { name: 'I know this, skip' })).toBeFocused();
+
+    // Fold an open one.
+    await spend.getByRole('button', { name: 'I know this, skip' }).click();
+    await expect(spend).toHaveAttribute('data-state', 'collapsed');
+    await expect(spend.locator('.lesson-recap')).toHaveText(lessonOf(SPEND).recap);
+    await expect(spend.locator('.lesson-chip')).toHaveText('Skipped');
+    await expect(spend.getByRole('button', { name: 'Show me the lesson anyway' })).toBeFocused();
+
+    const m = await stored(page);
+    expect(m.overrides).toEqual({ [ALIASES]: 'forced', [SPEND]: 'skipped' });
+
+    // A second start of the same lab respects them: forced stays open even though known, skipped stays folded.
+    await page.getByRole('button', { name: '← Back to labs' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    // Aliases is known (nothing asked about it); the rest are asked again.
+    await runQuiz(page, bundle.questions, () => false);
+    await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'expanded');
+    await expect(page.locator(`.lesson[data-concept="${SPEND}"]`)).toHaveAttribute('data-state', 'collapsed');
+    expect(s.starts).toEqual([]);
+  });
+
+  test('a lesson shows its text and its embedded diagram', async ({ page }) => {
+    await stub(page);
+    await open(page, { mastery: SKIPPED });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await runQuiz(page, bundle.questions, () => false);
+    const card = page.locator(`.lesson[data-concept="${ALIASES}"]`);
+    await expect(card.locator('.lesson-body p').first()).toBeVisible();
+    const diagram = card.locator('.diagram');
+    await expect(diagram.first()).toBeVisible();
+    await expect(diagram.first().locator('svg')).toBeVisible();
+    // The diagram is a labelled group with its steps available as text.
+    await expect(diagram.first()).toHaveAttribute('role', 'group');
+  });
+
+  test('starts the lab only when Start the lab is pressed, then boots', async ({ page }) => {
+    const s = await stub(page);
+    await open(page, { mastery: SKIPPED });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await runQuiz(page, bundle.questions, () => true);
+    await expect(heading(page)).toHaveText('Your plan for this lab');
+    await expect(page.locator('.lesson[data-state="collapsed"]')).toHaveCount(bundle.concepts.length);
+    expect(s.starts).toEqual([]);
+    await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+    await enterSession(page);
+    expect(s.starts).toEqual([GATEWAY]);
+    await expect(screen(page)).toBeHidden();
+    expect(s.errors).toEqual([]);
+  });
+
+  test('"Skip all, just start the lab" starts from the story, before any question', async ({ page }) => {
+    const s = await stub(page);
+    await open(page, { mastery: SKIPPED });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
+    await enterSession(page);
+    expect(s.starts).toEqual([GATEWAY]);
+    expect(s.posted).toEqual([]);
+    // Nothing was decided on the learner's behalf.
+    expect((await stored(page)).concepts ?? {}).toEqual({});
+  });
+
+  test('"Skip all, just start the lab" is on a question screen too, and "Back to labs" returns', async ({ page }) => {
+    const s = await stub(page);
+    await open(page, { mastery: SKIPPED });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('button', { name: '← Back to labs' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await expect(screen(page)).toBeHidden();
+    expect(s.starts).toEqual([]);
+
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
+    await enterSession(page);
+    expect(s.starts).toEqual([GATEWAY]);
+  });
+
+  test('a failed start leaves the plan on screen with the buttons working again', async ({ page }) => {
+    const s = await stub(page);
+    await page.route('**/api/start', (route) => json(route, { error: 'no container in a stubbed test' }, 500));
+    await open(page, { mastery: { ...SKIPPED, concepts: Object.fromEntries(bundle.concepts.map((c) => [c.id, { known: true }])) } });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+    await expect(page.locator('#toast')).toContainText('Could not start this lab');
+    await expect(heading(page)).toHaveText('Your plan for this lab');
+    await expect(page.getByRole('button', { name: 'Start the lab', exact: true })).toBeEnabled();
+    await expect(page.locator('#workspace')).toBeHidden();
+    expect(s.starts).toEqual([]);
+  });
+
+  test("a 'strong' platform area starts the lessons folded when the lab's own questions were not asked", async ({ page }) => {
+    await stub(page);
+    await open(page, { mastery: { onboarding: { status: 'done', at: 1, levels: { gateway: 'strong' } } } });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
+    await enterSession(page);
+    await page.getByRole('tab', { name: 'Learn' }).click();
+    for (const c of bundle.concepts) await expect(page.locator(`#learnBody .lesson[data-concept="${c.id}"]`)).toHaveAttribute('data-state', 'collapsed');
+  });
+
+  test('an answered diagnostic beats a strong area: a missed concept opens', async ({ page }) => {
+    await stub(page);
+    await open(page, { mastery: { onboarding: { status: 'done', at: 1, levels: { gateway: 'strong' } } } });
+    await startCard(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await runQuiz(page, bundle.questions, (q) => q.concept !== SPEND);
+    await expect(page.locator(`.lesson[data-concept="${SPEND}"]`)).toHaveAttribute('data-state', 'expanded');
+    await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
+  });
+
+  test('keeps to the screen width at 390px', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await stub(page);
+    await open(page, { mastery: SKIPPED });
+    await startCard(page);
+    await noHorizontalScroll(page);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await noHorizontalScroll(page);
+    await runQuiz(page, bundle.questions, () => false);
+    await expect(heading(page)).toHaveText('Your plan for this lab');
+    await noHorizontalScroll(page);
+    for (const box of await page.locator('#learnScreen .lesson, #learnScreen .quiz-option, #learnScreen .diagram').all()) {
+      const r = await box.boundingBox();
+      if (r) expect(r.x + r.width).toBeLessThanOrEqual(390.5);
+    }
+  });
+});
+
+// =========================================================================
+// in the session
+// =========================================================================
+
+const ANSWERS_TEMPLATE = JSON.stringify({ support_deployment: null, support_tokens_hello: null, unknown_alias_status: null }, null, 2) + '\n';
+
+/** Starts the gateway lab and goes straight in. */
+async function intoSession(page: Page, opts: StubOptions = {}, mastery: Mastery = SKIPPED) {
+  const s = await stub(page, { files: { 'answers.json': ANSWERS_TEMPLATE }, ...opts });
+  await open(page, { mastery });
+  await startCard(page);
+  await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
+  await enterSession(page);
+  // The tabs are built once the brief has loaded.
+  await expect(page.locator('#tabLearn')).toBeVisible();
+  await expect(page.locator('#tabQuestions')).toBeVisible();
+  return s;
+}
+
+const field = (page: Page, key: string) => page.locator(`.qfield[data-key="${key}"]`);
+const lastPut = (s: Stub) => JSON.parse(s.puts.at(-1)!.body) as Answers;
+
+test.describe('the Learn tab', () => {
+  test('shows the story and every lesson with its diagram, toggleable, without changing how the lab opens', async ({ page }) => {
+    await intoSession(page);
+    // The brief is still what a learner lands on.
+    await expect(page.locator('.tab-active')).toHaveText('Brief');
+    const tabs = await page.locator('#centerTabs .tab:visible').allInnerTexts();
+    expect(tabs).toEqual(['Brief', 'Learn', 'Questions', 'Terminal', 'Editor']);
+
+    await page.getByRole('tab', { name: 'Learn' }).click();
+    await expect(page.locator('#viewLearn')).toBeVisible();
+    await expect(page.locator('#learnBody .learn-story-title')).toHaveText(bundle.story!.title);
+    await expect(page.locator('#learnBody .learn-story .learn-prose p').first()).toBeVisible();
+    const lessons = page.locator('#learnBody .lesson');
+    await expect(lessons).toHaveCount(bundle.concepts.length);
+
+    // Nothing known: all open, each with a diagram and a toggle that folds it to its recap.
+    const first = lessons.first();
+    await expect(first).toHaveAttribute('data-state', 'expanded');
+    await expect(first.locator('.diagram').first()).toBeVisible();
+    const toggle = first.getByRole('button', { name: 'Hide lesson' });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await toggle.click();
+    await expect(first).toHaveAttribute('data-state', 'collapsed');
+    await expect(first.locator('.lesson-recap')).toBeVisible();
+    await expect(first.getByRole('button', { name: 'Show lesson' })).toHaveAttribute('aria-expanded', 'false');
+    await expect(first.getByRole('button', { name: 'Show lesson' })).toBeFocused();
+    await first.getByRole('button', { name: 'Show lesson' }).click();
+    await expect(first.locator('.diagram').first()).toBeVisible();
+    // Toggling here does not write to the record.
+    expect((await stored(page)).overrides ?? {}).toEqual({});
+  });
+
+  test("follows the plan: a known concept is folded, and it opens on demand", async ({ page }) => {
+    await intoSession(page, {}, { ...SKIPPED, concepts: { [ALIASES]: { known: true } } });
+    await page.getByRole('tab', { name: 'Learn' }).click();
+    const aliases = page.locator(`#learnBody .lesson[data-concept="${ALIASES}"]`);
+    await expect(aliases).toHaveAttribute('data-state', 'collapsed');
+    await expect(aliases.locator('.lesson-chip')).toHaveText('You know this');
+    await aliases.getByRole('button', { name: 'Show lesson' }).click();
+    await expect(aliases.locator('.diagram').first()).toBeVisible();
+  });
+
+  test('is on a phone-width page without widening it', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await intoSession(page);
+    await page.getByRole('tab', { name: 'Learn' }).click();
+    await expect(page.locator('#learnBody .lesson').first()).toBeVisible();
+    await noHorizontalScroll(page);
+    const widths = await page.locator('#learnBody .lesson, #learnBody .diagram, #learnBody pre').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right));
+    for (const right of widths) expect(right).toBeLessThanOrEqual(390.5);
+    // The tab is reachable in the scrolling tab strip.
+    await expect(page.getByRole('tab', { name: 'Questions' })).toBeAttached();
+  });
+});
+
+test.describe('the Questions tab', () => {
+  test('renders each field with its prompt and help, and loads the current values', async ({ page }) => {
+    await intoSession(page, {
+      files: { 'answers.json': JSON.stringify({ support_deployment: 'b', support_tokens_hello: 12, unknown_alias_status: null, notes: 'keep me' }) },
+    });
+    await page.getByRole('tab', { name: 'Questions' }).click();
+    await expect(page.locator('#viewQuestions')).toBeVisible();
+    await expect(page.locator('.qfield')).toHaveCount(bundle.fields.length);
+    for (const f of bundle.fields) {
+      const box = field(page, f.key);
+      await expect(box).toContainText(f.prompt.replace(/`/g, ''));
+      if (f.help) await expect(box.locator('.qfield-help')).toContainText(f.help.slice(0, 30));
+    }
+    // A choice with two choices is radios; a number is a number input.
+    await expect(field(page, 'support_deployment').locator('input[type="radio"]')).toHaveCount(2);
+    await expect(field(page, 'support_tokens_hello').locator('input[type="number"]')).toBeVisible();
+    // Current values, from the file.
+    await expect(field(page, 'support_deployment').locator('input[value="b"]')).toBeChecked();
+    await expect(field(page, 'support_tokens_hello').locator('input')).toHaveValue('12');
+    await expect(field(page, 'unknown_alias_status').locator('input')).toHaveValue('');
+    // The controls are labelled and described.
+    const input = field(page, 'support_tokens_hello').locator('input');
+    await expect(input).toHaveAccessibleName(/total token count/);
+    await expect(input).toHaveAccessibleDescription(/send_calls\.py/);
+  });
+
+  test('writes answers.json as JSON with the right types after a pause, and says Saved', async ({ page }) => {
+    const s = await intoSession(page, {
+      files: { 'answers.json': JSON.stringify({ support_deployment: null, support_tokens_hello: null, unknown_alias_status: null, notes: 'keep me' }) },
+    });
+    await page.getByRole('tab', { name: 'Questions' }).click();
+    await expect(page.locator('.qfield')).toHaveCount(bundle.fields.length);
+    const status = page.locator('.qform-status');
+
+    await field(page, 'support_deployment').locator('input[value="a"]').check();
+    await expect(status).toHaveText('Unsaved changes');
+    // Typing several characters is one write, after ~600 ms of quiet.
+    const tokens = field(page, 'support_tokens_hello').locator('input');
+    await tokens.pressSequentially('11', { delay: 40 });
+    const before = s.puts.length;
+    expect(before).toBe(0);
+    await expect(status).toHaveText('Saved', { timeout: 5000 });
+    expect(s.puts).toHaveLength(1);
+    expect(s.puts[0]!.path).toBe('answers.json');
+    const written = JSON.parse(s.puts[0]!.body);
+    expect(written).toEqual({ support_deployment: 'a', support_tokens_hello: 11, unknown_alias_status: null, notes: 'keep me' });
+    expect(typeof written.support_tokens_hello).toBe('number');
+    expect(written.unknown_alias_status).toBeNull();
+    // Unknown keys survive.
+    expect(written.notes).toBe('keep me');
+
+    // Emptying a number writes null, not 0 or "".
+    await tokens.fill('');
+    await expect(status).toHaveText('Saved', { timeout: 5000 });
+    expect(lastPut(s).support_tokens_hello).toBeNull();
+    // A decimal stays a number.
+    await field(page, 'unknown_alias_status').locator('input').fill('404');
+    await expect(status).toHaveText('Saved', { timeout: 5000 });
+    expect(lastPut(s).unknown_alias_status).toBe(404);
+  });
+
+  test('the Save button writes at once', async ({ page }) => {
+    const s = await intoSession(page);
+    await page.getByRole('tab', { name: 'Questions' }).click();
+    await field(page, 'support_deployment').locator('input[value="b"]').check();
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.locator('.qform-status')).toHaveText('Saved');
+    expect(lastPut(s).support_deployment).toBe('b');
+    expect(s.puts.length).toBe(1);
+  });
+
+  const UNREADABLE: Array<[string, Record<string, string>]> = [
+    ['missing', {}],
+    ['not JSON', { 'answers.json': '{ this is not json' }],
+    ['not an object', { 'answers.json': '[1,2,3]' }],
+  ];
+  for (const [what, files] of UNREADABLE) {
+    test(`a file that is ${what} reads as empty, and is written out whole`, async ({ page }) => {
+      const s = await intoSession(page, { files });
+      await page.getByRole('tab', { name: 'Questions' }).click();
+      await expect(page.locator('.qfield')).toHaveCount(bundle.fields.length);
+      await expect(page.locator('.qfield input[type="number"]').first()).toHaveValue('');
+      await expect(page.locator('.qfield input[type="radio"]:checked')).toHaveCount(0);
+      await field(page, 'unknown_alias_status').locator('input').fill('500');
+      await expect(page.locator('.qform-status')).toHaveText('Saved', { timeout: 5000 });
+      // Every field is in the file, the untouched ones null.
+      expect(lastPut(s)).toEqual({ support_deployment: null, support_tokens_hello: null, unknown_alias_status: 500 });
+      expect(s.errors).toEqual([]);
+    });
+  }
+
+  test('re-reads before writing and merges by key when the file changed in the editor meanwhile', async ({ page }) => {
+    const s = await intoSession(page, { files: { 'answers.json': JSON.stringify({ support_deployment: null, support_tokens_hello: null, unknown_alias_status: null, notes: 'v1' }) } });
+    await page.getByRole('tab', { name: 'Questions' }).click();
+    await expect(page.locator('.qfield')).toHaveCount(bundle.fields.length);
+
+    // Someone edits the file: a key the form shows but the learner has not touched, and a key it does not know.
+    s.files.set('answers.json', JSON.stringify({ support_deployment: 'b', support_tokens_hello: null, unknown_alias_status: 404, notes: 'edited in the editor', extra: [1] }));
+
+    // The learner changes a different key in the form.
+    await field(page, 'support_tokens_hello').locator('input').fill('22');
+    await expect(page.locator('.qform-status')).toHaveText('Saved', { timeout: 5000 });
+    expect(lastPut(s)).toEqual({ support_deployment: 'b', support_tokens_hello: 22, unknown_alias_status: 404, notes: 'edited in the editor', extra: [1] });
+    // What the editor wrote now shows in the untouched controls.
+    await expect(field(page, 'support_deployment').locator('input[value="b"]')).toBeChecked();
+    await expect(field(page, 'unknown_alias_status').locator('input')).toHaveValue('404');
+
+    // A key the learner changed wins over an edit to the same key.
+    s.files.set('answers.json', JSON.stringify({ support_deployment: 'a', support_tokens_hello: 99, unknown_alias_status: 404, notes: 'again' }));
+    await field(page, 'support_tokens_hello').locator('input').fill('23');
+    await expect(page.locator('.qform-status')).toHaveText('Saved', { timeout: 5000 });
+    expect(lastPut(s)).toEqual({ support_deployment: 'a', support_tokens_hello: 23, unknown_alias_status: 404, notes: 'again' });
+  });
+
+  test('shows an edit made elsewhere when the tab is opened again', async ({ page }) => {
+    const s = await intoSession(page);
+    await page.getByRole('tab', { name: 'Questions' }).click();
+    await expect(page.locator('.qfield')).toHaveCount(bundle.fields.length);
+    await page.getByRole('tab', { name: 'Brief' }).click();
+    s.files.set('answers.json', JSON.stringify({ support_deployment: 'b', support_tokens_hello: 7, unknown_alias_status: null }));
+    await page.getByRole('tab', { name: 'Questions' }).click();
+    await expect(field(page, 'support_tokens_hello').locator('input')).toHaveValue('7');
+    await expect(field(page, 'support_deployment').locator('input[value="b"]')).toBeChecked();
+  });
+
+  test('a failed write says so and keeps the answers for another try', async ({ page }) => {
+    const s = await intoSession(page);
+    await page.route(`${API}/sessions/${SESSION_ID}/files/answers.json`, (route) => (route.request().method() === 'PUT' ? json(route, { error: 'disk full' }, 500) : route.fallback()));
+    await page.getByRole('tab', { name: 'Questions' }).click();
+    await field(page, 'unknown_alias_status').locator('input').fill('500');
+    await expect(page.locator('.qform-status')).toContainText('Not saved', { timeout: 5000 });
+    await expect(field(page, 'unknown_alias_status').locator('input')).toHaveValue('500');
+    expect(s.puts).toEqual([]);
+  });
+
+  test('Run checks saves what is pending, then runs the console’s own checks', async ({ page }) => {
+    const s = await intoSession(page);
+    await page.getByRole('tab', { name: 'Questions' }).click();
+    await field(page, 'support_deployment').locator('input[value="a"]').check();
+    await page.locator('#btnRunChecksForm').click();
+    await expect(page.locator('.qform-checks')).toContainText('1/3 pts · 1/2 checks');
+    // The write came first, and the existing Checks panel shows the same run.
+    expect(lastPut(s).support_deployment).toBe('a');
+    expect(s.checkRuns).toBe(1);
+    await expect(page.locator('#checksPanel .check')).toHaveCount(2);
+    await expect(page.locator('#checksSummary')).toContainText('1/3 pts');
+  });
+
+  test('the editor and the form agree: a write is shown in an open, unmodified answers.json', async ({ page }) => {
+    const s = await intoSession(page);
+    await page.locator('#fileList button', { hasText: 'answers.json' }).click();
+    await expect(page.locator('#editorPath')).toHaveText('answers.json');
+    await expect(page.locator('#editorMount .cm-content')).toContainText('support_deployment');
+    await page.getByRole('tab', { name: 'Questions' }).click();
+    await field(page, 'unknown_alias_status').locator('input').fill('418');
+    await expect(page.locator('.qform-status')).toHaveText('Saved', { timeout: 5000 });
+    await page.getByRole('tab', { name: 'Editor' }).click();
+    await expect(page.locator('#editorMount .cm-content')).toContainText('418');
+    expect(s.puts).toHaveLength(1);
+  });
+
+  test('keeps to the screen width at 390px', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await intoSession(page);
+    await page.getByRole('tab', { name: 'Questions' }).click();
+    await expect(page.locator('.qfield')).toHaveCount(bundle.fields.length);
+    await noHorizontalScroll(page);
+    const rights = await page.locator('#questionsBody .qfield, #questionsBody input, #questionsBody .qform-actions').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right));
+    for (const right of rights) expect(right).toBeLessThanOrEqual(390.5);
+  });
+});
+
+// =========================================================================
+// labs without learning content
+// =========================================================================
+
+test.describe('a lab without learning content', () => {
+  test('goes straight to the boot, fetches no bundle and adds no tabs', async ({ page }) => {
+    const s = await stub(page);
+    await open(page, { mastery: SKIPPED });
+    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await enterSession(page);
+    expect(s.starts).toEqual([PLAIN]);
+    expect(s.learnFetches).toEqual([]);
+    await expect(screen(page)).toBeHidden();
+    await expect(page.locator('#tabLearn')).toBeHidden();
+    await expect(page.locator('#tabQuestions')).toBeHidden();
+    expect(await page.locator('#centerTabs .tab:visible').allInnerTexts()).toEqual(['Brief', 'Terminal', 'Editor']);
+    await expect(page.locator('.tab-active')).toHaveText('Brief');
+    expect(s.errors).toEqual([]);
+  });
+
+  for (const [what, slug] of [['is missing (404)', LEARN_404], ['fails (500)', LEARN_500]] as const) {
+    test(`a lab marked has_learn whose bundle ${what} also goes straight to the boot`, async ({ page }) => {
+      const s = await stub(page);
+      await open(page, { mastery: SKIPPED });
+      await page.locator(`.lab[data-slug="${slug}"] .lab-start`).click();
+      await enterSession(page);
+      expect(s.learnFetches).toContain(slug);
+      expect(s.starts).toEqual([slug]);
+      await expect(page.locator('#learnScreen')).toBeHidden();
+      await expect(page.locator('#tabLearn')).toBeHidden();
+      await expect(page.locator('#tabQuestions')).toBeHidden();
+      expect(s.errors).toEqual([]);
+    });
+  }
+
+  test('a remembered running session is resumed as before, with no learning screens in between', async ({ page }) => {
+    const s = await stub(page, { lab: PLAIN });
+    // The console comes back to the session this browser was in.
+    await page.addInitScript(([id]) => localStorage.setItem('opalix.session', JSON.stringify({ id, token: 'test-token', lab: 'see-how-requests-are-routed-plain', urls: { services: {} } })), [SESSION_ID]);
+    await open(page, { mastery: SKIPPED });
+    // Booted straight into the remembered session: no launcher, no learn screen.
+    await expect(page.locator('#workspace')).toBeVisible();
+    await expect(screen(page)).toBeHidden();
+    expect(s.learnFetches).toEqual([]);
+  });
+});
+
+// =========================================================================
+// screenshots
+// =========================================================================
+
+/** Fails when a learning screen is wider than the window. */
+async function screenshotLayoutCheck(page: Page) {
+  await noHorizontalScroll(page);
+}
+
+const VARIANTS = [
+  { name: 'light-1000', theme: 'light' as const, width: 1000, height: 800 },
+  { name: 'dark-1000', theme: 'dark' as const, width: 1000, height: 800 },
+  { name: 'light-390', theme: 'light' as const, width: 390, height: 844 },
+  { name: 'dark-390', theme: 'dark' as const, width: 390, height: 844 },
+];
+
+test.describe('screenshots', () => {
+  test.skip(process.env.LEARN_SHOTS === '0', 'LEARN_SHOTS=0');
+
+  for (const v of VARIANTS) {
+    test(`learning screens, ${v.name}`, async ({ page }) => {
+      mkdirSync(SHOTS, { recursive: true });
+      await page.setViewportSize({ width: v.width, height: v.height });
+      await page.emulateMedia({ colorScheme: v.theme, reducedMotion: 'reduce' });
+      await stub(page, { files: { 'answers.json': ANSWERS_TEMPLATE } });
+      const shot = async (name: string) => {
+        await noHorizontalScroll(page);
+        await page.screenshot({ path: join(SHOTS, `${name}-${v.name}.png`), fullPage: false });
+      };
+
+      // The platform quiz: intro, a checked question, the summary.
+      await open(page, { theme: v.theme });
+      await expect(heading(page)).toHaveText('Find your starting point');
+      await shot('onboarding-intro');
+      await page.getByRole('button', { name: 'Start the quiz' }).click();
+      const q = await (async () => {
+        const first = onboarding.questions[0]!;
+        await page.locator(`.quiz-option[data-option="${first.options.find((o) => !first.answer.includes(o.id))!.id}"] input`).check();
+        await page.getByRole('button', { name: 'Check', exact: true }).click();
+        return first;
+      })();
+      expect(q).toBeTruthy();
+      await shot('onboarding-question');
+      await next(page);
+      await runQuiz(page, onboarding.questions, (x) => x.concept.startsWith('gateway.') || x.concept.startsWith('mcp.'));
+      await expect(heading(page)).toHaveText('Where to start');
+      await shot('onboarding-summary');
+      await page.getByRole('button', { name: 'Go to the labs' }).click();
+      await expect(page.locator('.badge-suggested')).toHaveCount(1);
+      await page.locator('.badge-suggested').scrollIntoViewIfNeeded();
+      await shot('launcher-suggested');
+
+      // Before you begin: the story, a question, the plan.
+      await startCard(page);
+      await expect(heading(page)).toHaveText(bundle.story!.title);
+      await shot('before-story');
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await runQuiz(page, bundle.questions, (x) => x.concept === ALIASES);
+      await expect(heading(page)).toHaveText('Your plan for this lab');
+      await shot('before-plan');
+      await page.locator(`.lesson[data-concept="${SPEND}"] .diagram`).first().scrollIntoViewIfNeeded();
+      await shot('before-plan-lesson');
+
+      // In the session: a lesson with its diagram, and the questions form.
+      await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+      await enterSession(page);
+      await page.getByRole('tab', { name: 'Learn' }).click();
+      await page.locator('#learnBody .lesson .diagram').first().scrollIntoViewIfNeeded();
+      await shot('lesson-diagram');
+      await page.getByRole('tab', { name: 'Questions' }).click();
+      await field(page, 'support_deployment').locator('input[value="a"]').check();
+      await field(page, 'support_tokens_hello').locator('input').fill('11');
+      await expect(page.locator('.qform-status')).toHaveText('Saved', { timeout: 5000 });
+      await shot('questions');
+    });
+  }
+});

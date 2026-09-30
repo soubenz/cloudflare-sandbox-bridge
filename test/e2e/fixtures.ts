@@ -76,7 +76,7 @@ export async function openConsole(page: Page, { onboarded = true }: { onboarded?
       // A first visit opens a modal <dialog> over the launcher, which would
       // swallow every click below it. Specs that are not about it have
       // already read it; 13-launcher-groups.spec.ts opts out to test it.
-      if (seen) localStorage.setItem('opalixOnboarded', '1');
+      if (seen) (localStorage.setItem('opalixOnboarded', '1'), localStorage.setItem('opalixLearn', '{"v":1,"onboarding":{"status":"skipped"}}'));
     },
     [API, sharedSession, onboarded] as const
   );

@@ -9,6 +9,8 @@
 <script src="./theme-init.js"></script>
 <link rel="stylesheet" href="./dist/xterm.css">
 <link rel="stylesheet" href="./styles.css">
+<link rel="stylesheet" href="./diagram.css">
+<link rel="stylesheet" href="./learn.css">
 </head>
 <body>
 
@@ -72,6 +74,8 @@
     <button id="btnBackToLabs" class="btn btn-primary" hidden>← Back to labs</button>
     <button id="btnTheme" class="btn btn-tiny btn-ghost btn-icon" type="button" aria-label="Theme: system. Switch to light."><span id="themeIcon" aria-hidden="true">◐</span></button>
     <button id="btnHelp" class="btn btn-tiny btn-ghost btn-icon" type="button" aria-label="How this console works" title="How this console works">?</button>
+    <!-- Shown only when the platform quiz exists (GET /api/onboarding answered). -->
+    <button id="btnRetakeQuiz" class="btn btn-tiny btn-ghost" type="button" title="Retake the platform quiz that sets where each module starts" hidden>Retake the quiz</button>
     <span class="identity" id="identity" title="Signed in as" hidden><span class="sr-only">Signed in as </span><span class="mono small" id="identityName"></span></span>
     <button id="btnSignOut" class="btn btn-tiny btn-ghost" type="button" title="Sign out of the console on this browser">Sign out</button>
   </div>
@@ -109,6 +113,11 @@
     <p class="sr-only">Loading labs…</p>
   </div>
   <p class="notice notice-bad" id="launchError" role="alert" hidden></p>
+</section>
+
+<!-- The learning screens: the platform quiz, and "Before you begin" for a lab. One at a time, in place of the launcher. -->
+<section class="learn-screen" id="learnScreen" aria-label="Learning" hidden>
+  <div class="learn-wrap" id="learnHost"></div>
 </section>
 
 <!-- Live session -->
@@ -224,6 +233,9 @@
     </section>
     <nav class="tabs" id="centerTabs" role="tablist" aria-label="Session views">
       <button class="tab tab-active" data-view="brief" role="tab" aria-selected="true" aria-controls="viewBrief">Brief</button>
+      <!-- Only for labs whose bundle has a story or lessons / graded fields. -->
+      <button class="tab" data-view="learn" id="tabLearn" role="tab" aria-selected="false" aria-controls="viewLearn" hidden>Learn</button>
+      <button class="tab" data-view="questions" id="tabQuestions" role="tab" aria-selected="false" aria-controls="viewQuestions" hidden>Questions</button>
       <button class="tab" data-view="terminal" role="tab" aria-selected="false" aria-controls="viewTerminal">Terminal</button>
       <button class="tab" data-view="editor" role="tab" aria-selected="false" aria-controls="viewEditor">Editor</button>
       <span class="tab-spacer" role="presentation"></span>
@@ -233,6 +245,14 @@
 
     <div class="view view-active" id="viewBrief" role="tabpanel" aria-label="Brief">
       <article class="brief" id="briefBody"><p class="muted">Loading the brief…</p></article>
+    </div>
+
+    <div class="view" id="viewLearn" role="tabpanel" aria-label="Learn">
+      <article class="brief learn-body" id="learnBody"></article>
+    </div>
+
+    <div class="view" id="viewQuestions" role="tabpanel" aria-label="Questions">
+      <div class="brief questions-body" id="questionsBody"></div>
     </div>
 
     <div class="view" id="viewTerminal" role="tabpanel" aria-label="Terminal">
@@ -337,6 +357,7 @@
     </dl>
     <p class="muted small onboarding-timers"><strong>Timers.</strong> The header counts down to a hard limit, and a lab left alone ends after a warning. End with a snapshot to keep your work and pick it up again.</p>
     <div class="dialog-actions">
+      <button type="button" id="btnOnboardingRetake" class="btn btn-ghost" hidden>Retake the quiz</button>
       <button type="button" id="btnOnboardingDone" class="btn btn-primary" autofocus>Got it</button>
     </div>
   </div>

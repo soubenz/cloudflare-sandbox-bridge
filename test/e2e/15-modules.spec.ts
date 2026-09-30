@@ -81,7 +81,7 @@ async function stubLabs(page: Page, labs: unknown[] = LABS) {
 async function openLauncher(page: Page, opts: { width?: number; height?: number } = {}) {
   await page.setViewportSize({ width: opts.width ?? 1440, height: opts.height ?? 900 });
   await signIn(page);
-  await page.addInitScript(() => localStorage.setItem('opalixOnboarded', '1'));
+  await page.addInitScript(() => (localStorage.setItem('opalixOnboarded', '1'), localStorage.setItem('opalixLearn', '{"v":1,"onboarding":{"status":"skipped"}}')));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
   await page.waitForSelector('.lab, #labList .empty-state', { timeout: 30_000 });
@@ -403,7 +403,7 @@ test.describe('search and filters over paths and modules', () => {
     await stubLabs(page);
     await signIn(page);
     await page.addInitScript(() => {
-      localStorage.setItem('opalixOnboarded', '1');
+      (localStorage.setItem('opalixOnboarded', '1'), localStorage.setItem('opalixLearn', '{"v":1,"onboarding":{"status":"skipped"}}'));
       localStorage.setItem('opalixFilters', JSON.stringify({ q: 'replicas', difficulty: [], family: [], status: [] }));
     });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -460,7 +460,7 @@ test.describe('states', () => {
       await route.fulfill({ json: LABS });
     });
     await signIn(page);
-    await page.addInitScript(() => localStorage.setItem('opalixOnboarded', '1'));
+    await page.addInitScript(() => (localStorage.setItem('opalixOnboarded', '1'), localStorage.setItem('opalixLearn', '{"v":1,"onboarding":{"status":"skipped"}}')));
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.lab-skeleton')).toHaveCount(3);
     await expect(page.locator('#labList')).toHaveAttribute('aria-busy', 'true');

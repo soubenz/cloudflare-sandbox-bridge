@@ -124,6 +124,21 @@ export const api = {
   /** The console's signed-in subject: `{sub}`. */
   me: () => sameOrigin('/api/me'),
 
+  /** A lab's learning bundle, `{version, learn}`; a lab with none is a 404 (`err.status`). */
+  learn: (slug) => sameOrigin(`/api/learn/${encodeURIComponent(slug)}`),
+  /** The one-time platform quiz, `{version, intro, questions}`; 404 when none is published. */
+  onboarding: () => sameOrigin('/api/onboarding'),
+  /**
+   * Anonymous quiz outcomes (see learn-model.js answersBody). The body carries
+   * no identity and the Worker adds none: the API stores no user at all.
+   */
+  postAnswers: (body) =>
+    sameOrigin('/api/learn/answers', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
   /**
    * Starting a session goes through this console's own Worker, which holds
    * the service key. The browser never sees that key, and the Worker knows
