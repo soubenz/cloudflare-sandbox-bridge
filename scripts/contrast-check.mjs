@@ -11,8 +11,12 @@
 //
 // The accent families (--accent-<name>, -soft, -ink) are checked twice: on the
 // design tokens' own surfaces, and on the console's surfaces, because the
-// console (dashboard/public/styles.css) has its own palette and carries a
-// mirror of the accent values. The mirror must equal packages/design.
+// console (dashboard/public/styles.css) carries a mirror of the design's
+// palette (it does not load tokens.css) under its own variable names. The
+// mirror of the accents must equal packages/design, and every colour pair the
+// console draws as text (4.5:1) or as a boundary or fill that must be seen
+// (3:1) is checked in both themes. No colour may be named outside the token
+// blocks of styles.css and learn.css.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -183,10 +187,12 @@ const rows2 = [["surfaces", "pair (worst of 8 accents)", "ratio", "min", "worst"
 const designNames = { surface: "color-surface", bg: "color-bg", track: "color-border", text: ["color-text", "color-text-muted"] };
 for (const [theme, tokens] of Object.entries(themes)) accentPairs(`design ${theme}`, tokens, designNames);
 
-// The console has its own palette (dark by default, two light blocks), so the
-// accents are checked on its surfaces, and its mirror of them is compared
-// with the design tokens.
-const consoleCss = readFileSync(join(root, "dashboard/public/styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+// The console's palette: light by default, dark under prefers-color-scheme
+// (for a page with no data-theme) and under [data-theme="dark"]. The accent
+// families are checked on its surfaces, its mirror of them is compared with the
+// design tokens, and the pairs the console draws are checked below.
+const consoleCssRaw = readFileSync(join(root, "dashboard/public/styles.css"), "utf8");
+const consoleCss = consoleCssRaw.replace(/\/\*[\s\S]*?\*\//g, "");
 const consoleBody = (re, label) => {
   const m = consoleCss.match(re);
   if (!m) {
@@ -195,29 +201,131 @@ const consoleBody = (re, label) => {
   }
   return m[1];
 };
-const cDark = hexTokens(consoleBody(/^:root\s*\{([^}]*)\}/m, "console :root (dark)"));
-const cLightAttr = hexTokens(consoleBody(/:root\[data-theme="light"\]\s*\{([^}]*)\}/, 'console [data-theme="light"]'));
-const cLightMedia = hexTokens(
-  consoleBody(
-    /@media\s*\(prefers-color-scheme:\s*light\)\s*\{\s*:root:not\(\[data-theme\]\)\s*\{([^}]*)\}/,
-    "console light @media",
-  ),
+const cLightBody = consoleBody(/^:root\s*\{([^}]*)\}/m, "console :root (light)");
+const cDarkAttrBody = consoleBody(/:root\[data-theme="dark"\]\s*\{([^}]*)\}/, 'console [data-theme="dark"]');
+const cDarkMediaBody = consoleBody(
+  /@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root:not\(\[data-theme\]\)\s*\{([^}]*)\}/,
+  "console dark @media",
 );
-const sameTokens = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
-if (!sameTokens(cLightAttr, cLightMedia)) {
-  console.error('\nFAIL: the console\'s light @media block and [data-theme="light"] block differ');
+// Whole declarations, not just the hex ones: shadows and the scrim must agree too. color-scheme is the attribute block's own.
+if (norm(cDarkMediaBody) !== norm(cDarkAttrBody.replace(/color-scheme\s*:\s*dark\s*;/, ""))) {
+  console.error('\nFAIL: the console\'s dark @media block and [data-theme="dark"] block differ');
   failed++;
+} else {
+  console.log('\nconsole dark @media block and [data-theme="dark"] block are identical: ok');
 }
-const consoleThemes = { dark: cDark, "light (attr)": { ...cDark, ...cLightAttr }, "light (media)": { ...cDark, ...cLightMedia } };
-const consoleNames = { surface: "surface", bg: "bg", track: "border", text: ["ink", "ink-2", "ink-muted"] };
+const cLight = hexTokens(cLightBody);
+const cDarkAttr = hexTokens(cDarkAttrBody);
+const cDarkMedia = hexTokens(cDarkMediaBody);
+const consoleThemes = {
+  light: cLight,
+  "dark (attr)": { ...cLight, ...cDarkAttr },
+  "dark (media)": { ...cLight, ...cDarkMedia },
+};
+const consoleNames = { surface: "surface", bg: "bg", track: "surface-3", text: ["ink", "ink-2", "ink-muted"] };
+
+// sRGB mix, as `color-mix(in srgb, a p%, b)` paints it, for the tinted progress tracks.
+const mixHex = (a, b, p) => {
+  const ch = (h, i) => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16);
+  const c = [0, 1, 2].map((i) => Math.round(ch(a, i) * p + ch(b, i) * (1 - p)));
+  return `#${c.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+};
+
+// [foreground, background, minimum ratio, what it is]. Text is 4.5:1; a boundary, a ring or a fill that
+// must be seen is 3:1.
+const consolePairs = [
+  ["ink", "bg", 4.5, "text on the page"],
+  ["ink", "surface", 4.5, "text on a card"],
+  ["ink", "surface-2", 4.5, "text on a hovered row"],
+  ["ink-2", "bg", 4.5, "secondary text on the page"],
+  ["ink-2", "surface", 4.5, "secondary text on a card"],
+  ["ink-2", "surface-2", 4.5, "secondary text on a hovered row"],
+  ["ink-muted", "bg", 4.5, "muted text on the page"],
+  ["ink-muted", "surface", 4.5, "muted text on a card"],
+  ["ink-muted", "surface-2", 4.5, "muted text on a hovered row"],
+  ["ink-muted", "surface-3", 4.5, "muted text on a chip or the account pill"],
+  ["ink", "surface-3", 4.5, "text on the current nav link"],
+  ["good", "bg", 4.5, "state: healthy, on the page"],
+  ["good", "surface", 4.5, "state: healthy, on a card"],
+  ["warn", "bg", 4.5, "state: warning, on the page"],
+  ["warn", "surface", 4.5, "state: warning, on a card"],
+  ["bad", "bg", 4.5, "state: failing, on the page"],
+  ["bad", "surface", 4.5, "state: failing, on a card"],
+  ["accent", "bg", 4.5, "accent text and links on the page"],
+  ["accent", "surface", 4.5, "accent text and links on a card"],
+  ["accent-text", "accent-soft", 4.5, "Suggested start, selected chip"],
+  ["accent-text", "bg", 4.5, "accent text on the page"],
+  ["ink", "accent-soft", 4.5, "text on the recap tint"],
+  ["on-accent", "accent-fill", 4.5, "white on a primary button"],
+  ["on-accent", "accent-fill-hover", 4.5, "white on a hovered primary button"],
+  ["on-strong", "strong", 4.5, "Start and the current path pill"],
+  ["chip-strong-fg", "chip-strong-bg", 4.5, "Running and Case file badges"],
+  ["accent-on-dark", "chip-strong-bg", 4.5, "the LABS tag"],
+  ["done-fg", "done-bg", 4.5, "a done check and the account initials"],
+  ["on-accent", "resume-bg", 4.5, "text on the running-lab card"],
+  ["navy-muted", "resume-bg", 4.5, "secondary text on the running-lab card"],
+  ["accent-on-dark", "navy-line", 4.5, "RUNNING on the running-lab card"],
+  ["navy-muted", "navy-line", 4.5, "the time left on a tinted chip"],
+  ["code-text", "code-bg", 4.5, "code on its dark ground"],
+  ["border-input", "surface", 3.0, "an input or checkbox edge on a card"],
+  ["border-input", "bg", 3.0, "an input edge on the page"],
+  ["border-input", "surface-2", 3.0, "an input edge on a quiet surface"],
+  ["accent", "bg", 3.0, "the focus ring on the page"],
+  ["accent", "surface", 3.0, "the focus ring on a card"],
+  ["accent", "surface-3", 3.0, "the focus ring on a chip, and a progress fill against its track"],
+  ["accent-fill", "bg", 3.0, "a primary button against the page"],
+  ["accent-fill", "surface", 3.0, "a filled step or highlight against a card"],
+  ["strong", "bg", 3.0, "the current path pill against the page"],
+  ["done-bg", "surface", 3.0, "a done circle against a card"],
+  ["ink-muted", "surface", 3.0, "the circle of an open lab row"],
+];
 for (const [theme, tokens] of Object.entries(consoleThemes)) {
   accentPairs(`console ${theme}`, tokens, consoleNames);
-  // What the launcher also puts on the plain page and card.
-  for (const [fg, bg] of [["ink", "bg"], ["ink", "surface"], ["ink-2", "surface"], ["ink-muted", "bg"], ["ink-muted", "surface"]]) {
-    const r = ratio(tokens[fg], tokens[bg]);
-    const ok = r >= 4.5;
+  for (const [fg, bg, min, what] of consolePairs) {
+    const a = tokens[fg];
+    const b = tokens[bg];
+    if (!a || !b) {
+      failed++;
+      rows2.push([`console ${theme}`, `${fg} on ${bg} (${what})`, "missing", String(min), "-", "FAIL"]);
+      continue;
+    }
+    const r = ratio(a, b);
+    const ok = r >= min;
     if (!ok) failed++;
-    rows2.push([`console ${theme}`, `${fg} on ${bg}`, r.toFixed(2), "4.5", "-", ok ? "ok" : "FAIL"]);
+    rows2.push([`console ${theme}`, `${fg} on ${bg} (${what})`, r.toFixed(2), String(min), "-", ok ? "ok" : "FAIL"]);
+  }
+  // A module's progress fill on its own tinted track (18% of the accent into the card colour).
+  let worst = { r: Infinity, n: "" };
+  for (const n of ACCENTS) {
+    const r = ratio(tokens[`accent-${n}`], mixHex(tokens[`accent-${n}`], tokens.surface, 0.18));
+    if (r < worst.r) worst = { r, n };
+  }
+  {
+    const ok = worst.r >= 3;
+    if (!ok) failed++;
+    rows2.push([`console ${theme}`, "module progress fill on its tinted track (worst of 8)", worst.r.toFixed(2), "3", worst.n, ok ? "ok" : "FAIL"]);
+  }
+}
+
+// Nothing but the token blocks may name a colour: every other rule reads a variable.
+{
+  const stripped = (css) =>
+    css
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^:root\s*\{[^}]*\}/m, "")
+      .replace(/:root\[data-theme="dark"\]\s*\{[^}]*\}/, "")
+      .replace(/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root:not\(\[data-theme\]\)\s*\{[^}]*\}\s*\}/, "");
+  for (const file of ["styles.css", "learn.css"]) {
+    const body = stripped(readFileSync(join(root, "dashboard/public", file), "utf8"));
+    const strays = [];
+    for (const m of body.matchAll(/\{([^{}]*)\}/g)) {
+      for (const v of m[1].matchAll(/(?::|\s)(#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)|hsla?\([^)]*\))/g)) strays.push(v[1]);
+    }
+    console.log(`\ndashboard/public/${file} names no colour outside its token blocks: ${strays.length ? "FAIL" : "ok"}`);
+    if (strays.length) {
+      console.error(`  found: ${[...new Set(strays)].join(", ")}`);
+      failed++;
+    }
   }
 }
 // The public /labs page sits on the marketing site's own light palette
@@ -252,8 +360,9 @@ for (const [theme, tokens] of Object.entries(consoleThemes)) {
       failed++;
     }
   };
-  mirrorOf(themes.light, consoleThemes["light (attr)"], "light");
-  mirrorOf(themes["dark-attr"], consoleThemes.dark, "dark");
+  mirrorOf(themes.light, consoleThemes.light, "light");
+  mirrorOf(themes["dark-attr"], consoleThemes["dark (attr)"], "dark");
+  mirrorOf(themes["dark-attr"], consoleThemes["dark (media)"], "dark (media)");
 }
 
 // The site serves these straight from site/public (no build step), so the

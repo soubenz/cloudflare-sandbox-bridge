@@ -303,7 +303,15 @@ test.describe('path navigator', () => {
     // Scrolling by script (no wheel, key or touch) moves it too once the page has settled.
     await pills.nth(1).click();
     await expect(pills.nth(1)).toHaveAttribute('aria-current', 'true');
-    await page.waitForTimeout(600);
+    // Let the smooth scroll finish (how long it takes depends on how far the path is), then the page has settled.
+    let last = -1;
+    for (let i = 0; i < 40; i++) {
+      const top = await page.evaluate(() => document.getElementById('launcher')!.scrollTop);
+      if (top === last) break;
+      last = top;
+      await page.waitForTimeout(150);
+    }
+    await page.waitForTimeout(400);
     await page.evaluate(() => { document.getElementById('launcher')!.scrollTop = 0; });
     await expect(pills.nth(0)).toHaveAttribute('aria-current', 'true');
   });
@@ -524,12 +532,15 @@ test.describe('themes and small screens', () => {
       await stubLabs(page);
       await openLauncher(page);
       const band = section(page, 'ai-platform');
-      // The path band and each module carry an accent; the tint behind them is not the page colour.
+      // The path band and each module carry an accent; the tint of the band's icon is not the page colour.
       const accents = await page.locator('.lab-group[data-accent], .module[data-accent]').evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.accent));
       expect(accents.length).toBe(3 + 3);
-      const bg = await band.locator('.path-bg').evaluate((el) => getComputedStyle(el).backgroundColor);
+      const bg = await band.locator('> .path-tile').evaluate((el) => getComputedStyle(el).backgroundColor);
       const page_ = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
       expect(bg).not.toBe(page_);
+      // The module panel is on its family's tint too, not on the card colour.
+      const panel = await card(page, 'ai-platform', 1).locator('.module-info').evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(panel).not.toBe(page_);
       // Body text on the tinted band is the console's normal text colour, never the accent.
       const [intro, ink2, accentInk] = await band.locator('.path-intro').evaluate((el) => {
         const colour = (value: string) => {
@@ -554,18 +565,33 @@ test.describe('themes and small screens', () => {
     expect(overflow.page).toBeLessThanOrEqual(0);
     expect(overflow.body).toBeLessThanOrEqual(0);
 
-    // Every header control ends inside the viewport (the identity text is dropped below 520px).
-    const right = await page.evaluate(() => Math.max(...[...document.querySelectorAll('.bar *')].filter((el) => (el as HTMLElement).offsetParent !== null).map((el) => el.getBoundingClientRect().right)));
-    expect(right).toBeLessThanOrEqual(390);
-    await expect(page.locator('#identity')).toBeHidden();
+    // The header is one slim pill: the brand and a menu button, which opens the rest inside the pill.
+    const headerRight = () => page.evaluate(() => Math.max(...[...document.querySelectorAll('.bar *')].filter((el) => (el as HTMLElement).offsetParent !== null).map((el) => el.getBoundingClientRect().right)));
+    await expect(page.locator('#btnMenu')).toBeVisible();
+    await expect(page.locator('#btnMenu')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#btnSignOut')).toBeHidden();
+    expect(await headerRight()).toBeLessThanOrEqual(390);
+    await page.locator('#btnMenu').click();
+    await expect(page.locator('#btnMenu')).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#btnSignOut')).toBeVisible();
+    await expect(page.locator('#btnHelp')).toBeVisible();
+    await expect(page.locator('#btnTheme')).toBeVisible();
+    // Every header control ends inside the viewport (the identity text is dropped below 520px).
+    expect(await headerRight()).toBeLessThanOrEqual(390);
+    await expect(page.locator('#identity')).toBeHidden();
 
     const size = async (selector: string) => (await page.locator(selector).first().boundingBox())!;
-    for (const selector of ['.lab-start', 'a.path-pill', 'button.filter-chip', '#btnSignOut', '#btnTheme', '#btnHelp', '.lab-more > summary', '#labSearch']) {
+    for (const selector of ['.lab-start', 'a.path-pill', 'button.filter-chip', '#btnSignOut', '#btnTheme', '#btnHelp', '#btnMenu', '.lab-more > summary', '#labSearch']) {
       const box = await size(selector);
       expect(box.height, `${selector} height`).toBeGreaterThanOrEqual(44);
     }
     expect((await size('#btnTheme')).width).toBeGreaterThanOrEqual(44);
+    expect((await size('#btnMenu')).width).toBeGreaterThanOrEqual(44);
+    // Escape closes the menu and puts focus back on its button.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#btnMenu')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#btnMenu')).toBeFocused();
+    await expect(page.locator('#btnSignOut')).toBeHidden();
     // A module card is one column, and a lab row keeps its Start button inside the card.
     const c = card(page, 'ai-platform', 1);
     await c.scrollIntoViewIfNeeded();
@@ -585,5 +611,108 @@ test.describe('themes and small screens', () => {
     expect(rows!.y).toBeGreaterThan(info!.y + info!.height - 2);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
+
+test.describe('the launcher, as the landing page draws it', () => {
+  test('a row says Start, Open again or Locked, and the hero asks for the next lab when nothing is running', async ({ page }) => {
+    await stubLabs(page);
+    await openLauncher(page);
+    await expect(page.locator('#heroTitle')).toHaveText('Pick your next lab.');
+    await expect(page.locator('#resumeCard')).toBeHidden();
+    await expect(page.locator('#heroLede')).toHaveText(/^Two paths, each a run of hands-on labs\. Start with an explore lab/);
+    await expect(row(page, 'g1').locator('.lab-start')).toHaveText('Open again');
+    await expect(row(page, 'g5').locator('.lab-start')).toHaveText('Start');
+    await expect(row(page, 't2').locator('.lab-start')).toHaveText('Locked');
+    // A done row shows a check in its circle (the number stays in the markup), an open one its number.
+    await expect(row(page, 'g1').locator('.lab-num')).toHaveText('1');
+    await expect(row(page, 'g1')).toHaveClass(/lab-done/);
+  });
+
+  test('the big number, the icon tile and the skills sit on the module panel, and the path has its icon tile and totals', async ({ page }) => {
+    await stubLabs(page);
+    await openLauncher(page);
+    const c = card(page, 'ai-platform', 2);
+    await expect(c.locator('.module-bignum')).toHaveText('02');
+    await expect(c.locator('.module-bignum')).toHaveAttribute('aria-hidden', 'true');
+    await expect(c.locator('.module-tile svg')).toBeVisible();
+    await expect(section(page, 'ai-platform').locator('.path-summary b')).toHaveText('8 labs');
+  });
+
+  test('the header is the landing page\'s pill: brand, Labs, Paths, Help, theme, sign out', async ({ page }) => {
+    await stubLabs(page);
+    await openLauncher(page);
+    const nav = page.getByRole('navigation', { name: 'Console' });
+    await expect(page.locator('.brand')).toContainText('opalix');
+    await expect(page.locator('.brand .beta-tag')).toHaveText('LABS');
+    await expect(nav.getByRole('link', { name: 'Labs' })).toHaveAttribute('aria-current', 'page');
+    await expect(nav.getByRole('button', { name: 'Help' })).toBeVisible();
+    await expect(page.locator('#identityInitials')).toHaveText('CO');
+    const radius = await page.locator('.nav').evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
+    expect(parseFloat(radius)).toBeGreaterThan(40);
+    // Paths goes to the path navigator, and focus lands on its first pill.
+    await nav.getByRole('link', { name: 'Paths' }).click();
+    await expect(page.locator('a.path-pill').first()).toBeFocused();
+    // Help opens the existing dialog.
+    await nav.getByRole('button', { name: 'Help' }).click();
+    await expect(page.locator('dialog#onboarding[open]')).toBeVisible();
+  });
+
+  test('the console uses Funnel Display, Funnel Sans and JetBrains Mono, self-hosted', async ({ page }) => {
+    const fonts: string[] = [];
+    page.on('response', (r) => { if (r.url().endsWith('.woff2')) fonts.push(new URL(r.url()).pathname); });
+    const external: string[] = [];
+    page.on('request', (r) => { if (!r.url().startsWith(new URL(page.url() || 'about:blank').origin) && /fonts\.(googleapis|gstatic)/.test(r.url())) external.push(r.url()); });
+    await stubLabs(page);
+    await openLauncher(page);
+    await page.evaluate(() => document.fonts.ready);
+    const faces = await page.evaluate(() => [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family.replace(/"/g, '')));
+    expect(faces).toEqual(expect.arrayContaining(['Funnel Display', 'Funnel Sans']));
+    expect(fonts.every((f) => f.startsWith('/dist/fonts/'))).toBe(true);
+    expect(external).toEqual([]);
+    const family = (sel: string) => page.locator(sel).first().evaluate((el) => getComputedStyle(el).fontFamily);
+    expect(await family('#heroTitle')).toContain('Funnel Display');
+    expect(await family('.lede')).toContain('Funnel Sans');
+    expect(await family('.lab-sub .chip')).toContain('JetBrains Mono');
+  });
+});
+
+test.describe('a path with many modules', () => {
+  const MANY: Array<Record<string, unknown>> = [1, 2, 3, 4, 5, 6, 7].map((n) => lab({ slug: `m${n}`, title: `Lab of module ${n}`, path: 'ai-platform', module: n, order: 1, estimated_minutes: 20 }));
+
+  test('opens the first two modules, condenses the rest to cards, and opens one on demand', async ({ page }) => {
+    await stubLabs(page, MANY);
+    await openLauncher(page);
+    await expect(page.locator('.module')).toHaveCount(7);
+    // Every module is still in the page; only the later ones show as a card.
+    await expect(page.locator('.module[data-collapsed="1"]')).toHaveCount(5);
+    await expect(card(page, 'ai-platform', 1).locator('.module-info')).toBeVisible();
+    await expect(card(page, 'ai-platform', 2).locator('.lab')).toBeVisible();
+    const mini = card(page, 'ai-platform', 5).getByRole('button', { name: /Module 5/ });
+    await expect(mini).toBeVisible();
+    await expect(mini).toHaveAttribute('aria-expanded', 'false');
+    await expect(card(page, 'ai-platform', 5).locator('.lab')).toBeHidden();
+    await mini.click();
+    await expect(card(page, 'ai-platform', 5).locator('.lab')).toBeVisible();
+    await expect(card(page, 'ai-platform', 5).locator('h3.module-title')).toBeFocused();
+    await expect(page.locator('.module[data-collapsed="1"]')).toHaveCount(4);
+  });
+
+  test('a search opens every module that has a match', async ({ page }) => {
+    await stubLabs(page, MANY);
+    await openLauncher(page);
+    await page.locator('#labSearch').fill('module 6');
+    await expect(card(page, 'ai-platform', 6)).toBeVisible();
+    await expect(card(page, 'ai-platform', 6).locator('.lab')).toBeVisible();
+    await expect(card(page, 'ai-platform', 4)).toBeHidden();
+    await page.locator('#btnClearFilters').click();
+    await expect(card(page, 'ai-platform', 6).locator('.lab')).toBeHidden();
+  });
+
+  test('a module with a lab under way opens by itself', async ({ page }) => {
+    await stubLabs(page, MANY.map((l) => (l.slug === 'm6' ? { ...l, progress: started } : l)) as unknown[]);
+    await openLauncher(page);
+    await expect(card(page, 'ai-platform', 6).locator('.lab')).toBeVisible();
+    await expect(card(page, 'ai-platform', 5).locator('.lab')).toBeHidden();
   });
 });

@@ -25,6 +25,7 @@ import {
   setOverride,
 } from './learn-model.js';
 import { actionBar, button, focusHeading, lessonCard, make, questionScreen, screenHead, show } from './learn-ui.js';
+import { uiIcon } from './icons.js';
 import { mountMarkdown } from './markdown.js';
 
 /** The short tag on a lesson that says why it starts the way it does. */
@@ -58,6 +59,14 @@ export function planSummary(plan) {
  */
 export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBack }) {
   const learn = entry.learn;
+  // The steps of this lab's screen, fixed now so the bar does not change length part-way:
+  // the story (if it has one), the questions (if any are due), and the plan.
+  const stages = [
+    ...(learn.story ? ['story'] : []),
+    ...(diagnosticQuestions(learn, store.get()).length > 0 ? ['questions'] : []),
+    'plan',
+  ];
+  const steps = (name) => ({ current: stages.indexOf(name) + 1, total: stages.length });
   let cards = [];
   let prose = null;
   let starting = false;
@@ -76,7 +85,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     const buttons = host.querySelectorAll('button');
     buttons.forEach((b) => (b.disabled = true));
     const primary = host.querySelector('[data-start="primary"]');
-    const label = primary?.textContent;
+    const original = primary ? [...primary.childNodes].map((n) => n.cloneNode(true)) : [];
     if (primary) {
       primary.textContent = 'Starting…';
       primary.setAttribute('aria-busy', 'true');
@@ -88,17 +97,17 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       if (!gone && host.isConnected) {
         buttons.forEach((b) => (b.disabled = false));
         if (primary) {
-          primary.textContent = label;
+          primary.replaceChildren(...original);
           primary.removeAttribute('aria-busy');
         }
       }
     }
   }
 
-  const skipAll = () => button('Skip all, just start the lab', { kind: 'ghost', onClick: start, id: 'btnSkipAll' });
+  const skipAll = () => button('Skip all, just start the lab', { kind: 'quiet', onClick: start, id: 'btnSkipAll' });
   const back = () =>
     button('← Back to labs', {
-      kind: 'ghost',
+      kind: 'quiet',
       onClick: () => {
         cleanup();
         gone = true;
@@ -118,14 +127,17 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     const body = make('div', 'learn-prose');
     prose = mountMarkdown(body, s.body, { headingLevel: 2 });
     const next = button(more ? 'Continue' : 'Start the lab', {
-      kind: 'primary',
+      kind: 'accent',
       onClick: more ? questions : start,
       id: 'btnStoryNext',
     });
+    next.classList.add('btn-lg');
+    next.append(uiIcon('arrow', 16));
     if (!more) next.dataset.start = 'primary';
+    body.classList.add('story-quote');
     show(
       host,
-      screenHead({ eyebrow: eyebrow(), title: s.title, meta: readingTime(s.minutes) }),
+      screenHead({ eyebrow: eyebrow(), title: s.title, meta: readingTime(s.minutes), badge: 'Case file', steps: steps('story') }),
       body,
       actionBar([next, skipAll(), back()])
     );
@@ -148,6 +160,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
         index: i,
         total: asked.length,
         lastLabel: 'See my plan',
+        steps: steps('questions'),
         onNext: (r) => {
           results.push(r);
           step(i + 1);
@@ -212,13 +225,20 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       list.append(card.root);
     }
 
-    const go = button('Start the lab', { kind: 'primary', onClick: start, id: 'btnStartLab' });
+    const go = button('Start the lab', { kind: 'accent', onClick: start, id: 'btnStartLab' });
     go.dataset.start = 'primary';
-    go.classList.add('learn-start');
+    go.classList.add('learn-start', 'btn-lg');
+    go.append(uiIcon('arrow', 16));
 
     show(
       host,
-      screenHead({ eyebrow: eyebrow(), title: 'Your plan for this lab', meta: 'The questions set where each lesson starts. You decide what to read.' }),
+      screenHead({
+        eyebrow: eyebrow(),
+        title: 'Your plan for this lab',
+        mark: 'this lab',
+        meta: 'The questions set where each lesson starts. You decide what to read.',
+        steps: steps('plan'),
+      }),
       summary,
       list,
       actionBar([go, skipAll(), back()], { sticky: true, label: 'Start' })

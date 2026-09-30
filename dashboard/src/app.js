@@ -1,7 +1,18 @@
 import { api, apiBase, configureAuth, eventsUrl, serviceUrl, serviceBaseUrl } from './api.js';
 import { attachTerminal } from './terminal.js';
 import { diffLines, collapseContext } from './diff.js';
-import { ICONS, buildLauncherModel, labStatus, moduleMetaLine, passedSlugs, summaryLine } from './launcher-model.js';
+import {
+  buildLauncherModel,
+  heroLede,
+  labStatus,
+  locateLab,
+  moduleMetaLine,
+  moduleViews,
+  passedSlugs,
+  summaryLine,
+} from './launcher-model.js';
+import { isPhoneLike, readDevice } from './device.js';
+import { icon, uiIcon } from './icons.js';
 import { createMasteryStore, normalizeLearn, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
 import { runOnboarding } from './onboarding.js';
 import { runBeforeYouBegin } from './before-you-begin.js';
@@ -235,30 +246,11 @@ async function loadLabs() {
  * from packages/catalogue/paths.json always goes in through textContent.
  */
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
 function node(tag, className, text) {
   const el = document.createElement(tag);
   if (className) el.className = className;
   if (text !== undefined) el.textContent = text;
   return el;
-}
-
-/** A stroke glyph from the trusted table in launcher-model.js (never from the catalogue). */
-function icon(name, size = 24) {
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('width', String(size));
-  svg.setAttribute('height', String(size));
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '1.75');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('focusable', 'false');
-  svg.innerHTML = ICONS[name] ?? ICONS.grid;
-  return svg;
 }
 
 function progressBar(done, total, label) {
@@ -277,7 +269,15 @@ function progressBar(done, total, label) {
 /** An id-safe form of a slug from the catalogue. */
 const safeId = (slug) => String(slug).replace(/[^a-z0-9_-]+/gi, '-');
 
+/** The model the launcher is drawn from, kept so the resume card can say where its lab sits. */
+let launcherModel = null;
+/** Modules the learner opened from a condensed card, by path and number, for this page load. */
+const openedModules = new Set();
+/** The slug of the lab that is still running (verified by renderResumeCard), so its row says Rejoin. */
+let runningSlug = null;
+
 function renderLauncher(model) {
+  launcherModel = model;
   const list = $('labList');
   list.innerHTML = '';
   // Where the platform quiz says to begin: the first module card whose area
@@ -285,6 +285,7 @@ function renderLauncher(model) {
   const cards = model.paths.flatMap((p) => (p.cards ? p.modules.map((m) => ({ path: p.slug, number: m.number })) : []));
   const suggested = suggestStart(cards, mastery.get());
   for (const path of model.paths) list.append(pathSection(path, suggested));
+  $('heroLede').textContent = heroLede(model.paths.filter((p) => !p.other).length);
   renderPathNav(model);
 }
 
@@ -292,7 +293,7 @@ function renderLauncher(model) {
  * One path: a band with its icon, title, intro and totals, then its modules
  * as cards, or (a single-module path) its labs straight underneath. The
  * heading is a direct child of the section, and every part of the band is a
- * grid item of it, so the tinted band is one element behind them.
+ * grid item of it.
  */
 function pathSection(path, suggested = null) {
   const id = path.other ? 'path-other' : `path-${safeId(path.slug)}`;
@@ -302,14 +303,9 @@ function pathSection(path, suggested = null) {
   section.dataset.accent = path.accent;
   section.setAttribute('aria-labelledby', `${id}-title`);
 
-  const bg = node('div', 'path-bg');
-  bg.setAttribute('aria-hidden', 'true');
-
   const tile = node('span', 'tile path-tile');
   tile.setAttribute('aria-hidden', 'true');
-  tile.append(icon(path.icon || 'grid'));
-
-  const eyebrow = node('p', 'path-eyebrow', path.other ? 'Not in a path' : `Path ${path.number}`);
+  tile.append(icon(path.icon || 'grid', 32));
 
   const head = node('h2', 'group-head');
   head.id = `${id}-title`;
@@ -317,17 +313,25 @@ function pathSection(path, suggested = null) {
   head.append(node('span', 'group-title', path.title));
 
   const stats = node('div', 'path-stats');
-  const summary = node('p', 'path-summary', summaryLine(path.totals));
+  // "31 labs" leads in bold; the rest of the line is the same text as before.
+  const [first, ...rest] = summaryLine(path.totals).split(' · ');
+  const summary = node('p', 'path-summary');
+  summary.append(node('b', '', first), document.createTextNode(rest.length ? ` · ${rest.join(' · ')}` : ''));
   stats.append(summary, progressBar(path.totals.done, path.totals.labs, `Labs done in ${path.title}`));
 
-  section.append(bg, tile, eyebrow, head);
+  section.append(tile, head);
   if (path.intro) section.append(node('p', 'path-intro', path.intro));
   section.append(stats);
 
   const body = node('div', 'path-body');
   if (path.cards) {
     const modules = node('div', 'modules');
-    for (const module of path.modules) modules.append(moduleCard(path, module, id, suggested));
+    const views = moduleViews(path, {
+      suggested,
+      running: runningSlug,
+      open: [...openedModules].filter((k) => k.startsWith(`${path.slug}#`)).map((k) => Number(k.split('#')[1])),
+    });
+    for (const module of path.modules) modules.append(moduleCard(path, module, id, suggested, views.get(module.number) === 'mini'));
     body.append(modules);
   } else {
     // No module card, so no h3 of its own: an invisible one keeps h2 -> h3 -> h4 unbroken.
@@ -338,16 +342,28 @@ function pathSection(path, suggested = null) {
   return section;
 }
 
-function moduleCard(path, module, pathId, suggested = null) {
+function moduleCard(path, module, pathId, suggested = null, collapsed = false) {
   const id = `${pathId}-module-${module.number}`;
   const card = node('section', 'module');
   card.id = id;
   card.dataset.module = String(module.number);
   card.dataset.accent = module.accent;
   if (module.optional) card.dataset.optional = '1';
+  if (collapsed) card.dataset.collapsed = '1';
   card.setAttribute('aria-labelledby', `${id}-title`);
 
   const info = node('div', 'module-info');
+  // The big, faint number behind the panel (decoration; the eyebrow says it in words).
+  if (module.known && Number.isFinite(module.number)) {
+    const big = node('span', 'module-bignum', String(module.number).padStart(2, '0'));
+    big.setAttribute('aria-hidden', 'true');
+    info.append(big);
+  }
+  const tile = node('span', 'tile module-tile');
+  tile.setAttribute('aria-hidden', 'true');
+  tile.append(icon(module.icon || 'grid', 24));
+  info.append(tile);
+
   const eyebrow = node('p', 'module-eyebrow');
   if (module.known) eyebrow.append(node('span', 'module-num', module.eyebrow));
   if (module.optional) eyebrow.append(node('span', 'badge badge-optional', 'Optional'));
@@ -356,14 +372,10 @@ function moduleCard(path, module, pathId, suggested = null) {
   }
   if (eyebrow.childElementCount) info.append(eyebrow);
 
-  const top = node('div', 'module-head');
-  const tile = node('span', 'tile module-tile');
-  tile.setAttribute('aria-hidden', 'true');
-  tile.append(icon(module.icon || 'grid', 22));
   const title = node('h3', 'module-title', module.title);
   title.id = `${id}-title`;
-  top.append(tile, title);
-  info.append(top);
+  title.tabIndex = -1;
+  info.append(title);
 
   if (module.intro) info.append(node('p', 'module-intro', module.intro));
   if (module.skills.length) {
@@ -381,6 +393,29 @@ function moduleCard(path, module, pathId, suggested = null) {
   info.append(node('p', 'module-progress', `${totals.done} of ${totals.labs} done`));
 
   card.append(info, labRows(module.labs, 'lab-rows'));
+
+  // The condensed face: the same module as a card that opens in place. It is a
+  // button, so the keyboard reaches it, and opening moves focus to the title.
+  const mini = node('button', 'module-mini');
+  mini.type = 'button';
+  mini.setAttribute('aria-expanded', 'false');
+  mini.setAttribute('aria-controls', id);
+  const miniTile = node('span', 'tile');
+  miniTile.setAttribute('aria-hidden', 'true');
+  miniTile.append(icon(module.icon || 'grid', 22));
+  const text = node('span', 'module-mini-text');
+  text.append(
+    node('span', 'module-mini-eyebrow', `${module.eyebrow}${module.optional ? ' · optional' : ''}`),
+    node('span', 'module-mini-title', module.title),
+    node('span', 'module-mini-meta', moduleMetaLine(totals))
+  );
+  mini.append(miniTile, text);
+  mini.addEventListener('click', () => {
+    openedModules.add(`${path.slug}#${module.number}`);
+    delete card.dataset.collapsed;
+    title.focus({ preventScroll: true });
+  });
+  card.append(mini);
   return card;
 }
 
@@ -410,8 +445,10 @@ function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
       <h4 class="lab-title"></h4>
       <div class="lab-sub"></div>
     </div>
-    <div class="lab-status"></div>
-    <button class="btn btn-primary lab-start">Start</button>
+    <div class="lab-act">
+      <div class="lab-status"></div>
+      <button class="btn lab-start">Start</button>
+    </div>
     <details class="lab-more">
       <summary>About this lab</summary>
       <p class="lab-summary"></p>
@@ -507,7 +544,43 @@ function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
     if (button.getAttribute('aria-disabled') === 'true') return;
     beginLab(lab, row);
   });
+  styleStartButton(row);
+  if (lab.slug === runningSlug) applyRunning(row, true);
   return row;
+}
+
+/**
+ * What the row's button says and how it looks: Start (the dark one), Open again
+ * for a lab already passed, Rejoin for the lab that is running, and a quiet
+ * Locked while a prerequisite stands in the way.
+ */
+function styleStartButton(row) {
+  const button = row.querySelector('.lab-start');
+  const running = row.classList.contains('lab-running');
+  const locked = row.classList.contains('lab-locked');
+  const done = row.classList.contains('lab-done');
+  button.textContent = locked ? 'Locked' : running ? 'Rejoin' : done ? 'Open again' : 'Start';
+  button.className = `btn lab-start ${locked ? 'btn-ghost' : running ? 'btn-accent' : done ? 'btn-ghost' : 'btn-strong'}`;
+}
+
+/** Marks a row as the lab that is running (or clears it), keeping the status line and the button in step. */
+function applyRunning(row, on) {
+  row.classList.toggle('lab-running', on);
+  const status = row.querySelector('.lab-status');
+  const badge = status.querySelector('.badge-running');
+  if (on && !badge) status.prepend(node('span', 'badge badge-running', 'Running'));
+  if (!on && badge) badge.remove();
+  styleStartButton(row);
+}
+
+/** The launcher learns which lab is running once the resume card has asked the API. */
+function setRunningLab(slug) {
+  runningSlug = slug;
+  for (const row of $('labList').querySelectorAll('.lab')) applyRunning(row, row.dataset.slug === slug && !row.classList.contains('lab-locked'));
+  // The module holding it opens, if the path had condensed it.
+  const row = slug ? $('labList').querySelector(`.lab[data-slug="${CSS.escape(slug)}"]`) : null;
+  const module = row?.closest('.module');
+  if (module?.dataset.collapsed) delete module.dataset.collapsed;
 }
 
 // ------------------------------------------------------------ path navigator
@@ -534,8 +607,11 @@ function renderPathNav(model) {
     link.dataset.path = path.slug;
     link.dataset.accent = path.accent;
     const glyph = node('span', 'pill-icon');
-    glyph.append(icon(path.icon || 'grid', 16));
-    link.append(glyph, node('span', 'pill-title', path.title), node('span', 'pill-count', String(path.totals.labs)));
+    glyph.append(icon(path.icon || 'grid', 14));
+    // "6 labs" in words on a wide screen; the unit is dropped on a phone (styles.css).
+    const meta = node('span', 'pill-meta');
+    meta.append(node('span', 'pill-count', String(path.totals.labs)), document.createTextNode(' '), node('span', 'pill-unit', path.totals.labs === 1 ? 'lab' : 'labs'));
+    link.append(glyph, node('span', 'pill-title', path.title), meta);
     link.addEventListener('click', (event) => {
       event.preventDefault();
       goToPath(id);
@@ -569,6 +645,7 @@ function updatePathNav() {
     link.parentElement.hidden = !section || section.hidden;
     if (!link.parentElement.hidden) visible++;
     link.querySelector('.pill-count').textContent = String(shown);
+    link.querySelector('.pill-unit').textContent = shown === 1 ? 'lab' : 'labs';
   }
   // One group needs no signpost, and neither does a list with nothing in it.
   $('pathNav').hidden = pills.length < 2 || visible === 0;
@@ -746,6 +823,8 @@ function applyFilters() {
   for (const module of list.querySelectorAll('.module')) module.hidden = !module.querySelector('.lab:not([hidden])');
   for (const group of list.querySelectorAll('.lab-group')) group.hidden = !group.querySelector('.lab:not([hidden])');
   updatePathNav();
+  // A module the path had condensed opens for a search or filter, so a match is never out of sight.
+  list.classList.toggle('is-filtering', filtersActive());
   $('labCount').textContent = `${shown} of ${cards.length} labs`;
   $('labNoMatch').hidden = shown > 0 || !cards.length;
   $('btnClearFilters').hidden = !filtersActive();
@@ -767,57 +846,106 @@ function clearFilters() {
 let resumeToken = 0;
 
 /**
+ * The lab this browser remembers, if the API says it is still up:
+ * `{ saved, status, slug, title }`, else null. The status is asked without
+ * recovery: a refused token means the remembered session is gone, not that one
+ * should be started to find out.
+ */
+async function fetchRunning() {
+  const saved = rememberedSession();
+  if (!saved?.id || !saved?.token || state.session) return null;
+  let status;
+  try {
+    status = await api.status(saved.id, saved.token, { recover: false });
+  } catch {
+    return null;
+  }
+  const running = status?.meta?.state;
+  if (running !== 'running' && running !== 'starting') return null;
+  const slug = status.meta.lab_slug ?? saved.lab;
+  return { saved, status, slug, title: labsBySlug.get(slug)?.title ?? slug };
+}
+
+/** "Pick up where you left off." beside the running lab, else "Pick your next lab." */
+function setHero(resuming) {
+  $('heroTitle').replaceChildren(
+    document.createTextNode(resuming ? 'Pick up where you ' : 'Pick your next '),
+    node('span', 'mark', resuming ? 'left off.' : 'lab.')
+  );
+}
+
+/** "41:12 left" from the status the API gave, ticking; `set` receives the text. */
+function startCountdown(status, set) {
+  clearInterval(state.resumeTimer);
+  const skew = Number.isFinite(status.server_time) ? status.server_time - Date.now() : 0;
+  const expires = status.meta.expires_at;
+  const tick = () => {
+    if (!expires) return set('');
+    const ms = expires - skew - Date.now();
+    set(ms > 0 ? `${formatClock(ms)} left` : 'time is up');
+  };
+  tick();
+  state.resumeTimer = setInterval(tick, 1000);
+}
+
+/**
  * "You have a lab running". The launcher is what a learner sees after a
  * sign-in that lost the tab, or a session that was left with the remembered
  * record still in place; either way the lab is there and the fastest thing
- * to offer is the way back into it. The status is asked without recovery:
- * a refused token means the remembered session is gone, not that one should
- * be started to find out.
+ * to offer is the way back into it. It is the navy card beside the hero, and
+ * the hero says so ("Pick up where you left off").
  */
 async function renderResumeCard() {
   const host = $('resumeCard');
   const mine = ++resumeToken;
   clearInterval(state.resumeTimer);
   host.hidden = true;
-  host.innerHTML = '';
-  const saved = rememberedSession();
-  if (!saved?.id || !saved?.token || state.session) return;
-  let status;
-  try {
-    status = await api.status(saved.id, saved.token, { recover: false });
-  } catch {
-    return;
-  }
-  const running = status?.meta?.state;
-  if (mine !== resumeToken || state.session || (running !== 'running' && running !== 'starting')) return;
+  host.replaceChildren();
+  setHero(false);
+  setRunningLab(null);
+  const found = await fetchRunning();
+  if (!found || mine !== resumeToken || state.session) return;
+  const { saved, status, slug, title } = found;
 
-  const slug = status.meta.lab_slug ?? saved.lab;
-  const title = labsBySlug.get(slug)?.title ?? slug;
-  host.innerHTML = `
-    <p class="resume-text">
-      <strong>You have a lab running</strong> — <span class="resume-title"></span>
-      <span class="resume-left mono muted"></span>
-    </p>
-    <span class="resume-actions">
-      <button type="button" class="btn btn-primary" id="btnRejoin">Rejoin</button>
-      <button type="button" class="btn btn-ghost btn-link" id="btnDiscard">Discard</button>
-    </span>`;
-  host.querySelector('.resume-title').textContent = title;
+  const live = node('span', 'resume-live');
+  live.append(document.createElement('i'), document.createTextNode('RUNNING'));
+  const left = node('span', 'resume-left mono');
+  const row = node('div', 'resume-row');
+  row.append(live, left);
 
-  const skew = Number.isFinite(status.server_time) ? status.server_time - Date.now() : 0;
-  const expires = status.meta.expires_at;
-  const left = host.querySelector('.resume-left');
-  const tick = () => {
-    if (!expires) return (left.textContent = '');
-    const ms = expires - skew - Date.now();
-    left.textContent = ms > 0 ? `· ${formatClock(ms)} left` : '· time is up';
-  };
-  tick();
-  state.resumeTimer = setInterval(tick, 1000);
+  // Where it sits ("Gateway and access · lab 3 of 6") and how it is going.
+  const where = locateLab(launcherModel, slug);
+  const latest = status.checks?.results;
+  const passed = Array.isArray(latest) ? latest.filter((r) => r.pass).length : 0;
+  const parts = [];
+  if (where) parts.push(where.module.known ? where.module.title : where.path.title, `lab ${where.position} of ${where.total}`);
+  if (Array.isArray(latest) && latest.length) parts.push(`${passed} of ${latest.length} checks passing`);
 
-  host.querySelector('#btnRejoin').addEventListener('click', () => startSession(slug, host));
-  host.querySelector('#btnDiscard').addEventListener('click', () => discardRemembered(saved, host));
+  const buttons = node('div', 'resume-actions');
+  const rejoin = node('button', 'btn btn-accent');
+  rejoin.type = 'button';
+  rejoin.id = 'btnRejoin';
+  rejoin.append(document.createTextNode('Rejoin the lab'), uiIcon('arrow', 14));
+  const discard = node('button', 'btn btn-quiet', 'End session');
+  discard.type = 'button';
+  discard.id = 'btnDiscard';
+  buttons.append(rejoin, discard);
+
+  host.append(row, node('p', 'resume-title', title));
+  if (parts.length) host.append(node('p', 'resume-sub', parts.join(' · ')));
+  if (Array.isArray(latest) && latest.length) host.append(progressBar(passed, latest.length, 'Checks passing in the latest run'));
+  host.append(buttons);
+
+  startCountdown(status, (text) => (left.textContent = text));
+  rejoin.addEventListener('click', () => {
+    // A phone cannot run a lab: say so instead of starting (or rejoining) one.
+    if (guardDesktop()) return;
+    startSession(slug, host);
+  });
+  discard.addEventListener('click', () => discardRemembered(saved, host));
   host.hidden = false;
+  setHero(true);
+  setRunningLab(slug);
 }
 
 /**
@@ -835,13 +963,101 @@ async function discardRemembered(saved, host) {
     forgetSession();
     clearInterval(state.resumeTimer);
     host.hidden = true;
-    host.innerHTML = '';
+    host.replaceChildren();
+    setHero(false);
+    setRunningLab(null);
   } catch (err) {
     button.disabled = false;
     button.removeAttribute('aria-busy');
     toast(`Could not discard the lab — ${err.message}`, 'bad');
   }
 }
+
+// ------------------------------------------------------- the desktop notice
+
+/*
+ * A lab needs a wide screen (terminal, editor and checks side by side), so on
+ * a phone Start and Rejoin show this screen instead of starting anything: no
+ * request is made and no container is claimed. Reading still works on a phone,
+ * so only those two actions are gated. The test is device.js; it is asked when
+ * the learner tries, and again on resize and on rotation, so a window widened
+ * to a desktop size brings the launcher back.
+ */
+
+/** Shows the notice and returns true when this screen is too small to start a lab. */
+function guardDesktop() {
+  if (!isPhoneLike(readDevice())) return false;
+  showDesktopNotice();
+  return true;
+}
+
+async function showDesktopNotice() {
+  hideLearnScreen();
+  $('launcher').hidden = true;
+  const url = `${location.origin}/`;
+  $('dnEmail').href = `mailto:?subject=${encodeURIComponent('Opalix labs: open this on a desktop')}&body=${encodeURIComponent(`Open this link on a laptop or desktop to start a lab: ${url}`)}`;
+  $('dnUrl').value = url;
+  $('dnManual').hidden = true;
+  $('dnCopyText').textContent = 'Copy the link';
+  $('dnStatus').textContent = '';
+  $('dnRunning').hidden = true;
+  $('desktopNotice').hidden = false;
+  $('desktopNotice').scrollTop = 0;
+  window.scrollTo(0, 0);
+  $('dnTitle').focus();
+  syncQuizButtons();
+  // The lab that is still running, if there is one: it can be rejoined from a computer.
+  const token = ++noticeToken;
+  const found = await fetchRunning();
+  if (!found || token !== noticeToken || $('desktopNotice').hidden) return;
+  $('dnRunningTitle').textContent = found.title;
+  startCountdown(found.status, (text) => ($('dnRunningMeta').textContent = `${text ? `${text} · ` : ''}rejoin from a computer`));
+  $('dnRunning').hidden = false;
+}
+let noticeToken = 0;
+
+function hideDesktopNotice({ focus = true } = {}) {
+  noticeToken++;
+  $('desktopNotice').hidden = true;
+  $('launcher').hidden = false;
+  clearInterval(state.resumeTimer);
+  // The launcher's own card ticks again.
+  renderResumeCard();
+  syncQuizButtons();
+  if (focus) {
+    const heading = $('heroTitle');
+    heading.focus({ preventScroll: true });
+  }
+}
+
+$('dnBrowse').addEventListener('click', () => hideDesktopNotice());
+
+/** Copies the link; where the clipboard cannot be written, shows it selected instead. */
+$('dnCopy').addEventListener('click', async () => {
+  const url = `${location.origin}/`;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('no clipboard');
+    await navigator.clipboard.writeText(url);
+    $('dnManual').hidden = true;
+    $('dnCopyText').textContent = 'Copied';
+    $('dnStatus').textContent = 'Link copied.';
+    setTimeout(() => {
+      $('dnCopyText').textContent = 'Copy the link';
+    }, 2500);
+  } catch {
+    $('dnManual').hidden = false;
+    $('dnUrl').focus();
+    $('dnUrl').select();
+    $('dnStatus').textContent = 'The link is selected. Copy it with your keyboard.';
+  }
+});
+
+// A window widened to a desktop size (or a phone turned sideways into one) has no use for the notice.
+function reevaluateDevice() {
+  if (!$('desktopNotice').hidden && !isPhoneLike(readDevice())) hideDesktopNotice({ focus: false });
+}
+window.addEventListener('resize', reevaluateDevice);
+window.addEventListener('orientationchange', reevaluateDevice);
 
 // -------------------------------------------------------------- onboarding
 
@@ -922,11 +1138,13 @@ async function fetchLearn(slug) {
 let beginning = false;
 async function beginLab(lab, card) {
   if (beginning) return;
+  // Start, Open again and Rejoin all come through here: on a phone they show the desktop notice.
+  if (guardDesktop()) return;
   // A running lab is rejoined by Start, whatever was clicked: nothing to prepare for.
   const resuming = !$('resumeCard').hidden;
   if (!lab.has_learn || resuming) return startSession(lab.slug, card);
   beginning = true;
-  const buttons = document.querySelectorAll('.lab button, .resume-card button');
+  const buttons = document.querySelectorAll('.lab button, .resume button');
   buttons.forEach((b) => (b.disabled = true));
   const button = card?.querySelector('.lab-start');
   const label = button?.textContent;
@@ -954,7 +1172,8 @@ async function beginLab(lab, card) {
     entry,
     store: mastery,
     post: (body) => api.postAnswers(body),
-    onStart: () => startSession(lab.slug),
+    // The screen may have shrunk since Start was pressed: ask again before a container is claimed.
+    onStart: () => (guardDesktop() ? undefined : startSession(lab.slug)),
     onBack: leaveLearnScreen,
   });
 }
@@ -974,9 +1193,9 @@ async function loadOnboardingOffer() {
 
 /** The two "Retake the quiz" controls show only when a quiz exists and the learner is at the launcher. */
 function syncQuizButtons() {
-  const atLauncher = !state.session && $('learnScreen').hidden;
+  const atLauncher = !state.session && $('learnScreen').hidden && $('desktopNotice').hidden;
   $('btnRetakeQuiz').hidden = !(onboardingOffer && atLauncher);
-  $('btnOnboardingRetake').hidden = !(onboardingOffer && !state.session && $('learnScreen').hidden);
+  $('btnOnboardingRetake').hidden = !(onboardingOffer && atLauncher);
 }
 
 function showQuiz() {
@@ -1093,7 +1312,7 @@ async function startSession(slug, card) {
   const error = $('launchError');
   error.hidden = true;
   error.className = 'notice notice-bad';
-  const buttons = document.querySelectorAll('.lab button, .resume-card button');
+  const buttons = document.querySelectorAll('.lab button, .resume button');
   buttons.forEach((b) => (b.disabled = true));
   const button = card?.querySelector('button');
   // The resume card's button says "Rejoin", a lab card's says "Start".
@@ -2065,7 +2284,7 @@ function resetBarStats() {
 
 const THEME_KEY = 'opalixTheme';
 const THEMES = ['light', 'dark', 'system'];
-const THEME_ICON = { light: '☀', dark: '☾', system: '◐' };
+const THEME_ICON = { light: 'sun', dark: 'moon', system: 'auto' };
 
 function currentTheme() {
   const saved = lsGet(THEME_KEY);
@@ -2086,7 +2305,7 @@ function applyTheme(mode) {
   const button = $('btnTheme');
   button.setAttribute('aria-label', `Theme: ${mode}. Switch to ${next}.`);
   button.title = `Theme: ${mode} — click for ${next}`;
-  $('themeIcon').textContent = THEME_ICON[mode];
+  $('themeIcon').replaceChildren(uiIcon(THEME_ICON[mode], 20));
 }
 
 $('btnTheme').addEventListener('click', () => {
@@ -2102,6 +2321,8 @@ async function showIdentity() {
     const { sub } = await api.me();
     if (typeof sub !== 'string' || !sub) return;
     $('identityName').textContent = sub;
+    // Two letters in the circle, as the landing page's account chip has.
+    $('identityInitials').textContent = sub.replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase();
     $('identity').hidden = false;
   } catch {
     /* an older Worker has no /api/me; the header simply omits it */
@@ -3427,6 +3648,49 @@ function showView(view, tabEl) {
 
 // ---------------------------------------------------------------- wiring
 
+// The header's own links. Labs (and the brand) go home: the launcher from a learning or
+// notice screen, the top of it from the launcher. Paths goes to the path navigator.
+function goHome(event) {
+  event.preventDefault();
+  setMenu(false);
+  if (state.session) return;
+  if (!$('desktopNotice').hidden) hideDesktopNotice();
+  else if (!$('learnScreen').hidden) leaveLearnScreen();
+  else {
+    $('launcher').scrollTo({ top: 0, behavior: 'auto' });
+    window.scrollTo(0, 0);
+  }
+}
+$('brandLink').addEventListener('click', goHome);
+$('navLabs').addEventListener('click', goHome);
+$('navPaths').addEventListener('click', (event) => {
+  event.preventDefault();
+  setMenu(false);
+  if (state.session || $('launcher').hidden) return;
+  const nav = $('pathNav');
+  const first = nav.hidden ? null : nav.querySelector('.path-pill');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  (first ?? $('labList')).scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  first?.focus({ preventScroll: true });
+});
+
+// On a phone the links and account controls live behind a menu button inside the pill.
+function setMenu(open) {
+  $('nav').classList.toggle('menu-open', open);
+  const button = $('btnMenu');
+  button.setAttribute('aria-expanded', String(open));
+  button.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+}
+$('btnMenu').addEventListener('click', () => setMenu($('btnMenu').getAttribute('aria-expanded') !== 'true'));
+$('nav').addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && $('btnMenu').getAttribute('aria-expanded') === 'true') {
+    setMenu(false);
+    $('btnMenu').focus();
+  }
+});
+$('btnHelp').addEventListener('click', () => setMenu(false));
+$('btnRetakeQuiz').addEventListener('click', () => setMenu(false));
+
 $('btnHelp').addEventListener('click', showOnboarding);
 $('btnRetakeQuiz').addEventListener('click', showQuiz);
 $('btnOnboardingRetake').addEventListener('click', showQuiz);
@@ -3679,6 +3943,9 @@ async function resumeOrShowLabs() {
   try {
     const saved = rememberedSession();
     if (!saved?.id || !saved?.token) return await loadLabs();
+    // A phone cannot run a lab, so it does not walk back into one: the launcher shows it
+    // as the lab in progress, and Rejoin explains. The record stays for the computer.
+    if (isPhoneLike(readDevice())) return await loadLabs();
 
     // No recovery here: a refused token means the remembered session is
     // gone, and rejoining to find out could start a new container.

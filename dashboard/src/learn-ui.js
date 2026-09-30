@@ -38,16 +38,43 @@ export function focusHeading(root) {
   if (h) h.focus({ preventScroll: false });
 }
 
-/** A screen's head: an eyebrow line, the h1 that takes focus, and an optional meta line. */
-export function screenHead({ eyebrow, title, meta, id }) {
+/**
+ * The progress-steps bar at the top of a learning screen: `total` segments, the
+ * first `current` of them filled. Decoration only (the heading and the eyebrow say
+ * where the learner is), so it is hidden from assistive technology.
+ */
+export function stepBar(current, total) {
+  const bar = make('div', 'steps');
+  bar.setAttribute('aria-hidden', 'true');
+  for (let i = 1; i <= total; i++) bar.append(make('i', i <= current ? 'on' : ''));
+  return bar;
+}
+
+/**
+ * A screen's head: the steps bar, an eyebrow line, the h1 that takes focus and an
+ * optional meta line.
+ *
+ *   steps   { current, total } for the bar
+ *   mark    the end of `title` to set on the accent highlighter, as the landing page does
+ *   badge   a small navy badge beside the meta line ("Case file")
+ */
+export function screenHead({ eyebrow, title, meta, id, steps, mark, badge }) {
   const head = make('header', 'learn-head');
+  if (steps) head.append(stepBar(steps.current, steps.total));
   if (eyebrow) head.append(make('p', 'learn-eyebrow', eyebrow));
-  const h1 = make('h1', 'learn-title', title);
+  const h1 = make('h1', 'learn-title');
+  if (mark && title.endsWith(mark)) h1.append(document.createTextNode(title.slice(0, -mark.length)), make('span', 'mark', mark));
+  else h1.textContent = title;
   h1.tabIndex = -1;
   h1.setAttribute('data-learn-heading', '');
   if (id) h1.id = id;
   head.append(h1);
-  if (meta) head.append(make('p', 'learn-meta', meta));
+  if (meta || badge) {
+    const row = make('div', 'learn-metarow');
+    if (badge) row.append(make('span', 'badge badge-case', badge));
+    if (meta) row.append(make('p', 'learn-meta', meta));
+    head.append(row);
+  }
   return head;
 }
 
@@ -85,17 +112,18 @@ let uid = 0;
  *              the explanation without a verdict and reports { correct: false,
  *              unsure: true }; nothing about it says the learner failed
  *   nextLabelFor  (result) => what Next says once this one is answered
+ *   steps      { current, total } for the screen's progress-steps bar
  *
  * Single choice is radios, multiple is checkboxes. "Check" reveals whether the
  * answer was right with the explanation, in a live region; nothing is
  * revealed before. Returns { root } (the heading inside it takes focus).
  */
-export function questionScreen({ question, index, total, onNext, lastLabel = 'Finish', title, eyebrow, allowUnsure = false, nextLabelFor }) {
+export function questionScreen({ question, index, total, onNext, lastLabel = 'Finish', title, eyebrow, allowUnsure = false, nextLabelFor, steps }) {
   const id = `q${++uid}`;
   const multi = question.type === 'multi';
   const root = make('div', 'quiz');
 
-  const head = screenHead({ eyebrow, title: title ?? `Question ${index + 1} of ${total}` });
+  const head = screenHead({ eyebrow, title: title ?? `Question ${index + 1} of ${total}`, steps });
   head.classList.add('quiz-head');
   head.append(progressBar(index, total));
   root.append(head);
@@ -243,10 +271,10 @@ export function lessonCard({ concept, state, mode, chip, onAction, headingTag = 
     if (mode === 'plan') {
       const b =
         current === 'collapsed'
-          ? button('Show me the lesson anyway', { onClick: () => onAction?.('forced') })
+          ? button('Show me the lesson anyway', { kind: 'quiet', onClick: () => onAction?.('forced') })
           : button('I know this, skip', { kind: 'ghost', onClick: () => onAction?.('skipped') });
       b.classList.add('lesson-toggle');
-      root.append(b);
+      head.append(b);
       focusTarget = b;
     } else {
       const open = current === 'expanded';

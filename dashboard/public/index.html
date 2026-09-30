@@ -7,6 +7,9 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▣</text></svg>">
 <!-- Applies a saved theme before first paint; a module script would flash the other one. -->
 <script src="./theme-init.js"></script>
+<!-- The two faces the first paint uses; styles.css declares all three (self-hosted, see build.mjs). -->
+<link rel="preload" href="./dist/fonts/funnel-display-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="./dist/fonts/funnel-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="./dist/xterm.css">
 <link rel="stylesheet" href="./styles.css">
 <link rel="stylesheet" href="./diagram.css">
@@ -38,61 +41,76 @@
   </div>
 </div>
 
-<header class="bar">
-  <div class="brand"><span class="brand-mark" aria-hidden="true">▣</span> <strong>Opalix</strong> <span class="muted">lab console</span></div>
+<header class="site-header">
+  <!-- The landing page's floating pill. `bar` stays as the hook the session bar is styled and tested by. -->
+  <div class="bar nav" id="nav">
+    <a class="brand" href="#" id="brandLink" aria-label="Opalix labs home">
+      <svg class="brand-mark" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="6"/><circle cx="12" cy="12" r="4.5"/></svg>
+      <span>opalix</span><span class="beta-tag">LABS</span>
+    </a>
 
-  <div class="bar-session" id="sessionBar" hidden>
-    <span class="pill" id="statePill" title="">—</span>
-    <span class="pill pill-stream" id="streamPill" role="status" title="Live updates are interrupted; the console keeps checking on its own" hidden>reconnecting…</span>
-    <span class="session-lab">
-      <span class="session-title" id="sessionTitle"></span>
-      <span class="mono muted small" id="sessionLab"></span>
-    </span>
-    <span class="timer" id="expiryTimer" title="Time until the hard timeout"></span>
-    <!-- The session id is on the state pill's tooltip; this copy is for screen readers and support. -->
-    <span class="sr-only" id="sessionId"></span>
+    <nav class="nav-links" id="navLinks" aria-label="Console">
+      <a class="nav-launcher" href="#" id="navLabs" aria-current="page">Labs</a>
+      <a class="nav-launcher" href="#paths" id="navPaths">Paths</a>
+      <button id="btnHelp" type="button" aria-haspopup="dialog" title="How this console works">Help</button>
+    </nav>
 
-    <span class="bar-stats" id="barStats" role="group" aria-label="Session progress">
-      <span class="stat" title="Checks passing in the latest run">
-        <span class="stat-label">Checks</span> <b class="stat-value" id="statChecks">—</b>
+    <div class="bar-session" id="sessionBar" hidden>
+      <span class="pill" id="statePill" title="">—</span>
+      <span class="pill pill-stream" id="streamPill" role="status" title="Live updates are interrupted; the console keeps checking on its own" hidden>reconnecting…</span>
+      <span class="session-lab">
+        <span class="session-title" id="sessionTitle"></span>
+        <span class="mono muted small" id="sessionLab"></span>
       </span>
-      <span class="stat" title="Hints unlocked out of the lab's hints">
-        <span class="stat-label">Hints</span> <b class="stat-value" id="statHints">—</b>
-      </span>
-      <span class="stat" id="statCostWrap" title="Approximate spend by this session so far">
-        <span class="sr-only">Cost</span> <b class="stat-value" id="statCost">—</b>
-      </span>
-    </span>
-  </div>
+      <span class="timer" id="expiryTimer" title="Time until the hard timeout"></span>
+      <!-- The session id is on the state pill's tooltip; this copy is for screen readers and support. -->
+      <span class="sr-only" id="sessionId"></span>
 
-  <div class="bar-actions">
-    <div class="session-actions" id="sessionActions" hidden>
-      <button id="btnChecks" class="btn btn-primary" disabled>Run checks</button>
-      <button id="btnSnapshot" class="btn" disabled title="Save the workspace so it survives a container restart">Snapshot</button>
-      <button id="btnEnd" class="btn btn-danger" disabled>End session</button>
+      <span class="bar-stats" id="barStats" role="group" aria-label="Session progress">
+        <span class="stat" title="Checks passing in the latest run">
+          <span class="stat-label">Checks</span> <b class="stat-value" id="statChecks">—</b>
+        </span>
+        <span class="stat" title="Hints unlocked out of the lab's hints">
+          <span class="stat-label">Hints</span> <b class="stat-value" id="statHints">—</b>
+        </span>
+        <span class="stat" id="statCostWrap" title="Approximate spend by this session so far">
+          <span class="sr-only">Cost</span> <b class="stat-value" id="statCost">—</b>
+        </span>
+      </span>
     </div>
-    <button id="btnBackToLabs" class="btn btn-primary" hidden>← Back to labs</button>
-    <button id="btnTheme" class="btn btn-tiny btn-ghost btn-icon" type="button" aria-label="Theme: system. Switch to light."><span id="themeIcon" aria-hidden="true">◐</span></button>
-    <button id="btnHelp" class="btn btn-tiny btn-ghost btn-icon" type="button" aria-label="How this console works" title="How this console works">?</button>
-    <!-- Shown only when the platform quiz exists (GET /api/onboarding answered). -->
-    <button id="btnRetakeQuiz" class="btn btn-tiny btn-ghost" type="button" title="Retake the platform quiz that sets where each module starts" hidden>Retake the quiz</button>
-    <span class="identity" id="identity" title="Signed in as" hidden><span class="sr-only">Signed in as </span><span class="mono small" id="identityName"></span></span>
-    <button id="btnSignOut" class="btn btn-tiny btn-ghost" type="button" title="Sign out of the console on this browser">Sign out</button>
+
+    <div class="bar-actions nav-actions">
+      <div class="session-actions" id="sessionActions" hidden>
+        <button id="btnChecks" class="btn btn-primary" disabled>Run checks</button>
+        <button id="btnSnapshot" class="btn" disabled title="Save the workspace so it survives a container restart">Snapshot</button>
+        <button id="btnEnd" class="btn btn-danger" disabled>End session</button>
+      </div>
+      <button id="btnBackToLabs" class="btn btn-primary" hidden>← Back to labs</button>
+      <div class="nav-account" id="navAccount">
+        <button id="btnTheme" class="icon-btn" type="button" aria-label="Theme: system. Switch to light."><span id="themeIcon" aria-hidden="true"></span></button>
+        <!-- Shown only when the platform quiz exists (GET /api/onboarding answered). -->
+        <button id="btnRetakeQuiz" class="btn btn-quiet" type="button" title="Retake the platform quiz that sets where each module starts" hidden>Retake the quiz</button>
+        <span class="who" id="identity" title="Signed in as" hidden><span class="sr-only">Signed in as </span><i class="who-initials" id="identityInitials" aria-hidden="true"></i><span id="identityName"></span></span>
+        <button id="btnSignOut" class="btn btn-quiet nav-signout" type="button" title="Sign out of the console on this browser">Sign out</button>
+      </div>
+      <!-- Phones only: opens the links and account controls inside the pill. -->
+      <button id="btnMenu" class="icon-btn nav-menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="navLinks navAccount"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M5 9h14M5 15h14"/></svg></button>
+    </div>
   </div>
 </header>
 
 <!-- No session yet: pick a lab -->
 <section class="launcher" id="launcher">
-  <div class="launcher-head">
-    <h1>Start a lab <span class="count" id="labCount"></span></h1>
-    <p class="muted">
-      Each lab runs in its own container, with a terminal, an editor and the
-      lab's services. You can have one lab running at a time — starting
-      another while one is live takes you back to the one you have.
-    </p>
+  <div class="hello">
+    <div class="hello-row">
+      <div class="hello-copy">
+        <h1 class="h-hero" id="heroTitle" tabindex="-1">Pick your next <span class="mark">lab.</span></h1>
+        <p class="lede" id="heroLede">Each path is a run of hands-on labs. Start with an explore lab, then build or fix the real thing. Your progress is kept on this browser.</p>
+      </div>
+      <!-- Filled when a lab is remembered and the API says it is still up. -->
+      <aside class="resume" id="resumeCard" aria-label="Lab in progress" hidden></aside>
+    </div>
   </div>
-  <!-- Filled when a lab is remembered and the API says it is still up. -->
-  <div class="resume-card" id="resumeCard" role="status" hidden></div>
   <!-- One link per learning path; built with the list, hidden when there is only one group. -->
   <nav class="path-nav" id="pathNav" aria-label="Learning paths" hidden>
     <ul class="path-nav-list" id="pathNavList"></ul>
@@ -101,9 +119,10 @@
     <div class="filter-search">
       <label class="sr-only" for="labSearch">Search labs by title, summary or name</label>
       <input id="labSearch" type="search" placeholder="Search labs" autocomplete="off">
-      <button id="btnClearFilters" type="button" class="btn btn-tiny btn-ghost" hidden>Clear filters</button>
+      <button id="btnClearFilters" type="button" class="btn btn-quiet" hidden>Clear filters</button>
     </div>
     <div class="filter-chips" id="filterChips"></div>
+    <p class="lab-count" id="labCount" role="status"></p>
   </div>
   <p class="empty-state" id="labNoMatch" hidden>No labs match these filters.</p>
   <div id="labList" class="lab-list" aria-busy="true">
@@ -113,6 +132,39 @@
     <p class="sr-only">Loading labs…</p>
   </div>
   <p class="notice notice-bad" id="launchError" role="alert" hidden></p>
+</section>
+
+<!-- A phone cannot run a lab. Shown instead of starting one; browsing is still allowed. -->
+<section class="notice-screen" id="desktopNotice" aria-labelledby="dnTitle" hidden>
+  <div class="notice-wrap">
+    <div class="step-card notice-card">
+      <span class="tile tile-strong" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" focusable="false"><rect x="3" y="4" width="18" height="12" rx="2.5"/><path d="M9 20h6M12 16v4"/></svg></span>
+      <h1 id="dnTitle" tabindex="-1">Labs work best on a <span class="mark">desktop.</span></h1>
+      <p class="notice-lede">Every lab has a terminal, an editor and live checks side by side, and they need a wide screen. Open this page on a laptop or desktop to start one.</p>
+      <div class="notice-actions">
+        <a class="btn btn-accent" id="dnEmail" href="mailto:"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M4 7l8 6 8-6"/></svg>Email me the link</a>
+        <button class="btn btn-ghost" id="dnCopy" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></svg><span id="dnCopyText">Copy the link</span></button>
+      </div>
+      <!-- Only when the clipboard cannot be written: the link, selected, to copy by hand. -->
+      <div class="notice-manual" id="dnManual" hidden>
+        <label class="sr-only" for="dnUrl">Link to this console</label>
+        <input id="dnUrl" type="text" readonly>
+      </div>
+      <p class="sr-only" id="dnStatus" role="status" aria-live="polite"></p>
+    </div>
+    <!-- The lab that is still running, if this browser remembers one. -->
+    <div class="notice-running" id="dnRunning" hidden>
+      <span class="resume-live"><i></i>RUNNING</span>
+      <div class="notice-running-text">
+        <strong id="dnRunningTitle"></strong>
+        <span class="mono" id="dnRunningMeta"></span>
+      </div>
+    </div>
+    <div class="notice-foot">
+      <button class="btn btn-quiet" id="dnBrowse" type="button">Browse the labs anyway</button>
+      <p class="mono">You can read the paths and lessons here. Starting a lab needs a desktop.</p>
+    </div>
+  </div>
 </section>
 
 <!-- The learning screens: the platform quiz, and "Before you begin" for a lab. One at a time, in place of the launcher. -->

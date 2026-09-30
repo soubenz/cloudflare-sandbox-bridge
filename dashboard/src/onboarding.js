@@ -32,7 +32,20 @@ import {
   skipOnboarding,
 } from './learn-model.js';
 import { actionBar, button, focusHeading, make, questionScreen, screenHead, show } from './learn-ui.js';
+import { icon, uiIcon } from './icons.js';
 import { mountMarkdown } from './markdown.js';
+// The copy of every path and module (icon and accent too), shared with the launcher:
+// each area of the quiz is drawn with the icon and colour of the module it opens.
+import pathMeta from '../../packages/catalogue/paths.json';
+
+/** The three steps of the quiz: what you know, a question or two about it, where to start. */
+const STEPS = 3;
+
+/** The icon and accent family of the module an area belongs to (slate and a grid when the copy has none). */
+function moduleLook(area) {
+  const module = pathMeta.paths?.find((p) => p.slug === area.path)?.modules?.find((m) => m.number === area.module);
+  return { icon: module?.icon || 'grid', accent: module?.accent || 'slate' };
+}
 
 /** What a level chip says. Words about knowledge, never about marks. */
 export const LEVEL_LABELS = { strong: 'Strong', ok: 'Familiar', new: 'New' };
@@ -86,7 +99,7 @@ export function runOnboarding({ host, onboarding, store, post, onExit, areas = p
     store.update((m) => skipOnboarding(m));
     leave(false);
   };
-  const skipButton = () => button('Skip for now', { kind: 'ghost', onClick: skip, id: 'btnOnboardingSkip' });
+  const skipButton = () => button('Skip for now', { kind: 'quiet', onClick: skip, id: 'btnOnboardingSkip' });
 
   /** The answers given so far for one area, in the order they were asked. */
   const answersFor = (area) => results.filter((r) => r.concept.startsWith(`${area}.`));
@@ -104,7 +117,8 @@ export function runOnboarding({ host, onboarding, store, post, onExit, areas = p
 
     const list = make('div', 'ob-choices');
     const boxes = new Map();
-    const choice = (value, title, blurb, extra = '') => {
+    // The checkbox is the real control, drawn as the design's rounded box (styles in learn.css).
+    const choice = (value, title, blurb, extra = '', look = null) => {
       const label = make('label', `ob-choice${extra}`);
       const input = make('input');
       input.type = 'checkbox';
@@ -112,12 +126,21 @@ export function runOnboarding({ host, onboarding, store, post, onExit, areas = p
       input.value = value;
       boxes.set(value, input);
       const text = make('span', 'ob-choice-text');
-      text.append(make('span', 'ob-choice-title', title));
+      const head = make('span', 'ob-choice-head');
+      if (look) {
+        const tile = make('span', 'tile ob-choice-tile');
+        tile.dataset.accent = look.accent;
+        tile.setAttribute('aria-hidden', 'true');
+        tile.append(icon(look.icon, 18));
+        head.append(tile);
+      }
+      head.append(make('span', 'ob-choice-title', title));
+      text.append(head);
       if (blurb) text.append(make('span', 'ob-choice-blurb', blurb));
       label.append(input, text);
       return label;
     };
-    for (const a of areas) list.append(choice(a.area, a.title, blurbs[a.area]));
+    for (const a of areas) list.append(choice(a.area, a.title, blurbs[a.area], '', moduleLook(a)));
     const none = choice('none', 'None of these yet', 'I am new to all of this. Every module starts as a full lesson.', ' ob-choice-none');
     set.append(list, none);
     form.append(set);
@@ -126,13 +149,19 @@ export function runOnboarding({ host, onboarding, store, post, onExit, areas = p
     message.setAttribute('role', 'status');
     message.setAttribute('aria-live', 'polite');
 
-    const start = button('Start', { kind: 'primary', type: 'submit', id: 'btnOnboardingStart' });
+    const start = button('Start', { kind: 'accent', type: 'submit', id: 'btnOnboardingStart' });
+    start.classList.add('btn-lg');
+    start.append(uiIcon('arrow', 16));
+    // "2 areas picked": a count of what is ticked, and nothing about how many questions follow.
+    const tally = make('span', 'ob-tally');
     const ticked = () => areas.filter((a) => boxes.get(a.area).checked).map((a) => a.area);
     const hasChoice = () => ticked().length > 0 || boxes.get('none').checked;
     // Not `disabled`: a disabled button cannot be reached or explained by keyboard. It says so in words instead.
     const sync = () => {
       start.setAttribute('aria-disabled', String(!hasChoice()));
       if (hasChoice()) message.textContent = '';
+      const n = ticked().length;
+      tally.textContent = n ? `${n} ${n === 1 ? 'area' : 'areas'} picked` : boxes.get('none').checked ? 'Every module starts as a full lesson' : 'Pick the areas you know';
     };
 
     // "None of these yet" is exclusive: it clears the areas, and ticking an area clears it.
@@ -154,11 +183,11 @@ export function runOnboarding({ host, onboarding, store, post, onExit, areas = p
       probe(0);
     });
 
-    form.append(message, actionBar([start, skipButton()]));
+    form.append(message, actionBar([start, skipButton(), tally]));
     sync();
     show(
       host,
-      screenHead({ eyebrow: 'Welcome', title: 'What have you worked with?', meta: 'Nothing to pass or fail.' }),
+      screenHead({ eyebrow: 'Welcome', title: 'What have you worked with?', mark: 'worked with?', meta: 'Nothing to pass or fail.', steps: { current: 1, total: STEPS } }),
       prose,
       form
     );
@@ -188,6 +217,7 @@ export function runOnboarding({ host, onboarding, store, post, onExit, areas = p
       eyebrow: `Area ${ai + 1} of ${selected.length}`,
       title: `${titleOf(area)} \u00b7 question ${asked + 1} of up to ${MAX_PROBE}`,
       allowUnsure: true,
+      steps: { current: 2, total: STEPS },
       nextLabelFor: (r) => (endsAfter(ai, r) ? 'See where to start' : 'Next'),
       onNext: (r) => {
         results.push({ question_id: r.question_id, concept: r.concept, correct: r.correct });
@@ -239,8 +269,18 @@ export function runOnboarding({ host, onboarding, store, post, onExit, areas = p
       'This only sets where each module starts. Every lab asks a few questions of its own, and you can open or skip any lesson.'
     );
     const retake = make('p', 'learn-note muted small', 'You can retake this any time from the ? menu.');
-    const go = button('Go to the labs', { kind: 'primary', onClick: () => leave(true), id: 'btnOnboardingDone2' });
-    show(host, screenHead({ eyebrow: 'Your starting point', title: 'Where to start' }), lede, list, note, retake, actionBar([go]));
+    const go = button('Go to the labs', { kind: 'accent', onClick: () => leave(true), id: 'btnOnboardingDone2' });
+    go.classList.add('btn-lg');
+    go.append(uiIcon('arrow', 16));
+    show(
+      host,
+      screenHead({ eyebrow: 'Your starting point', title: 'Where to start', mark: 'start', steps: { current: 3, total: STEPS } }),
+      lede,
+      list,
+      note,
+      retake,
+      actionBar([go])
+    );
     focusHeading(host);
   }
 

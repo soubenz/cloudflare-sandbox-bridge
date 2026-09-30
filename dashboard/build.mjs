@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { cp, mkdir } from 'node:fs/promises';
+import { cp, mkdir, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -69,3 +69,14 @@ await cp(
   join(here, '../node_modules/@xterm/xterm/css/xterm.css'),
   join(here, 'public/dist/xterm.css')
 );
+
+// The console's three typefaces (Funnel Display, Funnel Sans, JetBrains Mono),
+// self-hosted from the shared design package so the page makes no third-party
+// request and the CSP can stay `font-src 'self'`. styles.css declares the
+// @font-face rules and points at dist/fonts/.
+const fontsFrom = join(here, '../packages/design/fonts');
+const fontsTo = join(here, 'public/dist/fonts');
+await mkdir(fontsTo, { recursive: true });
+for (const file of await readdir(fontsFrom)) {
+  if (file.endsWith('.woff2') || file === 'OFL.txt') await cp(join(fontsFrom, file), join(fontsTo, file));
+}

@@ -8,3 +8,7 @@
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+# Self-hosted fonts rarely change; let browsers keep them for 30 days.
+/dist/fonts/*
+  Cache-Control: public, max-age=2592000

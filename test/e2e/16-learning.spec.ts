@@ -1171,10 +1171,13 @@ test.describe('Before you begin', () => {
   });
 
   test('keeps to the screen width at 390px', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
     await stub(page);
     await open(page, { mastery: SKIPPED });
+    // A phone cannot start a lab (see "the desktop notice"), so the screen is opened on a wide window
+    // and the window is then narrowed to a phone's: the screens themselves must fit.
     await startCard(page);
+    await expect(heading(page)).toHaveText(bundle.story!.title);
+    await page.setViewportSize({ width: 390, height: 844 });
     await noHorizontalScroll(page);
     await page.getByRole('button', { name: 'Continue' }).click();
     await noHorizontalScroll(page);
@@ -1253,8 +1256,9 @@ test.describe('the Learn tab', () => {
   });
 
   test('is on a phone-width page without widening it', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
     await intoSession(page);
+    // Starting a lab is for a computer; a window narrowed after that must still hold together.
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('tab', { name: 'Learn' }).click();
     await expect(page.locator('#learnBody .lesson').first()).toBeVisible();
     await noHorizontalScroll(page);
@@ -1427,8 +1431,8 @@ test.describe('the Questions tab', () => {
   });
 
   test('keeps to the screen width at 390px', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
     await intoSession(page);
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('tab', { name: 'Questions' }).click();
     await expect(page.locator('.qfield')).toHaveCount(bundle.fields.length);
     await noHorizontalScroll(page);
@@ -1485,6 +1489,203 @@ test.describe('a lab without learning content', () => {
 });
 
 // =========================================================================
+// the desktop notice: a phone cannot run a lab
+// =========================================================================
+
+/** Every request that would make or rejoin a session: the console's start route and the API's session routes. */
+function watchSessionRequests(page: Page): string[] {
+  const seen: string[] = [];
+  page.on('request', (req) => {
+    const url = new URL(req.url());
+    if (url.pathname === '/api/start' || (req.url().startsWith(API) && url.pathname.startsWith('/sessions'))) seen.push(`${req.method()} ${url.pathname}`);
+  });
+  return seen;
+}
+
+const PHONE = { width: 390, height: 844 };
+const notice = (page: Page) => page.locator('#desktopNotice');
+/** A browser that remembers a lab that is still running (PLAIN), as after closing the tab. */
+const rememberRunning = (page: Page) =>
+  page.addInitScript(([id]) => localStorage.setItem('opalix.session', JSON.stringify({ id, token: 'test-token', lab: 'see-how-requests-are-routed-plain', urls: { services: {} } })), [SESSION_ID]);
+
+test.describe('the desktop notice', () => {
+  test('Start on a phone shows the notice instead of starting: no session is requested', async ({ page }) => {
+    const s = await stub(page, { lab: PLAIN });
+    const requests = watchSessionRequests(page);
+    await page.setViewportSize(PHONE);
+    await open(page, { mastery: SKIPPED });
+    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+
+    await expect(notice(page)).toBeVisible();
+    await expect(page.locator('#dnTitle')).toHaveText('Labs work best on a desktop.');
+    await expect(page.locator('#dnTitle')).toBeFocused();
+    await expect(page.locator('#launcher')).toBeHidden();
+    await expect(page.locator('#workspace')).toBeHidden();
+    await expect(page.locator('#bootModal')).toBeHidden();
+    expect(s.starts).toEqual([]);
+    expect(requests).toEqual([]);
+    // Nothing is offered that does not work here, and nothing sticks out.
+    await expect(page.locator('#dnRunning')).toBeHidden();
+    await noHorizontalScroll(page);
+    expect(s.errors).toEqual([]);
+  });
+
+  test('a lab with lessons gets the notice too, before any learning screen and without fetching the lesson', async ({ page }) => {
+    const s = await stub(page);
+    await page.setViewportSize(PHONE);
+    await open(page, { mastery: SKIPPED });
+    await startCard(page);
+    await expect(notice(page)).toBeVisible();
+    await expect(screen(page)).toBeHidden();
+    expect(s.learnFetches).toEqual([]);
+    expect(s.starts).toEqual([]);
+  });
+
+  test('offers the link by email and to copy, and a way back to the labs', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await stub(page);
+    await page.setViewportSize(PHONE);
+    await open(page, { mastery: SKIPPED });
+    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    const origin = new URL(page.url()).origin;
+
+    const email = page.getByRole('link', { name: 'Email me the link' });
+    const href = (await email.getAttribute('href'))!;
+    expect(href.startsWith('mailto:?subject=')).toBe(true);
+    const params = new URLSearchParams(href.slice('mailto:?'.length));
+    expect(params.get('subject')).toMatch(/desktop/i);
+    expect(params.get('body')).toContain(`${origin}/`);
+
+    // Copying puts this origin's URL on the clipboard and says so.
+    await page.getByRole('button', { name: 'Copy the link' }).click();
+    await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();
+    await expect(page.locator('#dnStatus')).toHaveText('Link copied.');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${origin}/`);
+    await expect(page.locator('#dnManual')).toBeHidden();
+
+    await page.getByRole('button', { name: 'Browse the labs anyway' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await expect(notice(page)).toBeHidden();
+    await expect(page.locator('.lab').first()).toBeVisible();
+    await expect(page.locator('#heroTitle')).toBeFocused();
+  });
+
+  test('where the clipboard cannot be written the link is shown selected', async ({ page }) => {
+    await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true }));
+    await stub(page);
+    await page.setViewportSize(PHONE);
+    await open(page, { mastery: SKIPPED });
+    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await page.getByRole('button', { name: 'Copy the link' }).click();
+    const field = page.getByLabel('Link to this console');
+    await expect(field).toBeVisible();
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue(`${new URL(page.url()).origin}/`);
+    const selected = await field.evaluate((el: HTMLInputElement) => el.value.slice(el.selectionStart ?? 0, el.selectionEnd ?? 0));
+    expect(selected).toBe(`${new URL(page.url()).origin}/`);
+    await expect(page.locator('#dnStatus')).toContainText('selected');
+  });
+
+  test('a lab that is still running waits as a card: Rejoin on a phone explains, and starts nothing', async ({ page }) => {
+    const s = await stub(page, { lab: PLAIN });
+    const requests = watchSessionRequests(page);
+    await rememberRunning(page);
+    await page.setViewportSize(PHONE);
+    await open(page, { mastery: SKIPPED });
+    // A phone does not walk back into the lab on load: it sees the launcher, with the lab in progress.
+    await expect(page.locator('#workspace')).toBeHidden();
+    await expect(page.locator('#launcher')).toBeVisible();
+    const resume = page.locator('#resumeCard');
+    await expect(resume).toBeVisible();
+    await expect(page.locator('#heroTitle')).toHaveText('Pick up where you left off.');
+    await expect(resume).toContainText('See how requests are routed');
+    await expect(resume).toContainText('left');
+    await expect(page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`)).toHaveText('Rejoin');
+
+    await page.getByRole('button', { name: /Rejoin the lab/ }).click();
+    await expect(notice(page)).toBeVisible();
+    // The running lab is on the notice, to be rejoined from a computer.
+    await expect(page.locator('#dnRunning')).toBeVisible();
+    await expect(page.locator('#dnRunningTitle')).toHaveText('See how requests are routed');
+    await expect(page.locator('#dnRunningMeta')).toContainText('rejoin from a computer');
+    expect(s.starts).toEqual([]);
+    // The status of the remembered lab was read; nothing was started or rejoined.
+    expect(requests.filter((r) => r.startsWith('POST'))).toEqual([]);
+    // The record stays for the computer.
+    expect(await page.evaluate(() => localStorage.getItem('opalix.session'))).toContain(SESSION_ID);
+    await noHorizontalScroll(page);
+  });
+
+  test('on a desktop the same Start starts the lab, with no notice', async ({ page }) => {
+    const s = await stub(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, { mastery: SKIPPED });
+    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await enterSession(page);
+    expect(s.starts).toEqual([PLAIN]);
+    await expect(notice(page)).toBeHidden();
+  });
+
+  test('the line is 760px: one pixel narrower is a phone, 760 starts a lab', async ({ page }) => {
+    const s = await stub(page);
+    await page.setViewportSize({ width: 759, height: 900 });
+    await open(page, { mastery: SKIPPED });
+    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await expect(notice(page)).toBeVisible();
+    expect(s.starts).toEqual([]);
+    // Widening the window brings the launcher back by itself.
+    await page.setViewportSize({ width: 760, height: 900 });
+    await expect(notice(page)).toBeHidden();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await enterSession(page);
+    expect(s.starts).toEqual([PLAIN]);
+  });
+
+  test('a window shrunk after Before you begin opened is asked again when Start the lab is pressed', async ({ page }) => {
+    const s = await stub(page);
+    await open(page, { mastery: SKIPPED });
+    await startCard(page);
+    await expect(heading(page)).toHaveText(bundle.story!.title);
+    await page.setViewportSize(PHONE);
+    await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
+    await expect(notice(page)).toBeVisible();
+    await expect(screen(page)).toBeHidden();
+    expect(s.starts).toEqual([]);
+  });
+
+  test('a tablet held upright (a touch screen under 900px) gets the notice; turned sideways it does not', async ({ browser, staticServer }) => {
+    const context = await browser.newContext({ baseURL: staticServer, viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    try {
+      const s = await stub(page);
+      await open(page, { mastery: SKIPPED });
+      await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+      await expect(notice(page)).toBeVisible();
+      expect(s.starts).toEqual([]);
+      await page.setViewportSize({ width: 1180, height: 820 });
+      await expect(notice(page)).toBeHidden();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('reading still works on a phone: the launcher, its filters, the lessons list and the quiz are not gated', async ({ page }) => {
+    const s = await stub(page);
+    await page.setViewportSize(PHONE);
+    await open(page, { mastery: null });
+    // The quiz opens on its own and can be done.
+    await expect(heading(page)).toHaveText('What have you worked with?');
+    await page.getByRole('button', { name: 'Skip for now' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await page.locator('#labSearch').fill('routed');
+    await expect(page.locator(`.lab[data-slug="${PLAIN}"]`)).toBeVisible();
+    await noHorizontalScroll(page);
+    expect(s.starts).toEqual([]);
+  });
+});
+
+// =========================================================================
 // screenshots
 // =========================================================================
 
@@ -1494,8 +1695,8 @@ async function screenshotLayoutCheck(page: Page) {
 }
 
 const VARIANTS = [
-  { name: 'light-1000', theme: 'light' as const, width: 1000, height: 800 },
-  { name: 'dark-1000', theme: 'dark' as const, width: 1000, height: 800 },
+  { name: 'light-1440', theme: 'light' as const, width: 1440, height: 900 },
+  { name: 'dark-1440', theme: 'dark' as const, width: 1440, height: 900 },
   { name: 'light-390', theme: 'light' as const, width: 390, height: 844 },
   { name: 'dark-390', theme: 'dark' as const, width: 390, height: 844 },
 ];
@@ -1538,9 +1739,27 @@ test.describe('screenshots', () => {
       await expect(page.locator('.badge-suggested')).toHaveCount(1);
       await page.locator('.badge-suggested').scrollIntoViewIfNeeded();
       await shot('launcher-suggested');
+      await page.locator('#launcher').evaluate((el) => { el.scrollTop = 0; window.scrollTo(0, 0); });
+      await shot('launcher');
+      if (v.width < 760) {
+        await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+        await expect(page.locator('#desktopNotice')).toBeVisible();
+        await shot('desktop-notice');
+        await page.getByRole('button', { name: 'Browse the labs anyway' }).click();
+        await expect(page.locator('#launcher')).toBeVisible();
+      }
+
+      // A phone cannot start a lab, so the window is wide for the moment a lab is started and is then
+      // put back: what is photographed is the phone-sized screen.
+      const wide = async (act: () => Promise<unknown>) => {
+        if (v.width >= 760) return act();
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await act();
+        await page.setViewportSize({ width: v.width, height: v.height });
+      };
 
       // Before you begin: the story, a question, the plan.
-      await startCard(page);
+      await wide(() => startCard(page));
       await expect(heading(page)).toHaveText(bundle.story!.title);
       await shot('before-story');
       await page.getByRole('button', { name: 'Continue' }).click();
@@ -1551,8 +1770,10 @@ test.describe('screenshots', () => {
       await shot('before-plan-lesson');
 
       // In the session: a lesson with its diagram, and the questions form.
-      await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
-      await enterSession(page);
+      await wide(async () => {
+        await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+        await enterSession(page);
+      });
       await page.getByRole('tab', { name: 'Learn' }).click();
       await page.locator('#learnBody .lesson .diagram').first().scrollIntoViewIfNeeded();
       await shot('lesson-diagram');

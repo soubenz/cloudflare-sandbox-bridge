@@ -256,3 +256,68 @@ export function moduleMetaLine(totals) {
   if (totals.free) parts.push(`${totals.free} free`);
   return parts.join(' · ');
 }
+
+// ---------------------------------------------------------------------------
+// The hero, the running lab's place in the catalogue, and which modules open.
+
+const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+const LEDE_TAIL = 'Start with an explore lab, then build or fix the real thing. Your progress is kept on this browser.';
+
+/**
+ * The line under the hero: how many paths there are, then the same advice.
+ * "Four paths, each a run of hands-on labs. Start with an explore lab, …"
+ * `count` is the number of real paths (not the "Other labs" group).
+ */
+export function heroLede(count) {
+  const n = Math.floor(Number(count));
+  if (!Number.isFinite(n) || n < 1) return `Each path is a run of hands-on labs. ${LEDE_TAIL}`;
+  if (n === 1) return `One path, a run of hands-on labs. ${LEDE_TAIL}`;
+  const word = NUMBER_WORDS[n] ?? String(n);
+  return `${word.charAt(0).toUpperCase() + word.slice(1)} paths, each a run of hands-on labs. ${LEDE_TAIL}`;
+}
+
+/**
+ * Where a lab sits: `{ path, module, entry, position, total }` (position is 1-based
+ * within its module, total the module's lab count), or null when the catalogue has
+ * no such lab. The resume card says "lab 3 of 6" from this.
+ */
+export function locateLab(model, slug) {
+  for (const path of model?.paths ?? []) {
+    for (const module of path.modules) {
+      const at = module.labs.findIndex((e) => e.lab.slug === slug);
+      if (at >= 0) return { path, module, entry: module.labs[at], position: at + 1, total: module.labs.length };
+    }
+  }
+  return null;
+}
+
+/** A path with more modules than this opens only the ones worth opening; the rest are cards to open. */
+export const MINI_AFTER = 4;
+/** How many modules, from the first, always open. */
+export const OPEN_FIRST = 2;
+
+/**
+ * Which modules of a path show in full and which as a condensed card:
+ * a Map of module number to 'full' | 'mini'.
+ *
+ * A path of up to MINI_AFTER modules, and a path with no module cards, shows
+ * everything. A longer one opens its first OPEN_FIRST modules, any module with
+ * a lab under way, the one holding the running lab, the one the quiz suggests,
+ * and any module in `open` (the ones the learner opened); the others are minis.
+ * Nothing is ever dropped: a mini opens in place, and a search or filter opens
+ * every module that has a match (app.js, `is-filtering`).
+ */
+export function moduleViews(path, { suggested = null, running = null, open = [] } = {}) {
+  const views = new Map();
+  const condense = Boolean(path?.cards) && path.modules.length > MINI_AFTER;
+  path.modules.forEach((module, i) => {
+    let full = !condense || i < OPEN_FIRST || new Set(open).has(module.number);
+    if (!full) {
+      full =
+        module.labs.some((e) => e.status === 'started' || e.lab.slug === running) ||
+        (suggested && suggested.path === path.slug && suggested.number === module.number);
+    }
+    views.set(module.number, full ? 'full' : 'mini');
+  });
+  return views;
+}
