@@ -21,9 +21,13 @@ export function apiBase() {
 }
 
 /** The message keeps its `NNN: ` prefix (callers match on it); `status` saves them parsing it. */
-function statusError(status, detail) {
+function statusError(status, detail, apiError) {
   const err = new Error(`${status}: ${detail}`);
   err.status = status;
+  // The API's machine-readable part, for callers that act on it (a locked
+  // solution says what unlocks it in `details`); absent for other bodies.
+  if (apiError?.code) err.code = apiError.code;
+  if (apiError?.details !== undefined) err.details = apiError.details;
   return err;
 }
 
@@ -62,8 +66,10 @@ async function request(path, { method = 'GET', body, token, raw, recover = true,
     // The API's errors are {error:{code,message}}; surface the message, since
     // it is written to be read (e.g. "This user already has an active session").
     let detail = await res.text();
+    let apiError;
     try {
-      detail = JSON.parse(detail).error?.message ?? detail;
+      apiError = JSON.parse(detail).error;
+      detail = apiError?.message ?? detail;
     } catch {
       /* not JSON; use the raw body */
     }
@@ -80,7 +86,7 @@ async function request(path, { method = 'GET', body, token, raw, recover = true,
         auth.signedOut?.();
       }
     }
-    throw statusError(res.status, detail);
+    throw statusError(res.status, detail, apiError);
   }
   if (res.status === 204) return undefined;
   const type = res.headers.get('content-type') ?? '';
@@ -170,6 +176,12 @@ export const api = {
   touch: (id, token) => request(`/sessions/${id}/touch`, { method: 'POST', token }),
   resume: (id, token) => request(`/sessions/${id}/resume`, { method: 'POST', token }),
   snapshot: (id, token) => request(`/sessions/${id}/snapshot`, { method: 'POST', token }),
+  /**
+   * The lab's reference solution: `{files: [{path, content}], truncated}`.
+   * A 403 (`err.code === 'solution_locked'`) carries `err.details` with the
+   * rule and the learner's progress towards it.
+   */
+  solution: (id, token) => request(`/sessions/${id}/solution`, { token }),
   runChecks: (id, token) => request(`/sessions/${id}/checks`, { method: 'POST', body: {}, token }),
   /** One rating (1-5) and optional text per session; a second call replaces the first. */
   feedback: (id, token, { rating, text }) =>

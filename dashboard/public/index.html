@@ -131,6 +131,28 @@
       <div id="hintsPanel" class="block-body" aria-live="polite"><p class="muted small">Hints unlock on a timer as the lab goes on.</p></div>
     </section>
 
+    <!-- Only for labs that ship a solution, and only once status() says so. There is
+         deliberately no way to reveal it early from here. -->
+    <section class="block" id="solutionBlock" aria-labelledby="solutionHeading" hidden>
+      <h2 id="solutionHeading">
+        Solution
+        <span class="block-meta" id="solutionMeta"></span>
+      </h2>
+      <div id="solutionPanel" class="block-body solution-panel" aria-live="polite">
+        <div id="solutionLocked">
+          <p class="solution-rule small">
+            <svg class="solution-lock" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 4 15h8a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 12 6h-.5V4.5A3.5 3.5 0 0 0 8 1Zm-2 3.5a2 2 0 1 1 4 0V6H6V4.5Z"/></svg>
+            <span class="sr-only">Locked. </span><span id="solutionRule"></span>
+          </p>
+          <p class="solution-progress small muted" id="solutionProgress"></p>
+        </div>
+        <div id="solutionReady" hidden>
+          <p class="small">The solution is available</p>
+          <button type="button" id="btnSolutionOpen" class="btn btn-primary">Compare with my work</button>
+        </div>
+      </div>
+    </section>
+
     <section class="block block-grow">
       <h2>
         Workspace
@@ -328,6 +350,43 @@
       <button type="button" id="btnEndCancel" class="btn btn-ghost" value="cancel">Cancel</button>
     </div>
   </form>
+</dialog>
+
+<!-- Solution: a read-only line diff of the learner's files against the lab's. -->
+<dialog class="dialog dialog-solution" id="solutionDialog" aria-labelledby="solutionDialogTitle">
+  <div class="sol-card">
+    <header class="sol-head">
+      <h2 id="solutionDialogTitle">Compare with the solution</h2>
+      <p class="muted small sol-legend">
+        Read-only, from your work to the solution.
+        <span class="sol-key"><b class="sol-sign sol-sign-del" aria-hidden="true">-</b> only in your work</span>
+        <span class="sol-key"><b class="sol-sign sol-sign-add" aria-hidden="true">+</b> only in the solution</span>
+      </p>
+    </header>
+    <div class="sol-status" id="solutionStatus" role="status" aria-live="polite" hidden>
+      <span class="spinner spinner-sm" id="solutionSpinner" aria-hidden="true" hidden></span>
+      <p class="small" id="solutionStatusText"></p>
+      <button type="button" id="btnSolutionRetry" class="btn btn-tiny" hidden>Retry</button>
+    </div>
+    <p class="notice notice-warn small sol-note" id="solutionTruncated" hidden>Some files were left out because they are large.</p>
+    <p class="notice notice-warn small sol-note" id="solutionDirty" hidden></p>
+    <div class="sol-body" id="solutionBody" hidden>
+      <nav class="sol-files" aria-label="Solution files"><ul id="solutionFiles"></ul></nav>
+      <section class="sol-pane" aria-label="Differences">
+        <div class="sol-pane-head">
+          <span class="mono sol-path" id="solutionPath"></span>
+          <span class="mono small sol-counts" id="solutionCounts"></span>
+        </div>
+        <p class="small muted sol-pane-note" id="solutionFileNote" hidden></p>
+        <div class="sol-diff" id="solutionDiff" role="region" tabindex="0"></div>
+      </section>
+    </div>
+    <footer class="sol-foot">
+      <span class="small muted sol-copy-note" id="solutionCopyNote" role="status" aria-live="polite"></span>
+      <button type="button" id="btnSolutionCopy" class="btn" disabled>Copy solution file</button>
+      <button type="button" id="btnSolutionClose" class="btn btn-primary">Close</button>
+    </footer>
+  </div>
 </dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden>

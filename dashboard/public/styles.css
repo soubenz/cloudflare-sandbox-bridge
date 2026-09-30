@@ -828,6 +828,16 @@ pre.logs-tail {
 .hint-locked { border-left-color: var(--border-strong); background: var(--surface); color: var(--ink-muted); }
 .hint-locked .hint-label { margin-bottom: 0; font-size: var(--fs-xs); text-transform: none; letter-spacing: 0; }
 
+/* ---------- solution block ---------- */
+/* Short enough to show whole, unlike the hint list beside it. */
+.solution-panel { max-height: none; overflow: visible; }
+.solution-panel p { margin: 0; }
+.solution-rule { display: flex; align-items: flex-start; gap: var(--s2); color: var(--ink-2); line-height: 1.55; }
+.solution-lock { flex-shrink: 0; margin-top: 3px; color: var(--ink-muted); }
+.solution-progress { margin-top: var(--s2) !important; font-variant-numeric: tabular-nums; }
+#solutionReady p { color: var(--ink-2); margin-bottom: var(--s2); }
+#solutionReady .btn { width: 100%; }
+
 /* ---------- result card ---------- */
 .result-card {
   position: relative;
@@ -915,6 +925,91 @@ input:focus-visible { outline-offset: 0; border-color: var(--accent); }
 .dialog-card p { margin: 0; }
 .dialog-actions { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: flex-end; margin-top: var(--s5); }
 
+/* ---------- solution comparison ---------- */
+.dialog-solution {
+  width: min(1080px, calc(100vw - 32px));
+  height: min(84dvh, 780px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+.dialog-solution[open] { display: flex; }
+.sol-card { display: flex; flex-direction: column; gap: var(--s3); flex: 1; min-width: 0; min-height: 0; padding: var(--s4) var(--s5) var(--s3); }
+.sol-head h2 { margin: 0 0 var(--s1); font-size: var(--fs-lg); }
+.sol-head p { margin: 0; }
+.sol-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); }
+.sol-key { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.sol-sign {
+  display: inline-grid; place-items: center;
+  width: 16px; height: 16px; border-radius: 3px;
+  font: 700 var(--fs-sm)/1 var(--mono);
+}
+.sol-sign-add { color: var(--good); background: color-mix(in oklab, var(--good) 18%, var(--surface)); }
+.sol-sign-del { color: var(--bad); background: color-mix(in oklab, var(--bad) 18%, var(--surface)); }
+.sol-status { display: flex; align-items: center; gap: var(--s2); padding: var(--s3) 0; }
+.sol-status p { margin: 0; color: var(--ink-2); }
+.sol-status[data-kind="locked"] p { color: var(--ink); }
+.sol-status .error { color: var(--bad); }
+.sol-note { margin: 0; }
+.sol-body {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface);
+  overflow: hidden;
+}
+.sol-files { min-height: 0; overflow: auto; background: var(--surface-2); border-right: 1px solid var(--border); }
+.sol-files ul { list-style: none; margin: 0; padding: var(--s1); display: flex; flex-direction: column; gap: 2px; }
+.sol-file {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  width: 100%; padding: 6px var(--s2);
+  background: transparent; color: var(--ink-2);
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.sol-file:hover { background: var(--surface-3); color: var(--ink); }
+.sol-file[aria-current="true"] {
+  background: var(--surface-3); color: var(--ink);
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+.sol-file-name { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.sol-file-tag { font-size: var(--fs-xs); color: var(--good); }
+.sol-file-tag-warn { color: var(--warn); }
+.sol-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.sol-pane-head {
+  display: flex; align-items: baseline; gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  background: var(--surface-2); border-bottom: 1px solid var(--border);
+}
+.sol-path { font-size: var(--fs-sm); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.sol-counts { margin-left: auto; flex-shrink: 0; color: var(--ink-2); white-space: nowrap; }
+.sol-pane-note { margin: 0; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--border); }
+/* One column as wide as the widest line (and never narrower than the pane),
+   so every row's tint runs the full width while the pane scrolls sideways. */
+.sol-diff {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: minmax(100%, max-content); align-content: start;
+  overflow: auto;
+  font: var(--fs-sm)/1.6 var(--mono);
+  color: var(--ink);
+}
+.sol-diff:focus-visible { outline-offset: -2px; }
+.dl { display: grid; grid-template-columns: 5ch 5ch 3ch 1fr; }
+.dl-n { padding-right: var(--s2); text-align: right; color: var(--ink-muted); user-select: none; font-variant-numeric: tabular-nums; }
+.dl-sign { text-align: center; font-weight: 700; user-select: none; }
+.dl-text { white-space: pre; padding-right: var(--s4); }
+.dl-add { background: color-mix(in oklab, var(--good) 14%, var(--surface)); }
+.dl-del { background: color-mix(in oklab, var(--bad) 14%, var(--surface)); }
+.dl-add .dl-sign { color: var(--good); }
+.dl-del .dl-sign { color: var(--bad); }
+.dl-gap {
+  display: block; padding: 2px var(--s3);
+  background: var(--surface-2); color: var(--ink-muted);
+  border-block: 1px solid var(--border);
+  font-style: italic; user-select: none;
+}
+.sol-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2); }
+.sol-copy-note { margin-right: auto; min-width: 0; }
+
 /* ---------- toast ---------- */
 .toast {
   position: fixed; right: var(--s4); bottom: 48px; z-index: 40;
@@ -976,6 +1071,13 @@ input:focus-visible { outline-offset: 0; border-color: var(--accent); }
   .lab { grid-template-columns: 1fr; }
   .lab-start { justify-self: start; }
   .modal-card { padding: var(--s5); }
+  .dialog-solution { width: calc(100vw - 16px); max-width: none; height: calc(100dvh - 16px); max-height: none; }
+  .sol-card { padding: var(--s3); }
+  .sol-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .sol-files { border-right: 0; border-bottom: 1px solid var(--border); }
+  .sol-files ul { flex-direction: row; overflow-x: auto; }
+  .sol-file { width: auto; flex-shrink: 0; }
+  .sol-copy-note { flex-basis: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

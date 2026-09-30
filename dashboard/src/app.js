@@ -1,5 +1,6 @@
 import { api, apiBase, configureAuth, eventsUrl, serviceUrl, serviceBaseUrl } from './api.js';
 import { attachTerminal } from './terminal.js';
+import { diffLines, collapseContext } from './diff.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -71,6 +72,8 @@ const state = {
   hints: null,
   hintSig: '',
   hintTimer: 0,
+  /** `status().solution` when the lab has one (else null), and the file the comparison is showing. */
+  solution: null,
   /** `meta.started_at` (server clock), and `server_time - Date.now()` at the last status. */
   startedAt: null,
   clockSkew: 0,
@@ -772,6 +775,7 @@ function openEventStream() {
     ['container.restarted', 'warn'],
     ['pressure', 'warn'],
     ['hint', 'warn'],
+    ['solution.unlocked', 'good'],
     ['check.started', 'info'],
     ['check.result', 'info'],
     ['check.finished', 'info'],
@@ -878,6 +882,7 @@ function handleEvent(type, tone, data) {
     if (data.state === 'running') onRunning();
   }
   if (type === 'hint') renderHint(data);
+  if (type === 'solution.unlocked') onSolutionUnlocked();
   if (type === 'check.finished' || type === 'check.result') refreshChecks();
   if (type === 'container.restarted') onContainerRestarted();
   if (type === 'service.health' && data?.service && data?.health) setServiceHealth(data.service, data.health);
@@ -943,6 +948,7 @@ function onContainerRestarted() {
 const LEARNER_NOTICES = {
   pressure: (d) => [d.title, d.message],
   hint: (d) => ['Hint', d.text],
+  'solution.unlocked': () => ['The solution is now available', 'Compare it with your work from the Solution block.'],
   // The payload is {reason}, not a duration: the time left is what the
   // header's own timer counts down to.
   'session.expiring': () => {
@@ -1471,6 +1477,7 @@ function teardownSession() {
 
 /** An ended session leaves a dead workspace on screen; this is the way out. */
 function backToLabs() {
+  resetSolution();
   forgetSession();
   state.session = null;
   state.dirty = false;
@@ -1740,6 +1747,8 @@ function absorbStatus(status, { celebrate = false } = {}) {
     state.hints = status.hints;
     renderHints();
   }
+  // An API that predates the solution omits it, which reads as "none".
+  renderSolution(status?.solution);
   setCostStat(status?.cost?.usd);
   if (state.checksRunning) return;
   if (status?.checks) renderChecks(status.checks);
@@ -2019,6 +2028,323 @@ function renderHint(data) {
   startHintTimer();
 }
 
+// -------------------------------------------------------------- solution
+
+/** Unlocked once the API says so, or once the learner has finished the lab. */
+const solutionUnlocked = (solution) => solution.unlocked === true || solution.progress?.completed === true;
+
+/** "Checks run 1 · Hints used 2 of 3", from whichever numbers the API sent. */
+function solutionProgressText(progress) {
+  const parts = [];
+  if (Number.isFinite(progress?.check_runs)) parts.push(`Checks run ${progress.check_runs}`);
+  if (Number.isFinite(progress?.hints_total) && progress.hints_total > 0 && Number.isFinite(progress?.hints_delivered)) {
+    parts.push(`Hints used ${progress.hints_delivered} of ${progress.hints_total}`);
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * The Solution block, from `status().solution`. Not there (an older API, a
+ * lab with no solution) means nothing is shown at all. The button and the
+ * paragraphs are static elements that are only shown or hidden, so a status
+ * refresh never replaces the button the dialog returns focus to.
+ */
+function renderSolution(solution) {
+  const block = $('solutionBlock');
+  if (!solution || solution.available !== true) {
+    state.solution = null;
+    block.hidden = true;
+    return;
+  }
+  state.solution = solution;
+  const unlocked = solutionUnlocked(solution);
+  block.hidden = false;
+  block.dataset.state = unlocked ? 'unlocked' : 'locked';
+  $('solutionMeta').textContent = unlocked ? 'Available' : 'Locked';
+  $('solutionMeta').dataset.tone = unlocked ? 'good' : 'warn';
+  $('solutionLocked').hidden = unlocked;
+  $('solutionReady').hidden = !unlocked;
+  $('solutionRule').textContent = solution.rule || 'The solution unlocks as you work through the lab.';
+  $('solutionProgress').textContent = solutionProgressText(solution.progress);
+}
+
+/** The stream said it unlocked; show that now and let status() confirm it. */
+function onSolutionUnlocked() {
+  if (state.solution) renderSolution({ ...state.solution, unlocked: true });
+  refreshStatus();
+}
+
+/** A new session, or leaving one: nothing of the last lab's solution stays on screen. */
+function resetSolution() {
+  state.solution = null;
+  solutionLoad++;
+  $('solutionBlock').hidden = true;
+  const dialog = $('solutionDialog');
+  if (dialog.open) dialog.close();
+}
+
+/** Bumped by every load and by closing, so an answer that arrives late is dropped. */
+let solutionLoad = 0;
+/** What the open dialog is showing: `files` are `{path, content, mine, missing, unreadable, ops, changed}`. */
+const solutionView = { files: [], selected: 0 };
+
+const CONTEXT_LINES = 3;
+const READ_CONCURRENCY = 4;
+
+function openSolutionDialog() {
+  const dialog = $('solutionDialog');
+  if (!dialog.open) dialog.showModal();
+  loadSolution();
+}
+
+/** One line under the dialog's heading in place of the diff: loading, an error (with Retry) or the lock. */
+function setSolutionStatus(kind, text = '') {
+  const box = $('solutionStatus');
+  box.hidden = !kind;
+  box.dataset.kind = kind || '';
+  $('solutionSpinner').hidden = kind !== 'loading';
+  $('solutionStatusText').textContent = text;
+  $('solutionStatusText').classList.toggle('error', kind === 'error');
+  $('btnSolutionRetry').hidden = kind !== 'error';
+  $('solutionBody').hidden = true;
+  $('solutionTruncated').hidden = true;
+  $('solutionDirty').hidden = true;
+  $('btnSolutionCopy').disabled = true;
+  $('solutionCopyNote').textContent = '';
+}
+
+/** The API's `solution_locked` 403, shown in the dialog and mirrored into the block. */
+function showSolutionLocked(details) {
+  const previous = state.solution ?? {};
+  renderSolution({
+    ...previous,
+    available: true,
+    unlocked: false,
+    rule: details?.rule ?? previous.rule,
+    progress: details?.progress ?? previous.progress,
+  });
+  const progress = solutionProgressText(state.solution.progress);
+  setSolutionStatus('locked', `The solution is still locked. ${$('solutionRule').textContent}${progress ? ` (${progress})` : ''}`);
+  refreshStatus();
+}
+
+/** A file path from the API, as the files route wants it: relative, each segment encoded. */
+const filesRoutePath = (path) =>
+  path
+    .replace(/^\/+/, '')
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/');
+
+/** The learner's saved copy of a file. Missing counts as empty; another failure is reported per file. */
+async function readMine(session, path) {
+  try {
+    const result = await api.readFile(session.id, session.token, filesRoutePath(path));
+    return { text: typeof result?.content === 'string' ? result.content : '', missing: false };
+  } catch (err) {
+    if (err.status === 404) return { text: '', missing: true };
+    return { text: '', missing: false, unreadable: err.message };
+  }
+}
+
+async function loadSolution() {
+  const session = state.session;
+  if (!session) return;
+  const seq = ++solutionLoad;
+  const current = () => seq === solutionLoad && state.session === session;
+  setSolutionStatus('loading', 'Loading the solution…');
+  try {
+    const result = await api.solution(session.id, session.token);
+    if (!current()) return;
+    const files = (Array.isArray(result?.files) ? result.files : [])
+      .filter((f) => f && typeof f.path === 'string' && f.path)
+      .map((f) => ({ path: f.path, content: typeof f.content === 'string' ? f.content : '' }));
+    if (!files.length) {
+      setSolutionStatus('empty', 'The solution has no files to show.');
+      return;
+    }
+    // A few reads at a time: a solution can be many files, and the learner's
+    // container answers each one in turn.
+    const mine = new Array(files.length);
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(READ_CONCURRENCY, files.length) }, async () => {
+        while (next < files.length && current()) {
+          const i = next++;
+          mine[i] = await readMine(session, files[i].path);
+        }
+      })
+    );
+    if (!current()) return;
+    solutionView.files = files.map((file, i) => {
+      const own = mine[i];
+      const ops = own.unreadable ? null : diffLines(own.text, file.content);
+      return {
+        ...file,
+        missing: own.missing,
+        unreadable: own.unreadable ?? null,
+        ops,
+        changed: ops ? ops.some((op) => op.type !== 'same') : true,
+      };
+    });
+    solutionView.selected = Math.max(0, solutionView.files.findIndex((f) => f.changed));
+    showSolutionDiff(result.truncated === true);
+  } catch (err) {
+    if (!current()) return;
+    if (err.status === 403 && err.code === 'solution_locked') return showSolutionLocked(err.details);
+    if (err.status === 404) {
+      renderSolution(null);
+      return setSolutionStatus('empty', 'This lab has no solution to show.');
+    }
+    setSolutionStatus('error', `Could not load the solution — ${err.message}`);
+  }
+}
+
+function showSolutionDiff(truncated) {
+  setSolutionStatus(null);
+  $('solutionBody').hidden = false;
+  $('solutionTruncated').hidden = !truncated;
+  // The comparison reads what is saved in the container; an open file with
+  // edits that were never saved is not in it.
+  const dirty = state.dirty && state.openFile && solutionView.files.some((f) => f.path === state.openFile);
+  $('solutionDirty').hidden = !dirty;
+  if (dirty) $('solutionDirty').textContent = `You have unsaved changes to ${state.openFile}. This comparison uses the saved version.`;
+
+  const list = $('solutionFiles');
+  list.innerHTML = '';
+  solutionView.files.forEach((file, i) => {
+    const li = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'sol-file';
+    button.dataset.index = String(i);
+    button.dataset.path = file.path;
+    button.title = `/workspace/${file.path}`;
+    const name = document.createElement('span');
+    name.className = 'sol-file-name mono';
+    name.textContent = file.path;
+    button.append(name);
+    const tag = file.unreadable ? 'unreadable' : file.missing ? 'not in your work' : file.changed ? '' : 'matches';
+    if (tag) {
+      const chip = document.createElement('span');
+      chip.className = `sol-file-tag${file.changed ? ' sol-file-tag-warn' : ''}`;
+      chip.textContent = tag;
+      button.append(chip);
+    }
+    button.addEventListener('click', () => selectSolutionFile(i));
+    li.append(button);
+    list.append(li);
+  });
+  selectSolutionFile(solutionView.selected);
+}
+
+function selectSolutionFile(index) {
+  const file = solutionView.files[index];
+  if (!file) return;
+  solutionView.selected = index;
+  for (const button of $('solutionFiles').querySelectorAll('.sol-file')) {
+    const on = Number(button.dataset.index) === index;
+    if (on) button.setAttribute('aria-current', 'true');
+    else button.removeAttribute('aria-current');
+  }
+  $('solutionPath').textContent = file.path;
+  $('btnSolutionCopy').disabled = false;
+  $('solutionCopyNote').textContent = '';
+  const diff = $('solutionDiff');
+  diff.setAttribute('aria-label', `Differences in ${file.path}`);
+  diff.scrollTop = 0;
+  diff.scrollLeft = 0;
+
+  const note = $('solutionFileNote');
+  const counts = $('solutionCounts');
+  counts.textContent = '';
+  note.hidden = true;
+
+  if (file.unreadable) {
+    note.hidden = false;
+    note.textContent = `Could not read your copy of this file (${file.unreadable}), so the solution is shown without a comparison.`;
+    diff.replaceChildren(
+      ...file.content.split('\n').map((text, i) => diffRow({ type: 'same', text, aLine: undefined, bLine: i + 1 }))
+    );
+    return;
+  }
+  const added = file.ops.filter((op) => op.type === 'add').length;
+  const removed = file.ops.filter((op) => op.type === 'del').length;
+  counts.textContent = file.changed ? `+${added} -${removed}` : '';
+  if (file.missing) {
+    note.hidden = false;
+    note.textContent = 'This file is not in your workspace yet.';
+  } else if (!file.changed) {
+    note.hidden = false;
+    note.textContent = 'Your file matches the solution.';
+  }
+  const rows = file.changed ? collapseContext(file.ops, CONTEXT_LINES) : file.ops;
+  const frag = document.createDocumentFragment();
+  for (const op of rows) frag.append(op.type === 'gap' ? gapRow(op.count) : diffRow(op));
+  diff.replaceChildren(frag);
+}
+
+const SIGNS = { add: '+', del: '-', same: '' };
+const SIGN_TITLES = { add: 'In the solution, missing from yours', del: 'In yours, not in the solution', same: '' };
+
+function diffRow(op) {
+  const row = document.createElement('div');
+  row.className = `dl dl-${op.type}`;
+  const cells = [
+    ['dl-n', op.aLine],
+    ['dl-n', op.bLine],
+  ].map(([cls, n]) => {
+    const cell = document.createElement('span');
+    cell.className = cls;
+    cell.textContent = n ?? '';
+    return cell;
+  });
+  const sign = document.createElement('span');
+  sign.className = 'dl-sign';
+  sign.textContent = SIGNS[op.type];
+  if (SIGN_TITLES[op.type]) sign.title = SIGN_TITLES[op.type];
+  const text = document.createElement('span');
+  text.className = 'dl-text';
+  text.textContent = op.text;
+  row.append(...cells, sign, text);
+  return row;
+}
+
+function gapRow(count) {
+  const row = document.createElement('div');
+  row.className = 'dl dl-gap';
+  row.setAttribute('role', 'separator');
+  row.textContent = `… ${count} unchanged line${count === 1 ? '' : 's'} …`;
+  return row;
+}
+
+let copyNoteTimer = 0;
+async function copySolutionFile() {
+  const file = solutionView.files[solutionView.selected];
+  if (!file) return;
+  const note = $('solutionCopyNote');
+  clearTimeout(copyNoteTimer);
+  try {
+    await navigator.clipboard.writeText(file.content);
+    note.textContent = `Copied ${file.path}`;
+  } catch {
+    note.textContent = 'Could not copy. Select the text in the diff and copy it instead.';
+  }
+  copyNoteTimer = setTimeout(() => (note.textContent = ''), 4000);
+}
+
+$('btnSolutionOpen').addEventListener('click', openSolutionDialog);
+$('btnSolutionRetry').addEventListener('click', loadSolution);
+$('btnSolutionCopy').addEventListener('click', copySolutionFile);
+$('btnSolutionClose').addEventListener('click', () => $('solutionDialog').close());
+$('solutionDialog').addEventListener('close', () => {
+  // Drops a load still in flight, and hands focus back to where it came from
+  // (the browser does this too, but not if the block was redrawn meanwhile).
+  solutionLoad++;
+  const opener = $('btnSolutionOpen');
+  if (!opener.closest('[hidden]')) opener.focus();
+});
+
 // ---------------------------------------------------------------- result
 
 /**
@@ -2106,6 +2432,7 @@ function resetSessionFeedback() {
   state.history = [];
   state.hints = null;
   state.hintSig = '';
+  resetSolution();
   resetBarStats();
   state.startedAt = null;
   state.clockSkew = 0;
