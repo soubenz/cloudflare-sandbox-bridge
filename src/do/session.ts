@@ -53,15 +53,18 @@ export class Session extends DurableObject<Env> {
   }
 
   async runChecks(only?: string[]): Promise<ChecksRun> {
+    await this.rt.requireRunning();
     const manifest = await this.rt.requireManifest();
     return runChecks(this.rt, manifest, only);
   }
 
   async restartService(name: string): Promise<ServiceRuntime> {
+    await this.rt.requireRunning();
     return restartServiceImpl(this.rt, name);
   }
 
   async snapshot(): Promise<SnapshotEntry> {
+    await this.rt.requireRunning();
     return lifecycle.snapshotNow(this.rt, 'user');
   }
 
@@ -74,16 +77,20 @@ export class Session extends DurableObject<Env> {
   }
 
   async readFile(path: string) {
+    await this.rt.requireRunning();
     return this.rt.backend().readFile(path);
   }
   async writeFile(path: string, content: string): Promise<void> {
+    await this.rt.requireRunning();
     await this.rt.backend().writeFile(path, content);
     await this.rt.touchInput();
   }
   async listFiles(path: string) {
+    await this.rt.requireRunning();
     return this.rt.backend().listFiles(path);
   }
   async deleteFile(path: string): Promise<void> {
+    await this.rt.requireRunning();
     await this.rt.backend().deleteFile(path);
     await this.rt.touchInput();
   }

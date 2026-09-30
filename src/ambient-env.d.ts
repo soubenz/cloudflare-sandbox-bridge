@@ -16,6 +16,7 @@
 declare namespace Cloudflare {
   interface Env {
     SANDBOX_API_KEY: string;
+    SANDBOX_API_KEY_PREVIOUS?: string;
     SESSION_TOKEN_SECRET: string;
     R2_ACCESS_KEY_ID: string;
     R2_SECRET_ACCESS_KEY: string;

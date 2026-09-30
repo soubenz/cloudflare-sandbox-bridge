@@ -2,4 +2,4 @@ SANDBOX_API_KEY=dev-service-key-change-me
 SESSION_TOKEN_SECRET=dev-session-secret-change-me
 R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
-LLM_WORKER_KEY=dev-llm-key-change-me
+AI_GATEWAY_TOKEN=dev-llm-key-change-me

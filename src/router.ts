@@ -3,7 +3,7 @@ import type { Env } from './env';
 import { isFamily } from './families/registry';
 import { loadCurrentManifest, loadCatalogue, publishLab } from './labs/bundle';
 import { parseManifest } from './labs/manifest';
-import { requireServiceAuth, requireBrowserAuth, mintSessionToken } from './auth';
+import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
 import { workspacePath } from './lib/paths';
 import { insertSession } from './session/d1';
@@ -15,6 +15,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
 
   app.use('*', corsMiddleware());
+  app.use('*', previousKeyHeader());
 
   app.onError((err, c) => {
     const apiErr = err instanceof ApiError ? err : fromSdkError(err);

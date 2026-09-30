@@ -23,6 +23,20 @@ export async function cancelTimer(rt: SessionRuntime, kind: TimerKind, ref?: str
   await rt.putTimers(timers.filter((t) => !(t.kind === kind && t.ref === ref)));
 }
 
+/** Cancels every timer of a kind, whatever its `ref` (cancelTimer only matches one ref, and pressure/hint timers each carry one). */
+export async function cancelTimersOfKind(rt: SessionRuntime, ...kinds: TimerKind[]): Promise<void> {
+  const timers = await rt.timers();
+  await rt.putTimers(timers.filter((t) => !kinds.includes(t.kind)));
+  await rearmAlarm(rt);
+}
+
+/** Cancels every timer except the given kinds, then re-arms the alarm for whatever is left. */
+export async function cancelTimersExcept(rt: SessionRuntime, ...keep: TimerKind[]): Promise<void> {
+  const timers = await rt.timers();
+  await rt.putTimers(timers.filter((t) => keep.includes(t.kind)));
+  await rearmAlarm(rt);
+}
+
 export async function popDueTimers(rt: SessionRuntime, now: number): Promise<TimerEntry[]> {
   const timers = await rt.timers();
   const due = timers.filter((t) => t.at <= now);

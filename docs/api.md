@@ -22,6 +22,10 @@ Two credential kinds:
   other `/sessions/{id}/*` route. A session token only authenticates its own
   session — using it against a different session id is rejected.
 
+During a key rotation the API also accepts `SANDBOX_API_KEY_PREVIOUS` (when
+set) and marks those responses `X-Opalix-Key: previous`; see
+`docs/runbooks/secrets-rotation.md`.
+
 Every route that accepts a session token also accepts the service key, so a
 service caller can reach the whole session surface without minting a token.
 
@@ -106,7 +110,7 @@ the RPC boundary.
 | 409 | `active_session_exists` | the user already has a live session (the D1 unique index) |
 | 409 | `cannot_resume` | `POST /sessions/{id}/resume` on a session that is not `ended` |
 | 409 | `no_snapshot` | resume with no snapshot to restore from |
-| 409 | `not_running` | terminal attach while the session is not `running` |
+| 409 | `not_running` | the session is not running (still starting, resuming, recovering or ended) |
 | 409 | `session_recovering` | a stale process/terminal handle; the container was replaced |
 | 409 | `file_exists` | SDK `FileExistsError` |
 | 413 | `payload_too_large` | `PUT .../files/...` over 2 MiB, or the SDK's own file-size limit |

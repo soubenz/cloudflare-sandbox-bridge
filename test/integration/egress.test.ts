@@ -34,16 +34,17 @@ describeIfConfigured('egress fence', () => {
     if (sessionId) await session.end(sessionId, false).catch(() => {});
   });
 
-  it('reaches an allowed host through its outbound handler', async () => {
-    // bundles.opalix.internal is served by bundlesOutbound straight from
-    // R2, so a success here proves both halves at once: the allowlist let
-    // the request out, and the Worker-side handler intercepted it.
+  it('does not serve lab bundles over any egress host', async () => {
+    // bundles.opalix.internal used to be served straight from R2 and let a
+    // learner read every private bundle (grader scripts). It must be gone:
+    // anything but a 200 (denied, unresolvable, 404) is fine.
     const { output } = await execViaTerminal(
       terminalUrl,
-      'curl -s -m 20 -o /tmp/probe.tgz -w "HTTPCODE=%{http_code}" http://bundles.opalix.internal/labs/hello/1.0.0/workspace.tgz; echo; file -b /tmp/probe.tgz'
+      "curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://bundles.opalix.internal/labs/index.json || echo blocked"
     );
-    expect(output).toContain('HTTPCODE=200');
-    expect(output.toLowerCase()).toContain('gzip');
+    // The terminal stream carries prompt/echo noise, so match a bare 200 on its own line too.
+    expect(output.trim()).not.toBe('200');
+    expect(output).not.toMatch(/^\s*200\s*$/m);
   }, 120_000);
 
   // A host outside allowedHosts is rejected by ContainerProxy with 520;
@@ -73,9 +74,19 @@ describeIfConfigured('egress fence', () => {
       terminalUrl,
       "env; echo ---; cat /etc/opalix/session.env 2>/dev/null; echo ---; cat /proc/1/environ 2>/dev/null | tr '\\0' '\\n'"
     );
-    for (const secret of ['LLM_WORKER_KEY', 'SANDBOX_API_KEY', 'SESSION_TOKEN_SECRET', 'R2_SECRET_ACCESS_KEY']) {
+    for (const secret of ['AI_GATEWAY_TOKEN', 'SANDBOX_API_KEY', 'SESSION_TOKEN_SECRET', 'R2_SECRET_ACCESS_KEY']) {
       expect(output).not.toContain(secret);
     }
+
+    // The AI Gateway credential is injected as an `Authorization` header by
+    // llmOutbound, so neither its name nor any Authorization header may be
+    // baked into the session env file the container reads.
+    const { output: sessionEnv } = await execViaTerminal(
+      terminalUrl,
+      'echo BEGIN; cat /etc/opalix/session.env 2>/dev/null; echo END'
+    );
+    expect(sessionEnv).not.toContain('AI_GATEWAY_TOKEN');
+    expect(sessionEnv).not.toContain('Authorization');
   }, 120_000);
 
   it('gives the learner the lab env but runs them unprivileged', async () => {

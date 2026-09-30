@@ -30,9 +30,9 @@
 #     will otherwise conclude their fix doesn't work when it does.
 #  4. Presidio + spaCy get their own isolated Python install
 #     (/opt/opalix/venvs/presidio), not the image's shared environment --
-#     see IMAGE_CHANGE_NEEDED.md alongside this file for exactly what that
-#     needs and why (a real, confirmed dependency-pin collision, not just a
-#     theoretical one).
+#     see the Presidio block in images/gateway/Dockerfile for exactly what
+#     that needs and why (a real, confirmed dependency-pin collision, not
+#     just a theoretical one).
 #
 # Postgres is mandatory here for the same reason as every other lab in this
 # family (LiteLLM's virtual-key/spend layer is backed by a Prisma schema

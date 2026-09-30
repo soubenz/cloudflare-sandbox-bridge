@@ -1,6 +1,6 @@
 import { Sandbox } from '@cloudflare/sandbox';
 import type { Env } from '../env';
-import { BASE_ALLOWED_HOSTS, LLM_HOST, MIRROR_HOST, BUNDLES_HOST, llmOutbound, mirrorOutbound, bundlesOutbound } from './egress';
+import { BASE_ALLOWED_HOSTS, LLM_HOST, MIRROR_HOST, llmOutbound, mirrorOutbound } from './egress';
 
 /**
  * Container class for the "gateway" lab family (LiteLLM + Grafana +
@@ -34,5 +34,4 @@ export class GatewayLab extends Sandbox<Env> {
 GatewayLab.outboundByHost = {
   [LLM_HOST]: llmOutbound,
   [MIRROR_HOST]: mirrorOutbound,
-  [BUNDLES_HOST]: bundlesOutbound,
 };

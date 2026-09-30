@@ -2,6 +2,7 @@ import { createRouter } from './router';
 import type { Env } from './env';
 import { poolTarget } from './families/registry';
 import { poolStub } from './do/pool';
+import { deleteExpiredSnapshots, shouldSweepSnapshots } from './session/d1';
 
 // Re-export every Durable Object class so wrangler can wire up bindings.
 export { AgentLab } from './families/agent-lab';
@@ -24,10 +25,20 @@ export default {
   fetch: app.fetch,
 
   /** Safety-net pool kick, every 5 minutes: ensures each family's Pool DO has its config initialized and its alarm loop running, even if it was never primed via the API. */
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     for (const family of ['agent', 'gateway'] as const) {
       const stub = poolStub(env, family);
       ctx.waitUntil(stub.initConfig(family, poolTarget(env, family)).then(() => stub.prime()));
+    }
+
+    // Hourly: drop D1 snapshot rows past their TTL. R2 objects are expired by the bucket lifecycle rule (docs/runbooks/backups.md).
+    if (shouldSweepSnapshots(controller.scheduledTime)) {
+      ctx.waitUntil(
+        deleteExpiredSnapshots(env, Date.now()).then(
+          (deleted) => console.log(`snapshot sweep: deleted ${deleted} expired snapshot rows`),
+          (err) => console.error('snapshot sweep failed:', err)
+        )
+      );
     }
   },
 };

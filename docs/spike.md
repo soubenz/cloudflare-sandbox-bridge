@@ -1,30 +1,30 @@
 # Phase 0 spike results
 
-Template — fill in during the spike (plan section 11, Phase 0). None of
-this has been measured yet: this development environment had no Docker
-daemon and no live Cloudflare account, so nothing here has been verified
-against a real container. Run the spike before trusting any code in this
-repo against real learners.
+Started as a template for the Phase 0 spike (plan section 11). The
+numbers below were filled in from the live deployment over 23–30 Sep 2026
+as each was measured; cells marked "not measured" were never measured and
+should be read as unknown, not as zero. Later sections in this file hold
+the detailed measurement notes each row was taken from.
 
 ## Numbers to fill in
 
 | Metric | Value | Notes |
 |---|---|---|
-| Agent image size | | `images/agent/Dockerfile` |
-| Gateway image size | | `images/gateway/Dockerfile` |
-| Cold `getSandbox` → `exec(['true'])`, p50 | | 10 runs |
-| Cold `getSandbox` → `exec(['true'])`, p95 | | |
-| LiteLLM `waitForPort` time (cold) | | |
-| Grafana `waitForPort` time (cold) | | |
-| Memory idle, `basic` (1 GiB) | | fits? |
-| Memory under agent load, `basic` | | |
-| Memory idle, `standard-1` (4 GiB) | | |
-| Memory under agent load, `standard-1` | | |
-| Claim latency, 1 warm container in pool | | |
-| Relayed terminal round-trip latency | | src/session/terminal.ts |
-| Chosen instance type — agent family | | |
-| Chosen instance type — gateway family | | |
-| Chosen pool target per family | | |
+| Agent image size | 2.17 GB | `images/agent/Dockerfile`; CI `docker image ls`, deploy #51 (section 4) |
+| Gateway image size | 3.51 GB | `images/gateway/Dockerfile`; deploy #51 (was 2.16 GB at deploy #18, 2.86 GB at #47) |
+| Cold `getSandbox` → `exec(['true'])`, p50 | 7 467 ms | 10 runs. Measured as `POST /sessions` to `running`, agent family, `hello` lab (section 1), not a bare `exec` |
+| Cold `getSandbox` → `exec(['true'])`, p95 | 21 355 ms | n = 10, so this is the maximum, not a true p95 |
+| LiteLLM `waitForPort` time (cold) | not measured on its own | Whole-session start to `running` (sum of the sequential healthchecks): 77 s on a fresh DB, 34-48 s with the pre-migrated template. LiteLLM alone with no DB: 10.5-16.3 s |
+| Grafana `waitForPort` time (cold) | not measured | Only the agent `hello` lab and the LiteLLM fixture were run |
+| Memory idle, `basic` (1 GiB) | not measured | fits? Not tried; `basic` was never run |
+| Memory under agent load, `basic` | not measured | `basic` was never run |
+| Memory idle, `standard-1` (4 GiB) | not measured | Only under the gateway fixture; see next row |
+| Memory under agent load, `standard-1` | not measured for the agent family | Gateway fixture (Postgres + LiteLLM), whole container: 544-600 MB used; LiteLLM RSS 421 MB |
+| Claim latency, 1 warm container in pool | 2 305 ms p50 | n = 5, min 1 772 ms, max 4 895 ms; pool held 1-2 warm (section 2) |
+| Relayed terminal round-trip latency | not measured | src/session/terminal.ts |
+| Chosen instance type — agent family | `standard-1` | `wrangler.jsonc` is the source of truth |
+| Chosen instance type — gateway family | custom: 1 vCPU, 8192 MiB, 16000 MB disk | `wrangler.jsonc`; `standard-1`'s 8 GB disk was outgrown by the gateway image |
+| Chosen pool target per family | 1 agent, 1 gateway | `POOL_TARGET_AGENT` / `POOL_TARGET_GATEWAY` in `wrangler.jsonc`; chosen, not derived from a measurement here |
 
 ## Risks (plan section 12) — verdict per item
 
@@ -32,18 +32,18 @@ repo against real learners.
 |---|---|---|
 | R1 | Two container classes, one Worker, independent scaling | |
 | R2 | `enableInternet=false` + `outboundByHost` blocks/intercepts correctly on `@next`; confirm `ctx.containerId` shape | |
-| R3 | `writeFile` fast enough for multi-MB bundles, else use the `bundlesOutbound` handler | |
+| R3 | `writeFile` fast enough for multi-MB bundles (the `bundlesOutbound` egress fallback was removed: it let learners read private bundles) | |
 | R4 | `createBackup` after `restoreBackup` captures the merged overlay | |
 | R5 | `terminal.connect()` with a synthetic request returns a usable socket | |
 | R6 | `SandboxAddon.getWebSocketUrl` can target our terminal route (for a later browser client) | |
 | R7 | A 3-minute exec and a 2-hour attached terminal don't hit DO/RPC limits | |
 | R8 | `getProcess()` goes null promptly after a container kill; sandbox id survives for `recover()` | |
-| R9 | Cold start fits an "instant" budget with 1 warm container | |
-| R10 | Grafana `serve_from_sub_path` / LiteLLM `SERVER_ROOT_PATH` behave behind `src/session/proxy.ts` | |
-| R11 | D1 accepts the partial unique index (`migrations/0001_init.sql`) | |
-| R12 | `locationHint: weur` honoured for Session DOs and sandbox stubs | |
-| R13 | The `@next` image tag in the Dockerfiles matches the installed npm version and boots correctly | |
-| R14 | A custom 0.5 vCPU / 2 GiB instance type is accepted and sufficient, or `standard-1` is needed | |
+| R9 | Cold start fits an "instant" budget with 1 warm container | Not "instant": a warm claim lands at ~2.3 s p50 (1.8-4.9 s); a cold start is 7.5 s p50, up to 21 s. See sections 1-2 |
+| R10 | Grafana `serve_from_sub_path` / LiteLLM `SERVER_ROOT_PATH` behave behind `src/session/proxy.ts` | LiteLLM: mostly, with one broken `/ui/` asset path and framing headers the proxy strips ("LiteLLM under a path prefix", T5). Grafana: not measured |
+| R11 | D1 accepts the partial unique index (`migrations/0001_init.sql`) | Yes in practice: migrations apply in CI and sessions are created against it. No dedicated test recorded here |
+| R12 | `locationHint: weur` honoured for Session DOs and sandbox stubs | not measured |
+| R13 | The `@next` image tag in the Dockerfiles matches the installed npm version and boots correctly | Boots: both images build and run live. Version match not separately checked |
+| R14 | A custom 0.5 vCPU / 2 GiB instance type is accepted and sufficient, or `standard-1` is needed | Not accepted: Cloudflare requires custom types to have at least 1 vCPU, and disk is capped at 2x memory in GiB. `standard-1` for agent; custom 1 vCPU / 8 GiB for gateway (see `wrangler.jsonc`) |
 
 ## How to run it
 

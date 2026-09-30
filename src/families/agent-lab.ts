@@ -1,6 +1,6 @@
 import { Sandbox } from '@cloudflare/sandbox';
 import type { Env } from '../env';
-import { BASE_ALLOWED_HOSTS, LLM_HOST, MIRROR_HOST, BUNDLES_HOST, llmOutbound, mirrorOutbound, bundlesOutbound } from './egress';
+import { BASE_ALLOWED_HOSTS, LLM_HOST, MIRROR_HOST, llmOutbound, mirrorOutbound } from './egress';
 
 /**
  * Container class for the "agent" lab family (Python agent + LiteLLM +
@@ -40,5 +40,4 @@ export class AgentLab extends Sandbox<Env> {
 AgentLab.outboundByHost = {
   [LLM_HOST]: llmOutbound,
   [MIRROR_HOST]: mirrorOutbound,
-  [BUNDLES_HOST]: bundlesOutbound,
 };

@@ -41,6 +41,15 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # Docker's build context is each family's own directory, so the
+      # canonical images/common/opalix-init.sh is copied into both. See
+      # images/common/README.md.
+      - name: init.sh copies are identical
+        run: |
+          cmp images/common/opalix-init.sh images/agent/opalix-init.sh \
+            && cmp images/common/opalix-init.sh images/gateway/opalix-init.sh \
+            || { echo "opalix-init.sh copies differ; edit all three"; exit 1; }
+
       # Confirms the config compiles before spending time on a Docker build.
       - name: Dry-run
         env:

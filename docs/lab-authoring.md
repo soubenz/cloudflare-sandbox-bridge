@@ -135,9 +135,10 @@ entry; used anywhere else it renders with an empty service name, giving
 ### egress.allow
 
 `egress.allow` is unioned with the family's base allowlist — it never
-replaces it. The base list is `llm.opalix.ai`, `mirror.opalix.ai` and
-`bundles.opalix.internal` (the LLM Worker, the package mirror, and the
-lab-bundle server). Containers run with internet disabled otherwise.
+replaces it. The base list is `gateway.ai.cloudflare.com` (Cloudflare AI
+Gateway, the model layer) and `mirror.opalix.ai` (the package mirror); see
+`BASE_ALLOWED_HOSTS` in `src/families/egress.ts`. Containers run with
+internet disabled otherwise.
 
 Two consequences of how this is applied. An empty `allow` skips the runtime
 call entirely, leaving the image's static allowlist in place. And if the

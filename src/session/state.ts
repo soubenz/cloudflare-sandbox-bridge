@@ -2,6 +2,7 @@ import type { Env, Family } from '../env';
 import type { Terminal } from '@cloudflare/sandbox';
 import type { LabManifest, ServiceSpec } from '../labs/manifest';
 import type { Backend } from './backend';
+import { ApiError } from '../lib/errors';
 
 export type SessionState = 'created' | 'starting' | 'running' | 'recovering' | 'resuming' | 'ended';
 export type EndReason = 'user' | 'idle' | 'expired' | 'error' | 'evicted';
@@ -13,6 +14,8 @@ export interface SessionMeta {
   lab_version: string;
   family: Family;
   sandbox_id?: string;
+  /** The container this session last held. `sandbox_id` is cleared on end so a resume claims a fresh one; this keeps the old id for diagnosis. */
+  last_sandbox_id?: string;
   state: SessionState;
   created_at: number;
   started_at?: number;
@@ -61,7 +64,8 @@ export type TimerKind =
   | 'hint'
   | 'health'
   | 'metrics'
-  | 'cleanup';
+  | 'cleanup'
+  | 'purge';
 
 export interface TimerEntry {
   at: number;
@@ -116,6 +120,10 @@ const KEYS = {
   sessionEnv: 'session_env',
 } as const;
 
+function notRunning(): ApiError {
+  return ApiError.conflict('not_running', 'The session is not running (still starting, resuming, recovering or ended)');
+}
+
 /**
  * Bundles a Session Durable Object's storage, env, and lazily-created
  * Backend behind typed accessors, so every session/* module operates on
@@ -157,7 +165,12 @@ export class SessionRuntime {
   }
   async patchMeta(patch: Partial<SessionMeta>): Promise<SessionMeta> {
     const meta = await this.requireMeta();
-    const next = { ...meta, ...patch };
+    const next: SessionMeta = { ...meta, ...patch };
+    // An explicit `undefined` in the patch means "clear this field": drop the
+    // key rather than store an undefined-valued one.
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) delete (next as unknown as Record<string, unknown>)[key];
+    }
     await this.putMeta(next);
     return next;
   }
@@ -193,6 +206,10 @@ export class SessionRuntime {
   }
   async putSessionEnv(vars: Record<string, string>): Promise<void> {
     await this.storage.put(KEYS.sessionEnv, vars);
+  }
+
+  async clearSessionEnv(): Promise<void> {
+    await this.storage.delete(KEYS.sessionEnv);
   }
 
   async terminal(): Promise<TerminalRuntime | undefined> {
@@ -231,6 +248,10 @@ export class SessionRuntime {
     await this.storage.put(KEYS.checksLast, run);
   }
 
+  async clearLastChecks(): Promise<void> {
+    await this.storage.delete(KEYS.checksLast);
+  }
+
   async cost(): Promise<CostState> {
     return (await this.storage.get<CostState>(KEYS.cost)) ?? { running_s: 0, usd: 0, llm_usd: 0 };
   }
@@ -240,8 +261,13 @@ export class SessionRuntime {
 
   /** Lazily built; rebuilt if the sandbox id changes across a resume. */
   backend(): Backend {
-    if (!this._backend) throw new Error('Backend not initialized; call bindBackend() after meta has a sandbox_id');
+    if (!this._backend) throw notRunning();
     return this._backend;
+  }
+  /** Throws the 409 `not_running` unless the session is `running`. Guards every RPC that needs a live container. */
+  async requireRunning(): Promise<void> {
+    const meta = await this.meta();
+    if (meta?.state !== 'running') throw notRunning();
   }
   /**
    * Dynamically imports backend.ts rather than importing `cloudflareBackend`

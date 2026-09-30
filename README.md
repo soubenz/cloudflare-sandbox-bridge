@@ -19,8 +19,8 @@ rationale; this README is the quick-start.
   Durable Objects (`do/`), session logic (`session/`), lab manifest and
   bundle handling (`labs/`), per-family container classes (`families/`).
 - `images/` — one Dockerfile per lab family (`agent`, `gateway`).
-- `labs/` — real lab content goes here (empty at this commit; see
-  `test/fixtures/labs/hello` for a trivial worked example).
+- `labs/` — the lab content: 39 labs (25 gateway-family, 14 agent-family).
+  See `test/fixtures/labs/hello` for a trivial worked example.
 - `cli/` — the `opalix` command-line client.
 - `site/` — the public opalix.ai home page and waitlist: static HTML and
   CSS plus one Worker endpoint (`npm run dev:site`, `npm run deploy:site`).
@@ -65,7 +65,10 @@ This is the Phase 1 implementation from the sandbox-layer plan: the full
 API surface, both Durable Objects, and the CLI are written and typecheck
 clean, with unit tests for every pure-logic module (manifest parsing and
 templating, session-token auth, the timer scheduler, check-output parsing).
-It has **not** been deployed or run against a live container yet — that is
-Phase 0's spike, which needs a Cloudflare account with Containers enabled
-and a Docker daemon (this development environment had neither). See
-`docs/spike.md` for what to verify before trusting this in anger.
+It is deployed: the API Worker, the dashboard Worker and the site are
+deployed from `main` by GitHub Actions (`.github/workflows/deploy.yml` and
+`deploy-site.yml`). There are 39 labs under `labs/` (25 gateway-family, 14
+agent-family). There is no deployed staging environment: `wrangler.jsonc`
+still defines a `staging` env, but it holds a placeholder D1 id and no workflow
+deploys it. See `docs/spike.md` for the measurements taken against the live
+deployment.

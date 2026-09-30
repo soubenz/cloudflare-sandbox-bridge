@@ -4,7 +4,7 @@ import { renderManifest } from '../labs/manifest';
 import type { SessionRuntime, SessionMeta, SnapshotEntry } from './state';
 import { emitEvent, hasActiveEventClients } from './events';
 import { BASE_ALLOWED_HOSTS } from '../families/egress';
-import { scheduleTimer, cancelTimer, popDueTimers, rearmAlarm } from './timers';
+import { scheduleTimer, cancelTimersOfKind, cancelTimersExcept, popDueTimers, rearmAlarm } from './timers';
 import { hydrateWorkspaceFiles, hydratePressureScripts, applySessionEnv } from './hydrate';
 import { startAllServices, relaunchAllServices, healthCheckAll, allServicesGone } from './services';
 import { firePressureEvent } from './pressure';
@@ -32,6 +32,7 @@ const HEALTH_INTERVAL_ACTIVE_MS = 15_000;
 const HEALTH_INTERVAL_IDLE_MS = 60_000;
 const METRICS_INTERVAL_MS = 30_000;
 const CLEANUP_AFTER_MS = 60 * 60_000;
+const PURGE_DEFAULT_AFTER_MS = 7 * 24 * 60 * 60_000;
 
 export interface CreateSessionInput {
   userId: string;
@@ -152,9 +153,9 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
       // may end the session (idle or hard expiry destroys the container).
       // Anything still queued behind it would then run against a container
       // that no longer exists, so stop as soon as the session is over.
-      // `resume` and `cleanup` are the two that are meant to run on an
-      // ended session.
-      if (timer.kind !== 'cleanup' && timer.kind !== 'resume' && (await rt.requireMeta()).state === 'ended') {
+      // `resume`, `cleanup` and `purge` are the ones that are meant to run
+      // on an ended session.
+      if (timer.kind !== 'cleanup' && timer.kind !== 'purge' && timer.kind !== 'resume' && (await rt.requireMeta()).state === 'ended') {
         continue;
       }
 
@@ -235,6 +236,14 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
           break;
         case 'resume':
           await runResume(rt);
+          break;
+        case 'purge':
+          if (await runPurge(rt)) {
+            // Storage is gone, including the timer list; nothing later in this
+            // batch can run against it.
+            await rt.storage.deleteAlarm();
+            return;
+          }
           break;
       }
     } catch (err) {
@@ -385,16 +394,20 @@ export async function requestResume(rt: SessionRuntime): Promise<{ meta: Session
 
 async function runResume(rt: SessionRuntime): Promise<void> {
   const meta = await rt.requireMeta();
+  // A DELETE can end the session while it is `resuming`. The resume timer may
+  // already be due by then; running it would claim a container and flip the
+  // session to `running` while D1 says ended.
+  if (meta.state !== 'resuming') return;
   const manifest = await rt.requireManifest();
   const snapshots = await rt.snapshots();
   const latest = snapshots[0];
   if (!latest) throw new Error('resume fired with no snapshot');
 
-  // The `start` timer is deliberately retryable: if the DO is evicted
-  // mid-start the alarm runs this again. Claiming unconditionally would
-  // then take a second container and overwrite the id of the first, which
-  // end() would never destroy — it would sit in the pool's `claimed` map
-  // until the 3-hour reap. Reuse the claim we already hold.
+  // The `resume` timer is deliberately retryable: if the DO is evicted
+  // mid-resume the alarm runs this again. endSession cleared `sandbox_id`, so
+  // the first run claims a fresh container from the pool and records it; a
+  // retry then reuses that claim instead of taking a second one whose id
+  // would be overwritten and never destroyed.
   const sandboxId = meta.sandbox_id ?? (await (await pool(rt, meta.family)).claim(rt.sessionId)).sandbox_id;
   if (meta.sandbox_id !== sandboxId) await rt.patchMeta({ sandbox_id: sandboxId });
   await rt.bindBackend(meta.family, sandboxId);
@@ -427,6 +440,9 @@ async function runResume(rt: SessionRuntime): Promise<void> {
     ended_at: undefined,
     end_reason: undefined,
   });
+
+  // Ended sessions are on a cleanup/purge schedule; a live one must not be.
+  await cancelTimersOfKind(rt, 'cleanup', 'purge');
 
   await scheduleTimer(rt, 'hard', expiresAt);
   await scheduleTimer(rt, 'hard_warn', expiresAt - HARD_WARN_BEFORE_MS);
@@ -464,11 +480,20 @@ export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reas
   rt.upstreamTerminalHandle = undefined;
 
   const now = Date.now();
-  const next = await rt.patchMeta({ state: 'ended', ended_at: now, end_reason: reason === 'user' ? 'user' : reason });
+  // Clear the container binding: the id was just destroyed and released, and
+  // keeping it would let a resume re-bind it (`meta.sandbox_id ?? claim()`),
+  // bypassing the pool. `last_sandbox_id` remembers it.
+  const next = await rt.patchMeta({
+    state: 'ended',
+    ended_at: now,
+    end_reason: reason === 'user' ? 'user' : reason,
+    sandbox_id: undefined,
+    last_sandbox_id: meta.sandbox_id ?? meta.last_sandbox_id,
+  });
 
-  for (const kind of ['hard', 'hard_warn', 'idle', 'idle_warn', 'health', 'metrics'] as const) {
-    await cancelTimer(rt, kind);
-  }
+  // Every kind, not a fixed list: pressure and hint timers carry refs, so a
+  // per-kind cancelTimer() never matched them, and they woke the ended DO.
+  await cancelTimersExcept(rt, 'cleanup');
   await scheduleTimer(rt, 'cleanup', now + CLEANUP_AFTER_MS);
 
   bestEffort(updateSession(rt.env, next), 'updateSession(ended)');
@@ -481,6 +506,31 @@ async function runCleanup(rt: SessionRuntime): Promise<void> {
   await rt.putServices({});
   await rt.putTerminal(undefined);
   await rt.putPressureStatus({});
+  // The last check run was already written to D1 when it finished; the
+  // rendered env is only useful to a live container.
+  await rt.clearSessionEnv();
+  await rt.clearLastChecks();
+
+  const snapshots = await rt.snapshots();
+  const purgeAt =
+    snapshots.length > 0
+      ? Math.max(...snapshots.map((s) => s.created_at + s.ttl * 1000))
+      : Date.now() + PURGE_DEFAULT_AFTER_MS;
+  await scheduleTimer(rt, 'purge', purgeAt);
+}
+
+/**
+ * Last act of a session's Durable Object: once its snapshots have expired
+ * there is nothing left worth keeping, so drop all storage (meta, manifest,
+ * snapshots, cost, timers) and the alarm. Returns whether it purged; a session
+ * that has been resumed since cleanup was scheduled is left alone.
+ */
+async function runPurge(rt: SessionRuntime): Promise<boolean> {
+  const meta = await rt.meta();
+  if (meta && meta.state !== 'ended') return false;
+  await rt.storage.deleteAll();
+  await rt.storage.deleteAlarm();
+  return true;
 }
 
 /**

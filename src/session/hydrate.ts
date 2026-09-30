@@ -14,11 +14,9 @@ async function runOrThrow(rt: SessionRuntime, argv: readonly [string, ...string[
  * `learner` user. Skipped on resume when a snapshot is restored instead
  * (see lifecycle.resume) — restoreBackup() replaces this entirely.
  *
- * Delivery is `writeFile` of the whole archive in one call. If the spike
- * (risk R3) finds that too slow for multi-MB bundles, swap this for a
- * `curl http://bundles.opalix.internal/<key>` exec call instead — the
- * outbound handler in families/egress.ts (`bundlesOutbound`) already serves
- * R2 objects at that host, so only this function would need to change.
+ * Delivery is `writeFile` of the whole archive in one call. Archives are
+ * deliberately not served to the container over an egress host: any such
+ * handler would be reachable from the learner's terminal.
  */
 export async function hydrateWorkspaceFiles(rt: SessionRuntime, labSlug: string, labVersion: string): Promise<void> {
   const backend = rt.backend();

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { LLM_HOST, MIRROR_HOST } from '../../src/families/egress';
+import { BASE_ALLOWED_HOSTS, LLM_HOST, MIRROR_HOST } from '../../src/families/egress';
 
 /**
  * families/egress.ts documents that LLM_HOST/MIRROR_HOST must be literal
@@ -31,6 +31,15 @@ describe('egress hostname constants stay in sync with wrangler.jsonc', () => {
 
   it('MIRROR_HOST matches the production wrangler.jsonc var', () => {
     expect(MIRROR_HOST).toBe(vars.MIRROR_HOST);
+  });
+});
+
+describe('egress allowlist hygiene', () => {
+  it('has no .internal host (nothing may serve private bundles to the container)', () => {
+    expect(BASE_ALLOWED_HOSTS.length).toBeGreaterThan(0);
+    for (const host of BASE_ALLOWED_HOSTS) {
+      expect(host.endsWith('.internal')).toBe(false);
+    }
   });
 });
 

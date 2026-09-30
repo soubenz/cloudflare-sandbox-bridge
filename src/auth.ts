@@ -1,3 +1,4 @@
+import type { MiddlewareHandler } from 'hono';
 import type { Env } from './env';
 import { ApiError } from './lib/errors';
 
@@ -93,11 +94,50 @@ export type AuthContext =
   | { kind: 'service' }
   | { kind: 'session'; sid: string; uid: string };
 
+/** Response header that tells a caller its service key is the retiring one. */
+export const KEY_HEADER = 'X-Opalix-Key';
+
+/** Requests that authenticated with `SANDBOX_API_KEY_PREVIOUS`; read by `previousKeyHeader`. */
+const previousKeyRequests = new WeakSet<Request>();
+
+/**
+ * Which service key `token` is, if any. Both keys are always compared, so
+ * timing does not reveal which slot matched. `SANDBOX_API_KEY_PREVIOUS` only
+ * counts while it is set and non-empty: it exists for the rotation window
+ * (docs/runbooks/secrets-rotation.md) and is deleted afterwards.
+ */
+function matchServiceKey(token: string, env: Env): 'primary' | 'previous' | null {
+  const primary = timingSafeEqual(token, env.SANDBOX_API_KEY);
+  const previousKey = env.SANDBOX_API_KEY_PREVIOUS;
+  const previous = !!previousKey && timingSafeEqual(token, previousKey);
+  if (primary) return 'primary';
+  return previous ? 'previous' : null;
+}
+
+/** True when `token` is a valid service key; records a previous-key match on `request`. */
+function acceptServiceKey(request: Request, token: string, env: Env): boolean {
+  const match = matchServiceKey(token, env);
+  if (match === 'previous') previousKeyRequests.add(request);
+  return match !== null;
+}
+
+/**
+ * Sets `X-Opalix-Key: previous` on the response of any request that
+ * authenticated with the previous key, so callers can see which of their
+ * clients still hold the old one before it is deleted.
+ */
+export function previousKeyHeader(): MiddlewareHandler {
+  return async (c, next) => {
+    await next();
+    if (previousKeyRequests.has(c.req.raw) && c.res.status !== 101) c.header(KEY_HEADER, 'previous');
+  };
+}
+
 /** Service callers (app backend, CLI) send the static bearer key. */
 export function requireServiceAuth(request: Request, env: Env): void {
   const header = request.headers.get('Authorization');
   const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-  if (!token || !timingSafeEqual(token, env.SANDBOX_API_KEY)) {
+  if (!token || !acceptServiceKey(request, token, env)) {
     throw ApiError.unauthorized('Missing or invalid service key');
   }
 }
@@ -111,7 +151,7 @@ export function requireServiceAuth(request: Request, env: Env): void {
 export async function requireBrowserAuth(request: Request, env: Env, sessionId: string): Promise<AuthContext> {
   const header = request.headers.get('Authorization');
   const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-  if (bearer && timingSafeEqual(bearer, env.SANDBOX_API_KEY)) return { kind: 'service' };
+  if (bearer && acceptServiceKey(request, bearer, env)) return { kind: 'service' };
 
   const url = new URL(request.url);
   const queryToken = url.searchParams.get('token') ?? undefined;

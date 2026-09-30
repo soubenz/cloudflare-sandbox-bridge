@@ -76,6 +76,22 @@ export async function insertCheckRun(env: Env, sessionId: string, run: ChecksRun
     .run();
 }
 
+/**
+ * Deletes `snapshots` rows whose TTL has passed and returns how many went.
+ * This removes the D1 index rows only; the R2 objects are deleted by the
+ * bucket lifecycle rule (see docs/runbooks/backups.md). Throws on D1 failure
+ * like the other writers here — the caller decides how to absorb it.
+ */
+export async function deleteExpiredSnapshots(env: Env, nowMs: number): Promise<number> {
+  const result = await env.DB.prepare(`DELETE FROM snapshots WHERE expires_at < ?`).bind(nowMs).run();
+  return result.meta?.changes ?? 0;
+}
+
+/** The cron fires every 5 minutes; sweep only in the first run of each UTC hour (minute 0-4). */
+export function shouldSweepSnapshots(scheduledTime: number): boolean {
+  return new Date(scheduledTime).getUTCMinutes() < 5;
+}
+
 /** Wraps a D1 write so a failure logs instead of throwing — see file-level doc above. */
 export function bestEffort(promise: Promise<unknown>, what: string): void {
   promise.catch((err) => console.error(`d1 best-effort write failed (${what}):`, err));

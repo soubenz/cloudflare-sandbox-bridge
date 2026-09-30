@@ -8,7 +8,6 @@ export interface FamilyConfig {
   sandboxBinding: 'AGENT_LAB' | 'GATEWAY_LAB';
   /** Key into Env for the pool var that sets this family's warm-pool target. */
   poolTargetVar: 'POOL_TARGET_AGENT' | 'POOL_TARGET_GATEWAY';
-  instanceType: 'basic' | 'standard-1' | 'standard-2' | 'standard-3';
 }
 
 export const FAMILIES: Record<Family, FamilyConfig> = {
@@ -16,13 +15,11 @@ export const FAMILIES: Record<Family, FamilyConfig> = {
     family: 'agent',
     sandboxBinding: 'AGENT_LAB',
     poolTargetVar: 'POOL_TARGET_AGENT',
-    instanceType: 'standard-1',
   },
   gateway: {
     family: 'gateway',
     sandboxBinding: 'GATEWAY_LAB',
     poolTargetVar: 'POOL_TARGET_GATEWAY',
-    instanceType: 'standard-1',
   },
 };
 

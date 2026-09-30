@@ -112,7 +112,7 @@ export async function startAllServices(rt: SessionRuntime, manifest: LabManifest
   }
 }
 
-/** Kills (SIGTERM, then SIGKILL after 5s) and restarts a single named service. */
+/** Kills (SIGTERM, then SIGKILL if it has not exited within 5s) and restarts a single named service. */
 export async function restartService(rt: SessionRuntime, name: string): Promise<ServiceRuntime> {
   const services = await rt.services();
   const existing = services[name];
@@ -123,15 +123,28 @@ export async function restartService(rt: SessionRuntime, name: string): Promise<
     const proc = await backend.getProcess(existing.process_id);
     if (proc) {
       await proc.kill(15);
-      const exited = await Promise.race([
-        proc.waitForExit({ timeout: 5000 }).then(() => true),
-        new Promise<boolean>((r) => setTimeout(() => r(false), 5000)),
-      ]);
-      if (!exited) await proc.kill(9).catch(() => {});
+      // The SDK's waitForExit({ timeout }) REJECTS with ProcessWaitTimeoutError
+      // rather than resolving, so a slow SIGTERM must be told apart from a real failure.
+      const exited = await proc.waitForExit({ timeout: 5000 }).then(
+        () => true,
+        (e) => (e?.name === 'ProcessWaitTimeoutError' ? false : Promise.reject(e)),
+      );
+      if (!exited) {
+        await proc.kill(9).catch(() => {});
+        await proc.waitForExit({ timeout: 3000 }).catch(() => {});
+      }
     }
   }
 
-  const runtime = await startService(rt, existing.spec);
+  let runtime: ServiceRuntime;
+  try {
+    runtime = await startService(rt, existing.spec);
+  } catch (err) {
+    // The old process is gone and no new one is running: never leave the stored state saying 'healthy'.
+    services[name] = { ...existing, health: 'unhealthy', process_id: undefined };
+    await rt.putServices(services);
+    throw err;
+  }
   runtime.restarts = existing.restarts + 1;
   services[name] = runtime;
   await rt.putServices(services);

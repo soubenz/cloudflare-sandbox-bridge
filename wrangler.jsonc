@@ -94,7 +94,9 @@
     "DASHBOARD_ORIGIN": "https://opalix-dashboard.soubenz94.workers.dev,http://localhost:8788"
   },
   // Secrets (wrangler secret put): SANDBOX_API_KEY, SESSION_TOKEN_SECRET,
-  // R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, LLM_WORKER_KEY.
+  // R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, AI_GATEWAY_TOKEN.
+  // Optional: SANDBOX_API_KEY_PREVIOUS -- set only during a SANDBOX_API_KEY
+  // rotation window; see docs/runbooks/secrets-rotation.md.
   "triggers": {
     "crons": ["*/5 * * * *"]
   },
