@@ -11,7 +11,7 @@ what, broken down both ways. What's running already answers half of that.
 |---|---|
 | `gateway/config.yaml` | The gateway's one model alias, `assistant`, priced explicitly ($0.002/prompt token, $0.004/completion token). |
 | `gateway/keys.json` | Written automatically once the gateway is up: each team's id and a working key for it. |
-| **traffic** service | Idle until you (or a grading run) call it. `curl -X POST http://127.0.0.1:8965/run` sends one fixed batch of real calls across all three teams and all three features, through their own team keys, each one tagged with which feature it's for. Do not edit `services/traffic.py` -- it isn't part of your task, and grading calls it directly regardless. |
+| **traffic** service | Idle until you call it. `curl -X POST http://127.0.0.1:8965/run` sends one fixed batch of real calls across all three teams and all three features, through their own team keys, each one tagged with which feature it's for. Do not edit `services/traffic.py` -- it isn't part of your task, and grading does not use it. |
 | **grafana** tab | A real, already-provisioned Grafana, signed in automatically, no login screen. Its one dashboard, "Tell finance who spent the money", is provisioned straight from `dashboard/dashboard.json` -- edit that file and the tab picks it up within about 10 seconds, no restart needed. |
 
 Call the traffic endpoint once, wait about 20 seconds for spend to land,
@@ -41,11 +41,14 @@ yourself from tokens.
 ## Checking your work
 
 **Run checks** never reads your dashboard's history or your query's
-text style. It truncates the spend log, calls the traffic service's own
-`/run` once, waits for spend to land, then runs your dashboard's own two
-panel queries -- exactly as saved in `dashboard/dashboard.json` -- through
-Grafana's own query API, and compares what comes back against its own,
-independently-computed bill for that exact traffic.
+text style, and never touches the spend data you generated while working.
+It starts its own copy of the gateway against a fresh, empty database,
+sends its own batch of calls (a different mix every run -- not the batch
+the traffic service sends), waits for spend to land, then runs your
+dashboard's own two panel queries -- exactly as saved in
+`dashboard/dashboard.json` -- through Grafana's own query API against that
+fresh data, and compares what comes back against its own,
+independently-computed bill for exactly the calls it sent.
 
 | Check | Passes when |
 |---|---|

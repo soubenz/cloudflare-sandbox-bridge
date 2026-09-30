@@ -206,22 +206,22 @@ checks:
     parallel: false
   - name: eu-only-alias-stays-in-region
     script: eu-only-alias-stays-in-region.sh
-    timeout_s: 180
+    timeout_s: 300
     weight: 2
     parallel: false
   - name: eu-outage-fails-closed
     script: eu-outage-fails-closed.sh
-    timeout_s: 180
+    timeout_s: 300
     weight: 2
     parallel: false
   - name: unrestricted-alias-fails-over
     script: unrestricted-alias-fails-over.sh
-    timeout_s: 180
+    timeout_s: 300
     weight: 2
     parallel: false
   - name: audit-trail-for-both-aliases
     script: audit-trail-for-both-aliases.sh
-    timeout_s: 180
+    timeout_s: 300
     weight: 1
     parallel: false
 

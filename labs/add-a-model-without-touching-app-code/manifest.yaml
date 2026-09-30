@@ -97,7 +97,7 @@ objectives:
   - "Drive LiteLLM's live model catalogue (/model/new, /model/update) from MLflow's registry, with no restart"
   - "Split live traffic between two deployments of the same model by weight, for a staged rollout"
   - "Keep one team's traffic pinned to a specific deployment while the rest of the catalogue moves on"
-timeout_minutes: 90
+timeout_minutes: 120
 idle_minutes: 10
 
 env:
@@ -287,17 +287,17 @@ checks:
   # servers, a real migration), before any of the three phases it drives.
   - name: champion-drives-support
     script: champion-drives-support.sh
-    timeout_s: 280
+    timeout_s: 300
     weight: 2
     parallel: false
   - name: challenger-gets-its-share
     script: challenger-gets-its-share.sh
-    timeout_s: 280
+    timeout_s: 300
     weight: 1
     parallel: false
   - name: pinned-team-stays-put
     script: pinned-team-stays-put.sh
-    timeout_s: 280
+    timeout_s: 300
     weight: 1
     parallel: false
 

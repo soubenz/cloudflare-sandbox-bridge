@@ -247,12 +247,12 @@ services:
     argv: ["python3", "-B", "/workspace/view_service.py"]
     cwd: /workspace
     env:
-      VIEW_PORT: "8963"
+      VIEW_PORT: "8962"
       LITELLM_URL: "http://127.0.0.1:4000"
       LITELLM_MASTER_KEY: "sk-opalix-onboard-master"
       CONTEXTFORGE_URL: "http://127.0.0.1:4744"
       GATEWAY_CONFIG_PATH: "/workspace/gateway/config.yaml"
-    port: 8963
+    port: 8962
     healthcheck:
       type: http
       path: /healthz

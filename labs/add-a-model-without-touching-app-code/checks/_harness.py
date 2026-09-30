@@ -33,6 +33,7 @@ import contextlib
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -53,13 +54,21 @@ WORKSPACE_DIR = os.environ.get("WORKSPACE_DIR", "/workspace")
 CONFIG_PATH = os.path.join(WORKSPACE_DIR, "gateway", "config.yaml")
 SYNC_PY = os.path.join(WORKSPACE_DIR, "platform", "sync.py")
 
-# The grader's own gateway and registry -- canonical ports are LiteLLM's
-# own 4100 and (picked for this lab, since MLflow has none of its own in
-# docs/lab-authoring.md's port table) 8965; overridable so this harness
-# can run against this lab's own local test-port block while developing
-# it.
-GRADER_LITELLM_PORT = os.environ.get("GRADER_LITELLM_PORT", "4100")
-GRADER_MLFLOW_PORT = os.environ.get("GRADER_MLFLOW_PORT", "8965")
+# The grader's own gateway and registry each get an EPHEMERAL port: the
+# kernel hands out a free one (bind to port 0), so a grading run can never
+# collide with -- or need to clear -- anything already listening on a fixed
+# port, and each process is stopped by terminating the process group this
+# harness started (`start_new_session=True` + `os.killpg`), never by port.
+# The env overrides exist only so this harness can be pinned to a local
+# test-port block while developing the lab.
+def _free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return str(sock.getsockname()[1])
+
+
+GRADER_LITELLM_PORT = os.environ.get("GRADER_LITELLM_PORT") or _free_port()
+GRADER_MLFLOW_PORT = os.environ.get("GRADER_MLFLOW_PORT") or _free_port()
 GRADER_PG_HOST = os.environ.get("GRADER_PG_HOST", "127.0.0.1")
 GRADER_PG_PORT = os.environ.get("GRADER_PG_PORT", "5432")
 GRADER_DB_NAME = os.environ.get("GRADER_DB_NAME", "grading")
@@ -211,18 +220,32 @@ def _tail(path, n_bytes=4000):
 
 
 def _stop_proc(proc, log_f):
+    """Stops a process this harness started -- and everything it spawned --
+    by terminating its process group. Every Popen here uses
+    `start_new_session=True`, so the group id is the child's own pid and
+    the group is ours alone. Never by port. The group is signalled even if
+    the leader is already gone, so a process a misbehaving sync.py
+    relaunched (same group) cannot outlive the run."""
     if proc is None:
         return
+    pgid = proc.pid
     try:
-        pgid = os.getpgid(proc.pid)
-        os.killpg(pgid, signal.SIGTERM)
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
         try:
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            os.killpg(pgid, signal.SIGKILL)
+            pass
+        try:
+            os.killpg(pgid, signal.SIGKILL)  # stragglers; ESRCH once the group is empty
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
             proc.wait(timeout=10)
-    except (ProcessLookupError, PermissionError):
-        pass
+        except subprocess.TimeoutExpired:
+            pass
     finally:
         if log_f is not None:
             try:
@@ -251,33 +274,6 @@ def _psql(sql):
         capture_output=True, text=True, timeout=30,
     )
     return proc.returncode, proc.stdout, proc.stderr
-
-
-def _kill_anything_on_port(port):
-    """Best-effort: kill whatever is bound to `port`, so a process a prior
-    run's wrong-answer sync orphaned (found live: relaunching LiteLLM
-    itself, bound to the same port, outside anything this harness tracks)
-    can't block this run from binding it again. Never raises -- a clean
-    port is the common case and this is only a safety net."""
-    from shutil import which
-    if which("fuser"):
-        subprocess.run(["fuser", "-k", "-TERM", "%s/tcp" % port], capture_output=True, timeout=5)
-        time.sleep(0.3)
-        subprocess.run(["fuser", "-k", "-KILL", "%s/tcp" % port], capture_output=True, timeout=5)
-        return
-    try:
-        out = subprocess.run(["ss", "-ltnp"], capture_output=True, text=True, timeout=5).stdout
-    except Exception:
-        return
-    needle = ":%s " % port
-    for line in out.splitlines():
-        if needle not in line:
-            continue
-        for m in __import__("re").finditer(r"pid=(\d+)", line):
-            try:
-                os.kill(int(m.group(1)), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
 
 
 def _recreate_grading_db():
@@ -454,8 +450,6 @@ def _build_results():
             _stop_proc(proc, log_f)
 
     try:
-        _kill_anything_on_port(GRADER_LITELLM_PORT)
-        _kill_anything_on_port(GRADER_MLFLOW_PORT)
         _recreate_grading_db()
 
         litellm_proc, litellm_log_f = _start_grader_litellm(os.path.join(HERE, "grader-litellm.log"))
@@ -560,6 +554,27 @@ def _build_results():
         _stop_all()
 
 
+# The longest any check of this lab may run (manifest.yaml `timeout_s`). A
+# lock older than that belongs to a run that was SIGKILLed at its timeout
+# and can never finish, so it is removed rather than waited on.
+LONGEST_CHECK_TIMEOUT_S = 300
+
+
+def _lock_is_stale():
+    try:
+        return time.time() - os.path.getmtime(LOCK_PATH) > LONGEST_CHECK_TIMEOUT_S
+    except OSError:
+        return False
+
+
+def _clear_stale_lock():
+    if _lock_is_stale():
+        try:
+            os.remove(LOCK_PATH)
+        except OSError:
+            pass
+
+
 def get_results():
     """Returns the shared results dict, running the one-time setup if this
     is the first check script to ask for it in this run."""
@@ -567,6 +582,7 @@ def get_results():
         with open(RESULTS_PATH) as f:
             return json.load(f)
 
+    _clear_stale_lock()
     got_lock = False
     try:
         fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -595,6 +611,10 @@ def get_results():
         if os.path.exists(RESULTS_PATH):
             with open(RESULTS_PATH) as f:
                 return json.load(f)
+        if _lock_is_stale():
+            # the holder was killed at its timeout: take over, don't wait forever
+            _clear_stale_lock()
+            return get_results()
         time.sleep(1)
     raise RuntimeError("timed out waiting for another check to finish the shared grader setup")
 
@@ -722,4 +742,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:  # SystemExit (every normal pass/fail) is not an Exception
+        print(json.dumps({"pass": False, "message": "grader error: %s: %s" % (type(e).__name__, e)}))
+        sys.exit(1)

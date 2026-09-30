@@ -14,6 +14,7 @@ convention.
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -56,6 +57,27 @@ def _request(method, url, headers=None, body=None, timeout=10):
         return status, raw.decode("utf-8", "replace")
 
 
+def _redact(text):
+    """Failure messages must never carry a secret. The master key is the only
+    one in play here; a LiteLLM auth error can echo (part of) the key it was
+    sent, so scrub the key and its common masked forms from anything that
+    came back from the gateway before it goes into a message."""
+    text = str(text)
+    if LITELLM_MASTER_KEY:
+        text = text.replace(LITELLM_MASTER_KEY, "<redacted>")
+        # LiteLLM's own masking keeps a short prefix and suffix of the key.
+        text = text.replace(LITELLM_MASTER_KEY[:6] + "...", "<redacted>...")
+        text = text.replace("..." + LITELLM_MASTER_KEY[-4:], "...<redacted>")
+    # Anything shaped like a LiteLLM key (full or masked, "sk-..." plus dots).
+    return re.sub(r"sk-[A-Za-z0-9_.\-]+", "<redacted>", text)
+
+
+def _show(value):
+    """A learner-supplied answer, rendered for a message: JSON, bounded."""
+    text = json.dumps(value)
+    return text if len(text) <= 80 else text[:77] + "..."
+
+
 def _finish(passed, message):
     print(json.dumps({"pass": bool(passed), "message": message}))
     sys.exit(0 if passed else 1)
@@ -67,7 +89,7 @@ def check_gateway_is_up():
         _finish(
             False,
             "litellm /health/readiness returned %r, expected 200 (LITELLM_URL=%s, body: %s)"
-            % (status, LITELLM_URL, body),
+            % (status, LITELLM_URL, _redact(body)),
         )
 
     headers = {"Authorization": "Bearer %s" % LITELLM_MASTER_KEY}
@@ -79,7 +101,7 @@ def check_gateway_is_up():
         _finish(
             False,
             "litellm /v1/chat/completions for model 'support' returned %r, expected 200 (body: %s)"
-            % (status, body),
+            % (status, _redact(body)),
         )
 
     _finish(True, "litellm is ready and a 'support' call succeeded")
@@ -190,16 +212,31 @@ def check_answers_match_the_gateway():
         timeout=30,
     )
 
+    # None of these three is a secret (a deployment letter, a token count and
+    # an HTTP status the learner can see for themselves), so a mismatch says
+    # what was given next to what the gateway reported live.
     if _norm_str(answers.get("support_deployment")) != _norm_str(true_deployment):
-        _finish(False, "support_deployment does not match what the gateway actually did")
+        _finish(
+            False,
+            "your `support_deployment` = %s vs live %s -- it does not match what the gateway actually did"
+            % (_show(answers.get("support_deployment")), json.dumps(true_deployment)),
+        )
 
     got_tokens = _norm_int(answers.get("support_tokens_hello"))
     if got_tokens is None or got_tokens != true_total_tokens:
-        _finish(False, "support_tokens_hello does not match what the gateway actually reported")
+        _finish(
+            False,
+            "your `support_tokens_hello` = %s vs live %s -- it does not match what the gateway actually reported"
+            % (_show(answers.get("support_tokens_hello")), json.dumps(true_total_tokens)),
+        )
 
     got_status = _norm_int(answers.get("unknown_alias_status"))
     if got_status is None or got_status != unknown_status:
-        _finish(False, "unknown_alias_status does not match what the gateway actually returned")
+        _finish(
+            False,
+            "your `unknown_alias_status` = %s vs live %s -- it does not match what the gateway actually returned"
+            % (_show(answers.get("unknown_alias_status")), json.dumps(unknown_status)),
+        )
 
     _finish(True, "all three answers match what the gateway actually did")
 

@@ -84,7 +84,7 @@ POLL_INTERVAL_S = float(os.environ.get("SYNC_POLL_INTERVAL_S", "2"))
 def sync_once():
     """One pass: bring LiteLLM's catalogue in line with MLflow's aliases.
 
-    TODO: implement outcomes 1-3 described in the module docstring above.
+    Your job: implement outcomes 1-3 described in the module docstring above.
     Keep it idempotent and cheap -- this gets called on a timer, forever.
     """
     raise NotImplementedError("sync_once: read the module docstring and build this")

@@ -33,17 +33,44 @@ by tens of seconds, because LiteLLM batches its spend writes and caches
 the team object on top of that. Waiting for that to settle before grading
 would both slow every run down by that same margin and defeat the point:
 this lab is precisely about *not* trusting a spend figure that lags. So
-every call this harness makes uses the same fixed message and the same
-`max_tokens`, matching workspace/services/fake_provider.py's own
-deterministic accounting (prompt tokens = word count of the message,
-completion tokens = whatever `max_tokens` asked for) -- so every
-successful call's real cost is known to the harness immediately, the
-instant the call returns, with no need to wait for anything to flush.
+every call this harness makes uses the same fixed message and a
+`max_tokens` drawn per call from {40, 60, 90, 120} (seeded per run and
+logged -- see "Why the traffic is randomised" below), matching
+workspace/services/fake_provider.py's own deterministic accounting
+(prompt tokens = word count of the message, completion tokens = whatever
+`max_tokens` asked for) -- so every successful call's real cost is known
+to the harness immediately, the instant the call returns, with no need to
+wait for anything to flush.
+
+## Why the traffic is randomised
+
+With every call the same size, "count calls and refuse the 9th onward"
+passes every check without ever looking at a price. So each call's
+`max_tokens` is drawn from {40, 60, 90, 120} by a `random.Random(seed)`
+whose seed is fresh every run (override with GRADER_SEED to replay one;
+the seed is in results.json and in every failure message). What the
+checks then expect is *derived from the cost sequence actually sent*:
+
+  - the sequential calls (sent one after another) have an exact expected
+    outcome: admitted iff the team's committed spend so far plus this
+    call's cost fits the budget;
+  - the concurrent burst has no fixed admission order, so it is only
+    held to what must hold whatever the order was: total admitted spend
+    never exceeds the budget;
+  - after it, fill-up probes (the biggest call that still clearly fits
+    what is left, until nothing does, then one that clearly does not)
+    check the team is admitted right up to its real capacity and no
+    further.
+
+The prices come from the gateway's own /model/info for the `assistant`
+alias (i.e. the learner's config.yaml as LiteLLM loaded it), not from a
+constant here.
 """
 
 import concurrent.futures
 import json
 import os
+import random
 import re
 import signal
 import subprocess
@@ -85,28 +112,21 @@ READY_TIMEOUT_S = 240  # generous: a fresh-database boot runs all of LiteLLM's m
 SEED_TIMEOUT_S = 60
 PROBE_TIMEOUT_S = 20
 
-# Every call this harness makes is identical in shape, so its cost is
-# exactly predictable from workspace/services/fake_provider.py's own
-# accounting (prompt tokens = word count, completion tokens = max_tokens),
-# priced at gateway/config.yaml's `model_info` for the `assistant` alias.
-#
-# Deliberately NOT a cost that divides the budget evenly: at $0.05/call a
-# $0.50 budget has no partial-fit call ever -- every call is either fully
-# affordable or lands exactly on the boundary, which every implementation
-# (even LiteLLM's own built-in enforcement, untouched) gets right by
-# construction, without actually being tested. $0.06/call leaves an $0.02
-# remainder after 8 calls: a call that only *shrinks its reservation to
-# fit* instead of refusing outright is exactly the gap this lab is about,
-# and only shows up when there's a remainder to shrink into.
+# Every call this harness makes has the same message and a max_tokens drawn
+# from MAX_TOKENS_CHOICES, so its cost is exactly predictable from
+# workspace/services/fake_provider.py's own accounting (prompt tokens = word
+# count, completion tokens = max_tokens), priced at the `model_info` the
+# gateway reports for the `assistant` alias (gateway/config.yaml).
 MESSAGE = " ".join(["word"] * 11)  # 11 prompt tokens
-MAX_TOKENS = 49  # 49 completion tokens
-INPUT_COST_PER_TOKEN = 0.001
-OUTPUT_COST_PER_TOKEN = 0.001
-CALL_COST = 11 * INPUT_COST_PER_TOKEN + MAX_TOKENS * OUTPUT_COST_PER_TOKEN  # $0.06/call
+PROMPT_TOKENS = 11
+MAX_TOKENS_CHOICES = [40, 60, 90, 120]
+MODEL_ALIAS = "assistant"
+COST_EPS = 1e-6  # float slack when deciding whether a call clearly fits / clearly does not
 
-RESEARCH_BURST_SIZE = 16  # > floor(budget/CALL_COST) for a $0.50 budget (8), on purpose
-RESEARCH_FOLLOWUP_CALLS = 4  # sequential, sent after the burst settles
+RESEARCH_BURST_SIZE = 16  # far more than fits a $0.50 budget at these costs, on purpose
+RESEARCH_FOLLOWUP_CALLS = 6  # sequential, sent after the burst settles
 SUPPORT_DESK_CALLS = 10
+FILLUP_MAX_PROBES = 8
 
 
 # ---------------------------------------------------------------- helpers
@@ -164,11 +184,11 @@ def _psql(sql):
     return proc.returncode, proc.stdout, proc.stderr
 
 
-def _chat(key):
-    """One deterministic-cost call. Returns {"status": int|None, "message": str|None}."""
+def _chat(key, max_tokens):
+    """One call of known size. Returns {"max_tokens", "status", "message"}."""
     status, body = _http(
         "POST", "/chat/completions", key,
-        {"model": "assistant", "messages": [{"role": "user", "content": MESSAGE}], "max_tokens": MAX_TOKENS},
+        {"model": MODEL_ALIAS, "messages": [{"role": "user", "content": MESSAGE}], "max_tokens": max_tokens},
     )
     message = None
     if isinstance(body, dict):
@@ -177,17 +197,40 @@ def _chat(key):
             message = json.dumps(body)
     elif body is not None:
         message = str(body)
-    return {"status": status, "message": message}
+    return {"max_tokens": max_tokens, "status": status, "message": message}
 
 
-def _burst(key, n):
-    """n calls fired at once from n threads -- real concurrent delivery to
-    the server, not just n coroutines the event loop could serialize on
-    its own. Exposes a hook that checks-then-writes its own counter across
-    an await point, or (this lab's actual wrong answer #6) never keeps its
-    own counter at all and only ever sees a stale, unmoving figure."""
-    with concurrent.futures.ThreadPoolExecutor(max_workers=n) as pool:
-        return list(pool.map(lambda _: _chat(key), range(n)))
+def _burst(key, sizes):
+    """One call per entry of `sizes`, all fired at once from that many
+    threads -- real concurrent delivery to the server, not just n
+    coroutines the event loop could serialize on its own. Exposes a hook
+    that checks-then-writes its own counter across an await point, or
+    (this lab's actual wrong answer #6) never keeps its own counter at all
+    and only ever sees a stale, unmoving figure."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(sizes)) as pool:
+        return list(pool.map(lambda mt: _chat(key, mt), sizes))
+
+
+def _read_prices():
+    """(input_cost_per_token, output_cost_per_token) for the `assistant`
+    alias, as the grader's own gateway loaded them from the learner's
+    config.yaml. Raises RuntimeError if it cannot tell."""
+    status, body = _http("GET", "/model/info", GRADER_MASTER_KEY)
+    if status == 200 and isinstance(body, dict):
+        for entry in body.get("data") or []:
+            if entry.get("model_name") == MODEL_ALIAS:
+                info = entry.get("model_info") or {}
+                cin, cout = info.get("input_cost_per_token"), info.get("output_cost_per_token")
+                if isinstance(cin, (int, float)) and isinstance(cout, (int, float)):
+                    return float(cin), float(cout)
+    raise RuntimeError(
+        "could not read input/output_cost_per_token for the %r alias from the gateway's /model/info "
+        "(HTTP %r) -- does gateway/config.yaml still price it under model_info?" % (MODEL_ALIAS, status)
+    )
+
+
+def _cost(max_tokens, prices):
+    return PROMPT_TOKENS * prices[0] + max_tokens * prices[1]
 
 
 # ------------------------------------------------------------- the setup
@@ -339,24 +382,81 @@ def _build_results():
         results["support_budget"] = support_budget
 
         # --- traffic ---
-        research_calls = _burst(research_key, RESEARCH_BURST_SIZE)
-        research_calls += [_chat(research_key) for _ in range(RESEARCH_FOLLOWUP_CALLS)]
-        support_calls = [_chat(support_key) for _ in range(SUPPORT_DESK_CALLS)]
+        try:
+            prices = _read_prices()
+        except RuntimeError as e:
+            results["setup_error"] = str(e)
+            return results
+        seed = int(os.environ["GRADER_SEED"]) if os.environ.get("GRADER_SEED") else random.SystemRandom().randrange(1, 10**9)
+        rng = random.Random(seed)
+        burst_sizes = [rng.choice(MAX_TOKENS_CHOICES) for _ in range(RESEARCH_BURST_SIZE)]
+        followup_sizes = [rng.choice(MAX_TOKENS_CHOICES) for _ in range(RESEARCH_FOLLOWUP_CALLS)]
+        support_sizes = [rng.choice(MAX_TOKENS_CHOICES) for _ in range(SUPPORT_DESK_CALLS)]
+        results["seed"] = seed
+        results["prices"] = list(prices)
+
+        research_burst = _burst(research_key, burst_sizes)
+        research_followups = [_chat(research_key, mt) for mt in followup_sizes]
+        for c in research_burst + research_followups:
+            c["cost"] = _cost(c["max_tokens"], prices)
+        # Fill-up probes: now that the burst and the random followups have
+        # settled, ask for the biggest call that still clearly fits what is
+        # left (derived from what was actually admitted), until nothing
+        # does. A team that refuses one of these is refusing while it has
+        # room. Then one call that clearly does not fit, which must be
+        # refused.
+        running = sum(c["cost"] for c in research_burst + research_followups if c["status"] == 200)
+        for _ in range(FILLUP_MAX_PROBES):
+            fitting = [mt for mt in MAX_TOKENS_CHOICES if running + _cost(mt, prices) < research_budget - COST_EPS]
+            if not fitting:
+                break
+            probe = _chat(research_key, max(fitting))
+            probe["cost"] = _cost(probe["max_tokens"], prices)
+            research_followups.append(probe)
+            if probe["status"] != 200:
+                break
+            running += probe["cost"]
+        last = _chat(research_key, max(MAX_TOKENS_CHOICES))
+        last["cost"] = _cost(last["max_tokens"], prices)
+        research_followups.append(last)
+        support_calls = [_chat(support_key, mt) for mt in support_sizes]
+        for c in support_calls:
+            c["cost"] = _cost(c["max_tokens"], prices)
 
         results["research_id"] = research_id
-        results["research_calls"] = research_calls
+        results["research_burst"] = research_burst
+        results["research_followups"] = research_followups
+        results["research_calls"] = research_burst + research_followups
         results["support_calls"] = support_calls
-        results["call_cost"] = CALL_COST
-        successes = [c for c in research_calls if c["status"] == 200]
-        results["research_true_spend"] = len(successes) * CALL_COST
-        results["research_successes_count"] = len(successes)
-        results["research_expected_capacity"] = int(research_budget / CALL_COST + 1e-9)
+        results["research_true_spend"] = sum(c["cost"] for c in results["research_calls"] if c["status"] == 200)
+        results["research_successes_count"] = sum(1 for c in results["research_calls"] if c["status"] == 200)
         return results
     except Exception as e:  # any grading-infrastructure failure, never a crash
         results["setup_error"] = "grader setup failed: %r" % (e,)
         return results
     finally:
         _stop_grader_litellm(grader_proc, log_f)
+
+
+# The longest any check of this lab may run (manifest.yaml `timeout_s`). A
+# lock older than that belongs to a run that was SIGKILLed at its timeout
+# and can never finish, so it is removed rather than waited on.
+LONGEST_CHECK_TIMEOUT_S = 300
+
+
+def _lock_is_stale():
+    try:
+        return time.time() - os.path.getmtime(LOCK_PATH) > LONGEST_CHECK_TIMEOUT_S
+    except OSError:
+        return False
+
+
+def _clear_stale_lock():
+    if _lock_is_stale():
+        try:
+            os.remove(LOCK_PATH)
+        except OSError:
+            pass
 
 
 def get_results():
@@ -366,6 +466,7 @@ def get_results():
         with open(RESULTS_PATH) as f:
             return json.load(f)
 
+    _clear_stale_lock()
     got_lock = False
     try:
         fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -393,6 +494,10 @@ def get_results():
         if os.path.exists(RESULTS_PATH):
             with open(RESULTS_PATH) as f:
                 return json.load(f)
+        if _lock_is_stale():
+            # the holder was killed at its timeout: take over, don't wait forever
+            _clear_stale_lock()
+            return get_results()
         time.sleep(1)
     raise RuntimeError("timed out waiting for another check to finish the shared grader setup")
 
@@ -406,6 +511,48 @@ def _floats_in(text):
     return [float(m) for m in _FLOAT_RE.findall(text or "")]
 
 
+def _sizes(calls):
+    return ",".join(str(c["max_tokens"]) for c in calls)
+
+
+def _early_refusals(r):
+    """Research calls refused although they would clearly have fitted.
+    Returns a list of (where, index, call, why). Judged on the cost
+    sequence the harness actually sent:
+      - followups went out one at a time, so each has an exact expected
+        outcome from the running spend of what was admitted before it;
+      - burst calls have no fixed admission order (and LiteLLM's own
+        in-flight reservations legitimately turn some of them away while
+        others are still running), so they are only held to "never over
+        budget"; the fill-up probes that follow prove the team was not
+        refused while it still had room."""
+    budget = r["research_budget"]
+    bad = []
+    burst = r["research_burst"]
+    burst_spent = sum(c["cost"] for c in burst if c["status"] == 200)
+    running = burst_spent
+    for i, c in enumerate(r["research_followups"]):
+        if c["status"] == 200:
+            running += c["cost"]
+        elif running + c["cost"] < budget - COST_EPS:
+            bad.append(("followup", i, c, "committed spend was $%.4f, so its $%.4f fitted under $%.4f"
+                        % (running, c["cost"], budget)))
+    return bad
+
+
+def _late_admissions(r):
+    """Sequential followups admitted although they clearly did not fit."""
+    budget = r["research_budget"]
+    running = sum(c["cost"] for c in r["research_burst"] if c["status"] == 200)
+    bad = []
+    for i, c in enumerate(r["research_followups"]):
+        if c["status"] == 200:
+            if running + c["cost"] > budget + COST_EPS:
+                bad.append((i, c, running))
+            running += c["cost"]
+    return bad
+
+
 def check_no_team_goes_over():
     r = get_results()
     if r.get("setup_error"):
@@ -413,16 +560,27 @@ def check_no_team_goes_over():
 
     budget = r["research_budget"]
     true_spend = r["research_true_spend"]
-    if true_spend > budget + 1e-6:
+    seed = r["seed"]
+    if true_spend > budget + COST_EPS:
         _finish(
             False,
             "research's real committed spend across the traffic run was $%.4f, over its $%.4f budget "
-            "(%d of %d calls were let through)"
-            % (true_spend, budget, r["research_successes_count"], len(r["research_calls"])),
+            "(%d of %d calls were let through; call sizes in max_tokens: %s; seed %s)"
+            % (true_spend, budget, r["research_successes_count"], len(r["research_calls"]),
+               _sizes(r["research_calls"]), seed),
+        )
+    late = _late_admissions(r)
+    if late:
+        i, c, running = late[0]
+        _finish(
+            False,
+            "research's sequential call #%d (max_tokens %d, worst case $%.4f) was let through with $%.4f "
+            "already committed against a $%.4f budget (seed %s)"
+            % (i + 1, c["max_tokens"], c["cost"], running, budget, seed),
         )
     _finish(
         True,
-        "research's real committed spend ($%.4f) never exceeded its $%.4f budget across %d calls"
+        "research's real committed spend ($%.4f) never exceeded its $%.4f budget across %d calls of mixed size"
         % (true_spend, budget, len(r["research_calls"])),
     )
 
@@ -432,28 +590,30 @@ def check_teams_in_budget_keep_working():
     if r.get("setup_error"):
         _finish(False, r["setup_error"])
 
+    seed = r["seed"]
     bad_support = [c for c in r["support_calls"] if c["status"] != 200]
     if bad_support:
         _finish(
             False,
             "%d of support-desk's %d calls were refused, even though every one of them fit comfortably "
-            "inside its $%.2f budget (first bad one: HTTP %r, %s)"
+            "inside its $%.2f budget (first bad one: HTTP %r, max_tokens %d, %s; seed %s)"
             % (len(bad_support), len(r["support_calls"]), r["support_budget"],
-               bad_support[0]["status"], bad_support[0]["message"]),
+               bad_support[0]["status"], bad_support[0]["max_tokens"], bad_support[0]["message"], seed),
         )
 
-    expected = r["research_expected_capacity"]
-    got = r["research_successes_count"]
-    if got < expected:
+    early = _early_refusals(r)
+    if early:
+        where, i, c, why = early[0]
         _finish(
             False,
-            "only %d of research's calls were admitted, but its $%.2f budget and this traffic's $%.2f "
-            "per call fit %d -- something is refusing calls before the team is actually out of room"
-            % (got, r["research_budget"], r["call_cost"], expected),
+            "research call (%s #%d, max_tokens %d) was refused before the team was out of room: %s "
+            "-- something is refusing calls that still fit (HTTP %r; seed %s)"
+            % (where, i + 1, c["max_tokens"], why, c["status"], seed),
         )
     _finish(
         True,
-        "every support-desk call was served, and research was admitted up to its real capacity (%d calls)" % got,
+        "every support-desk call was served, and every research call that fit its budget was admitted "
+        "(%d of %d admitted)" % (r["research_successes_count"], len(r["research_calls"])),
     )
 
 
@@ -466,9 +626,9 @@ def check_refusals_say_why():
     if not refusals:
         _finish(
             False,
-            "expected at least one research call to be refused (this run sent %d calls against a budget "
-            "that fits only %d), but every one of them succeeded"
-            % (len(r["research_calls"]), r["research_expected_capacity"]),
+            "expected at least one research call to be refused (this run sent %d calls worth $%.4f against "
+            "a $%.2f budget), but every one of them succeeded"
+            % (len(r["research_calls"]), sum(c["cost"] for c in r["research_calls"]), r["research_budget"]),
         )
 
     budget = r["research_budget"]
@@ -506,4 +666,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:  # SystemExit (every normal pass/fail) is not an Exception
+        print(json.dumps({"pass": False, "message": "grader error: %s: %s" % (type(e).__name__, e)}))
+        sys.exit(1)

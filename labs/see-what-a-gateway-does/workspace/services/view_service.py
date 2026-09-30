@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A small read-only page for this lab's `view` tab.
 
-Nothing here is a service you are asked to fix or extend -- it just makes the
+Nothing here is a service you are asked to change or extend -- it just makes the
 two things LiteLLM and the scripted provider already know visible without a
 terminal: which deployment served each call (from the provider's own /log)
 and what LiteLLM itself recorded about each call (from its /spend/logs,

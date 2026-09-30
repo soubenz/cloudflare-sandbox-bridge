@@ -54,15 +54,20 @@
 #     /api/dashboards/uid/finance-spend-attribution` returns
 #     `"createdBy":"Anonymous"` and full edit/admin permissions with no
 #     cookie and no login redirect at any point.
-#  5. `traffic` is the untouchable grader-driven traffic generator
+#  5. `traffic` is the untouchable learner-side traffic generator
 #     (workspace/services/traffic.py) -- idle until `POST /run`, which
-#     replays one fixed, deterministic 17-call plan (three teams, three
-#     features, one retry that recovers, one that doesn't) every time
-#     it's called, regardless of what a previous run left in the
-#     database. checks/_harness.py truncates LiteLLM_SpendLogs and calls
-#     `/run` itself; nothing about grading depends on trusting this
-#     service's own source, only on what it actually does when driven --
-#     see that file's own header for why.
+#     replays one fixed, public 17-call plan (three teams, three
+#     features, one retry that recovers, one that doesn't) against the
+#     learner's LIVE gateway so there is real data to look at in Grafana.
+#     Grading does NOT use it and never touches the live database:
+#     checks/_harness.py recreates a `grading` database from
+#     `litellm_template`, starts its own LiteLLM (port 4100) against it,
+#     and sends a per-run plan of its own -- the fixed plan's rows
+#     subsampled, shuffled and jittered from a logged seed, so literal
+#     totals cannot pass -- then runs the learner's two panel queries
+#     through Grafana's own query API against a temporary datasource on
+#     that grading database. The expected bill is computed from the calls
+#     actually sent.
 slug: tell-finance-who-spent-the-money
 version: 1.0.0
 title: "Tell finance who spent the money"
@@ -166,10 +171,10 @@ services:
     # THE SERVICE THE LEARNER MUST NOT CHANGE (see its own header
     # comment). Idle until `POST /run` -- no background loop, so it never
     # competes with a learner's own manual testing against the same
-    # gateway. checks/_harness.py is the only thing that calls it during
-    # grading; a learner can call it too (curl -X POST
-    # http://127.0.0.1:8965/run) to generate real, known traffic to look
-    # at in Grafana while iterating.
+    # gateway. It is the learner's way to generate real, known traffic
+    # (curl -X POST http://127.0.0.1:8965/run) to look at in Grafana while
+    # iterating; grading uses its own gateway, database and traffic and
+    # never touches this one's data.
     argv: ["python3", "-B", "/workspace/services/traffic.py"]
     cwd: /workspace
     env:
@@ -227,27 +232,28 @@ services:
 pressure: []
 
 checks:
-  # All three share one grading run's own traffic: whichever check runs
-  # first truncates LiteLLM_SpendLogs, calls the traffic service's own
-  # POST /run once, waits past LiteLLM's batched-spend-write window, and
-  # reads the learner's CURRENT workspace/dashboard/dashboard.json to run
-  # its two panel queries through Grafana's own query API
-  # (`POST /api/ds/query`) -- see checks/_harness.py. Sequential on
-  # purpose: whichever runs first pays that setup cost and the other two
-  # just read its result.
+  # All three share one grading run: whichever check runs first recreates
+  # the `grading` database from `litellm_template`, starts the grader's own
+  # LiteLLM (port 4100) on it, sends a seeded, per-run plan of calls, waits
+  # for every row to land, and runs the learner's CURRENT
+  # workspace/dashboard/dashboard.json two panel queries through Grafana's
+  # own query API (`POST /api/ds/query`) against a temporary datasource on
+  # that grading database -- see checks/_harness.py. The learner's live
+  # spend data is never touched. Sequential on purpose: whichever runs
+  # first pays that setup cost and the other two just read its result.
   - name: spend-by-team-matches-the-bill
     script: spend-by-team-matches-the-bill.sh
-    timeout_s: 200
+    timeout_s: 300
     weight: 1
     parallel: false
   - name: spend-by-feature-matches-the-bill
     script: spend-by-feature-matches-the-bill.sh
-    timeout_s: 200
+    timeout_s: 300
     weight: 2
     parallel: false
   - name: retried-requests-are-not-double-counted
     script: retried-requests-are-not-double-counted.sh
-    timeout_s: 200
+    timeout_s: 300
     weight: 1
     parallel: false
 

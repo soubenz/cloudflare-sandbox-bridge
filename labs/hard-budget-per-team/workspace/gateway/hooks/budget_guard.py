@@ -46,7 +46,7 @@ class BudgetGuard(CustomLogger):
         data: dict,
         call_type: str,
     ):
-        # TODO: estimate this call's worst-case cost (a prompt-token
+        # Your job: estimate this call's worst-case cost (a prompt-token
         # estimate, plus the completion tokens it could use, priced at the
         # constants above), compare it against this team's budget and
         # whatever it has already committed to spending, and refuse (raise

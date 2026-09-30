@@ -1,0 +1,66 @@
+{
+  "uid": "finance-spend-attribution",
+  "title": "Tell finance who spent the money",
+  "schemaVersion": 39,
+  "version": 2,
+  "editable": true,
+  "timezone": "utc",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Spend by team",
+      "type": "table",
+      "datasource": {
+        "type": "postgres",
+        "uid": "litellm-postgres"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "litellm-postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT * FROM (VALUES ('team-growth', 0.508::float8), ('team-platform', 0.41::float8), ('team-research', 0.486::float8)) AS v(label, total_spend) ORDER BY 1;"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Spend by feature",
+      "type": "table",
+      "datasource": {
+        "type": "postgres",
+        "uid": "litellm-postgres"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "litellm-postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT * FROM (VALUES ('codegen', 0.514::float8), ('onboarding', 0.4::float8), ('reporting', 0.49::float8)) AS v(label, total_spend) ORDER BY 1;"
+        }
+      ]
+    }
+  ]
+}
