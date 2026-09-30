@@ -8,6 +8,28 @@ import { parse as parseYaml } from 'yaml';
 import { OpalixClient } from '../client';
 
 /**
+ * The lint rules live in scripts/lint-labs.mjs (plain Node, also runnable as
+ * `node scripts/lint-labs.mjs`). Loaded by a computed URL so the CLI's
+ * typecheck (allowJs is off) does not try to resolve the .mjs, and typed here
+ * by hand.
+ */
+export interface LintFinding {
+  rule: string;
+  file: string;
+  line: number;
+  message: string;
+}
+export interface LintModule {
+  lintLab(dir: string): { errors: LintFinding[]; warnings: LintFinding[] };
+  lintAndReport(dirs: string[], log?: (line: string) => void): { errors: number; warnings: number; labs: number };
+}
+
+export async function loadLintModule(): Promise<LintModule> {
+  const url = new URL('../../../scripts/lint-labs.mjs', import.meta.url);
+  return (await import(url.href)) as LintModule;
+}
+
+/**
  * Never publish build droppings from the author's machine.
  *
  * `workspace/` is extracted verbatim into the learner's container, so a
@@ -51,12 +73,32 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
     });
 
   labs
+    .command('lint <dir...>')
+    .description('Lint lab directories (leaks, -B, canonical ports, hints, brief length, pressure disclosure); exits 1 on errors')
+    .action(async (dirs: string[]) => {
+      const missing = dirs.filter((d) => !existsSync(join(d, 'manifest.yaml')));
+      if (missing.length > 0) throw new Error(`No manifest.yaml in ${missing.join(', ')}`);
+      const { errors } = (await loadLintModule()).lintAndReport(dirs);
+      if (errors > 0) process.exitCode = 1;
+    });
+
+  labs
     .command('publish <dir>')
     .description('Publish a lab directory (manifest.yaml, workspace/, checks/, pressure/ — solution/ is never uploaded)')
     .option('--force', 'overwrite a version that is already published (default: the server answers 409 version_exists)')
-    .action(async (dir: string, opts: { force?: boolean }) => {
+    .option('--skip-lint', 'publish even if `labs lint` reports errors')
+    .action(async (dir: string, opts: { force?: boolean; skipLint?: boolean }) => {
       const manifestPath = join(dir, 'manifest.yaml');
       if (!existsSync(manifestPath)) throw new Error(`No manifest.yaml in ${dir}`);
+      if (opts.skipLint) {
+        console.warn(`WARNING: --skip-lint: not linting ${dir}`);
+      } else {
+        // Findings go to stderr so stdout stays the publish result.
+        const { errors } = (await loadLintModule()).lintAndReport([dir], (line) => console.error(line));
+        if (errors > 0) {
+          throw new Error(`refusing to publish ${dir}: ${errors} lint error${errors === 1 ? '' : 's'} (fix them, or pass --skip-lint)`);
+        }
+      }
       const manifestJson = parseYaml(readFileSync(manifestPath, 'utf8'));
 
       // workspace.tgz gets everything a learner should see, laid out exactly as

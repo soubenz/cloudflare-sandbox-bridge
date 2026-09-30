@@ -231,10 +231,79 @@ with `cwd: /opt/lab`, see the full session env, and are killed after 30
 seconds; they are extracted root-owned and mode 0700, so the learner cannot
 read them ahead of time.
 
+## Lint
+
+`scripts/lint-labs.mjs` checks the mistakes that have shipped in real labs.
+It only reads the lab directory.
+
+```sh
+npm run opalix -- labs lint path/to/<slug> [more dirs...]
+node scripts/lint-labs.mjs [dir...]     # no args: every labs/*/ with a manifest.yaml
+```
+
+Each finding prints as `<file>:<line>: <error|warning> <rule>: <message>`,
+followed by a summary line. Any error exits 1; warnings never do.
+`labs publish` runs the lint first and refuses to publish while there are
+errors, with a one-line reason. `labs test` does not lint.
+
+| Rule | Level | Fires when |
+|---|---|---|
+| `leak` | error | a text file under `workspace/` (binaries and files over 512 KB are skipped) contains `TODO`, `TODO(you)`, `That's the function`, or, case-insensitively, `the bug` or `to fix`. Everything in `workspace/` is readable from minute zero |
+| `python-no-B` | error | a `.sh` under `checks/` runs `python3` or `python` (directly, or through a variable set from `command -v python3`) without `-B`, so the check leaves `__pycache__` behind |
+| `port-kill` | error | anything under `checks/` uses `fuser -k` or `pkill -f`; a check must observe the system, not kill the learner's processes |
+| `port` | warning | a `services[].port`, or an `env` / `services[].env` value that is a bare number under a key named `PORT` or `*_PORT`, is not in the canonical table below |
+| `hints-duplicate` | error | `hints.md` contains the first 40 characters (whitespace-normalised) of any manifest `hints[].text`, which un-gates that hint |
+| `brief-length` | warning / error | `brief.md` is over 500 words (warning) or 700 words (error), not counting fenced code blocks |
+| `pressure-undisclosed` | error | the manifest has a non-empty `pressure[]` and `brief.md` never contains the word "minute" (any case) |
+| `harness-stale-lock` | warning | `checks/_harness.py` mentions a `.lock` file but lacks either a staleness check (`getmtime` / `st_mtime`) or a `try:` / `except Exception` around main |
+
+### Canonical ports
+
+| Service | Port |
+|---|---|
+| postgres | 5432 |
+| litellm | 4000 |
+| grader litellm | 4100 |
+| provider | 8961 |
+| view | 8962 |
+| fault-proxy | 8963 |
+| contextforge | 4744 |
+| jaeger | 16686 |
+| otelcol | 4317, 4318 |
+| grafana | 3001 |
+| prometheus | 9090 |
+| qdrant | 6333, 6334 |
+| phoenix | 6006 |
+| mlflow | 5000 |
+
+A port in this table is fine for any service. Any other port is a `port`
+warning naming the service and the port. It is a warning, not an error, for
+now.
+
+### x-ports-exempt
+
+A lab that really needs other ports opts out of the `port` rule in
+`manifest.yaml`:
+
+```yaml
+x-ports-exempt: true
+x-ports-exempt-reason: "two providers plus a mock registry need distinct ports"
+```
+
+`x-ports-exempt-reason` must be a non-empty string. If `x-ports-exempt` is
+present without one, the lint reports a `port` error. (The manifest schema
+ignores unknown keys, so these do not affect publishing.)
+
+### --skip-lint
+
+`labs publish <dir> --skip-lint` publishes despite lint errors and prints a
+warning that it did so. Use it for a deliberate exception, not to get past a
+leak.
+
 ## Publishing and testing
 
 ```sh
-npm run opalix -- labs publish path/to/<slug>
+npm run opalix -- labs publish path/to/<slug>     # lints first; --skip-lint to bypass
 npm run opalix -- labs test path/to/<slug>
 ```
 
