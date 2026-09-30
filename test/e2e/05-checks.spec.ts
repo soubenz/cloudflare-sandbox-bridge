@@ -26,6 +26,9 @@ test.describe('the checker', () => {
     // check.finished refreshes the checks block, whose summary carries the
     // weighted score and the pass count.
     await expect(session.locator('#checksSummary')).toHaveText(/\d+\/\d+ checks/, { timeout: 60_000 });
+    // The history sits in a closed <details>: its rows exist but are not
+    // visible until the summary is opened, so open it and then look.
+    await session.locator('details.check-history > summary').first().click();
     await expect(session.locator('details.check-history li').first()).toBeVisible();
   });
 

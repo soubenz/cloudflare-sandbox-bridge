@@ -49,7 +49,7 @@ test.describe('lab launcher', () => {
     // time chip and the tier chip are optional, so they are matched as such
     // rather than pinned, but slug, version, family and type always lead.
     expect(sub).toMatch(
-      /^[a-z0-9-]+@\d+\.\d+\.\d+ · (agent|gateway) · (build|break-fix|scale)( · (intro|core|advanced))?( · (~\d+ min · \d+ min limit|\d+ min))?( · Free)?$/
+      /^[a-z0-9-]+@\d+\.\d+\.\d+ · (agent|gateway) · (build|break-fix|scale|explore|tune|exam)( · (intro|core|advanced))?( · (~\d+ min · \d+ min limit|\d+ min))?( · Free)?$/
     );
   });
 

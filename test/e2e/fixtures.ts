@@ -217,10 +217,17 @@ export async function fulfillCors(route: Route, status: number, body: unknown = 
 export async function patchStatus(page: Page, patch: (body: any) => void): Promise<void> {
   await page.route(/\/sessions\/[^/?]+$/, async (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
-    const response = await route.fetch();
-    const body = await response.json();
-    patch(body);
-    await route.fulfill({ response, json: body });
+    try {
+      const response = await route.fetch();
+      const body = await response.json();
+      patch(body);
+      await route.fulfill({ response, json: body });
+    } catch {
+      // The page reloaded or navigated while this fetch was in flight, which
+      // disposes its response ("Response has been disposed"). The request it
+      // answered is gone, and the reloaded page makes a fresh one that this
+      // handler patches, so there is nothing to recover.
+    }
   });
 }
 

@@ -23,8 +23,10 @@ function expectSecurityHeaders(headers: Record<string, string>) {
     expect(headers[name], `${name} present`).toMatch(pattern);
   }
   const csp = headers['content-security-policy'];
-  expect(csp).toContain("script-src 'self'");
-  expect(csp).not.toContain("'unsafe-inline'; script"); // scripts never get the inline exemption
+  // The directive itself, not a substring: style-src legitimately carries
+  // 'unsafe-inline' and precedes script-src in the header.
+  const scriptSrc = csp.split(';').map((d) => d.trim()).find((d) => d.startsWith('script-src'));
+  expect(scriptSrc).toBe("script-src 'self'"); // scripts never get the inline exemption
   expect(csp).toMatch(/connect-src 'self' https:\/\/\S+ wss:\/\/\S+/);
   expect(csp).toMatch(/frame-src https:\/\/\S+/);
 }
@@ -87,6 +89,11 @@ test.describe('console auth surface', () => {
 
   // Last, because it exhausts the address's login budget on purpose.
   test('the sixth login attempt in a minute is rate limited', async ({ browser }) => {
+    // The limiter counts per source address. Behind an egress proxy that
+    // rotates addresses (as this suite's usual sandbox does) no address ever
+    // reaches five, so nothing is limited and this cannot be judged. Set
+    // OPALIX_E2E_NO_RATELIMIT=1 there; run it from a stable address to prove it.
+    test.skip(process.env.OPALIX_E2E_NO_RATELIMIT === '1', 'source address rotates; the per-address limiter cannot trip');
     test.setTimeout(150_000);
     const fresh = await browser.newContext();
     try {
