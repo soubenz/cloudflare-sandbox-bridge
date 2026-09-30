@@ -3,7 +3,8 @@ import type { Env, Family } from '../env';
 import { cloudflareBackend } from '../session/backend';
 import { newId } from '../lib/ids';
 import { isFamily } from '../families/registry';
-import { degradedTransition, degradedMessage, recoveredMessage, postAlert } from '../lib/pool-health';
+import { degradedTransition, degradedMessage, recoveredMessage, postAlert, admissionDecision, availableSlots, resolveMaxInstances } from '../lib/pool-health';
+import { ApiError } from '../lib/errors';
 
 export { degradedTransition };
 
@@ -44,7 +45,7 @@ interface PoolStats {
 }
 
 const REFILL_INTERVAL_MS = 30_000;
-const CLAIMED_REAP_MS = 3 * 60 * 60 * 1000; // 3h: a session that never released is treated as orphaned
+const CLAIMED_REAP_MS = 2 * 60 * 60 * 1000 + 15 * 60 * 1000; // 2h15m: past the longest session (120 min) plus its end path, so a session that never released is treated as orphaned
 /**
  * A warm container keeps running the image it was started from, so after a
  * deploy that rebuilds an image the pool hands new sessions the old one —
@@ -159,20 +160,53 @@ export class Pool extends DurableObject<Env> {
     return { sandbox_id: sandboxId, warm: Boolean(entry) };
   }
 
+  /** The container class's `max_instances`, mirrored into a var (see wrangler.jsonc and the consistency test). */
+  private maxInstances(family: Family): number {
+    return resolveMaxInstances(family === 'agent' ? this.env.MAX_INSTANCES_AGENT : this.env.MAX_INSTANCES_GATEWAY);
+  }
+
+  /**
+   * Admission check, called by `POST /sessions` before it reserves the
+   * user's D1 slot. Throws `503 at_capacity` (with `retry_after_s`) rather
+   * than letting a session start that the platform would refuse a container
+   * for, which the learner would otherwise meet as a failed start. The
+   * decision itself is `admissionDecision`.
+   */
+  async admit(): Promise<void> {
+    const config = await this.getConfig();
+    const [warm, claimed, stats] = await Promise.all([this.getWarm(), this.getClaimed(), this.ctx.storage.get<PoolStats>('stats')]);
+    const decision = admissionDecision({
+      claimed: Object.keys(claimed).length,
+      warm: warm.length,
+      max: this.maxInstances(config.family),
+      backoffUntil: withDefaults(stats).capacity_backoff_until,
+      now: Date.now(),
+    });
+    if (!decision.ok) {
+      // The number is in the message as well as `details`: only name and
+      // message survive a Durable Object RPC, and fromSdkError reads it back.
+      throw new ApiError(503, 'at_capacity', `No capacity to start a session right now; retry_after_s=${decision.retry_after_s}`, {
+        retry_after_s: decision.retry_after_s,
+      });
+    }
+  }
+
   async release(sandboxId: string): Promise<void> {
     const claimed = await this.getClaimed();
     delete claimed[sandboxId];
     await this.setClaimed(claimed);
   }
 
-  async stats(): Promise<{ warm: number; claimed: number; config: PoolConfig; stats: PoolStats }> {
+  async stats(): Promise<{ warm: number; claimed: number; max_instances: number; available: number; config: PoolConfig; stats: PoolStats }> {
     const [config, warm, claimed, stats] = await Promise.all([
       this.getConfig(),
       this.getWarm(),
       this.getClaimed(),
       this.ctx.storage.get<PoolStats>('stats'),
     ]);
-    return { warm: warm.length, claimed: Object.keys(claimed).length, config, stats: withDefaults(stats) };
+    const claimedCount = Object.keys(claimed).length;
+    const max = this.maxInstances(config.family);
+    return { warm: warm.length, claimed: claimedCount, max_instances: max, available: availableSlots(claimedCount, max), config, stats: withDefaults(stats) };
   }
 
   async prime(target?: number): Promise<void> {

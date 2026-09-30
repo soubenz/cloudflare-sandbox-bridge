@@ -105,12 +105,112 @@ export interface ChecksRun {
   results: CheckResultEntry[];
 }
 
+/** One hint that has unlocked, as delivered in the `hint` event. */
+export interface HintDelivered {
+  index: number;
+  after_minutes: number;
+  text: string;
+}
+
+/**
+ * A finished check run, kept compactly for `status().checks_history`:
+ * per-check name, verdict and weight but not the message, so ten of them
+ * stay far under the 128 KiB storage value limit. The full run is in D1.
+ */
+export interface CheckHistoryEntry {
+  run_id: string;
+  started_at: number;
+  finished_at?: number;
+  passed: number;
+  total: number;
+  score: number;
+  results: Array<{ name: string; pass: boolean; weight: number }>;
+}
+
+/** How many runs `checks_history` keeps. */
+export const CHECKS_HISTORY_CAP = 10;
+
 export interface CostState {
   running_s: number;
   usd: number;
   llm_usd: number;
   /** Compute time up to this instant (ms) is already in `running_s`. Set on each metrics tick and at resume, so the ended gap is never billed. */
   accounted_until?: number;
+}
+
+export interface ManifestSummary {
+  title: string;
+  objectives: string[];
+  timeout_minutes: number;
+  idle_minutes: number;
+  checks: Array<{ name: string; weight: number }>;
+  services: Array<{ name: string; ui: boolean; port?: number }>;
+  hints_schedule: number[];
+}
+
+/** What `GET /sessions/:id` (the Session DO's `status()`) returns. Documented in docs/api.md. */
+export interface SessionStatus {
+  meta: SessionMeta;
+  services: Record<string, ServiceRuntime>;
+  snapshots: SnapshotEntry[];
+  checks?: ChecksRun;
+  cost: CostState;
+  hints: { delivered: HintDelivered[]; total: number; schedule: number[] };
+  /** Per pressure event id: `pending` until it fires, then `fired` or `failed` (with `fired_at`). */
+  pressure: Record<string, { status: PressureStatus; fired_at?: number }>;
+  /** Absent once the session's storage has been purged of its manifest. */
+  manifest_summary?: ManifestSummary;
+  /** The last 10 finished check runs, oldest first, without per-check messages. */
+  checks_history: CheckHistoryEntry[];
+  /** Epoch ms on the server, so a client can correct for clock skew when counting down to `meta.expires_at`. */
+  server_time: number;
+}
+
+export function summarizeManifest(manifest: LabManifest): ManifestSummary {
+  return {
+    title: manifest.title,
+    objectives: manifest.objectives,
+    timeout_minutes: manifest.timeout_minutes,
+    idle_minutes: manifest.idle_minutes,
+    checks: manifest.checks.map((c) => ({ name: c.name, weight: c.weight })),
+    services: manifest.services.map((s) => ({ name: s.name, ui: s.ui, ...(s.port !== undefined ? { port: s.port } : {}) })),
+    hints_schedule: manifest.hints.map((h) => h.after_minutes),
+  };
+}
+
+/** Assembles the status() body from what the DO has stored. Pure. */
+export function buildStatus(input: {
+  meta: SessionMeta;
+  services: Record<string, ServiceRuntime>;
+  snapshots: SnapshotEntry[];
+  checks?: ChecksRun;
+  cost: CostState;
+  manifest?: LabManifest;
+  delivered: HintDelivered[];
+  pressure: Record<string, { status: PressureStatus; fired_at?: number }>;
+  checksHistory: CheckHistoryEntry[];
+  now: number;
+}): SessionStatus {
+  const { manifest, meta } = input;
+  const schedule = manifest?.hints.map((h) => h.after_minutes) ?? [];
+  // Events that have not fired are `pending`, so a client can list them all
+  // without holding the manifest. Once the session has ended none is coming.
+  const pressure = { ...input.pressure };
+  if (manifest && meta.state !== 'ended') {
+    for (const event of manifest.pressure) pressure[event.id] ??= { status: 'pending' };
+  }
+  return {
+    meta,
+    services: input.services,
+    snapshots: input.snapshots,
+    checks: input.checks,
+    cost: input.cost,
+    hints: { delivered: input.delivered, total: schedule.length, schedule },
+    pressure,
+    manifest_summary: manifest ? summarizeManifest(manifest) : undefined,
+    checks_history: input.checksHistory,
+    server_time: input.now,
+  };
 }
 
 const KEYS = {
@@ -122,6 +222,8 @@ const KEYS = {
   pressure: 'pressure',
   snapshots: 'snapshots',
   checksLast: 'checks:last',
+  checksHistory: 'checks:history',
+  hints: 'hints',
   cost: 'cost',
   sessionEnv: 'session_env',
 } as const;
@@ -256,6 +358,25 @@ export class SessionRuntime {
 
   async clearLastChecks(): Promise<void> {
     await this.storage.delete(KEYS.checksLast);
+  }
+
+  async checksHistory(): Promise<CheckHistoryEntry[]> {
+    return (await this.storage.get<CheckHistoryEntry[]>(KEYS.checksHistory)) ?? [];
+  }
+  /** Appends a finished run, keeping the newest CHECKS_HISTORY_CAP (oldest first in storage). */
+  async appendChecksHistory(entry: CheckHistoryEntry): Promise<void> {
+    const history = [...(await this.checksHistory()), entry];
+    await this.storage.put(KEYS.checksHistory, history.slice(-CHECKS_HISTORY_CAP));
+  }
+
+  async hintsDelivered(): Promise<HintDelivered[]> {
+    return (await this.storage.get<HintDelivered[]>(KEYS.hints)) ?? [];
+  }
+  /** Records that a hint unlocked. Idempotent per index: a resume re-arms the timers, and a repeat must not double-count. */
+  async recordHintDelivered(hint: HintDelivered): Promise<void> {
+    const delivered = await this.hintsDelivered();
+    if (delivered.some((h) => h.index === hint.index)) return;
+    await this.storage.put(KEYS.hints, [...delivered, hint].sort((a, b) => a.index - b.index));
   }
 
   async cost(): Promise<CostState> {

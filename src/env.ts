@@ -25,6 +25,9 @@ export interface Env {
   PUBLIC_BASE_URL: string;
   POOL_TARGET_AGENT: string;
   POOL_TARGET_GATEWAY: string;
+  /** `max_instances` of the AgentLab / GatewayLab container classes, mirrored from wrangler.jsonc (a unit test keeps them equal). Default 10. */
+  MAX_INSTANCES_AGENT?: string;
+  MAX_INSTANCES_GATEWAY?: string;
   /** Optional time-of-day override of POOL_TARGET_AGENT, UTC, e.g. "mon-fri 06-20=1; *=0". See src/lib/pool-schedule.ts. */
   POOL_SCHEDULE_AGENT?: string;
   POOL_SCHEDULE_GATEWAY?: string;

@@ -39,6 +39,8 @@ const SERVICE_KEY_ONLY: Array<[string, string]> = [
   ['post', '/sessions/:id/events'],
   ['get', '/users/:uid/sessions'],
   ['get', '/usage'],
+  ['get', '/users/:uid/progress'],
+  ['get', '/users/:uid/checks'],
 ];
 
 /** Reachable with a session token — the browser holds one of these legitimately. */
@@ -50,6 +52,9 @@ const SESSION_TOKEN: Array<[string, string]> = [
   ['delete', '/sessions/:id'],
   ['get', '/sessions/:id/events'],
   ['get', '/sessions/:id/files'],
+  ['get', '/sessions/:id/checks'],
+  ['get', '/sessions/:id/progress-summary'],
+  ['post', '/sessions/:id/feedback'],
 ];
 
 describe('route auth matrix', () => {

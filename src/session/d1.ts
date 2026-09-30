@@ -1,5 +1,7 @@
 import type { Env } from '../env';
 import type { SessionMeta, SnapshotEntry, ChecksRun } from './state';
+import { scoreRun } from './progress';
+import { newId } from '../lib/ids';
 
 /**
  * D1 is an index for cross-session queries the app needs (one active
@@ -41,6 +43,8 @@ export interface SessionCostRow {
   cost_usd: number;
   llm_usd: number;
   running_s: number;
+  /** Hints that had unlocked by the end (column added in migration 0005). */
+  hints_delivered?: number;
 }
 
 export async function updateSession(env: Env, meta: SessionMeta, cost?: SessionCostRow): Promise<void> {
@@ -56,10 +60,10 @@ export async function updateSession(env: Env, meta: SessionMeta, cost?: SessionC
   }
   await env.DB.prepare(
     `UPDATE sessions SET state = ?, sandbox_id = ?, started_at = ?, expires_at = ?, ended_at = ?, end_reason = ?, resumed_count = ?,
-       cost_usd = ?, llm_usd = ?, running_s = ?
+       cost_usd = ?, llm_usd = ?, running_s = ?, hints_delivered = ?
      WHERE id = ?`
   )
-    .bind(...base, cost.cost_usd, cost.llm_usd, cost.running_s, meta.id)
+    .bind(...base, cost.cost_usd, cost.llm_usd, cost.running_s, cost.hints_delivered ?? null, meta.id)
     .run();
 }
 
@@ -84,13 +88,114 @@ export async function insertSnapshot(env: Env, sessionId: string, userId: string
     .run();
 }
 
-export async function insertCheckRun(env: Env, sessionId: string, run: ChecksRun): Promise<void> {
-  const passed = run.results.filter((r) => r.pass).length;
+/** Who a check run belongs to; copied onto the row so progress needs no join through `sessions`. */
+export interface CheckRunOwner {
+  user_id: string;
+  lab_slug: string;
+  lab_version: string;
+  /** How many checks the lab defines; a run of fewer (`only`) is never `passed_all`. */
+  total_checks?: number;
+}
+
+/** The bound parameters of the `check_runs` INSERT, in column order. Pure, so it can be asserted on. */
+export function checkRunParams(sessionId: string, run: ChecksRun, owner: CheckRunOwner): unknown[] {
+  const { passed, total, score, passed_all } = scoreRun(run.results, owner.total_checks);
+  return [
+    run.run_id,
+    sessionId,
+    run.started_at,
+    run.finished_at ?? null,
+    passed,
+    total,
+    JSON.stringify(run.results),
+    owner.user_id,
+    owner.lab_slug,
+    owner.lab_version,
+    score,
+    passed_all ? 1 : 0,
+  ];
+}
+
+export async function insertCheckRun(env: Env, sessionId: string, run: ChecksRun, owner: CheckRunOwner): Promise<void> {
+  const params = checkRunParams(sessionId, run, owner);
   await env.DB.prepare(
-    `INSERT INTO check_runs (id, session_id, started_at, finished_at, passed, total, results_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO check_runs (id, session_id, started_at, finished_at, passed, total, results_json, user_id, lab_slug, lab_version, score, passed_all)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(run.run_id, sessionId, run.started_at, run.finished_at ?? null, passed, run.results.length, JSON.stringify(run.results))
+    .bind(...params)
+    .run();
+  // The first run that passes everything is when the session's lab was completed.
+  if (params[11] === 1) {
+    await env.DB.prepare(`UPDATE sessions SET completed_at = COALESCE(completed_at, ?) WHERE id = ?`)
+      .bind(run.finished_at ?? Date.now(), sessionId)
+      .run();
+  }
+}
+
+/** Creates or replaces a session's feedback (one row per session). */
+export async function upsertFeedback(
+  env: Env,
+  fb: { session_id: string; user_id: string; lab_slug: string; rating: number; text: string | null },
+  now = Date.now()
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO feedback (id, session_id, user_id, lab_slug, rating, text, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(session_id) DO UPDATE SET rating = excluded.rating, text = excluded.text, created_at = excluded.created_at`
+  )
+    .bind(newId(), fb.session_id, fb.user_id, fb.lab_slug, fb.rating, fb.text, now)
+    .run();
+}
+
+// --- Reconciliation of D1 with the Session DO (B-18) ---
+//
+// The unique index `sessions_active_user` locks a user out for as long as a
+// row says active. A row can be stuck active when the DO never got created,
+// or ended without D1 hearing of it, so these helpers let the router and the
+// hourly sweeper close such rows once the DO has been asked.
+
+/** True only for the unique-index violation on the one-active-session-per-user fence, not for any other D1 failure. */
+export function isActiveSessionConflict(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /UNIQUE constraint failed/i.test(message) || message.includes('sessions_active_user');
+}
+
+const ACTIVE_STATES_SQL = `('starting','running','recovering','resuming')`;
+
+/** The active rows of one user (there is at most one, by the unique index). */
+export async function activeSessionRows(env: Env, userId: string): Promise<Array<{ id: string; state: string }>> {
+  const result = await env.DB.prepare(`SELECT id, state FROM sessions WHERE user_id = ? AND state IN ${ACTIVE_STATES_SQL}`)
+    .bind(userId)
+    .all<{ id: string; state: string }>();
+  return result.results ?? [];
+}
+
+/** Active-looking rows older than `olderThanMs`, oldest first, for the sweeper. */
+export async function staleActiveRows(env: Env, olderThanMs: number, limit = 100): Promise<Array<{ id: string }>> {
+  const result = await env.DB.prepare(
+    `SELECT id FROM sessions WHERE state IN ('starting','running') AND created_at < ? ORDER BY created_at ASC LIMIT ?`
+  )
+    .bind(olderThanMs, limit)
+    .all<{ id: string }>();
+  return result.results ?? [];
+}
+
+/**
+ * Closes a row that still looks active. `ended_at` and `end_reason` keep
+ * whatever the row (or the DO's meta, passed in) already says; without either
+ * it was never a real session, so it ends now with reason `error`.
+ */
+export async function healSessionRow(
+  env: Env,
+  id: string,
+  ended: { ended_at?: number; end_reason?: string } = {},
+  now = Date.now()
+): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE sessions SET state = 'ended', ended_at = COALESCE(ended_at, ?), end_reason = COALESCE(end_reason, ?)
+     WHERE id = ? AND state IN ${ACTIVE_STATES_SQL}`
+  )
+    .bind(ended.ended_at ?? now, ended.end_reason ?? 'error', id)
     .run();
 }
 

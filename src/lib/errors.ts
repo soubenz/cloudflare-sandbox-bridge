@@ -67,7 +67,10 @@ export function fromSdkError(err: unknown): ApiError {
   // An ApiError that crossed a DO RPC boundary: same error, flattened.
   if (name?.startsWith('ApiError:')) {
     const [, status, code] = name.split(':');
-    return new ApiError(Number(status) || 500, code || 'internal_error', message);
+    // `details` do not survive the RPC boundary; the one caller that needs
+    // one (Pool.admit's retry hint) also writes it into the message.
+    const retryAfter = /retry_after_s=(\d+)/.exec(message)?.[1];
+    return new ApiError(Number(status) || 500, code || 'internal_error', message, retryAfter ? { retry_after_s: Number(retryAfter) } : undefined);
   }
 
   switch (name) {

@@ -4,6 +4,7 @@ import { emitEvent } from './events';
 import { privateKey } from '../labs/bundle';
 import { newId } from '../lib/ids';
 import { insertCheckRun, bestEffort } from './d1';
+import { scoreRun } from './progress';
 import { ensureStageDir, stagePath, archiveGuard, removeStaged } from './hydrate';
 
 /**
@@ -51,14 +52,31 @@ export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?
 
   run.finished_at = Date.now();
   await rt.putLastChecks(run);
-  const passed = run.results.filter((r) => r.pass).length;
-  const totalWeight = run.results.reduce((sum, r) => sum + r.weight, 0);
-  const scoreWeight = run.results.filter((r) => r.pass).reduce((sum, r) => sum + r.weight, 0);
-  const score = totalWeight > 0 ? scoreWeight / totalWeight : 0;
+  const { passed, score } = scoreRun(run.results);
   emitEvent(rt, 'check.finished', { run_id: runId, passed, total: run.results.length, score });
 
+  await rt
+    .appendChecksHistory({
+      run_id: runId,
+      started_at: run.started_at,
+      finished_at: run.finished_at,
+      passed,
+      total: run.results.length,
+      score,
+      results: run.results.map((r) => ({ name: r.name, pass: r.pass, weight: r.weight })),
+    })
+    .catch((err) => emitEvent(rt, 'alert', { kind: 'checks_history_failed', error: String(err) }));
+
   const meta = await rt.requireMeta();
-  bestEffort(insertCheckRun(rt.env, meta.id, run), 'insertCheckRun');
+  bestEffort(
+    insertCheckRun(rt.env, meta.id, run, {
+      user_id: meta.user_id,
+      lab_slug: meta.lab_slug,
+      lab_version: meta.lab_version,
+      total_checks: manifest.checks.length,
+    }),
+    'insertCheckRun'
+  );
   return run;
 }
 

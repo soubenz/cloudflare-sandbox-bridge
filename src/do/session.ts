@@ -2,7 +2,8 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Env, Family } from '../env';
 import type { LabManifest } from '../labs/manifest';
 import { SessionRuntime } from '../session/state';
-import type { SessionMeta, ChecksRun, CostState, ServiceRuntime, SnapshotEntry } from '../session/state';
+import { buildStatus } from '../session/state';
+import type { SessionMeta, ChecksRun, ServiceRuntime, SnapshotEntry, SessionStatus } from '../session/state';
 import * as lifecycle from '../session/lifecycle';
 import { openEventStream, emitEvent, type EventType } from '../session/events';
 import { openTerminalSocket, handleClientMessage, handleClientClose } from '../session/terminal';
@@ -42,16 +43,19 @@ export class Session extends DurableObject<Env> {
     return lifecycle.createSession(this.rt, input);
   }
 
-  async status(): Promise<{
-    meta: SessionMeta;
-    services: Record<string, ServiceRuntime>;
-    snapshots: SnapshotEntry[];
-    checks?: ChecksRun;
-    cost: CostState;
-  }> {
+  async status(): Promise<SessionStatus> {
     const meta = await this.rt.requireMeta();
-    const [services, snapshots, checks, cost] = await Promise.all([this.rt.services(), this.rt.snapshots(), this.rt.lastChecks(), this.rt.cost()]);
-    return { meta, services, snapshots, checks, cost };
+    const [services, snapshots, checks, cost, manifest, delivered, pressure, checksHistory] = await Promise.all([
+      this.rt.services(),
+      this.rt.snapshots(),
+      this.rt.lastChecks(),
+      this.rt.cost(),
+      this.rt.manifest(),
+      this.rt.hintsDelivered(),
+      this.rt.pressureStatus(),
+      this.rt.checksHistory(),
+    ]);
+    return buildStatus({ meta, services, snapshots, checks, cost, manifest, delivered, pressure, checksHistory, now: Date.now() });
   }
 
   async runChecks(only?: string[]): Promise<ChecksRun> {

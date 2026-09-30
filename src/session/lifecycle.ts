@@ -1,4 +1,4 @@
-import type { Family } from '../env';
+import type { Env, Family } from '../env';
 import type { LabManifest } from '../labs/manifest';
 import { renderManifest } from '../labs/manifest';
 import type { SessionRuntime, SessionMeta, SnapshotEntry, TimerKind } from './state';
@@ -11,6 +11,7 @@ import { firePressureEvent } from './pressure';
 import { tickMetrics } from './metrics';
 import { resetTerminal } from './terminal';
 import { updateSession, insertSnapshot, bestEffort } from './d1';
+import type { SessionCostRow } from './d1';
 import { mintSessionToken, mintLlmToken, sessionTokenExp } from '../auth';
 import { ApiError } from '../lib/errors';
 
@@ -226,6 +227,7 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
           const manifest = await rt.requireManifest();
           const hint = manifest.hints[Number(timer.ref)];
           if (hint) {
+            await rt.recordHintDelivered({ index: Number(timer.ref), after_minutes: hint.after_minutes, text: hint.text });
             emitEvent(rt, 'hint', {
               index: Number(timer.ref),
               after_minutes: hint.after_minutes,
@@ -561,15 +563,45 @@ export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reas
   await scheduleTimer(rt, 'cleanup', now + CLEANUP_AFTER_MS);
 
   const finalCost = await rt.cost().catch(() => undefined);
-  bestEffort(
-    updateSession(
-      rt.env,
-      next,
-      finalCost && { cost_usd: finalCost.usd, llm_usd: finalCost.llm_usd, running_s: Math.round(finalCost.running_s) }
-    ),
-    'updateSession(ended)'
+  const hintsDelivered = await rt.hintsDelivered().then((h) => h.length, () => undefined);
+  await persistEnded(
+    rt.env,
+    next,
+    finalCost && { cost_usd: finalCost.usd, llm_usd: finalCost.llm_usd, running_s: Math.round(finalCost.running_s), hints_delivered: hintsDelivered }
   );
   emitEvent(rt, 'session.state', { state: 'ended', reason });
+}
+
+/** Waits before the 2nd, 3rd and 4th attempt at the final D1 write of an ended session. */
+export const END_WRITE_RETRY_DELAYS_MS = [250, 500, 1000];
+
+/**
+ * The write that closes a session's D1 row. A lost write leaves the row
+ * active, and the unique index then locks the learner out of starting
+ * another session, so this one is awaited and retried rather than fired
+ * and forgotten. If every attempt fails it degrades to `bestEffort` (one
+ * last try that only logs) and the hourly sweeper is the backstop.
+ */
+export async function persistEnded(
+  env: Env,
+  meta: SessionMeta,
+  cost?: SessionCostRow,
+  delaysMs: number[] = END_WRITE_RETRY_DELAYS_MS
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await updateSession(env, meta, cost);
+      return;
+    } catch (err) {
+      const delay = delaysMs[attempt];
+      if (delay === undefined) {
+        console.error(`d1 write failed after ${attempt + 1} attempts (updateSession(ended)):`, err);
+        bestEffort(updateSession(env, meta, cost), 'updateSession(ended)');
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
 }
 
 /** Drops the SQL event log and most storage keys an hour after end, keeping only what a resume or history view needs. */

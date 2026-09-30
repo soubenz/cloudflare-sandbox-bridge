@@ -4,6 +4,7 @@ import { poolTarget } from './families/registry';
 import { poolStub } from './do/pool';
 import { resolvePoolTarget } from './lib/pool-schedule';
 import { deleteExpiredSnapshots, shouldSweepSnapshots } from './session/d1';
+import { sweepStaleSessions } from './session/reconcile';
 
 // Re-export every Durable Object class so wrangler can wire up bindings.
 export { AgentLab } from './families/agent-lab';
@@ -49,6 +50,16 @@ export default {
         deleteExpiredSnapshots(env, Date.now()).then(
           (deleted) => console.log(`snapshot sweep: deleted ${deleted} expired snapshot rows`),
           (err) => console.error('snapshot sweep failed:', err)
+        )
+      );
+
+      // Same hourly gate: close D1 rows that still look active three hours
+      // on, when their Session DO has ended or is gone. Each one holds its
+      // user's only session slot until closed.
+      ctx.waitUntil(
+        sweepStaleSessions(env, Date.now()).then(
+          ({ checked, healed }) => console.log(`session sweep: checked ${checked} stale active rows, healed ${healed}`),
+          (err) => console.error('session sweep failed:', err)
         )
       );
     }

@@ -86,6 +86,11 @@
     // slot is ~$108/month around the clock and ~$45 on this schedule.
     "POOL_SCHEDULE_AGENT": "mon-fri 06-20=1; *=0",
     "POOL_SCHEDULE_GATEWAY": "mon-fri 06-20=1; *=0",
+    // Admission control reads these; they must equal the containers[]
+    // max_instances above (a unit test checks) so POST /sessions answers
+    // 503 at_capacity instead of a start that burns retries and dies.
+    "MAX_INSTANCES_AGENT": "10",
+    "MAX_INSTANCES_GATEWAY": "10",
     "LLM_HOST": "gateway.ai.cloudflare.com",
     "AI_GATEWAY_NAME": "opalix",
     // A small model on purpose: Workers AI text generation is capped at 300

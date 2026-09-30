@@ -15,6 +15,9 @@
  */
 declare namespace Cloudflare {
   interface Env {
+    /** Vars mirrored from wrangler.jsonc's container `max_instances`; optional because `wrangler types` only sees vars that are declared there. */
+    MAX_INSTANCES_AGENT?: string;
+    MAX_INSTANCES_GATEWAY?: string;
     SANDBOX_API_KEY: string;
     SANDBOX_API_KEY_PREVIOUS?: string;
     SESSION_TOKEN_SECRET: string;

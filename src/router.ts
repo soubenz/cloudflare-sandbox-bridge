@@ -6,7 +6,9 @@ import { parseManifest } from './labs/manifest';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
 import { workspacePath } from './lib/paths';
-import { insertSession } from './session/d1';
+import { insertSession, upsertFeedback, healSessionRow, isActiveSessionConflict } from './session/d1';
+import { healIfStale, healUserActiveRows } from './session/reconcile';
+import { userProgress, sessionProgressSummary, sessionChecks, userChecks, parseFeedback, clampLimit } from './session/progress';
 import { poolStub } from './do/pool';
 import { newId } from './lib/ids';
 import { corsMiddleware } from './cors';
@@ -20,7 +22,12 @@ export function createRouter(): Hono<{ Bindings: Env }> {
 
   app.onError((err, c) => {
     const apiErr = err instanceof ApiError ? err : fromSdkError(err);
-    return apiErr.toResponse();
+    const response = apiErr.toResponse();
+    if (apiErr.code === 'at_capacity') {
+      const retryAfter = (apiErr.details as { retry_after_s?: number } | undefined)?.retry_after_s ?? 30;
+      response.headers.set('Retry-After', String(retryAfter));
+    }
+    return response;
   });
 
   // Plain GET /health is public liveness. `?deep=1` exercises D1, R2 and the
@@ -149,8 +156,10 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     const body = await c.req.json<StartBody>().catch((): StartBody => ({}));
     if (!body.lab || !body.user_id) throw ApiError.badRequest('missing_fields', 'lab and user_id are required');
 
+    // A row whose DO has ended (or never existed) is not a session to rejoin:
+    // close it and start fresh rather than mint a token for nothing.
     const existing = await activeSessionFor(c.env, body.user_id);
-    if (existing) return c.json(await rejoinSession(c.env, existing), 200);
+    if (existing && (await healIfStale(c.env, existing.id)) === 'live') return c.json(await rejoinSession(c.env, existing), 200);
 
     return c.json(await createSession(c.env, body.lab, body.user_id), 202);
   });
@@ -204,6 +213,33 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     const body = await c.req.json<{ only?: string[] }>().catch(() => ({}) as { only?: string[] });
     const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
     return c.json(await stub.runChecks(body.only));
+  });
+
+  // The last N runs of this session, from D1 (the DO keeps only the last run
+  // and a compact history), newest first.
+  app.get('/sessions/:id/checks', async (c) => {
+    const id = c.req.param('id');
+    await requireBrowserAuth(c.req.raw, c.env, id);
+    return c.json(await sessionChecks(c.env, id, clampLimit(c.req.query('limit'))));
+  });
+
+  // This user's standing on this session's lab: attempts, best score, and how
+  // many of the attempts were made in this session.
+  app.get('/sessions/:id/progress-summary', async (c) => {
+    const id = c.req.param('id');
+    await requireBrowserAuth(c.req.raw, c.env, id);
+    const { meta } = await c.env.SESSION.get(c.env.SESSION.idFromName(id)).status();
+    return c.json(await sessionProgressSummary(c.env, id, meta.user_id, meta.lab_slug));
+  });
+
+  app.post('/sessions/:id/feedback', async (c) => {
+    const id = c.req.param('id');
+    await requireBrowserAuth(c.req.raw, c.env, id);
+    // Validate before touching the DO: a bad body costs nothing.
+    const { rating, text } = parseFeedback(await c.req.json().catch(() => undefined));
+    const { meta } = await c.env.SESSION.get(c.env.SESSION.idFromName(id)).status();
+    await upsertFeedback(c.env, { session_id: id, user_id: meta.user_id, lab_slug: meta.lab_slug, rating, text });
+    return c.json({ ok: true }, 201);
   });
 
   app.post('/sessions/:id/events', async (c) => {
@@ -300,6 +336,21 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     return c.json(result.results);
   });
 
+  // --- Progress and check history (service auth; the app backend proxies these to learners) ---
+
+  app.get('/users/:uid/progress', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    return c.json(await userProgress(c.env, c.req.param('uid')));
+  });
+
+  app.get('/users/:uid/checks', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const q = c.req.query();
+    const before = q.before === undefined || q.before === '' ? undefined : Number(q.before);
+    if (before !== undefined && !Number.isFinite(before)) throw ApiError.badRequest('bad_cursor', '`before` must be an epoch-ms number');
+    return c.json(await userChecks(c.env, c.req.param('uid'), { lab: q.lab || undefined, limit: clampLimit(q.limit), before }));
+  });
+
   return app;
 }
 
@@ -349,30 +400,44 @@ async function deepHealth(env: Env) {
   };
 }
 
-/** Shared by POST /sessions and the dev endpoint; the only difference between them is who may call. */
+/** Shared by POST /sessions and POST /sessions/start; the only difference between them is who may call. */
 async function createSession(env: Env, lab: string, userId: string, ipHash?: string) {
   const { version, manifest } = await loadCurrentManifest(env, lab);
   if (!isFamily(manifest.family)) throw ApiError.internal(`lab "${lab}" has an unknown family "${manifest.family}"`);
 
+  // Refuse before reserving anything in D1: a session the pool cannot give a
+  // container to would otherwise hold the user's one slot while it fails.
+  await poolStub(env, manifest.family)
+    .admit()
+    .catch((err) => {
+      throw fromSdkError(err);
+    });
+
   const sessionId = newId();
-  // Reserve the one-active-session-per-user slot in D1 first; a unique-index
-  // conflict here is the enforcement point, not a check-then-act race.
-  await insertSession(env, {
+  const row = {
     id: sessionId,
     user_id: userId,
     lab_slug: manifest.slug,
     lab_version: version,
     family: manifest.family,
-    state: 'starting',
+    state: 'starting' as const,
     created_at: Date.now(),
     resumed_count: 0,
     ip_hash: ipHash,
-  }).catch((err) => {
-    throw ApiError.conflict('active_session_exists', 'This user already has an active session', { cause: String(err) });
-  });
+  };
+  await reserveSessionSlot(env, row);
 
   const stub = env.SESSION.get(env.SESSION.idFromName(sessionId));
-  const { meta, token } = await stub.create({ userId, labSlug: manifest.slug, labVersion: version, family: manifest.family, manifest });
+  let created: Awaited<ReturnType<typeof stub.create>>;
+  try {
+    created = await stub.create({ userId, labSlug: manifest.slug, labVersion: version, family: manifest.family, manifest });
+  } catch (err) {
+    // The row was reserved but no session exists: leaving it `starting` would
+    // lock the user out until the sweeper found it.
+    await healSessionRow(env, sessionId, {}).catch((healErr) => console.error('could not close the row of a session that failed to create:', healErr));
+    throw err;
+  }
+  const { meta, token } = created;
 
   return {
     id: sessionId,
@@ -380,6 +445,29 @@ async function createSession(env: Env, lab: string, userId: string, ipHash?: str
     token,
     urls: sessionUrls(env, sessionId, manifest.services.filter((s) => s.ui).map((s) => s.name)),
   };
+}
+
+/**
+ * Reserves the user's one-active-session slot in D1; the unique index is the
+ * enforcement point, not a check-then-act race. Only that index's violation
+ * is a 409. If the row that holds the slot is stale (its DO ended or never
+ * existed) it is closed and the insert retried once; any other D1 failure is
+ * a 500, not a misleading "already has a session".
+ */
+async function reserveSessionSlot(env: Env, row: Parameters<typeof insertSession>[1]): Promise<void> {
+  const conflict = (err: unknown) => ApiError.conflict('active_session_exists', 'This user already has an active session', { cause: String(err) });
+  try {
+    await insertSession(env, row);
+    return;
+  } catch (err) {
+    if (!isActiveSessionConflict(err)) throw ApiError.internal('Could not reserve the session slot', { cause: String(err) });
+    if (!(await healUserActiveRows(env, row.user_id))) throw conflict(err);
+  }
+  try {
+    await insertSession(env, row);
+  } catch (err) {
+    throw isActiveSessionConflict(err) ? conflict(err) : ApiError.internal('Could not reserve the session slot', { cause: String(err) });
+  }
 }
 
 /** The one live session this user already has, if any. */
