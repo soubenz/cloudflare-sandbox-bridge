@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { parse as parseYaml } from 'yaml';
 import { OpalixClient } from '../client';
+import { compileLearnDir } from '../learn-compile';
 
 /**
  * The lint rules live in scripts/lint-labs.mjs (plain Node, also runnable as
@@ -133,6 +134,29 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
       if (missing.length > 0) throw new Error(`No manifest.yaml in ${missing.join(', ')}`);
       const { errors } = (await loadLintModule()).lintAndReport(dirs);
       if (errors > 0) process.exitCode = 1;
+    });
+
+  labs
+    .command('learn-check <dir...>')
+    .description('Compile and validate each lab\'s learn/ folder (story, lessons, quiz, questions); exits 1 on any problem')
+    .action((dirs: string[]) => {
+      let failed = 0;
+      for (const dir of dirs) {
+        const result = compileLearnDir(dir);
+        if (result === null) {
+          console.log(`${dir}: no learn/ folder`);
+          continue;
+        }
+        if (result.problems.length > 0) {
+          failed++;
+          console.error(`${dir}: ${result.problems.length} problem${result.problems.length === 1 ? '' : 's'}`);
+          for (const p of result.problems) console.error(`  - ${p}`);
+        } else {
+          const b = result.bundle!;
+          console.log(`${dir}: ok (${b.concepts.length} lessons, ${b.questions.length} questions, ${b.fields.length} fields${b.story ? ', story' : ''})`);
+        }
+      }
+      if (failed > 0) process.exitCode = 1;
     });
 
   labs

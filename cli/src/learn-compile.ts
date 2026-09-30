@@ -1,0 +1,116 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
+import { LearnBundleSchema, checkLearnBundle, type LearnBundle } from '../../src/labs/learn';
+
+/** Splits `---\nyaml\n---\nbody`; a file with no front matter has empty data. */
+export function splitFrontMatter(text: string): { data: Record<string, unknown>; body: string } {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text);
+  if (!m) return { data: {}, body: text.trim() };
+  const data = parseYaml(m[1] ?? '');
+  return { data: data && typeof data === 'object' ? (data as Record<string, unknown>) : {}, body: (m[2] ?? '').trim() };
+}
+
+export interface LearnCompileResult {
+  bundle?: LearnBundle;
+  problems: string[];
+}
+
+/**
+ * Compiles `<labDir>/learn/` into a LearnBundle, or returns null when the lab
+ * has no such folder. Never throws on bad content: every problem is returned
+ * so an author sees them all at once.
+ *
+ *   learn/story.md               front matter: title, minutes; body: the case file
+ *   learn/concepts/<id>.md       front matter: id (must equal the file name), title, minutes, recap; body: the lesson
+ *   learn/quiz.yaml              questions: [ ... ]
+ *   learn/questions.yaml         answers_file, fields: [ ... ]   (explore labs)
+ */
+export function compileLearnDir(labDir: string): LearnCompileResult | null {
+  const dir = join(labDir, 'learn');
+  if (!existsSync(dir)) return null;
+  const problems: string[] = [];
+  const read = (rel: string): string | null => {
+    const p = join(dir, rel);
+    return existsSync(p) ? readFileSync(p, 'utf8') : null;
+  };
+
+  let story: unknown;
+  const storyText = read('story.md');
+  if (storyText !== null) {
+    const { data, body } = splitFrontMatter(storyText);
+    story = { title: data.title, minutes: data.minutes, body };
+  }
+
+  const concepts: unknown[] = [];
+  const conceptsDir = join(dir, 'concepts');
+  if (existsSync(conceptsDir)) {
+    for (const file of readdirSync(conceptsDir).filter((f) => f.endsWith('.md')).sort()) {
+      const { data, body } = splitFrontMatter(readFileSync(join(conceptsDir, file), 'utf8'));
+      const stem = file.slice(0, -3);
+      if (data.id !== stem) problems.push(`concepts/${file}: front matter id "${String(data.id)}" must equal the file name "${stem}"`);
+      concepts.push({ id: data.id, title: data.title, minutes: data.minutes, recap: data.recap, body });
+    }
+  }
+
+  let questions: unknown[] = [];
+  const quizText = read('quiz.yaml');
+  if (quizText !== null) {
+    try {
+      const y = parseYaml(quizText) as { questions?: unknown[] } | null;
+      questions = Array.isArray(y?.questions) ? y!.questions! : [];
+      if (!Array.isArray(y?.questions)) problems.push('quiz.yaml: expected a top-level `questions:` list');
+    } catch (e) {
+      problems.push(`quiz.yaml: not valid YAML (${(e as Error).message})`);
+    }
+  }
+
+  let answersFile: string | undefined;
+  let fields: unknown[] = [];
+  const qText = read('questions.yaml');
+  if (qText !== null) {
+    try {
+      const y = parseYaml(qText) as { answers_file?: string; fields?: unknown[] } | null;
+      answersFile = y?.answers_file;
+      fields = Array.isArray(y?.fields) ? y!.fields! : [];
+      if (!Array.isArray(y?.fields)) problems.push('questions.yaml: expected a top-level `fields:` list');
+    } catch (e) {
+      problems.push(`questions.yaml: not valid YAML (${(e as Error).message})`);
+    }
+  }
+
+  const parsed = LearnBundleSchema.safeParse({
+    version: 1,
+    story,
+    concepts,
+    questions,
+    ...(answersFile !== undefined ? { answers_file: answersFile } : {}),
+    fields,
+  });
+  if (!parsed.success) {
+    for (const i of parsed.error.issues) problems.push(`${i.path.join('.') || '(root)'}: ${i.message}`);
+    return { problems };
+  }
+  problems.push(...checkLearnBundle(parsed.data));
+
+  // The console writes the learner's answers into the file the lab's grader
+  // already reads, so the fields must match that file's keys exactly.
+  if (parsed.data.fields.length > 0) {
+    const answersPath = join(labDir, 'workspace', parsed.data.answers_file);
+    if (!existsSync(answersPath)) {
+      problems.push(`questions.yaml: workspace/${parsed.data.answers_file} does not exist, so there is nothing for the fields to fill`);
+    } else {
+      try {
+        const template = JSON.parse(readFileSync(answersPath, 'utf8')) as Record<string, unknown>;
+        const want = new Set(Object.keys(template));
+        const have = new Set(parsed.data.fields.map((f) => f.key));
+        for (const k of want) if (!have.has(k)) problems.push(`questions.yaml: workspace/${parsed.data.answers_file} has key "${k}" but no field asks for it`);
+        for (const k of have) if (!want.has(k)) problems.push(`questions.yaml: field "${k}" is not a key of workspace/${parsed.data.answers_file}`);
+      } catch {
+        problems.push(`workspace/${parsed.data.answers_file} is not valid JSON`);
+      }
+    }
+  }
+
+  return problems.length > 0 ? { problems } : { bundle: parsed.data, problems: [] };
+}
