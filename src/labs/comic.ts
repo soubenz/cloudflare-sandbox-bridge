@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BACKGROUNDS, BUBBLE_POSITIONS, CAST_IDS, PROPS, SCENES, SCENE_IDS, layoutComic } from './comic-kit';
+import { BACKGROUNDS, BUBBLE_POSITIONS, CAST_IDS, PROPS, SCENES, SCENE_IDS } from './comic-kit';
 
 /**
  * The story as a motion comic. Authors write `learn/comic.yaml`:
@@ -43,19 +43,45 @@ export const PanelSchema = z.object({
   lines: z.array(plain(44)).max(6).optional(),
 });
 
-export const ComicSchema = z.object({
-  title: plain(80),
-  panels: z.array(PanelSchema).min(4).max(9),
+export const PageSchema = z.object({
+  /** Optional page heading, e.g. a chapter line shown when the camera turns the page. */
+  title: plain(60).optional(),
+  panels: z.array(PanelSchema).min(1).max(9),
 });
 
-export type Comic = z.infer<typeof ComicSchema>;
+/**
+ * A comic has one or more pages. Write `pages:` for several, or a flat
+ * `panels:` list for a single page; both normalise to `pages`.
+ */
+export const ComicSchema = z
+  .object({
+    title: plain(80),
+    pages: z.array(PageSchema).min(1).max(6).optional(),
+    panels: z.array(PanelSchema).min(1).max(9).optional(),
+  })
+  .superRefine((c, ctx) => {
+    if (c.pages && c.panels) ctx.addIssue({ code: 'custom', message: 'write either pages or panels, not both' });
+    if (!c.pages && !c.panels) ctx.addIssue({ code: 'custom', message: 'a comic needs pages (or a flat panels list)' });
+  })
+  .transform((c) => ({ title: c.title, pages: c.pages ?? [{ panels: c.panels! }] }));
+
+export type Comic = z.output<typeof ComicSchema>;
+export type ComicPage = Comic['pages'][number];
 export type ComicPanel = z.infer<typeof PanelSchema>;
 
-/** Cross-checks a schema-valid comic: cast counts, speakers present, page tiling. */
+/** Every panel of a comic in reading order, with the page it is on. */
+export function allPanels(comic: Comic): { panel: ComicPanel; page: number; indexInPage: number; number: number }[] {
+  const out: { panel: ComicPanel; page: number; indexInPage: number; number: number }[] = [];
+  comic.pages.forEach((pg, pi) => pg.panels.forEach((panel, i) => out.push({ panel, page: pi + 1, indexInPage: i + 1, number: out.length + 1 })));
+  return out;
+}
+
+/** Cross-checks a schema-valid comic: cast counts, speakers present, length. */
 export function checkComic(comic: Comic): string[] {
   const problems: string[] = [];
-  comic.panels.forEach((p, i) => {
-    const at = `comic panel ${i + 1} (${p.scene})`;
+  const multi = comic.pages.length > 1;
+  for (const { panel: p, page, indexInPage } of allPanels(comic)) {
+    const at = multi ? `comic page ${page} panel ${indexInPage} (${p.scene})` : `comic panel ${indexInPage} (${p.scene})`;
     const rule = SCENES[p.scene];
     if (p.cast.length < rule.minCast || p.cast.length > rule.maxCast) {
       problems.push(`${at}: needs ${rule.minCast === rule.maxCast ? rule.minCast : `${rule.minCast} to ${rule.maxCast}`} cast member(s), has ${p.cast.length}`);
@@ -73,9 +99,15 @@ export function checkComic(comic: Comic): string[] {
     if (p.sfx && p.scene !== 'message' && p.scene !== 'portrait' && p.scene !== 'desk') {
       problems.push(`${at}: sfx is only for message, portrait and desk scenes`);
     }
+  }
+  const total = allPanels(comic).length;
+  if (total < 4) problems.push(`a comic needs at least 4 panels in all (has ${total})`);
+  if (total > 36) problems.push(`a comic can have at most 36 panels (has ${total})`);
+  const words = (pg: ComicPage) => pg.panels.reduce((n, p) => n + p.bubbles.reduce((m, b) => m + b.text.split(/\s+/).length, 0), 0);
+  comic.pages.forEach((pg, i) => {
+    if (words(pg) > 130) problems.push(`page ${i + 1} has ${words(pg)} spoken words; keep a page under 130 so it reads in about a minute`);
   });
-  problems.push(...layoutComic(comic.panels).problems);
-  const words = comic.panels.reduce((n, p) => n + p.bubbles.reduce((m, b) => m + b.text.split(/\s+/).length, 0), 0);
-  if (words > 160) problems.push(`the comic has ${words} spoken words; keep it under 160 so it plays in about a minute`);
+  const all = comic.pages.reduce((n, pg) => n + words(pg), 0);
+  if (all > 520) problems.push(`the comic has ${all} spoken words in all; keep it under 520 so the whole thing plays in under five minutes`);
   return problems;
 }

@@ -97,11 +97,11 @@ fields:
 
 ## The motion comic (optional): `learn/comic.yaml`
 
-The story can also be told as a motion comic that plays like a video: a camera moves across a comic page and zooms into each panel as it pops in, speech bubbles type out word by word, and the learner sees Replay and Skip. The art is drawn by the console from code, so a comic is a few lines of data per panel, never an image. `learn/story.md` stays required: it is the fallback for screen readers, for a skipped comic and for older consoles.
+The story can also be told as a motion comic that plays like a video: a camera moves across a comic page and zooms into each panel as it pops in, speech bubbles type out word by word, and the learner sees Replay and Skip. The art is drawn by the console from code, so a comic is a few lines of data per panel, never an image. It can have one page or several, and any number of panels on each. `learn/story.md` stays required: it is the fallback for screen readers, for a skipped comic and for older consoles.
 
 ```yaml
 title: Which provider answered?
-panels:
+panels:                         # one page; for several pages write `pages:` (below)
   - scene: desk                 # desk, message, portrait, screen, duo or you
     cast: [jonas]               # who is in it: maren, tomasz, priya, jonas, anneke, you
     caption: Tuesday, a little after ten.
@@ -115,6 +115,17 @@ panels:
     bubbles: [{ who: maren, text: "Nobody can answer this." }]
 ```
 
+More than one page:
+
+```yaml
+title: Which provider answered?
+pages:
+  - title: Tuesday morning        # optional heading shown when the camera turns the page
+    panels: [ ... ]
+  - title: The call
+    panels: [ ... ]
+```
+
 | Scene | Panel size | Cast | Needs |
 | --- | --- | --- | --- |
 | `desk` | wide (2 of 3 columns) | 1 | optional `lines` for the screen |
@@ -126,8 +137,8 @@ panels:
 
 Rules `labs learn-check` enforces:
 
-- 4 to 9 panels, in reading order. They tile a page of three columns, so every row must fill exactly: wide panels count 2, square ones 1. The checker names the panel that leaves a hole.
-- Speakers must be in the panel's cast. At most two bubbles per panel, 150 characters each, plain text. Under 160 spoken words in total, so it plays in about a minute.
+- 1 to 6 pages, 1 to 9 panels on a page, at least 4 and at most 36 panels in all. Panels flow in reading order into rows of three columns (wide counts 2, square 1). Any count works: a wide panel that does not fit the rest of a row starts the next row, and a row that is not full sits in the middle of the page, so there is nothing to balance by hand.
+- Speakers must be in the panel's cast. At most two bubbles per panel, 150 characters each, plain text. Under 130 spoken words on a page and under 520 in all, so a page plays in about a minute. The camera turns the page (with its optional title) between pages.
 - Every panel says something (a caption, a bubble or screen lines). `sfx` is for `message`, `portrait` and `desk` panels.
 - The comic follows the story bible: Larkfield, the five recurring people, second person for "you", no answer to a graded question.
 

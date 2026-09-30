@@ -67,33 +67,46 @@ export interface Placement {
   h: number;
 }
 
+/** Width of a full row of three columns. */
+export const PAGE_W = PAGE.columns * PAGE.colW + (PAGE.columns - 1) * PAGE.gap;
+
 /**
- * Packs panels into rows of three columns, in reading order. A set of panels
- * is valid only when every row fills exactly: a wide panel that cannot fit the
- * remaining space would leave a hole, so the author must reorder.
+ * Flows one page's panels into rows of up to three columns, in reading order,
+ * and centres every row that does not fill the width. Any number of panels
+ * works: a wide panel that does not fit the rest of a row starts the next row,
+ * and a short row (one wide panel, two squares) simply sits in the middle of
+ * the page. `problems` stays empty; it is kept so callers need not change.
  */
-export function layoutComic(panels: readonly PanelLike[]): { placements: Placement[]; rows: number; problems: string[] } {
-  const placements: Placement[] = [];
-  const problems: string[] = [];
-  let row = 0;
-  let col = 0;
+export function layoutComic(panels: readonly PanelLike[]): { placements: Placement[]; rows: number; height: number; problems: string[] } {
+  const rows: { index: number; span: number }[][] = [[]];
+  let used = 0;
   panels.forEach((p, index) => {
     const span = SCENES[p.scene].span;
-    if (col + span > PAGE.columns) {
-      problems.push(`panel ${index + 1} (${p.scene}) does not fit the rest of row ${row + 1}: reorder so every row fills (a wide panel counts 2 of 3 columns)`);
-      row += 1;
-      col = 0;
+    if (used + span > PAGE.columns) {
+      rows.push([]);
+      used = 0;
     }
-    const w = span * PAGE.colW + (span - 1) * PAGE.gap;
-    placements.push({ index, row, col, span, x: col * (PAGE.colW + PAGE.gap), y: row * (PAGE.rowH + PAGE.gap), w, h: PAGE.rowH });
-    col += span;
-    if (col === PAGE.columns) {
-      row += 1;
-      col = 0;
+    rows[rows.length - 1]!.push({ index, span });
+    used += span;
+  });
+  const placements: Placement[] = [];
+  rows.forEach((row, r) => {
+    if (row.length === 0) return;
+    const cols = row.reduce((n, c) => n + c.span, 0);
+    const gaps = row.length - 1 + row.reduce((n, c) => n + (c.span - 1), 0);
+    const width = cols * PAGE.colW + gaps * PAGE.gap;
+    let x = (PAGE_W - width) / 2;
+    let col = 0;
+    for (const c of row) {
+      const w = c.span * PAGE.colW + (c.span - 1) * PAGE.gap;
+      placements.push({ index: c.index, row: r, col, span: c.span, x, y: r * (PAGE.rowH + PAGE.gap), w, h: PAGE.rowH });
+      x += w + PAGE.gap;
+      col += c.span;
     }
   });
-  if (col !== 0) problems.push(`the last row is not full (${col} of ${PAGE.columns} columns used)`);
-  return { placements, rows: row + (col > 0 ? 1 : 0), problems };
+  placements.sort((a, b) => a.index - b.index);
+  const usedRows = rows.filter((r) => r.length > 0).length;
+  return { placements, rows: usedRows, height: usedRows * PAGE.rowH + (usedRows - 1) * PAGE.gap, problems: [] };
 }
 
 /** Seconds a panel stays on screen: a base beat plus reading time for its words. */
@@ -107,7 +120,27 @@ export interface TranscriptPanel {
   lines?: string[];
 }
 
-/** Plain text of the whole comic, for screen readers and the 'read as text' view. */
+export interface TranscriptPage {
+  title?: string;
+  panels: readonly TranscriptPanel[];
+}
+
+/** Plain text of a multi-page comic: panels are numbered across pages, pages get a heading line. */
+export function comicPagesTranscript(pages: readonly TranscriptPage[]): string[] {
+  if (pages.length === 1) return comicTranscript(pages[0]!.panels);
+  const out: string[] = [];
+  let n = 0;
+  pages.forEach((pg, pi) => {
+    out.push(`Page ${pi + 1}${pg.title ? `: ${pg.title}` : ''}.`);
+    comicTranscript(pg.panels).forEach((line) => {
+      n += 1;
+      out.push(line.replace(/^Panel \d+\./, `Panel ${n}.`));
+    });
+  });
+  return out;
+}
+
+/** Plain text of one page, for screen readers and the 'read as text' view. */
 export function comicTranscript(panels: readonly TranscriptPanel[]): string[] {
   const nameOf = new Map(CAST.map((c) => [c.id, c.name]));
   const out: string[] = [];
