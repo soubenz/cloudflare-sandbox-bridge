@@ -11,7 +11,8 @@
  * other.
  *
  * Sizes inside the picture (font-size, stroke-width) are in grid units of the
- * 100 x 64 viewBox, not pixels; they match the constants at the top of
+ * viewBox (110 wide, at most 64 tall, cropped to the content by
+ * viewBoxFor), not pixels; they match the constants at the top of
  * diagram.js, which size the boxes.
  */
 

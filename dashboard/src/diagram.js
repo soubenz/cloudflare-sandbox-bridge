@@ -326,6 +326,95 @@ export function packetSize(label) {
   return label ? { w: Math.max(6, label.length * FS_PACKET * W_MONO + 3), h: 4.2 } : { w: 3, h: 3 };
 }
 
+/** Margin kept round the content of the picture, and the least height it is drawn at, in grid units. */
+const VIEW_MARGIN = 6;
+const VIEW_MIN_H = 26;
+
+/**
+ * Where an edge's label sits: centred on (x, y), beside the line on its upper
+ * side (or the right for a level line), clear of a packet riding it.
+ * Returns { x, y, w, h } for the text's box.
+ */
+export function edgeLabelSpot(label, l) {
+  let nx = -l.dy;
+  let ny = l.dx;
+  if (ny > 0 || (ny === 0 && nx < 0)) {
+    nx = -nx;
+    ny = -ny;
+  }
+  const text = textOf(label);
+  const w = text.length * FS_EDGE * W_SANS;
+  const h = FS_EDGE;
+  const off = 1.5 + Math.abs(nx) * (w / 2) + Math.abs(ny) * (h / 2 + 1.4);
+  return { x: l.mx + nx * off, y: l.my + ny * off, w, h };
+}
+
+/** Distance along an edge at which a travelling packet starts, and (mirrored) ends. */
+function rideStart(l, w, h) {
+  const ext = (w / 2) * Math.abs(l.dx) + (h / 2) * Math.abs(l.dy) + 0.6;
+  return Math.max(Math.min(ext, l.len / 2), l.len * 0.28);
+}
+
+/**
+ * The part of the picture that has something in it, as the viewBox to draw:
+ * { x, y, w, h }. The width is always the grid's. The height fits the node
+ * boxes, edge labels, packet pills (at rest and at both ends of their ride)
+ * and note boxes of every step, plus a margin, and is never below a minimum
+ * nor above the full picture, so a diagram on one row is not drawn in a tall
+ * empty frame and a tall one is drawn as before.
+ */
+export function viewBoxFor(diagram) {
+  let lo = Infinity;
+  let hi = -Infinity;
+  const take = (y0, y1) => {
+    lo = Math.min(lo, y0);
+    hi = Math.max(hi, y1);
+  };
+  const nodes = (diagram && diagram.nodes) || [];
+  for (const n of nodes) {
+    const b = nodeBox(n);
+    take(b.y, b.y + b.h);
+  }
+  for (const e of (diagram && diagram.edges) || []) {
+    const l = layoutEdge(diagram, e);
+    if (l && e.label) {
+      const r = edgeLabelSpot(e.label, l);
+      take(r.y - r.h / 2, r.y + r.h / 2);
+    }
+  }
+  const total = ((diagram && diagram.steps) || []).length;
+  for (let i = 0; i < total; i++) {
+    const m = stepModel(diagram, i);
+    const perEdge = new Map();
+    for (const p of m.packets) perEdge.set(p.edge, (perEdge.get(p.edge) || 0) + 1);
+    const seen = new Map();
+    const taken = [];
+    for (const p of m.packets) {
+      const e = ((diagram && diagram.edges) || []).find((x) => x.id === p.edge);
+      const l = e && layoutEdge(diagram, e);
+      if (!l) continue;
+      const { w, h } = packetSize(p.label);
+      const lane = seen.get(p.edge) || 0;
+      seen.set(p.edge, lane + 1);
+      const shift = (lane - (perEdge.get(p.edge) - 1) / 2) * (h + 0.8);
+      const oy = l.dx * shift;
+      const s0 = rideStart(l, w, h);
+      for (const y of [l.my + oy, l.y1 + l.dy * s0 + oy, l.y1 + l.dy * (l.len - s0) + oy]) take(y - h / 2, y + h / 2);
+      taken.push({ x: l.mx - w / 2, y: l.my - h / 2, w, h });
+    }
+    for (const n of m.notes) {
+      const spot = placeNote(diagram, n.node, n.text, taken);
+      if (!spot) continue;
+      take(spot.y, spot.y + spot.h);
+      taken.push({ x: spot.x, y: spot.y, w: spot.w, h: spot.h });
+    }
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return { x: VIEW_X0, y: 0, w: VIEW_W, h: VIEW_H };
+  const h = clamp(hi - lo + 2 * VIEW_MARGIN, VIEW_MIN_H, VIEW_H);
+  const y = clamp((lo + hi) / 2 - h / 2, 0, VIEW_H - h);
+  return { x: VIEW_X0, y, w: VIEW_W, h };
+}
+
 /** A sentence for what a step sends and notes, for the text list. */
 export function stepDetail(diagram, model) {
   const nodes = nodeMap(diagram);
@@ -411,8 +500,9 @@ export function renderDiagram(diagram, opts = {}) {
 
   // --- picture ------------------------------------------------------------
   const figure = html('div', 'diagram-figure');
+  const view = viewBoxFor(diagram);
   const picture = svg('svg', {
-    viewBox: `${VIEW_X0} 0 ${VIEW_W} ${VIEW_H}`,
+    viewBox: `${f(view.x)} ${f(view.y)} ${f(view.w)} ${f(view.h)}`,
     preserveAspectRatio: 'xMidYMid meet',
     'aria-hidden': 'true',
     focusable: 'false',
@@ -452,18 +542,8 @@ export function renderDiagram(diagram, opts = {}) {
     const line = svg('line', { x1: f(l.x1), y1: f(l.y1), x2: f(lx), y2: f(ly), 'marker-end': `url(#${markers.plain})` }, 'diagram-edge-line');
     g.appendChild(line);
     if (e.label) {
-      // Beside the line, on its upper side (or the right for a level line), clear of a packet riding it.
-      let nx = -l.dy;
-      let ny = l.dx;
-      if (ny > 0 || (ny === 0 && nx < 0)) {
-        nx = -nx;
-        ny = -ny;
-      }
-      const label = textOf(e.label);
-      const halfW = (label.length * FS_EDGE * W_SANS) / 2;
-      const halfH = FS_EDGE / 2;
-      const off = 1.5 + Math.abs(nx) * halfW + Math.abs(ny) * (halfH + 1.4);
-      g.appendChild(svg('text', { x: f(l.mx + nx * off), y: f(l.my + ny * off), 'text-anchor': 'middle' }, 'diagram-edge-label', label));
+      const spot = edgeLabelSpot(e.label, l);
+      g.appendChild(svg('text', { x: f(spot.x), y: f(spot.y), 'text-anchor': 'middle' }, 'diagram-edge-label', textOf(e.label)));
     }
     edgeLayer.appendChild(g);
     edgeEls.set(e.id, { g, line });
@@ -661,10 +741,7 @@ export function renderDiagram(diagram, opts = {}) {
       // Ends of the ride: from just clear of the source box to just clear of
       // the target box, but never so far that a wide pill on a short edge
       // stops moving altogether.
-      const ax = Math.abs(l.dx);
-      const ay = Math.abs(l.dy);
-      const ext = (w / 2) * ax + (h / 2) * ay + 0.6;
-      const s0 = Math.max(Math.min(ext, l.len / 2), l.len * 0.28);
+      const s0 = rideStart(l, w, h);
       const sign = p.reverse ? -1 : 1;
       const at = (s) => {
         const t = sign > 0 ? s : l.len - s;

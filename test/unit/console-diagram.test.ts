@@ -35,11 +35,13 @@ const mod = (await import('../../dashboard/src/diagram.js' as string)) as {
   nextIndex: (i: number, total: number, dir: number, loop?: boolean) => number;
   wrapText: (t: string, max: number) => string[];
   segmentHitsRect: (x1: number, y1: number, x2: number, y2: number, r: { x: number; y: number; w: number; h: number }) => boolean;
+  packetSize: (label: string) => { w: number; h: number };
+  viewBoxFor: (d: unknown) => { x: number; y: number; w: number; h: number };
   placeNote: (d: unknown, node: string, text: string, taken?: unknown[]) => { lines: string[]; side: string; x: number; y: number; w: number; h: number } | null;
   renderDiagram: (d: unknown, o?: Record<string, unknown>) => Player;
   mountDiagrams: (root: unknown, library?: unknown[]) => Player[];
 };
-const { nodeBox, layoutEdge, stepModel, nextIndex, wrapText, segmentHitsRect, placeNote, renderDiagram, VIEW_X0, VIEW_W, VIEW_H, KINDS, TONES } = mod;
+const { nodeBox, layoutEdge, stepModel, nextIndex, wrapText, segmentHitsRect, packetSize, viewBoxFor, placeNote, renderDiagram, VIEW_X0, VIEW_W, VIEW_H, KINDS, TONES } = mod;
 
 const sample = DIAGRAMS.find((d) => d.id === 'gateway-alias-routing') as Diagram;
 const edgeOf = (d: Diagram, id: string) => d.edges.find((e) => e.id === id)!;
@@ -96,6 +98,131 @@ describe('the shared library, drawn', () => {
           expect(Math.max(gapX, gapY), `${d.id}: ${ia} and ${ib} are too close`).toBeGreaterThanOrEqual(2);
         }
       }
+    }
+  });
+});
+
+describe('the shared library, drawn: labels ride in the gaps', () => {
+  type Rect = { x: number; y: number; w: number; h: number };
+  /** A node that is lit draws a glow this far outside its box, so a label must stay clear of that too. */
+  const GLOW = 0.6;
+  const hit = (a: Rect, b: Rect) => a.x < b.x + b.w + GLOW && b.x - GLOW < a.x + a.w && a.y < b.y + b.h + GLOW && b.y - GLOW < a.y + a.h;
+  const fmt = (r: Rect) => `[${r.x.toFixed(1)},${r.y.toFixed(1)} ${r.w.toFixed(1)}x${r.h.toFixed(1)}]`;
+
+  /**
+   * The pill of every labelled packet as the player places it: centred on the
+   * edge midpoint, pushed sideways into its own lane when an edge carries more
+   * than one packet in a step (same arithmetic as `draw` in diagram.js).
+   */
+  function pillsOf(d: Diagram, i: number) {
+    const m = stepModel(d, i);
+    const perEdge = new Map<string, number>();
+    for (const p of m.packets) perEdge.set(p.edge, (perEdge.get(p.edge) ?? 0) + 1);
+    const seen = new Map<string, number>();
+    const out: Array<{ label: string; edge: string; rect: Rect; rest: Rect }> = [];
+    for (const p of m.packets) {
+      const edge = d.edges.find((e) => e.id === p.edge)!;
+      const l = layoutEdge(d, edge)!;
+      const { w, h } = packetSize(p.label);
+      const lane = seen.get(p.edge) ?? 0;
+      seen.set(p.edge, lane + 1);
+      const shift = (lane - (perEdge.get(p.edge)! - 1) / 2) * (h + 0.8);
+      const cx = l.mx - l.dy * shift;
+      const cy = l.my + l.dx * shift;
+      const rect = { x: cx - w / 2, y: cy - h / 2, w, h };
+      // `taken` in draw() uses the un-shifted midpoint box.
+      out.push({ label: p.label, edge: p.edge, rect, rest: { x: l.mx - w / 2, y: l.my - h / 2, w, h } });
+    }
+    return out;
+  }
+
+  it('keeps every packet pill clear of every node box and its glow', () => {
+    const bad: string[] = [];
+    for (const d of DIAGRAMS) {
+      const boxes = d.nodes.map((n) => [n.id, nodeBox(n)] as const);
+      d.steps.forEach((_, i) => {
+        for (const p of pillsOf(d, i)) {
+          if (!p.label) continue;
+          for (const [id, b] of boxes) if (hit(p.rect, b)) bad.push(`${d.id} step ${i + 1}: packet "${p.label}" on ${p.edge} ${fmt(p.rect)} covers node ${id} ${fmt(b)}`);
+        }
+      });
+    }
+    expect(bad, bad.join('\n')).toEqual([]);
+  });
+
+  it('keeps every step note clear of every node box and its glow, as drawn beside the resting packets', () => {
+    const bad: string[] = [];
+    for (const d of DIAGRAMS) {
+      const boxes = d.nodes.map((n) => [n.id, nodeBox(n)] as const);
+      d.steps.forEach((_, i) => {
+        const taken: Rect[] = pillsOf(d, i).map((p) => p.rest);
+        for (const n of stepModel(d, i).notes) {
+          const spot = placeNote(d, n.node, n.text, taken)!;
+          for (const [id, b] of boxes) if (hit(spot, b)) bad.push(`${d.id} step ${i + 1}: note "${n.text}" on ${n.node} ${fmt(spot)} covers node ${id} ${fmt(b)}`);
+          taken.push({ x: spot.x, y: spot.y, w: spot.w, h: spot.h });
+        }
+      });
+    }
+    expect(bad, bad.join('\n')).toEqual([]);
+  });
+});
+
+describe('viewBoxFor', () => {
+  it('draws a one-row diagram in a shorter frame than a two-row one', () => {
+    const oneRow = tiny([{ id: 'l', x: 10, y: 50 }, { id: 'm', x: 50, y: 50 }, { id: 'r', x: 90, y: 50 }], [{ id: 'l-m', from: 'l', to: 'm' }, { id: 'm-r', from: 'm', to: 'r' }]);
+    const twoRows = tiny([{ id: 'l', x: 10, y: 15 }, { id: 'm', x: 50, y: 50 }, { id: 'r', x: 90, y: 85 }], [{ id: 'l-m', from: 'l', to: 'm' }, { id: 'm-r', from: 'm', to: 'r' }]);
+    const a = viewBoxFor(oneRow);
+    const b = viewBoxFor(twoRows);
+    expect(a.h).toBeLessThan(b.h);
+    expect(a.w).toBe(VIEW_W);
+    expect(a.x).toBe(VIEW_X0);
+    expect(a.h).toBeGreaterThanOrEqual(26);
+    // The same holds for the real thing: what is drawn is what is in the frame.
+    const cfg = DIAGRAMS.find((d) => d.id === 'platform-end-to-end-check') as Diagram;
+    const flat = DIAGRAMS.find((d) => d.id === 'otel-parent-child') as Diagram;
+    expect(viewBoxFor(flat).h).toBeLessThan(viewBoxFor(cfg).h);
+  });
+
+  it('keeps every node, pill and note of every library diagram inside the frame, with a margin of air', () => {
+    for (const d of DIAGRAMS) {
+      const v = viewBoxFor(d);
+      expect(v.h, d.id).toBeLessThanOrEqual(VIEW_H);
+      expect(v.y, d.id).toBeGreaterThanOrEqual(0);
+      expect(v.y + v.h, d.id).toBeLessThanOrEqual(VIEW_H);
+      const inside = (y0: number, y1: number, what: string) => {
+        expect(y0, `${d.id}: ${what}`).toBeGreaterThanOrEqual(v.y);
+        expect(y1, `${d.id}: ${what}`).toBeLessThanOrEqual(v.y + v.h);
+      };
+      for (const n of d.nodes) {
+        const b = nodeBox(n);
+        inside(b.y, b.y + b.h, `node ${n.id}`);
+      }
+      d.steps.forEach((_, i) => {
+        const m = stepModel(d, i);
+        for (const p of m.packets) {
+          const l = layoutEdge(d, d.edges.find((e) => e.id === p.edge))!;
+          const { h } = packetSize(p.label);
+          inside(l.my - h / 2, l.my + h / 2, `step ${i + 1} packet ${p.label}`);
+        }
+        for (const n of m.notes) {
+          const s = placeNote(d, n.node, n.text, [])!;
+          inside(s.y, s.y + s.h, `step ${i + 1} note ${n.text}`);
+        }
+      });
+    }
+  });
+
+  it('is what the player sets as the picture viewBox', () => {
+    const { doc } = fakeEnv();
+    for (const d of DIAGRAMS) {
+      const el = renderDiagram(d, { document: doc, autoplay: false });
+      const v = viewBoxFor(d);
+      const svgEl = all(el).find((e) => e.tag === 'svg')!;
+      const parts = svgEl.getAttribute('viewBox')!.split(' ').map(Number);
+      expect(parts[0]).toBe(v.x);
+      expect(parts[2]).toBe(v.w);
+      expect(parts[1]).toBeCloseTo(v.y, 1);
+      expect(parts[3]).toBeCloseTo(v.h, 1);
     }
   });
 });
