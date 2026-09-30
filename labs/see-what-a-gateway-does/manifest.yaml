@@ -35,7 +35,7 @@ family: gateway
 path: ai-platform
 module: 1
 order: 1
-tier: free
+tier: pro
 estimated_minutes: 15
 summary: >-
   LiteLLM in front of two model deployments, backed by a real Postgres. A

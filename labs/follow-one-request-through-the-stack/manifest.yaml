@@ -63,7 +63,7 @@ family: gateway
 path: ai-platform
 module: 4
 order: 1
-tier: free
+tier: pro
 estimated_minutes: 10
 summary: >-
   A single real distributed trace, already captured in Jaeger: one support

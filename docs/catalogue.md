@@ -42,7 +42,7 @@ This is the canonical list of labs: one table per learning path, with the code, 
 
 | code | slug | title | family | type | module | order | tier | est. min | status |
 |---|---|---|---|---|---|---|---|---|---|
-| M1-1 | `see-what-a-gateway-does` | See what a gateway actually does | gateway | explore | 1 | 1 | free | 15 | built |
+| M1-1 | `see-what-a-gateway-does` | See what a gateway actually does | gateway | explore | 1 | 1 | pro | 15 | built |
 | M1-2 | `one-endpoint-one-key` | Give every team one endpoint and one key | gateway | build | 1 | 2 | pro | 75 | built |
 | M1-3 | `hard-budget-per-team` | Put a hard budget on every team | gateway | build | 1 | 3 | pro | 55 | built |
 | M1-4 | `add-a-model-without-touching-app-code` | Add a model to the catalogue without touching app code | gateway | build | 1 | 4 | pro | 105 | built |
@@ -58,7 +58,7 @@ This is the canonical list of labs: one table per learning path, with the code, 
 | M3-3 | `build-the-ingestion-pipeline` | Build the ingestion pipeline behind it | gateway | build | 3 | 3 | pro | 55 | built |
 | M3-4 | `add-hybrid-search-and-reranking` | Add hybrid search and reranking | gateway | build | 3 | 4 | pro | 25 | built |
 | M3-5 | `keep-the-index-fresh-without-downtime` | Keep the index fresh without downtime | gateway | build | 3 | 5 | pro | 35 | built |
-| M4-1 | `follow-one-request-through-the-stack` | Follow one request through the stack | gateway | explore | 4 | 1 | free | 10 | built |
+| M4-1 | `follow-one-request-through-the-stack` | Follow one request through the stack | gateway | explore | 4 | 1 | pro | 10 | built |
 | M4-2 | `see-one-request-across-every-service` | See one request across every service | gateway | build | 4 | 2 | pro | 30 | built |
 | M4-3 | `collect-telemetry-without-losing-the-errors` | Collect telemetry without losing the errors | gateway | build | 4 | 3 | pro | 25 | built |
 | M4-4 | `tell-finance-who-spent-the-money` | Tell finance who spent the money | gateway | build | 4 | 4 | pro | 40 | built |
