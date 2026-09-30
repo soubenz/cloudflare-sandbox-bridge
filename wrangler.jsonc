@@ -20,7 +20,20 @@
     {
       "class_name": "GatewayLab",
       "image": "./images/gateway/Dockerfile",
-      "instance_type": "standard-1",
+      // Custom instance type, not "standard-1": the gateway image's own
+      // unpacked size outgrew standard-1's 8GB disk the moment Presidio +
+      // spaCy were added (Module 7's PII-redaction lab) -- confirmed live
+      // via `wrangler containers info`: every new instance failed
+      // ImagePullError, "the requested disk size was smaller than the
+      // unpacked size of the image", and the whole GatewayLab application
+      // got stuck in `provisioning` with 0 healthy instances for hours,
+      // taking down every gateway-family lab, not just the new one. Same
+      // vCPU/memory as standard-1 (0.5 vCPU, 4096 MiB -- unaffected, only
+      // disk was the bottleneck), disk doubled to 16GB for real headroom
+      // given how many tools this image has accumulated (pgvector, Qdrant,
+      // Phoenix, MLflow, ContextForge, Jaeger, otelcol-contrib, Presidio)
+      // and is likely to keep accumulating.
+      "instance_type": { "vcpu": 0.5, "memory_mib": 4096, "disk_mb": 16000 },
       "max_instances": 20
     }
   ],
@@ -93,7 +106,8 @@
         {
           "class_name": "GatewayLab",
           "image": "./images/gateway/Dockerfile",
-          "instance_type": "standard-1",
+          // Kept in sync with the production block above -- see its comment.
+          "instance_type": { "vcpu": 0.5, "memory_mib": 4096, "disk_mb": 16000 },
           "max_instances": 5
         }
       ],
