@@ -25,7 +25,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
-PORT = int(os.environ.get("PROVIDER_PORT", "8971"))
+PORT = int(os.environ.get("PROVIDER_PORT", "8961"))
 
 COMPLETION_TOKENS = {"a": 12, "b": 20, "c": 7}
 

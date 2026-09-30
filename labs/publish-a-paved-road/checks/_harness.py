@@ -43,7 +43,7 @@ WORKSPACE_DIR = os.environ.get("WORKSPACE_DIR", "/workspace")
 CREDENTIALS_FILE = os.environ.get("CREDENTIALS_FILE", os.path.join(WORKSPACE_DIR, "template", "credentials.json"))
 
 TEMPLATE_URL = os.environ.get("TEMPLATE_URL", "http://127.0.0.1:8980").rstrip("/")
-FAULT_PROXY_URL = os.environ.get("FAULT_PROXY_URL", "http://127.0.0.1:8973").rstrip("/")
+FAULT_PROXY_URL = os.environ.get("FAULT_PROXY_URL", "http://127.0.0.1:8963").rstrip("/")
 LITELLM_URL = os.environ.get("LITELLM_URL", "http://127.0.0.1:4000").rstrip("/")
 JAEGER_QUERY_URL = os.environ.get("JAEGER_QUERY_URL", "http://127.0.0.1:16686").rstrip("/")
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
@@ -250,11 +250,33 @@ def _build_results():
         return results
 
 
+# The longest any check of this lab may run (manifest.yaml `timeout_s` is 240).
+# A lock older than a little past that belongs to a run that was SIGKILLed at
+# its timeout and can never finish, so it is removed rather than waited on.
+LONGEST_CHECK_TIMEOUT_S = 300
+
+
+def _lock_is_stale():
+    try:
+        return time.time() - os.path.getmtime(LOCK_PATH) > LONGEST_CHECK_TIMEOUT_S
+    except OSError:
+        return False
+
+
+def _clear_stale_lock():
+    if _lock_is_stale():
+        try:
+            os.remove(LOCK_PATH)
+        except OSError:
+            pass
+
+
 def get_results():
     if os.path.exists(RESULTS_PATH):
         with open(RESULTS_PATH) as f:
             return json.load(f)
 
+    _clear_stale_lock()
     got_lock = False
     try:
         fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -282,6 +304,10 @@ def get_results():
         if os.path.exists(RESULTS_PATH):
             with open(RESULTS_PATH) as f:
                 return json.load(f)
+        if _lock_is_stale():
+            # the holder was killed at its timeout: take over, don't wait forever
+            _clear_stale_lock()
+            return get_results()
         time.sleep(1)
     raise RuntimeError("timed out waiting for another check to finish the shared grader setup")
 
@@ -398,4 +424,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:  # SystemExit (every normal pass/fail) is not an Exception
+        print(json.dumps({"pass": False, "message": "grader error: %s: %s" % (type(e).__name__, e)}))
+        sys.exit(1)

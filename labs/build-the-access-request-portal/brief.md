@@ -1,11 +1,10 @@
 # Build the page where teams request access
 
 Teams that want to use the shared LiteLLM gateway aren't supposed to get a
-model key just by asking for one -- they submit a request, someone with
-real approval authority signs off, and only then does the gateway actually
-grant anything. There's no ticket queue behind this: the portal itself
-tracks the request from submission to approval and is the thing that talks
-to the gateway.
+model key just by asking. They submit a request, someone with real approval
+authority signs off, and only then does the gateway grant anything. There's
+no ticket queue: the portal tracks the request from submission to approval
+and is the thing that talks to the gateway.
 
 `workspace/portal/app.py` already implements most of this. Read it before
 you touch anything.
@@ -50,9 +49,8 @@ curl -s -X POST $PORTAL_URL/requests/1/approve \
 curl -s $PORTAL_URL/requests/1
 ```
 
-The key that comes back from a real approval actually works against
-`$LITELLM_URL/chat/completions` -- and only for the models that request
-actually named.
+The key from a real approval works against `$LITELLM_URL/chat/completions`,
+and only for the models that request named.
 
 ## Your task
 
@@ -63,9 +61,8 @@ something retrying a timed-out call) calls
 `POST /requests/{id}/approve` for it -- provisions LiteLLM access exactly
 once.
 
-You don't need to change what gets granted or who may approve -- both of
-those already work correctly. You're looking for the part of the flow that
-isn't safe to call twice.
+What gets granted and who may approve already work correctly. You're looking
+for the part of the flow that isn't safe to call twice.
 
 After you edit `portal/app.py`, restart the `portal` service from the
 Services panel (or `POST /sessions/{id}/services/portal/restart`) to pick
@@ -85,7 +82,7 @@ way any real caller would.
 | `only-the-approver-can-approve` | Approving with no credential is refused with `401`; approving with the wrong credential is refused with `403`; either way nothing is granted, and the real approver credential still works right afterward. |
 | `approving-twice-does-not-double-provision` | Approving the same request twice -- back to back, and as two calls fired at the same instant -- leaves exactly one LiteLLM team and exactly one LiteLLM key for it, confirmed against LiteLLM's own admin API, not the portal's own database. |
 
-The last check is the one this lab is actually about. The other three
+The last check is the one this lab is about. The other three
 describe behaviour the skeleton already gets right -- they're there so a
 fix that happens to also break who can approve, or what gets granted,
 doesn't quietly pass anyway.

@@ -5,7 +5,7 @@ configured to reach ``a`` only through this proxy -- never directly -- so
 the proxy is the one place a hang can be switched on or off.
 
 Every call this proxy receives is forwarded verbatim to deployment a
-(``http://127.0.0.1:8971/a/v1/chat/completions`` by default) *unless* the
+(``http://127.0.0.1:8961/a/v1/chat/completions`` by default) *unless* the
 proxy is currently in ``down`` or ``slow`` mode:
 
   * ``healthy`` (the default) -- forwards every call normally.
@@ -41,8 +41,8 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
-PORT = int(os.environ.get("FAULT_PROXY_PORT", "8973"))
-UPSTREAM = os.environ.get("UPSTREAM_URL", "http://127.0.0.1:8971/a/v1").rstrip("/")
+PORT = int(os.environ.get("FAULT_PROXY_PORT", "8963"))
+UPSTREAM = os.environ.get("UPSTREAM_URL", "http://127.0.0.1:8961/a/v1").rstrip("/")
 SLOW_SECONDS = float(os.environ.get("FAULT_SLOW_SECONDS", "30"))
 UPSTREAM_TIMEOUT_S = float(os.environ.get("FAULT_PROXY_UPSTREAM_TIMEOUT_S", "60"))
 

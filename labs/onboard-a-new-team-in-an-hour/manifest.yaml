@@ -61,6 +61,8 @@ objectives:
   - "Ship a real, immediately-runnable example alongside the credentials it depends on, so a new team member never has to configure anything by hand"
 timeout_minutes: 90
 idle_minutes: 10
+x-ports-exempt: true
+x-ports-exempt-reason: "wiki (8901) and tickets (8902) are two teams' own MCP tool servers with no canonical port; provider and view use the canonical 8961/8962"
 
 env:
   LITELLM_URL: "http://127.0.0.1:4000"
@@ -196,11 +198,11 @@ services:
     argv: ["python3", "-B", "/workspace/services/view.py"]
     cwd: /workspace
     env:
-      VIEW_PORT: "8904"
+      VIEW_PORT: "8962"
       LITELLM_URL: "http://127.0.0.1:4000"
       LITELLM_MASTER_KEY: "sk-opalix-onboard-master"
       CONTEXTFORGE_URL: "http://127.0.0.1:4744"
-    port: 8904
+    port: 8962
     healthcheck:
       type: http
       path: /healthz

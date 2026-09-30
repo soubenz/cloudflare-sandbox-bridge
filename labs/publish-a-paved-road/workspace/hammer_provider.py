@@ -16,7 +16,7 @@ import sys
 import urllib.error
 import urllib.request
 
-FAULT_PROXY_URL = os.environ.get("FAULT_PROXY_URL", "http://127.0.0.1:8973").rstrip("/")
+FAULT_PROXY_URL = os.environ.get("FAULT_PROXY_URL", "http://127.0.0.1:8963").rstrip("/")
 
 MODES = ("slow", "healthy", "down")
 

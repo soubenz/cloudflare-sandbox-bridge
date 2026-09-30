@@ -99,10 +99,12 @@ objectives:
   - "Leave the other paved-road defaults exactly as they are: the bounded timeout+retry and the scoped credential are already correct"
 timeout_minutes: 90
 idle_minutes: 10
+x-ports-exempt: true
+x-ports-exempt-reason: "seed (8974) and the template under repair (8980) are this lab's own services with no canonical port; provider and fault-proxy use the canonical 8961/8963"
 
 env:
-  PROVIDER_URL: "http://127.0.0.1:8971"
-  FAULT_PROXY_URL: "http://127.0.0.1:8973"
+  PROVIDER_URL: "http://127.0.0.1:8961"
+  FAULT_PROXY_URL: "http://127.0.0.1:8963"
   LITELLM_URL: "http://127.0.0.1:4000"
   LITELLM_MASTER_KEY: "sk-opalix-ppr-master"
   TEMPLATE_URL: "http://127.0.0.1:8980"
@@ -137,8 +139,8 @@ services:
     argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
     cwd: /workspace
     env:
-      PROVIDER_PORT: "8971"
-    port: 8971
+      PROVIDER_PORT: "8961"
+    port: 8961
     healthcheck:
       type: http
       path: /healthz
@@ -150,10 +152,10 @@ services:
     argv: ["python3", "-B", "/workspace/services/fault_proxy.py"]
     cwd: /workspace
     env:
-      FAULT_PROXY_PORT: "8973"
-      UPSTREAM_URL: "http://127.0.0.1:8971/a/v1"
+      FAULT_PROXY_PORT: "8963"
+      UPSTREAM_URL: "http://127.0.0.1:8961/a/v1"
       FAULT_SLOW_SECONDS: "30"
-    port: 8973
+    port: 8963
     healthcheck:
       type: http
       path: /healthz

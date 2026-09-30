@@ -13,15 +13,15 @@ model_list:
   - model_name: docs-writer
     litellm_params:
       model: openai/fake-model
-      api_base: http://127.0.0.1:8971/a/v1
+      api_base: http://127.0.0.1:8961/a/v1
       api_key: unused
   - model_name: code-helper
     litellm_params:
       model: openai/fake-model
-      api_base: http://127.0.0.1:8971/b/v1
+      api_base: http://127.0.0.1:8961/b/v1
       api_key: unused
   - model_name: platform-internal
     litellm_params:
       model: openai/fake-model
-      api_base: http://127.0.0.1:8971/c/v1
+      api_base: http://127.0.0.1:8961/c/v1
       api_key: unused

@@ -61,13 +61,15 @@ objectives:
   - "Prove an approval boundary (who may approve, what gets granted) against the gateway's own admin API, not the portal's own bookkeeping"
 timeout_minutes: 90
 idle_minutes: 10
+x-ports-exempt: true
+x-ports-exempt-reason: "the portal is this lab's own JSON API service and has no canonical port; provider is on the canonical 8961"
 
 env:
   LITELLM_URL: "http://127.0.0.1:4000"
   LITELLM_MASTER_KEY: "sk-opalix-access-portal-master"
   APPROVER_TOKEN: "opalix-access-portal-approver-secret"
   PORTAL_URL: "http://127.0.0.1:8973"
-  PROVIDER_URL: "http://127.0.0.1:8971"
+  PROVIDER_URL: "http://127.0.0.1:8961"
 
 services:
   # Copied from test/fixtures/labs/gateway-litellm-hello / labs/one-endpoint-
@@ -91,8 +93,8 @@ services:
     argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
     cwd: /workspace
     env:
-      PROVIDER_PORT: "8971"
-    port: 8971
+      PROVIDER_PORT: "8961"
+    port: 8961
     healthcheck:
       type: http
       path: /healthz
