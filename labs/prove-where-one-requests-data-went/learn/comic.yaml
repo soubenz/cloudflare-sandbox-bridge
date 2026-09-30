@@ -1,0 +1,44 @@
+title: Where did it go?
+panels:
+  - scene: desk
+    cast: [anneke]
+    bg: lilac
+    caption: Ten past nine.
+    bubbles:
+      - { who: anneke, text: "A customer asked, in writing, where the data in their ticket was processed. Their contract names a region." }
+    lines: ["support queue: one ticket", "contract: region named", "reply due: this week"]
+    sfx: HMM.
+  - scene: message
+    cast: [maren]
+    bg: sand
+    prop: envelope
+    sfx: PING!
+    bubbles:
+      - { who: maren, text: "Anneke needs proof for a customer. I pointed her at you." }
+  - scene: portrait
+    cast: [anneke]
+    bg: cobalt
+    prop: map
+    caption: Calm, exact, no exclamation marks.
+    bubbles:
+      - { who: anneke, text: "I do not doubt the routing rules. I would like to see the request itself. Then I can sign my name under it." }
+  - scene: screen
+    lines:
+      - "$ python3 -B send_request.py support-us"
+      - "200  response id returned"
+      - "region the data reached ........ ?"
+      - "services on a support-eu trace . ?"
+      - "every region tag agrees ........ ?"
+    caption: Three things to pin down.
+  - scene: duo
+    cast: [tomasz, anneke]
+    bg: ice
+    caption: Three aliases, each declared to sit in its own region.
+    bubbles:
+      - { who: tomasz, text: "The EU one is not a straight line to its provider. There is something in the middle. I never wrote down what." }
+      - { who: anneke, text: "Answer from what happened, not from what was meant to happen. I will ask how you know." }
+  - scene: you
+    caption: Your turn.
+    lines:
+      - "$ python3 -B send_request.py support-eu"
+      - "ready."

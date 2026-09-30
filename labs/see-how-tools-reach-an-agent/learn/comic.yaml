@@ -1,0 +1,41 @@
+title: One door for the tools
+panels:
+  - scene: desk
+    cast: [priya]
+    bg: sand
+    caption: Thursday morning, by the coffee machine.
+    bubbles:
+      - { who: priya, text: "My assistant has to explain why a parcel is late. That starts with the weather in the depot's city." }
+    lines: ["parcel: late", "depot city weather: ?", "reply to customer: ?"]
+  - scene: message
+    cast: [priya]
+    bg: rose
+    prop: document
+    sfx: HMM.
+    bubbles:
+      - { who: priya, text: "Search wrote a weather lookup, Billing a calculator. I do not want a fifth way." }
+  - scene: portrait
+    cast: [maren]
+    bg: lilac
+    prop: key
+    bubbles:
+      - { who: maren, text: "Security wants one door. Agents ask a server what tools it has, then call them by name. See it from the agent's side." }
+  - scene: screen
+    caption: A tool gateway, with a weather server and a calculator behind it.
+    lines:
+      - "$ call_tool.py --list"
+      - "tools an agent can see: ?"
+      - "$ call_tool.py calculator-tools-add"
+      - "result: ?"
+      - "$ call_tool.py does-not-exist"
+      - "marked as an error: ?"
+  - scene: duo
+    cast: [maren, priya]
+    bg: mint
+    bubbles:
+      - { who: maren, text: "Look at the request bodies, and at what comes back when a call goes right and when it does not." }
+      - { who: priya, text: "My assistant will read those answers. The shape of a failure matters to me." }
+  - scene: you
+    bg: navy
+    caption: Your turn.
+    lines: ["$ call_tool.py --list", "ready."]

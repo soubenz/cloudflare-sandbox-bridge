@@ -1,0 +1,45 @@
+title: Do the checklist yourself
+panels:
+  - scene: desk
+    cast: [maren]
+    bg: sand
+    caption: Wednesday, a little after ten.
+    bubbles:
+      - { who: maren, text: "A new team starts Monday. Their onboarding is a wiki page with nine bullets, and last time it took most of a week." }
+    lines: ["wiki: Team onboarding", "9 bullets", "last edited: before the gateway moved"]
+    sfx: TAP TAP
+  - scene: message
+    cast: [tomasz]
+    bg: ice
+    prop: laptop
+    sfx: HMM.
+    bubbles:
+      - { who: tomasz, text: "The script in the workspace runs the whole path for real. It is not a mock. Sorry about the comments." }
+  - scene: portrait
+    cast: [maren]
+    bg: navy
+    prop: key
+    caption: Maren hands you the task.
+    bubbles:
+      - { who: maren, text: "Be that new team for an hour. Get them fast-draft and their own tool, then make one real call that uses both." }
+  - scene: screen
+    lines:
+      - "$ python3 -B onboard.py --status"
+      - "fast-draft       granted to nobody"
+      - "weather-tools    not registered"
+      - "systems touched ................ ?"
+      - "new key on legacy-writer ....... ?"
+      - "real end-to-end call ........... ?"
+    caption: Three blanks to fill in as you go.
+  - scene: duo
+    cast: [maren, tomasz]
+    bg: mint
+    caption: Nothing is broken. Walk the path for real.
+    bubbles:
+      - { who: maren, text: "I will ask you again on Friday, so do not answer from the wiki." }
+      - { who: tomasz, text: "Two people have edited it since the gateway moved." }
+  - scene: you
+    caption: Your turn.
+    lines:
+      - "$ python3 -B onboard.py --status"
+      - "ready."

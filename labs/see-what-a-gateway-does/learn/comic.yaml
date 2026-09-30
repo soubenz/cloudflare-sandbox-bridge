@@ -1,0 +1,41 @@
+title: Which provider answered?
+panels:
+  - scene: desk
+    cast: [jonas]
+    bg: sand
+    caption: Tuesday, a little after ten.
+    bubbles:
+      - { who: jonas, text: "When Support's assistant replies to a customer, which provider answered? And what did that one reply cost?" }
+    lines: ["monthly invoice: one line", "provider per reply: ?", "cost per reply: ?"]
+  - scene: message
+    cast: [maren]
+    bg: rose
+    prop: envelope
+    sfx: PING!
+    bubbles:
+      - { who: maren, text: "Jonas forwarded this. Four teams, four providers, and nobody can answer him." }
+  - scene: portrait
+    cast: [maren]
+    bg: lilac
+    prop: map
+    sfx: HMM.
+    bubbles:
+      - { who: maren, text: "Tomasz built a gateway. Teams call an alias, never a provider's model name. Tell me what it really does." }
+  - scene: screen
+    caption: A small copy of it, and a scripted stand-in for a provider.
+    lines:
+      - "$ send_calls.py support \"hello gateway\""
+      - "answered by deployment ?"
+      - "total tokens ?"
+      - "$ send_calls.py does-not-exist"
+      - "HTTP status ?"
+  - scene: duo
+    cast: [jonas, maren]
+    bg: mint
+    bubbles:
+      - { who: jonas, text: "Can a caller find out which deployment answered without asking us?" }
+      - { who: maren, text: "Find out whether that is true. Three questions are waiting in the lab." }
+  - scene: you
+    bg: navy
+    caption: Your turn.
+    lines: ["$ send_calls.py support \"hello gateway\"", "ready."]
