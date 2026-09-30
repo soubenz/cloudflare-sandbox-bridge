@@ -10,14 +10,18 @@ A lab is a directory:
   workspace/          -> learner-visible starting files
   checks/              -> grader scripts, never sent to the learner
   pressure/            -> scripts for scheduled pressure events (optional)
-  solution/            -> reference solution, NEVER published (opalix labs publish excludes it)
+  solution/            -> reference solution, stored privately, shown to a learner once they have earned it
+    _degenerate/       -> author-only wrong answers (optional), never uploaded
 ```
 
-`opalix labs publish` builds two archives. `workspace.tgz` is the contents
+`opalix labs publish` builds three archives. `workspace.tgz` is the contents
 of `workspace/` plus `brief.md` and `hints.md` as siblings, extracted
 directly into `/workspace` and chowned to `learner`. `private.tgz` is
-`checks/` and `pressure/` only. `solution/` is not put into either archive,
-so it never reaches the server.
+`checks/` and `pressure/` only. `solution.tgz` is `solution/`, with its files
+at the archive root exactly as they map onto `/workspace`; it is stored
+privately, apart from the other two, and is never inside either of them. See
+[Solutions](#solutions) for what is and is not uploaded, and when a learner
+sees it.
 
 See `test/fixtures/labs/hello/` for a minimal worked example, and
 `src/labs/manifest.ts` for the full schema (zod, so it's the source of
@@ -213,11 +217,11 @@ env, is lab material, not a login screen.
   usually means one missing fact, not a missing strategy. Ship exactly one
   `hints[]` entry for an intro lab, timed the same way as the others'
   first hint (around the 15–20% mark of `timeout_minutes`). `solution/` is
-  never uploaded to the server at all, at any difficulty. The hint half is
-  weaker than it sounds: nothing caps `hints[]` at three (or at one), and
-  there is no unlock gate — each entry fires on its own `after_minutes`
-  timer and is pushed to the event stream as a `hint` event carrying the
-  full text. `hints.md`, if present, is shipped into `/workspace` in plain
+  uploaded and shown to the learner only under the unlock rule (see
+  [Solutions](#solutions)), at any difficulty. The hints themselves have no
+  gate: nothing caps `hints[]` at three (or at one), and each entry fires on
+  its own `after_minutes` timer and is pushed to the event stream as a
+  `hint` event carrying the full text. `hints.md`, if present, is shipped into `/workspace` in plain
   text at session start, so anything written there is readable by the
   learner from minute zero.
 - **Check scripts are never resident in the container between runs.** They
@@ -300,6 +304,44 @@ ignores unknown keys, so these do not affect publishing.)
 warning that it did so. Use it for a deliberate exception, not to get past a
 leak.
 
+## Solutions
+
+`solution/` is the reference answer, laid out as it maps onto `/workspace`
+(the same paths `labs test` writes into a fresh session). Publishing a lab
+stores it, and the console shows it to the learner as a diff against their
+own files once they have made a real attempt. A session has earned it when
+it has **passed every check**, or when it has **had every hint delivered and
+run the checks at least twice** (a lab with no hints needs only the two
+runs). Until then the API answers `403 solution_locked`; a lab with no
+`solution/` simply has nothing to show. The exact rule and routes are in
+`docs/api.md` (Solution reveal).
+
+What that means for what you put in it:
+
+- **Nothing in `solution/` may be a secret.** It is uploaded to the server
+  and returned to any learner who has earned it. It is stored privately (not
+  in `workspace.tgz`, not in `private.tgz`, no catalogue route serves it),
+  but a learner who unlocks it reads every file in it. Graders, seeds and
+  credentials belong in `checks/`, which is never revealed.
+- **`_degenerate/` is never uploaded.** A top-level `solution/_degenerate/`
+  directory holds the wrong answers that prove your checks discriminate. It
+  is excluded from the upload and from `labs test`'s pass case. (A
+  `_degenerate` directory nested deeper is an ordinary directory and is
+  uploaded.)
+- Also left out: `__pycache__`, `*.pyc` / `*.pyo`, any dotfile or dot
+  directory (`.DS_Store`, `.pytest_cache`), symlinks, and anything outside
+  `solution/`.
+- **Only text is shown**, and only up to 40 files, 64 KB each, 512 KB in
+  all, paths sorted. A binary file (or any file that is not valid UTF-8, or
+  has a NUL byte) is skipped; if a cap drops a file the learner is told the
+  list is truncated. Keep the solution to the files a learner has to change.
+- **Republishing the lab is what uploads its solution.** Edit `solution/`,
+  then run `labs publish` again: a new `version` if you bump it, or
+  `--force` to overwrite the current one (a forced publish of a directory
+  with no `solution/` removes the solution that version had). A session
+  already running keeps the lab version it started on, so it sees the
+  solution of that version.
+
 ## Publishing and testing
 
 ```sh
@@ -307,9 +349,9 @@ npm run opalix -- labs publish path/to/<slug>     # lints first; --skip-lint to 
 npm run opalix -- labs test path/to/<slug>
 ```
 
-Both take the lab **directory**, not the slug. `solution/` is never
-published, so it exists only in your own lab directory — a slug alone could
-never find it.
+Both take the lab **directory**, not the slug: `labs publish` packs the
+files in it, and `labs test` applies your local `solution/` (not the
+published one) to a fresh session, so a slug alone could not do either.
 
 `labs test` runs the whole loop and is the acceptance gate for a lab:
 

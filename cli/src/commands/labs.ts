@@ -48,6 +48,59 @@ export const TAR_EXCLUDES = [
   '--exclude=.ruff_cache',
 ];
 
+/**
+ * Files under `solution/` that `labs publish` uploads, as sorted POSIX paths
+ * relative to it. The reveal shows these to learners, so the rules are
+ * narrower than what `labs test` applies:
+ *
+ *   - a top-level `_degenerate/` directory is never uploaded (the author's
+ *     wrong answers, kept to prove the checks discriminate);
+ *   - nothing under a directory or with a name starting with `.`
+ *     (`.DS_Store`, `.pytest_cache`, editor droppings);
+ *   - no `__pycache__` directory and no `*.pyc` / `*.pyo`;
+ *   - symlinks are skipped, so nothing outside `solution/` can be pulled in.
+ */
+export function collectSolutionUploadFiles(dir: string): string[] {
+  const out: string[] = [];
+  const walk = (current: string): void => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const name = entry.name;
+      if (name.startsWith('.') || name.includes('\n')) continue;
+      if (entry.isSymbolicLink()) continue;
+      const full = join(current, name);
+      if (entry.isDirectory()) {
+        if (name === '__pycache__' || (current === dir && name === '_degenerate')) continue;
+        walk(full);
+      } else if (entry.isFile()) {
+        if (name.endsWith('.pyc') || name.endsWith('.pyo')) continue;
+        out.push(relative(dir, full).split(sep).join('/'));
+      }
+    }
+  };
+  walk(dir);
+  return out.sort();
+}
+
+/**
+ * `solution/` as a gzip tarball with the files at the archive root, exactly
+ * as they map onto /workspace, or undefined when there is no solution
+ * directory or nothing in it to upload. The file list is explicit (`-T -`)
+ * instead of `--exclude` patterns, whose matching differs between GNU tar
+ * and bsdtar; the `./` prefix keeps a name that starts with `-` from being
+ * read as an option. COPYFILE_DISABLE stops macOS tar adding `._` files.
+ */
+export function buildSolutionTgz(solutionDir: string): { tgz: Buffer; files: string[] } | undefined {
+  if (!existsSync(solutionDir) || !statSync(solutionDir).isDirectory()) return undefined;
+  const files = collectSolutionUploadFiles(solutionDir);
+  if (files.length === 0) return undefined;
+  const tgz = execFileSync('tar', ['czf', '-', '-C', solutionDir, '-T', '-'], {
+    input: files.map((f) => `./${f}`).join('\n') + '\n',
+    env: { ...process.env, COPYFILE_DISABLE: '1' },
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  return { tgz, files };
+}
+
 function buildTgz(sourceDir: string, subdirs: string[]): Buffer {
   const staging = mkdtempSync(join(tmpdir(), 'opalix-publish-'));
   try {
@@ -84,7 +137,9 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
 
   labs
     .command('publish <dir>')
-    .description('Publish a lab directory (manifest.yaml, workspace/, checks/, pressure/ — solution/ is never uploaded)')
+    .description(
+      'Publish a lab directory (manifest.yaml, workspace/, checks/, pressure/, and solution/ minus _degenerate/ — stored privately, shown to learners once they have earned it)'
+    )
     .option('--force', 'overwrite a version that is already published (default: the server answers 409 version_exists)')
     .option('--skip-lint', 'publish even if `labs lint` reports errors')
     .action(async (dir: string, opts: { force?: boolean; skipLint?: boolean }) => {
@@ -122,6 +177,14 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
         form.set('workspace', new Blob([workspaceTgz]), 'workspace.tgz');
         form.set('private', new Blob([privateTgz.length > 0 ? privateTgz : Buffer.alloc(0)]), 'private.tgz');
 
+        // solution/ is stored privately and revealed to a learner under the
+        // unlock rule (docs/lab-authoring.md). No solution directory, nothing sent.
+        const solution = buildSolutionTgz(join(dir, 'solution'));
+        if (solution) {
+          form.set('solution', new Blob([solution.tgz]), 'solution.tgz');
+          console.error(`solution/: ${solution.files.length} file${solution.files.length === 1 ? '' : 's'} packed for the reveal`);
+        }
+
         if (opts.force) form.set('force', 'true');
 
         const result: { slug: string; version: string; warnings?: string[] } = await getClient().publishLab(form);
@@ -148,11 +211,11 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
       const slug = manifest.slug;
       if (!slug) throw new Error(`${manifestPath} has no slug`);
 
-      // solution/ is deliberately never published (see `labs publish`), so it
-      // only ever exists in the author's local lab directory — which is why
-      // this command takes that directory rather than a bare slug, exactly
-      // like `labs publish <dir>` does. The session itself runs whatever
-      // version of the lab is currently published.
+      // This command applies the author's local solution/ (including
+      // `_degenerate/`'s exclusion), not the published one, which is why it
+      // takes that directory rather than a bare slug, exactly like
+      // `labs publish <dir>` does. The session itself runs whatever version
+      // of the lab is currently published.
       const solutionDir = join(dir, 'solution');
       const hasSolution = existsSync(solutionDir);
       const solutionFiles = hasSolution ? collectSolutionFiles(solutionDir) : [];

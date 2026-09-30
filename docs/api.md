@@ -32,6 +32,9 @@ set) and marks those responses `X-Opalix-Key: previous`; see
 
 Every route that accepts a session token also accepts the service key, so a
 service caller can reach the whole session surface without minting a token.
+The exceptions refuse the service key with `403 session_token_required`:
+the service-cookie route (it would put the key in a cookie) and
+`GET /sessions/{id}/solution` (the reveal is the learner's own view).
 
 Token lifetime tracks the session. Every mint goes through
 `sessionTokenExp` in `src/auth.ts`, which is the session's expiry plus ten
@@ -54,14 +57,15 @@ minutes are usable now.
 | GET | `/usage?from=&to=` | service | estimated container spend per family from D1 sessions (epoch ms; default last 30 days) → `{ from, to, by_family: { agent: { hours, usd, sessions }, gateway }, total_usd }`; see `docs/runbooks/cost.md` |
 | GET | `/labs` | service¹ | catalogue, ordered by `(path, module, order, slug)` → `[{ slug, version, title, type, family, summary?, objectives, difficulty?, timeout_minutes, path?, module?, order?, prerequisites?, tier, estimated_minutes? }]`. `summary`, `difficulty`, `path`, `module`, `order`, `prerequisites` and `estimated_minutes` are omitted when the manifest does not set them; `tier` is `free` or `pro` (default `pro`); `objectives` is `[]` when unset. `bundle.ts` `listCatalogue({ path?, module?, tier?, limit?, cursor? })` implements the filtered, paged form (cursor = last slug of the previous page; default limit 50, max 200) for the route to expose |
 | GET | `/labs/:slug` | service¹ | current version + manifest → `{ version, manifest }` |
-| POST | `/labs/publish` | service | multipart: `manifest`, `workspace`, `private` files plus optional `force=true` → `201 { slug, version, warnings: string[] }`; `warnings` lists prerequisites that are not published labs. Re-publishing an existing version is `409 version_exists` unless `force` |
+| POST | `/labs/publish` | service | multipart: `manifest`, `workspace`, `private` files, an optional `solution` file (the lab's `solution/` as a gzip tarball; `labs publish` sends it when the directory has anything to upload) and optional `force=true` → `201 { slug, version, warnings: string[] }`; `warnings` lists prerequisites that are not published labs. Re-publishing an existing version is `409 version_exists` unless `force`. The solution is stored privately at `labs/{slug}/{version}/solution.tgz`, never inside `workspace.tgz` or `private.tgz` and never served by a catalogue route; a forced re-publish without a `solution` part removes the one the version had |
 | GET | `/pools`, `/pools/:family` | service¹ | warm pool stats → `{ warm, claimed, max_instances, available, config, stats }`; `max_instances` is the container class's ceiling (`MAX_INSTANCES_<FAMILY>` var, default 10) and `available` is `max_instances - claimed`, the sessions that could still start⁴; `stats` includes `consecutive_start_failures`, `degraded`, and `last_start_error` / `last_start_error_at` when a start has failed |
 | POST | `/pools/:family/prime` | service | `{ target? }` → `{ ok: true }`; only ever grows the pool |
 | POST | `/pools/:family/drain` | service | destroys every warm container; claimed ones are untouched → `{ ok: true }` |
 | POST | `/sessions` | service | `{ lab, user_id }` → `202 { id, state, token, urls }`; `503 at_capacity` with a `Retry-After` header when the family's pool is full⁴ |
 | POST | `/sessions/start` | service | `{ lab, user_id }` → `202` same shape, or `200 { ..., rejoined: true }` if that user already has a live session² |
 | GET | `/sessions` | service | every live session, newest first, max 200 |
-| GET | `/sessions/:id` | session | the `status()` body: `{ meta, services, snapshots, checks?, cost, hints, pressure, manifest_summary?, checks_history, server_time }` — see [Session status](#session-status) |
+| GET | `/sessions/:id` | session | the `status()` body: `{ meta, services, snapshots, checks?, cost, hints, pressure, manifest_summary?, checks_history, solution, server_time }` — see [Session status](#session-status) |
+| GET | `/sessions/:id/solution` | session token only | the lab's solution as files, once the session has earned it → `200 { files: [{ path, content }], truncated }`; `404 no_solution`, `403 solution_locked`; the service key is refused with `403 session_token_required`. See [Solution reveal](#solution-reveal) |
 | GET/PUT/DELETE | `/sessions/:id/files/:path` | session | under `/workspace`; PUT capped at 2 MiB |
 | GET | `/sessions/:id/files?path=` | session | list; `path` defaults to `/workspace` but is **not** confined to it |
 | POST | `/sessions/:id/checks` | session | `{ only? }` → runs and returns the full `ChecksRun` |
@@ -191,9 +195,12 @@ the RPC boundary.
 | 404 | `lab_not_found` | no published lab with that slug |
 | 400 | `bad_window` | `GET /usage` with a `from`/`to` that is not a non-negative number, or `from >= to` |
 | 400 | `bad_path` | a `/files` path that is not under `/workspace` — lexically, after `realpath` resolution (symlinks included), or because `learner` cannot access it |
-| 400 | `unknown_event_type` | `POST /sessions/{id}/events` with a type outside the injectable set (`cost`, `llm.call`, `alert`, `pressure`, `hint`, `session.idle_warning`, `session.expiring`, `session.state`, `service.health`) |
+| 400 | `unknown_event_type` | `POST /sessions/{id}/events` with a type outside the injectable set (`cost`, `llm.call`, `alert`, `pressure`, `hint`, `solution.unlocked`, `session.idle_warning`, `session.expiring`, `session.state`, `service.health`) |
 | 404 | `unknown_family` | a `/pools/:family` path that is not `agent` or `gateway` |
-| 403 | `session_token_required` | `POST /sessions/{id}/services/{name}/session` called with the service key |
+| 403 | `session_token_required` | `POST /sessions/{id}/services/{name}/session` or `GET /sessions/{id}/solution` called with the service key |
+| 404 | `no_solution` | `GET /sessions/{id}/solution` for a lab version that has no solution (whatever the session's progress) |
+| 403 | `solution_locked` | `GET /sessions/{id}/solution` before the unlock rule is met; `details: { rule, progress }`, the same shape as `solution` in the status |
+| 500 | `solution_unreadable` | `GET /sessions/{id}/solution` when the stored archive is corrupt or holds an unsafe path (a publish defect, not the learner's) |
 | 404 | `unknown_service` | restart, cookie route or proxy for a service not in the lab |
 | 400 | `bad_feedback` | `POST /sessions/{id}/feedback` with a `rating` that is not an integer 1-5, a `text` that is not a string or is over 2000 characters, or a body that is not an object |
 | 400 | `bad_cursor` | `GET /users/{uid}/checks` with a `before` that is not a number |
@@ -227,6 +234,7 @@ reconnects without `Last-Event-ID` needs nothing else to redraw itself.
 | `pressure` | `{ [event_id]: { status: "pending" \| "fired" \| "failed", fired_at? } }`; `pending` covers events still to come and is not reported once the session has ended |
 | `manifest_summary?` | `{ title, objectives, timeout_minutes, idle_minutes, checks: [{ name, weight }], services: [{ name, ui, port? }], hints_schedule }`; absent if the manifest is gone |
 | `checks_history` | the last 10 finished runs, oldest first: `{ run_id, started_at, finished_at?, passed, total, score, results: [{ name, pass, weight }] }` (no messages; `GET /sessions/:id/checks` has the full runs) |
+| `solution` | `{ available, unlocked, rule, progress: { check_runs, hints_delivered, hints_total, completed } }` — see [Solution reveal](#solution-reveal) |
 | `server_time` | server epoch ms, for correcting client clock skew against `meta.expires_at` |
 
 The `sessions` row in D1 also gets `hints_delivered` (count) and, at the
@@ -234,6 +242,49 @@ first run that passes every check, `completed_at`; `check_runs` rows carry
 `user_id`, `lab_slug`, `lab_version`, `score` and `passed_all`
 (migration `0005_product.sql`). A run limited with `only` never counts as
 `passed_all`, since it did not cover every check.
+
+## Solution reveal
+
+Once a learner has made a real attempt, the lab's `solution/` is shown to
+them as files to diff against their own work. `labs publish` uploads it (see
+`docs/lab-authoring.md`); the Worker keeps it at
+`labs/{slug}/{version}/solution.tgz`, private like `private.tgz`.
+
+**The rule.** A session has earned the solution when either
+
+- it has passed every check (some check run passed all of the lab's checks,
+  the condition behind `sessions.completed_at`; a run limited with `only`
+  never counts), or
+- every hint the manifest defines has been delivered **and** at least two
+  check runs have happened. A lab with no hints needs only the two runs.
+
+The run count is a persisted per-session counter, not the length of
+`checks_history` (which keeps ten). Once earned, the solution stays earned.
+`solution.rule` carries the fixed text "Pass every check, or use every hint
+and run the checks twice."
+
+**Status.** `solution` in `GET /sessions/:id`: `available` is true iff the lab
+version this session runs has a `solution.tgz`; `unlocked` is the rule above;
+`progress` is `{ check_runs, hints_delivered, hints_total, completed }`.
+`unlocked` can be true while `available` is false.
+
+**Route.** `GET /sessions/:id/solution` takes a session token only. In order:
+`404 no_solution` when `available` is false (a session with no solution to
+show is never told it is "locked"); `403 solution_locked` with
+`details: { rule, progress }` while locked; otherwise
+`200 { files: [{ path, content }], truncated }`. `path` is relative to
+`/workspace`, files are sorted by path, and only text is returned: a file
+that is not valid UTF-8, or that contains a NUL byte, is skipped. Caps: 64 KB
+per file, 40 files, 512 KB in all, and the archive is read at most 16 MiB
+unpacked. A text file dropped by a cap sets `truncated: true`. The Worker
+gunzips and untars in memory; regular files only, and an archive holding an
+absolute path or a `..` segment is refused (`500 solution_unreadable`).
+
+**Event.** `solution.unlocked` (`data: {}`) is emitted once per session, at
+the end of the check run or on the delivery of the last hint that makes the
+rule true. The flag is stored with the session, so a container recovery or a
+resume never repeats it. It is not emitted for a lab version with no
+solution.
 
 ## Session lifecycle
 
@@ -279,6 +330,7 @@ one, the last 50 events are replayed. The log is capped at the most recent
 | `container.restarted` | `{ reason }` — the container was replaced and recovery has begun |
 | `pressure` | `{ event_id, title, message }` |
 | `hint` | `{ index, after_minutes, text }` — one per `hints[]` entry, on its own timer |
+| `solution.unlocked` | `{}` — once per session, when the [solution reveal](#solution-reveal) rule first becomes true and the lab has a solution |
 | `check.started` | `{ run_id, total }` |
 | `check.result` | one `CheckResultEntry`: `{ name, pass, message, duration_ms, exit_code, timed_out, weight }` |
 | `check.finished` | `{ run_id, passed, total, score }` — `score` is pass-weight over total weight |

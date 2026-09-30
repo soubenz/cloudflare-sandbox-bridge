@@ -12,6 +12,7 @@ export type EventType =
   | 'container.restarted'
   | 'pressure'
   | 'hint'
+  | 'solution.unlocked'
   | 'check.started'
   | 'check.result'
   | 'check.finished'

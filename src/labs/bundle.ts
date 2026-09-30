@@ -12,6 +12,14 @@ export function workspaceKey(slug: string, version: string): string {
 export function privateKey(slug: string, version: string): string {
   return `labs/${slug}/${version}/private.tgz`;
 }
+/**
+ * The lab's solution/ directory as a gzip tarball. Private like private.tgz:
+ * no catalogue route serves it, and the only reader is the session solution
+ * route (GET /sessions/:id/solution), which gates it on the unlock rule.
+ */
+export function solutionKey(slug: string, version: string): string {
+  return `labs/${slug}/${version}/solution.tgz`;
+}
 export function currentKey(slug: string): string {
   return `labs/${slug}/current`;
 }
@@ -116,8 +124,10 @@ export function compareCatalogueEntries(a: LabIndexEntry, b: LabIndexEntry): num
  * Publishes a lab bundle: validates the manifest, writes manifest +
  * workspace.tgz + private.tgz under the version path, records the old
  * `current` in `previous`, flips `current`, and rebuilds the catalogue.
- * `solution/` is never part of either archive — the CLI's `labs publish`
- * excludes it before calling this.
+ * `solution/` is never part of either of those archives. When the CLI sends
+ * one it is stored on its own, at `solutionKey`, and never served by a
+ * catalogue route; a forced re-publish that carries none removes the one the
+ * version already had, so the stored bundle always matches the last publish.
  *
  * A version is immutable once published: re-publishing the same
  * `<slug>/<version>` is `409 version_exists` unless `force` is true, because
@@ -132,6 +142,8 @@ export async function publishLab(
     manifestJson: unknown;
     workspaceTgz: ReadableStream | ArrayBuffer;
     privateTgz: ReadableStream | ArrayBuffer;
+    /** Optional: the lab's solution/ as a gzip tarball (see `solutionKey`). */
+    solutionTgz?: ReadableStream | ArrayBuffer;
     force?: boolean;
   }
 ): Promise<{ slug: string; version: string; warnings: string[] }> {
@@ -151,6 +163,11 @@ export async function publishLab(
     }),
     env.LABS_BUCKET.put(workspaceKey(slug, version), input.workspaceTgz),
     env.LABS_BUCKET.put(privateKey(slug, version), input.privateTgz),
+    input.solutionTgz !== undefined
+      ? env.LABS_BUCKET.put(solutionKey(slug, version), input.solutionTgz)
+      : input.force === true
+        ? env.LABS_BUCKET.delete(solutionKey(slug, version))
+        : Promise.resolve(),
   ]);
 
   // Keep the rollback target. A forced re-publish of the version that is

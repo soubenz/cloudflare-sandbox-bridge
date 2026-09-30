@@ -9,6 +9,7 @@ import { openEventStream, emitEvent, type EventType } from '../session/events';
 import { openTerminalSocket, handleClientMessage, handleClientClose } from '../session/terminal';
 import { proxyService, mintServiceCookie } from '../session/proxy';
 import { runChecks } from '../session/checks';
+import { buildSolutionStatus, solutionAvailable, solutionProgress } from '../session/solution';
 import { restartService as restartServiceImpl } from '../session/services';
 import { recordLlmCost } from '../session/metrics';
 import { readWorkspaceFile, writeWorkspaceFile, listWorkspaceDir, deleteWorkspaceFile } from '../session/files';
@@ -55,7 +56,8 @@ export class Session extends DurableObject<Env> {
       this.rt.pressureStatus(),
       this.rt.checksHistory(),
     ]);
-    return buildStatus({ meta, services, snapshots, checks, cost, manifest, delivered, pressure, checksHistory, now: Date.now() });
+    const solution = buildSolutionStatus(await solutionProgress(this.rt, manifest), await solutionAvailable(this.rt.env, meta));
+    return buildStatus({ meta, services, snapshots, checks, cost, manifest, delivered, pressure, checksHistory, solution, now: Date.now() });
   }
 
   async runChecks(only?: string[]): Promise<ChecksRun> {
@@ -127,7 +129,7 @@ export class Session extends DurableObject<Env> {
     // `session.state: ended` against status() before believing it.
     const known: EventType[] = [
       'cost', 'llm.call', 'alert',
-      'pressure', 'hint', 'session.idle_warning', 'session.expiring', 'session.state', 'service.health',
+      'pressure', 'hint', 'solution.unlocked', 'session.idle_warning', 'session.expiring', 'session.state', 'service.health',
     ];
     if (!known.includes(type as EventType)) throw ApiError.badRequest('unknown_event_type', `Unknown event type "${type}"`);
     if (type === 'llm.call' && typeof (data as { cost_usd?: number })?.cost_usd === 'number') {

@@ -84,7 +84,7 @@ describe('status() completeness (B-15)', () => {
     const status = await statusOf(rt);
 
     expect(Object.keys(status)).toEqual(
-      expect.arrayContaining(['meta', 'services', 'snapshots', 'checks', 'cost', 'hints', 'pressure', 'manifest_summary', 'checks_history', 'server_time'])
+      expect.arrayContaining(['meta', 'services', 'snapshots', 'checks', 'cost', 'hints', 'pressure', 'manifest_summary', 'checks_history', 'solution', 'server_time'])
     );
     expect(status.hints).toEqual({ delivered: [{ index: 0, after_minutes: 5, text: 'first' }], total: 2, schedule: [5, 15] });
     expect(status.pressure).toEqual({ p1: { status: 'fired', fired_at: 123 }, p2: { status: 'pending' } });
@@ -136,6 +136,70 @@ describe('status() completeness (B-15)', () => {
     await endSession(rt, 'user', false);
     const [, , cost] = d1.updateSession.mock.calls.at(-1) as unknown as [unknown, unknown, { hints_delivered: number }];
     expect(cost.hints_delivered).toBe(2);
+  });
+});
+
+describe('status().solution', () => {
+  const RULE = 'Pass every check, or use every hint and run the checks twice.';
+  const bucket = (rt: SessionRuntime, exists: boolean) => {
+    const heads: string[] = [];
+    (rt.env as unknown as { LABS_BUCKET: unknown }).LABS_BUCKET = {
+      head: async (key: string) => {
+        heads.push(key);
+        return exists ? { key } : null;
+      },
+    };
+    return heads;
+  };
+
+  it('is { available, unlocked, rule, progress } and reflects the counters, the hints and the R2 head', async () => {
+    const { rt } = makeRuntime();
+    const heads = bucket(rt, true);
+    await rt.putMeta(meta());
+    await rt.putManifest(manifest()); // two hints
+
+    expect((await statusOf(rt)).solution).toEqual({
+      available: true,
+      unlocked: false,
+      rule: RULE,
+      progress: { check_runs: 0, hints_delivered: 0, hints_total: 2, completed: false },
+    });
+    expect(heads).toEqual(['labs/lab-a/1.0.0/solution.tgz']);
+
+    await rt.recordCheckRun(false);
+    await rt.recordCheckRun(false);
+    await rt.recordHintDelivered({ index: 0, after_minutes: 5, text: 'first' });
+    expect((await statusOf(rt)).solution).toMatchObject({ unlocked: false, progress: { check_runs: 2, hints_delivered: 1, hints_total: 2 } });
+
+    await rt.recordHintDelivered({ index: 1, after_minutes: 15, text: 'second' });
+    expect((await statusOf(rt)).solution).toMatchObject({ unlocked: true, progress: { check_runs: 2, hints_delivered: 2, completed: false } });
+  });
+
+  it('completing the lab unlocks it', async () => {
+    const { rt } = makeRuntime();
+    bucket(rt, true);
+    await rt.putMeta(meta());
+    await rt.putManifest(manifest());
+    await rt.recordCheckRun(true);
+    expect((await statusOf(rt)).solution).toMatchObject({ unlocked: true, progress: { check_runs: 1, completed: true } });
+  });
+
+  it('available is false when the lab version has no solution.tgz, or R2 cannot be read', async () => {
+    const { rt } = makeRuntime();
+    bucket(rt, false);
+    await rt.putMeta(meta());
+    await rt.putManifest(manifest());
+    expect((await statusOf(rt)).solution.available).toBe(false);
+
+    (rt.env as unknown as { LABS_BUCKET: unknown }).LABS_BUCKET = { head: async () => { throw new Error('r2 down'); } };
+    expect((await statusOf(rt)).solution.available).toBe(false);
+  });
+
+  it('without a manifest there are no hints to wait for', async () => {
+    const { rt } = makeRuntime();
+    bucket(rt, true);
+    await rt.putMeta(meta({ state: 'ended', ended_at: Date.now() }));
+    expect((await statusOf(rt)).solution.progress).toEqual({ check_runs: 0, hints_delivered: 0, hints_total: 0, completed: false });
   });
 });
 

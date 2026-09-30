@@ -2,6 +2,7 @@ import type { Env, Family } from '../env';
 import type { Terminal } from '@cloudflare/sandbox';
 import type { LabManifest, ServiceSpec } from '../labs/manifest';
 import type { Backend } from './backend';
+import type { SolutionStatus } from './solution';
 import { ApiError } from '../lib/errors';
 
 export type SessionState = 'created' | 'starting' | 'running' | 'recovering' | 'resuming' | 'ended';
@@ -162,6 +163,8 @@ export interface SessionStatus {
   manifest_summary?: ManifestSummary;
   /** The last 10 finished check runs, oldest first, without per-check messages. */
   checks_history: CheckHistoryEntry[];
+  /** Whether this lab has a solution to reveal, and whether this session has earned it. See session/solution.ts. */
+  solution: SolutionStatus;
   /** Epoch ms on the server, so a client can correct for clock skew when counting down to `meta.expires_at`. */
   server_time: number;
 }
@@ -189,6 +192,7 @@ export function buildStatus(input: {
   delivered: HintDelivered[];
   pressure: Record<string, { status: PressureStatus; fired_at?: number }>;
   checksHistory: CheckHistoryEntry[];
+  solution: SolutionStatus;
   now: number;
 }): SessionStatus {
   const { manifest, meta } = input;
@@ -209,6 +213,7 @@ export function buildStatus(input: {
     pressure,
     manifest_summary: manifest ? summarizeManifest(manifest) : undefined,
     checks_history: input.checksHistory,
+    solution: input.solution,
     server_time: input.now,
   };
 }
@@ -223,6 +228,9 @@ const KEYS = {
   snapshots: 'snapshots',
   checksLast: 'checks:last',
   checksHistory: 'checks:history',
+  checkRuns: 'checks:count',
+  checksCompleted: 'checks:completed',
+  solutionUnlocked: 'solution:unlocked',
   hints: 'hints',
   cost: 'cost',
   sessionEnv: 'session_env',
@@ -245,6 +253,8 @@ export class SessionRuntime {
   readonly env: Env;
   readonly sessionId: string;
   private _backend?: Backend;
+  private checkRunQueue: Promise<unknown> = Promise.resolve();
+  private solutionClaimed = false;
 
   /** In-memory only — SSE writers for GET /events and the upstream terminal socket for WS /terminal. Never persisted; a DO restart drops both and clients reconnect. */
   readonly sseWriters = new Set<WritableStreamDefaultWriter<Uint8Array>>();
@@ -367,6 +377,50 @@ export class SessionRuntime {
   async appendChecksHistory(entry: CheckHistoryEntry): Promise<void> {
     const history = [...(await this.checksHistory()), entry];
     await this.storage.put(KEYS.checksHistory, history.slice(-CHECKS_HISTORY_CAP));
+  }
+
+  /** How many check runs this session has finished. A counter of its own: `checksHistory` keeps only the last ten. */
+  async checkRunCount(): Promise<number> {
+    return (await this.storage.get<number>(KEYS.checkRuns)) ?? 0;
+  }
+  /**
+   * Counts one finished run. `completed` is whether that run passed every
+   * check the lab defines (the same test D1's `completed_at` uses); once set
+   * it stays set, so a later failing run cannot take the solution away.
+   */
+  recordCheckRun(completed: boolean): Promise<void> {
+    // Read-modify-write, and two runs can finish together: queue them so
+    // neither reads the count the other is about to replace.
+    const done = this.checkRunQueue.then(async () => {
+      await this.storage.put(KEYS.checkRuns, (await this.checkRunCount()) + 1);
+      if (completed) await this.storage.put(KEYS.checksCompleted, true);
+    });
+    this.checkRunQueue = done.catch(() => {});
+    return done;
+  }
+  /** True once any run passed every check. */
+  async checksCompleted(): Promise<boolean> {
+    return (await this.storage.get<boolean>(KEYS.checksCompleted)) === true;
+  }
+
+  /** Whether the `solution.unlocked` event has been emitted for this session. Survives recovery and resume: it lives in DO storage. */
+  async solutionUnlockedEmitted(): Promise<boolean> {
+    return (await this.storage.get<boolean>(KEYS.solutionUnlocked)) === true;
+  }
+  /** Sets the flag; returns true only for the call that set it, so exactly one caller emits. */
+  async markSolutionUnlockedEmitted(): Promise<boolean> {
+    // Claimed synchronously, before any await, so concurrent callers in this
+    // instance cannot both get past it; storage carries it across restarts.
+    if (this.solutionClaimed) return false;
+    this.solutionClaimed = true;
+    try {
+      if (await this.solutionUnlockedEmitted()) return false;
+      await this.storage.put(KEYS.solutionUnlocked, true);
+      return true;
+    } catch (err) {
+      this.solutionClaimed = false;
+      throw err;
+    }
   }
 
   async hintsDelivered(): Promise<HintDelivered[]> {

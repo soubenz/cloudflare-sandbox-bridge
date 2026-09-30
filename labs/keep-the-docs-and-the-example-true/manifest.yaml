@@ -55,9 +55,10 @@
 # documented value, so a verify_docs.py that never reads the doc (and just
 # hard-codes `team-chat`) cannot pass.
 #
-# solution/_degenerate/ is never published (solution/ is not packed by
-# `labs publish`; checks/ is packed wholesale, so it lives here and not
-# under checks/) and exists only to prove the checks discriminate: it is
+# solution/_degenerate/ is never published (`labs publish` packs solution/
+# for the solution reveal but always leaves _degenerate/ out; checks/ is
+# packed wholesale, so it lives here and not under checks/) and exists only
+# to prove the checks discriminate: it is
 # the doc-ignoring cheat, and it must fail catches-a-wrong-key-scope.
 slug: keep-the-docs-and-the-example-true
 version: 1.0.0

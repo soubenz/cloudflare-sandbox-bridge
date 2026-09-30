@@ -1,7 +1,7 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { Env } from './env';
 import { isFamily } from './families/registry';
-import { loadCurrentManifest, listCatalogue, publishLab, INDEX_KEY } from './labs/bundle';
+import { loadCurrentManifest, listCatalogue, publishLab, solutionKey, INDEX_KEY } from './labs/bundle';
 import { parseManifest } from './labs/manifest';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
@@ -13,6 +13,8 @@ import { poolStub } from './do/pool';
 import { newId } from './lib/ids';
 import { corsMiddleware } from './cors';
 import { queryUsage, resolveWindow } from './session/usage';
+import { readSolutionFiles } from './session/solution';
+import { TarError } from './lib/tar';
 
 export function createRouter(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
@@ -78,10 +80,14 @@ export function createRouter(): Hono<{ Bindings: Env }> {
       throw ApiError.badRequest('bad_publish_payload', 'multipart form must include manifest, workspace, private files');
     }
     const manifestJson = JSON.parse(await manifestFile.text());
+    // Optional: a lab with no solution/ sends no part (an empty one counts as none).
+    const solutionFile = form.get('solution');
+    const solutionTgz = solutionFile instanceof File && solutionFile.size > 0 ? await solutionFile.arrayBuffer() : undefined;
     const result = await publishLab(c.env, {
       manifestJson,
       workspaceTgz: await workspaceFile.arrayBuffer(),
       privateTgz: await privateFile.arrayBuffer(),
+      ...(solutionTgz ? { solutionTgz } : {}),
       force: form.get('force') === 'true',
     });
     return c.json(result, 201);
@@ -173,6 +179,36 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     await requireBrowserAuth(c.req.raw, c.env, id);
     const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
     return c.json(await stub.status());
+  });
+
+  /**
+   * The lab's solution, as files to diff against the learner's own work.
+   * Session token only: the service key is refused, like the cookie route
+   * below, so the reveal is only ever the learner's own view. The unlock
+   * decision is the DO's (`status().solution`), so this route and the status
+   * block can never disagree.
+   */
+  app.get('/sessions/:id/solution', async (c) => {
+    const id = c.req.param('id');
+    const auth = await requireBrowserAuth(c.req.raw, c.env, id);
+    if (auth.kind !== 'session') {
+      throw new ApiError(403, 'session_token_required', 'The solution is shown to the learner and needs a session token, not the service key');
+    }
+    const status = await c.env.SESSION.get(c.env.SESSION.idFromName(id)).status();
+    const noSolution = () => ApiError.notFound('no_solution', 'This lab has no solution to show');
+    if (!status.solution.available) throw noSolution();
+    const { rule, progress } = status.solution;
+    if (!status.solution.unlocked) {
+      throw new ApiError(403, 'solution_locked', 'The solution is still locked for this session', { rule, progress });
+    }
+    const obj = await c.env.LABS_BUCKET.get(solutionKey(status.meta.lab_slug, status.meta.lab_version));
+    if (!obj) throw noSolution();
+    try {
+      return c.json(await readSolutionFiles(obj.body));
+    } catch (err) {
+      if (err instanceof TarError) throw new ApiError(500, 'solution_unreadable', `The stored solution could not be read: ${err.message}`);
+      throw err;
+    }
   });
 
   app.get('/sessions/:id/files/:path{.+}', async (c) => {

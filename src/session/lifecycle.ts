@@ -9,6 +9,7 @@ import { hydrateWorkspaceFiles, hydratePressureScripts, applySessionEnv } from '
 import { startAllServices, relaunchAllServices, healthCheckAll, allServicesGone } from './services';
 import { firePressureEvent } from './pressure';
 import { tickMetrics } from './metrics';
+import { tryEmitSolutionUnlocked } from './solution';
 import { resetTerminal } from './terminal';
 import { updateSession, insertSnapshot, bestEffort } from './d1';
 import type { SessionCostRow } from './d1';
@@ -233,6 +234,8 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
               after_minutes: hint.after_minutes,
               text: hint.text,
             });
+            // The last hint can be what earns the solution.
+            await tryEmitSolutionUnlocked(rt, manifest);
           }
           break;
         }

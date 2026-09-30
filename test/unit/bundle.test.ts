@@ -6,6 +6,9 @@ import {
   listCatalogue,
   pageCatalogue,
   manifestKey,
+  solutionKey,
+  workspaceKey,
+  privateKey,
   currentKey,
   previousKey,
   INDEX_KEY,
@@ -29,6 +32,9 @@ function fakeBucket(pageSize = 1000) {
     },
     async put(key: string, value: unknown) {
       store.set(key, typeof value === 'string' ? value : `bytes:${(value as ArrayBuffer).byteLength}`);
+    },
+    async delete(key: string) {
+      store.delete(key);
     },
     async list(opts: { prefix?: string; cursor?: string } = {}) {
       listCalls.push(opts);
@@ -215,5 +221,58 @@ describe('listCatalogue', () => {
     expect(pageCatalogue(legacy, { tier: 'pro' }).labs).toHaveLength(1);
     expect(pageCatalogue(legacy, { tier: 'free' }).labs).toHaveLength(0);
     expect(pageCatalogue(legacy, { limit: 0 }).labs).toHaveLength(1);
+  });
+});
+
+describe('publishLab and solution.tgz', () => {
+  const withSolution = (env: Env, m: unknown, solution: ArrayBuffer | undefined, force?: boolean) =>
+    publishLab(env, { manifestJson: m, workspaceTgz: bytes(), privateTgz: bytes(), solutionTgz: solution, force });
+
+  it('keys it beside the other parts of the version', () => {
+    expect(solutionKey('a-lab', '1.2.3')).toBe('labs/a-lab/1.2.3/solution.tgz');
+  });
+
+  it('stores it, and only it, under its own key when provided', async () => {
+    const { env, store } = fakeBucket();
+    await withSolution(env, manifest('one-lab'), new ArrayBuffer(9));
+    expect(store.get(solutionKey('one-lab', '1.0.0'))).toBe('bytes:9');
+    // workspace.tgz and private.tgz are the ones the caller passed, not the solution.
+    expect(store.get(workspaceKey('one-lab', '1.0.0'))).toBe('bytes:4');
+    expect(store.get(privateKey('one-lab', '1.0.0'))).toBe('bytes:4');
+  });
+
+  it('stores nothing when none is provided', async () => {
+    const { env, store } = fakeBucket();
+    await publish(env, manifest('one-lab'));
+    expect(store.has(solutionKey('one-lab', '1.0.0'))).toBe(false);
+    expect([...store.keys()].some((k) => k.includes('solution'))).toBe(false);
+  });
+
+  it('never puts it in the catalogue index or the stored manifest', async () => {
+    const { env, store } = fakeBucket();
+    await withSolution(env, manifest('one-lab'), new ArrayBuffer(9));
+    expect(store.get(INDEX_KEY)).not.toContain('solution');
+    expect(store.get(manifestKey('one-lab', '1.0.0'))).not.toContain('solution');
+  });
+
+  it('a forced re-publish without one removes the one the version had; with one, replaces it', async () => {
+    const { env, store } = fakeBucket();
+    await withSolution(env, manifest('one-lab'), new ArrayBuffer(9));
+    await withSolution(env, manifest('one-lab'), new ArrayBuffer(11), true);
+    expect(store.get(solutionKey('one-lab', '1.0.0'))).toBe('bytes:11');
+    await withSolution(env, manifest('one-lab'), undefined, true);
+    expect(store.has(solutionKey('one-lab', '1.0.0'))).toBe(false);
+  });
+
+  it('a new version does not disturb the solution of the old one', async () => {
+    const { env, store } = fakeBucket();
+    await withSolution(env, manifest('one-lab'), new ArrayBuffer(9));
+    await publish(env, manifest('one-lab', { version: '1.1.0' }));
+    expect(store.get(solutionKey('one-lab', '1.0.0'))).toBe('bytes:9');
+    expect(store.has(solutionKey('one-lab', '1.1.0'))).toBe(false);
+  });
+
+  it('still exports rebuildIndex for other modules', () => {
+    expect(typeof rebuildIndex).toBe('function');
   });
 });

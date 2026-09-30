@@ -6,6 +6,7 @@ import { newId } from '../lib/ids';
 import { insertCheckRun, bestEffort } from './d1';
 import { scoreRun } from './progress';
 import { ensureStageDir, stagePath, archiveGuard, removeStaged } from './hydrate';
+import { tryEmitSolutionUnlocked } from './solution';
 
 /**
  * Runs the lab's checker scripts and returns structured, per-criterion
@@ -52,7 +53,7 @@ export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?
 
   run.finished_at = Date.now();
   await rt.putLastChecks(run);
-  const { passed, score } = scoreRun(run.results);
+  const { passed, score, passed_all } = scoreRun(run.results, manifest.checks.length);
   emitEvent(rt, 'check.finished', { run_id: runId, passed, total: run.results.length, score });
 
   await rt
@@ -66,6 +67,13 @@ export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?
       results: run.results.map((r) => ({ name: r.name, pass: r.pass, weight: r.weight })),
     })
     .catch((err) => emitEvent(rt, 'alert', { kind: 'checks_history_failed', error: String(err) }));
+
+  // The run counter behind the solution unlock rule. Its own key, not the
+  // length of the history above, which keeps only the last ten runs.
+  await rt
+    .recordCheckRun(passed_all)
+    .catch((err) => emitEvent(rt, 'alert', { kind: 'check_run_count_failed', error: String(err) }));
+  await tryEmitSolutionUnlocked(rt, manifest);
 
   const meta = await rt.requireMeta();
   bestEffort(

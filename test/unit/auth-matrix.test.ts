@@ -56,6 +56,7 @@ const SESSION_TOKEN: Array<[string, string]> = [
   ['get', '/sessions/:id/progress-summary'],
   ['post', '/sessions/:id/feedback'],
   ['post', '/sessions/:id/services/:name/session'],
+  ['get', '/sessions/:id/solution'],
 ];
 
 describe('route auth matrix', () => {
@@ -88,6 +89,20 @@ describe('route auth matrix', () => {
     expect(router.indexOf("app.post('/sessions/:id/services/:name/session'")).toBeLessThan(
       router.indexOf("app.all('/sessions/:id/services/:name/*'")
     );
+  });
+
+  it('the solution route is session-token only, and is the only reader of solution.tgz', () => {
+    // A service key must be refused exactly like the cookie route refuses it:
+    // the reveal is the learner's view, and nothing else should be able to
+    // pull a lab's answer with the shared key.
+    const body = handlerFor('get', '/sessions/:id/solution');
+    expect(body).toContain("auth.kind !== 'session'");
+    expect(body).toContain('session_token_required');
+    expect(body.indexOf("auth.kind !== 'session'")).toBeLessThan(body.indexOf('.status()'));
+    // No catalogue or other route may build the key, so nothing else serves the file.
+    expect(router.split('solutionKey(').length - 1, 'solutionKey( appears once in the router').toBe(1);
+    expect(body).toContain('solutionKey(');
+    expect(router).not.toMatch(/solution\.tgz/);
   });
 
   it('has no unauthenticated session-start route', () => {
