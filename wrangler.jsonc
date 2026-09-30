@@ -27,13 +27,19 @@
       // ImagePullError, "the requested disk size was smaller than the
       // unpacked size of the image", and the whole GatewayLab application
       // got stuck in `provisioning` with 0 healthy instances for hours,
-      // taking down every gateway-family lab, not just the new one. Same
-      // vCPU/memory as standard-1 (0.5 vCPU, 4096 MiB -- unaffected, only
-      // disk was the bottleneck), disk doubled to 16GB for real headroom
-      // given how many tools this image has accumulated (pgvector, Qdrant,
-      // Phoenix, MLflow, ContextForge, Jaeger, otelcol-contrib, Presidio)
-      // and is likely to keep accumulating.
-      "instance_type": { "vcpu": 0.5, "memory_mib": 4096, "disk_mb": 16000 },
+      // taking down every gateway-family lab, not just the new one.
+      // First attempt (0.5 vCPU, 4096 MiB, 16000 disk) was rejected by a
+      // real deploy: Cloudflare requires custom instance types to have
+      // >=1 vCPU (sub-1 vCPU is preset-only) and caps disk at 2x memory
+      // in GiB. 16GB disk therefore needs at least 8 GiB memory, which
+      // forces vCPU to 1 too -- more than the old 0.5/4096 (disk was the
+      // only actual bottleneck), but still cheaper than jumping to the
+      // standard-3 preset (2 vCPU, 8 GiB, 16GB disk), which would double
+      // the vCPU for no reason. 16GB disk for real headroom given how
+      // many tools this image has accumulated (pgvector, Qdrant, Phoenix,
+      // MLflow, ContextForge, Jaeger, otelcol-contrib, Presidio) and is
+      // likely to keep accumulating.
+      "instance_type": { "vcpu": 1, "memory_mib": 8192, "disk_mb": 16000 },
       "max_instances": 20
     }
   ],
@@ -107,7 +113,7 @@
           "class_name": "GatewayLab",
           "image": "./images/gateway/Dockerfile",
           // Kept in sync with the production block above -- see its comment.
-          "instance_type": { "vcpu": 0.5, "memory_mib": 4096, "disk_mb": 16000 },
+          "instance_type": { "vcpu": 1, "memory_mib": 8192, "disk_mb": 16000 },
           "max_instances": 5
         }
       ],
