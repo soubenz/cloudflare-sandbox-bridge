@@ -1,0 +1,95 @@
+{
+  "_note": "Presentation copy for the four learning paths and the modules inside them. The console launcher and the public /labs page both read this file, so an intro is written once. Lab titles, counts, times and tiers come from the lab manifests, never from here. A module that has labs but no entry here fails test/unit/catalogue-meta.test.ts. `accent` is a colour family the design maps onto its tokens; `icon` names an inline glyph.",
+  "paths": [
+    {
+      "slug": "production-agents",
+      "title": "Production agents essentials",
+      "accent": "blue",
+      "icon": "bolt",
+      "intro": "How agents fail once real customers use them: an action repeated on a retry, a weekend of runaway spend, a tool's answer trusted without a check, a provider outage, instructions forgotten mid-conversation, and answers that are confidently wrong. Every lab starts broken, and you fix the cause.",
+      "modules": []
+    },
+    {
+      "slug": "securing-agents",
+      "title": "Securing agents",
+      "accent": "rose",
+      "icon": "shield",
+      "intro": "Keep an agent from leaking what it can reach or doing what it should not. The first lab is about the tool that runs code and the secrets file it could read. More labs are planned.",
+      "modules": []
+    },
+    {
+      "slug": "ai-platform",
+      "title": "Building an AI platform",
+      "accent": "violet",
+      "icon": "layers",
+      "intro": "The platform agents and models run on, in seven modules. You work on the real tools a platform team runs: an LLM gateway, tool servers behind MCP, retrieval, tracing and cost, and the controls that keep teams apart. Most labs start with something missing that you build.",
+      "modules": [
+        {
+          "number": 1,
+          "title": "Gateway and access",
+          "accent": "blue",
+          "icon": "route",
+          "intro": "One front door for every model call. You start by watching a real LLM gateway route a request, then give each team its own key and models, stop spend before it passes a budget, and keep answering when a provider fails.",
+          "skills": ["Scope keys and models per team", "Stop spend before the limit, not after", "Fail over without hammering a broken provider"]
+        },
+        {
+          "number": 2,
+          "title": "Tools and MCP",
+          "accent": "teal",
+          "icon": "plug",
+          "intro": "How tools reach an agent. You put many tool servers behind one MCP endpoint, give each agent only the tools it needs, write a tool server the platform can host, and change tool definitions without breaking anyone who uses them.",
+          "skills": ["Serve many tool servers through one endpoint", "Grant tools per agent, not per platform", "Version tool definitions and roll back safely"]
+        },
+        {
+          "number": 3,
+          "title": "Retrieval as a service",
+          "accent": "green",
+          "icon": "search",
+          "intro": "Search that teams call instead of build. You trace why a document matched, offer retrieval as a service, build the ingestion pipeline behind it, blend keyword and vector search with reranking, and refresh the index while it keeps answering.",
+          "skills": ["Explain and debug a match", "Ingest, update and delete without duplicates", "Combine keyword and vector search"]
+        },
+        {
+          "number": 4,
+          "title": "Observability and cost",
+          "accent": "amber",
+          "icon": "chart",
+          "intro": "See where every request and every dollar goes. You follow a request across services with traces, collect telemetry without dropping the errors, and answer finance's question: who spent what?",
+          "skills": ["Connect one trace across services", "Sample telemetry without losing failures", "Attribute spend to a team and a feature"]
+        },
+        {
+          "number": 5,
+          "title": "Runtime and durability",
+          "accent": "slate",
+          "icon": "stack",
+          "optional": true,
+          "intro": "Optional. Running agents that outlive a single process. One lab so far: two replicas of a chat service that must behave like one conversation, and a refund that must happen exactly once.",
+          "skills": ["Share state across replicas", "Make side effects happen exactly once"]
+        },
+        {
+          "number": 6,
+          "title": "Self-service and golden paths",
+          "accent": "rose",
+          "icon": "compass",
+          "intro": "Make the platform easy to adopt. You walk the path a new team takes, onboard a team in under an hour, publish a paved road for a new AI feature, keep the docs and the example true, and build the page where teams request access.",
+          "skills": ["Onboard a team end to end", "Publish a safe default for new features", "Keep documentation from drifting"]
+        },
+        {
+          "number": 7,
+          "title": "Compliance and sovereignty",
+          "accent": "indigo",
+          "icon": "lock",
+          "intro": "Prove where data went and keep it where it belongs. You follow one request's data across regions, keep EU data on EU routes, strip personal data before it reaches a model or a log, control what can leave the platform, and set retention that actually runs.",
+          "skills": ["Prove where a request's data went", "Redact personal data in more than one language", "Enforce retention and deletion"]
+        }
+      ]
+    },
+    {
+      "slug": "evals-releases",
+      "title": "Evals and safe releases",
+      "accent": "green",
+      "icon": "gate",
+      "intro": "Catch a bad change before your customers do. The first lab is a prompt change that made things worse while every dashboard stayed green. More labs are planned.",
+      "modules": []
+    }
+  ]
+}
