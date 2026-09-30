@@ -29,6 +29,27 @@ await build({
   logLevel: 'info',
 });
 
+// The diagram demo page (public/diagrams-demo.html, not linked from the app):
+// a tiny entry that mounts every [data-diagram] placeholder from the shared
+// library plus any JSON blocks in the page. Built from stdin, so it needs no
+// source file of its own.
+await build({
+  stdin: {
+    contents:
+      "import { mountDiagrams } from './diagram.js';\n" +
+      "import library from '../../packages/catalogue/diagrams.json';\n" +
+      'mountDiagrams(document, library.diagrams);\n',
+    resolveDir: join(here, 'src'),
+    sourcefile: 'diagrams-demo-entry.js',
+  },
+  outfile: join(here, 'public/dist/diagrams-demo.js'),
+  bundle: true,
+  format: 'esm',
+  minify: true,
+  target: ['es2022'],
+  logLevel: 'info',
+});
+
 // The Worker's own bundle. Deliberately outside public/: anything in the
 // assets directory is served as a static file, and the server side is not a
 // static file.

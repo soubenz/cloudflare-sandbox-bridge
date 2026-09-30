@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Diagram player demo</title>
+<!-- A static page for looking at the diagram player by hand and in e2e runs.
+     It is not linked from the console. Build first (npm run build:dashboard),
+     then serve dashboard/public and open /diagrams-demo.html. -->
+<script src="./theme-init.js"></script>
+<link rel="stylesheet" href="./styles.css">
+<link rel="stylesheet" href="./diagram.css">
+<style>
+  /* styles.css lays the body out as a full-height console; this page scrolls. */
+  body { display: block; height: auto; min-height: 100vh; overflow: auto; }
+  main { max-width: 46rem; margin: 0 auto; padding: var(--s5) var(--s4) var(--s6); }
+  h1 { font-size: var(--fs-xl); margin: 0 0 var(--s2); }
+  h2 { font-size: var(--fs-lg); margin: var(--s6) 0 var(--s2); }
+  p { margin: 0 0 var(--s3); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Diagram player</h1>
+  <p class="muted">Each player starts on its own when it scrolls into view, stops the moment you touch it and loops after a pause. With reduced motion set in your system it never starts by itself and packets rest at the middle of their edge. Open "Read as text" under a player for the same content as plain text.</p>
+
+  <h2>From the shared library</h2>
+  <div data-diagram="gateway-alias-routing"></div>
+
+  <h2>A busier one: eight nodes, notes, a failure</h2>
+  <div data-diagram="demo-search-flow"></div>
+
+  <h2>Reduced motion forced on, autoplay off</h2>
+  <div data-diagram="demo-search-flow" data-reduced-motion="true" data-autoplay="false" data-start="2"></div>
+
+  <h2>Every diagram in the library</h2>
+  <div data-diagram-all></div>
+
+  <h2>Hostile text stays text</h2>
+  <div data-diagram="demo-hostile-text" data-autoplay="false"></div>
+</main>
+
+<!-- Data, not code: the CSP's script-src 'self' does not touch a JSON block. -->
+<script type="application/json" data-diagram-library>
+{
+  "diagrams": [
+    {
+      "id": "demo-search-flow",
+      "title": "Asking the search app a question",
+      "summary": "An analyst asks a question. The gateway checks the budget, finds documents, has a model write the answer and records the call. If the budget is spent, the app gets a refusal instead.",
+      "nodes": [
+        { "id": "analyst", "label": "Analyst", "kind": "person", "x": 13, "y": 22 },
+        { "id": "app", "label": "Search app", "sub": "asks, shows answers", "kind": "client", "x": 13, "y": 78 },
+        { "id": "gw", "label": "Gateway", "sub": "key, budget, logging", "kind": "gateway", "x": 46, "y": 50 },
+        { "id": "index", "label": "Doc index", "sub": "vector search", "kind": "store", "x": 87, "y": 16 },
+        { "id": "model", "label": "Model", "sub": "writes the answer", "kind": "model", "x": 87, "y": 50 },
+        { "id": "log", "label": "Audit log", "sub": "who, what, cost", "kind": "log", "x": 87, "y": 84 }
+      ],
+      "edges": [
+        { "id": "analyst-app", "from": "analyst", "to": "app", "label": "types" },
+        { "id": "app-gw", "from": "app", "to": "gw", "label": "HTTPS" },
+        { "id": "gw-index", "from": "gw", "to": "index" },
+        { "id": "gw-model", "from": "gw", "to": "model" },
+        { "id": "gw-log", "from": "gw", "to": "log" }
+      ],
+      "steps": [
+        { "caption": "The analyst types a question into the search app.", "active": ["analyst", "app"], "packets": [{ "edge": "analyst-app", "label": "question" }] },
+        { "caption": "The app sends it to the gateway with the team key.", "active": ["app", "gw"], "packets": [{ "edge": "app-gw", "label": "question" }] },
+        { "caption": "The gateway searches the index for passages that match.", "active": ["gw", "index"], "packets": [{ "edge": "gw-index", "label": "search" }, { "edge": "gw-index", "reverse": true, "label": "3 passages", "tone": "ok" }], "notes": [{ "node": "index", "text": "3 passages found", "tone": "ok" }] },
+        { "caption": "It adds the passages to the question and asks the model. Most of the day's budget is already spent.", "active": ["gw", "model"], "packets": [{ "edge": "gw-model", "label": "prompt" }], "notes": [{ "node": "gw", "text": "budget: 18% left", "tone": "warn" }] },
+        { "caption": "The answer comes back, and the gateway records the call.", "active": ["model", "gw", "log"], "packets": [{ "edge": "gw-model", "reverse": true, "label": "answer", "tone": "ok" }, { "edge": "gw-log", "label": "call recorded" }] },
+        { "caption": "Later, with the budget gone, the gateway refuses before calling any model.", "active": ["gw", "app"], "packets": [{ "edge": "app-gw", "reverse": true, "label": "429 over budget", "tone": "bad" }], "notes": [{ "node": "app", "text": "Try again tomorrow", "tone": "bad" }] }
+      ]
+    },
+    {
+      "id": "demo-hostile-text",
+      "title": "Text from a diagram file <b>never</b> becomes markup",
+      "summary": "A diagram whose labels look like HTML. They should appear as literal characters.",
+      "nodes": [
+        { "id": "a", "label": "<img src=x onerror=alert(1)>", "sub": "<\/svg><script>x<\/script>", "kind": "client", "x": 20, "y": 50 },
+        { "id": "b", "label": "&lt;b&gt;bold&lt;/b&gt;", "sub": "\"quotes\" & 'apostrophes'", "kind": "service", "x": 78, "y": 50 }
+      ],
+      "edges": [
+        { "id": "a-b", "from": "a", "to": "b", "label": "<a href=javascript:1>" }
+      ],
+      "steps": [
+        { "caption": "Step one says <script>alert('caption')<\/script> and shows it as text.", "active": ["a"], "packets": [{ "edge": "a-b", "label": "<svg onload=1>" }] },
+        { "caption": "Step two: <style>*{display:none}</style> is only characters too.", "active": ["b"], "packets": [], "notes": [{ "node": "b", "text": "<iframe src=//evil>", "tone": "warn" }] }
+      ]
+    }
+  ]
+}
+</script>
+<script type="module" src="./dist/diagrams-demo.js"></script>
+</body>
+</html>
