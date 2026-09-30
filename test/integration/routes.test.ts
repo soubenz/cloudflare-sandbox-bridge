@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import WebSocket from 'ws';
 import { OpalixClient } from '../../cli/src/client';
-import { execViaTerminal, readSse } from './helpers';
+import { USER_PREFIX, execViaTerminal, readSse } from './helpers';
 
 /**
  * Tier 2 of the test plan: the routes the lifecycle smoke test never
@@ -19,7 +19,7 @@ const describeIfConfigured = OPALIX_URL && OPALIX_KEY ? describe : describe.skip
 
 describeIfConfigured('sandbox API routes', () => {
   const service = new OpalixClient({ baseUrl: OPALIX_URL!, serviceKey: OPALIX_KEY });
-  const userId = `routes-${Date.now()}`;
+  const userId = `${USER_PREFIX}routes-${Date.now()}`;
   let sessionId: string;
   let token: string;
   let session: OpalixClient;
@@ -196,7 +196,7 @@ describeIfConfigured('sandbox API routes', () => {
     });
 
     it('404s an unknown lab', async () => {
-      await expect(service.startSession('no-such-lab', `unknown-${Date.now()}`)).rejects.toThrow(/404/);
+      await expect(service.startSession('no-such-lab', `${USER_PREFIX}unknown-${Date.now()}`)).rejects.toThrow(/404/);
     });
   });
 

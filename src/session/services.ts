@@ -112,7 +112,23 @@ export async function startAllServices(rt: SessionRuntime, manifest: LabManifest
   }
 }
 
-/** Kills (SIGTERM, then SIGKILL if it has not exited within 5s) and restarts a single named service. */
+/**
+ * Kills (SIGTERM, then SIGKILL if it has not exited within 5s) and restarts a single named service.
+ *
+ * The relaunch is built EXCLUSIVELY from the spec persisted at session start
+ * (`services[name].spec`, derived from the lab manifest by startAllServices):
+ * argv, cwd, port and env all come from it, and the only other input is the
+ * session-level env, which is also DO storage. Nothing is re-read from the
+ * container, and the signature deliberately takes only a service *name*: the
+ * restart route reads no request body and the DO method forwards only the
+ * name, so a caller cannot substitute a different command. Keep it that way;
+ * do not add a spec/argv/env parameter here.
+ *
+ * Accepted residual gap: a witness service whose argv points into /workspace
+ * (for example `python /workspace/app.py`) executes learner-editable code by
+ * design, so a restart runs whatever the learner has saved there. The spec
+ * pins WHAT is launched, not the contents of files it launches.
+ */
 export async function restartService(rt: SessionRuntime, name: string): Promise<ServiceRuntime> {
   const services = await rt.services();
   const existing = services[name];

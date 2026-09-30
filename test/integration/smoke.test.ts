@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { OpalixClient } from '../../cli/src/client';
 import type { SessionCreateResponse } from '../../cli/src/client';
+import { USER_PREFIX } from './helpers';
 
 /**
  * Exercises the full session lifecycle against a live Worker — `wrangler
@@ -38,7 +39,7 @@ describeIfConfigured('sandbox API smoke test', () => {
   });
 
   it('starts a session and reaches running', async () => {
-    const started = await service.startSession('hello', `it-${Date.now()}`);
+    const started = await service.startSession('hello', `${USER_PREFIX}smoke-${Date.now()}`);
     expect(started.state).toBe('starting');
     sessionId = started.id;
     token = started.token;

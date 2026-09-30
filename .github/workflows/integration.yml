@@ -1,0 +1,77 @@
+name: Integration
+
+# Runs the live-Worker integration suite (test/integration) against the
+# deployed API: nightly, on demand, and after every successful Deploy.
+#
+# Repository secrets required (Settings -> Secrets and variables -> Actions):
+#   OPALIX_URL  base URL of the deployed Worker, e.g. https://opalix-sandbox.<subdomain>.workers.dev
+#   OPALIX_KEY  the service key for that Worker
+# Without OPALIX_KEY the run is skipped with a notice rather than failed
+# (same pattern as the Smoke test step in deploy.yml). Secrets cannot be read
+# in a job-level `if`, so the gate is the first step and every later step
+# depends on its output.
+#
+# Every session the suite starts has a user_id beginning with `it-`
+# (OPALIX_USER_PREFIX); test/integration/globalTeardown.ts deletes leftovers
+# of that prefix that are older than ten minutes.
+on:
+  workflow_dispatch:
+    inputs:
+      slow:
+        description: 'Also run the slow timing tests (test/integration/timing.test.ts)'
+        type: boolean
+        default: false
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_run:
+    workflows: ['Deploy']
+    types: [completed]
+
+concurrency:
+  group: integration
+  cancel-in-progress: false
+
+jobs:
+  integration:
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name != 'workflow_run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OPALIX_URL: ${{ secrets.OPALIX_URL }}
+      OPALIX_KEY: ${{ secrets.OPALIX_KEY }}
+      OPALIX_USER_PREFIX: it-
+    steps:
+      - name: Check secrets
+        id: gate
+        run: |
+          if [ -z "$OPALIX_URL" ] || [ -z "$OPALIX_KEY" ]; then
+            echo "::notice::OPALIX_URL/OPALIX_KEY secrets not set; skipping integration tests."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          # After a Deploy run, test the commit that was deployed.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: 22
+
+      - name: Install
+        if: steps.gate.outputs.run == 'true'
+        run: npm ci
+
+      - name: Integration tests
+        if: steps.gate.outputs.run == 'true'
+        run: npx vitest run --config vitest.integration.config.ts test/integration/smoke.test.ts test/integration/routes.test.ts test/integration/egress.test.ts
+
+      - name: Integration tests (slow timing)
+        if: steps.gate.outputs.run == 'true' && inputs.slow == true
+        env:
+          OPALIX_SLOW: '1'
+        run: npx vitest run --config vitest.integration.config.ts test/integration/timing.test.ts

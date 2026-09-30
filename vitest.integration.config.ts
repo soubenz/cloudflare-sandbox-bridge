@@ -15,6 +15,8 @@ if (!process.env.OPALIX_URL || !process.env.OPALIX_KEY) {
 export default defineConfig({
   test: {
     include: ['test/integration/**/*.test.ts'],
+    // Deletes leftover `it-` sessions older than 10 minutes.
+    globalTeardown: ['test/integration/globalTeardown.ts'],
     testTimeout: 120_000,
     hookTimeout: 120_000,
   },

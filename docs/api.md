@@ -68,7 +68,7 @@ minutes are usable now.
 | POST | `/sessions/:id/feedback` | session | `{ rating, text? }` — `rating` an integer 1-5, `text` at most 2000 characters. One row per session: a second call replaces the first. → `201 { ok: true }`; `400 bad_feedback` |
 | GET | `/sessions/:id/events` | session | SSE, replays from `Last-Event-ID` |
 | POST | `/sessions/:id/events` | service | `{ type, data }` — the LLM Worker reporting cost/calls |
-| POST | `/sessions/:id/services/:name/restart` | session | → the service's `ServiceRuntime` |
+| POST | `/sessions/:id/services/:name/restart` | session | → the service's `ServiceRuntime`. The request body is ignored: the service is relaunched from the spec fixed at session start, so its command, working directory and env cannot be changed by a restart |
 | ANY | `/sessions/:id/services/:name/*` | session | path-based UI proxy |
 | WS | `/sessions/:id/terminal` | session | relayed PTY |
 | POST | `/sessions/:id/snapshot` | session | → the new `SnapshotEntry` |

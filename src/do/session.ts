@@ -64,6 +64,8 @@ export class Session extends DurableObject<Env> {
     return runChecks(this.rt, manifest, only);
   }
 
+  // Name only, by design: the relaunch uses the spec stored at session start
+  // (see restartService in session/services.ts). Do not accept a spec here.
   async restartService(name: string): Promise<ServiceRuntime> {
     await this.rt.requireRunning();
     return restartServiceImpl(this.rt, name);

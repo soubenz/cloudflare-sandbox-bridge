@@ -1,5 +1,8 @@
 import { OpalixClient } from '../../cli/src/client';
 
+/** Prefix for every user id the suite creates; globalTeardown sweeps sessions with it. */
+export const USER_PREFIX = process.env.OPALIX_USER_PREFIX ?? 'it-';
+
 export interface SseEvent {
   id: string;
   event: string;
@@ -13,7 +16,7 @@ export async function startRunningSession(
   lab: string,
   timeoutMs = 120_000
 ): Promise<{ id: string; token: string; session: OpalixClient }> {
-  const started = await service.startSession(lab, `it-${lab}-${Date.now()}`);
+  const started = await service.startSession(lab, `${USER_PREFIX}${lab}-${Date.now()}`);
   const session = new OpalixClient({ baseUrl, sessionToken: started.token });
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
