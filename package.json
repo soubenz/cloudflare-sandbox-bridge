@@ -22,6 +22,7 @@
     "d1:migrate": "wrangler d1 migrations apply opalix --remote",
     "lab:publish": "tsx cli/src/index.ts labs publish",
     "typecheck:cli": "tsc --noEmit -p cli/tsconfig.json",
+    "check:contrast": "node scripts/contrast-check.mjs",
     "typecheck:all": "npm run typecheck && npm run typecheck:cli"
   },
   "dependencies": {

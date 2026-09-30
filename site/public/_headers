@@ -8,3 +8,5 @@
 # Self-hosted fonts rarely change; let browsers keep them for 30 days.
 /fonts/*
   Cache-Control: public, max-age=2592000
+/design/fonts/*
+  Cache-Control: public, max-age=2592000

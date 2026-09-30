@@ -1,0 +1,126 @@
+/*
+ * Opalix design tokens: one file shared by the marketing site (site/) and the
+ * learner console (dashboard/). Both Workers serve this same file, at
+ * /design/tokens.css, so a change here changes both.
+ *
+ * Theme selection:
+ *   - Default follows the system (prefers-color-scheme).
+ *   - <html data-theme="light"> forces light, <html data-theme="dark"> forces
+ *     dark, whatever the system says.
+ *   - The dark values therefore appear twice, once under the media query
+ *     (guarded so an explicit light choice wins) and once under the attribute.
+ *     The two blocks must stay identical; scripts/contrast-check.mjs asserts
+ *     that and checks WCAG contrast for the colour pairs used as text.
+ *
+ * Colour tokens are written as plain #hex on one line each so the contrast
+ * check can parse them. --color-code-* are the same in both themes (code
+ * blocks are always dark), so they are defined once, in the light block.
+ */
+
+:root {
+  /* Colour: light */
+  --color-bg: #f2f4fa;
+  --color-surface: #ffffff;
+  --color-surface-2: #e9ecf6;
+  --color-text: #0a0f2c;
+  --color-text-muted: #586083;
+  --color-accent: #3552f2;
+  --color-accent-contrast: #ffffff;
+  --color-success: #1a7f4b;
+  --color-warn: #8a4b0a;
+  --color-danger: #b42318;
+  --color-border: #d5d9ea;
+  --color-border-input: #8a91b0;
+  --color-code-bg: #0a0f2c;
+  --color-code-text: #e8ebf7;
+  --color-focus-ring: #3552f2;
+
+  --shadow-1: 0 1px 2px rgba(10, 15, 44, 0.06), 0 1px 1px rgba(10, 15, 44, 0.04);
+  --shadow-2: 0 8px 24px rgba(10, 15, 44, 0.1), 0 2px 6px rgba(10, 15, 44, 0.06);
+  color-scheme: light;
+
+  /* Focus ring, as a box-shadow: box-shadow: var(--focus-ring); */
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--color-focus-ring) 45%, transparent);
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Radius */
+  --radius-1: 4px;
+  --radius-2: 6px;
+  --radius-3: 8px;
+  --radius-4: 12px;
+  --radius-5: 20px;
+  --radius-6: 28px;
+  --radius-pill: 999px;
+
+  /* Type scale */
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 24px;
+  --fs-display-1: clamp(32px, 5vw, 56px);
+  --fs-display-2: clamp(24px, 3.5vw, 36px);
+
+  /* Fonts (files and @font-face live in fonts.css) */
+  --font-display: "Funnel Display", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Funnel Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Motion */
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 400ms;
+}
+
+/* Dark: system preference, unless the page explicitly chose light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #0a0f2c;
+    --color-surface: #111736;
+    --color-surface-2: #182050;
+    --color-text: #e8ebf7;
+    --color-text-muted: #9aa3c7;
+    --color-accent: #9aabff;
+    --color-accent-contrast: #0a0f2c;
+    --color-success: #5cc48f;
+    --color-warn: #ffb86b;
+    --color-danger: #ff9a9a;
+    --color-border: #263066;
+    --color-border-input: #5d6795;
+    --color-focus-ring: #9aabff;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 1px 1px rgba(0, 0, 0, 0.3);
+    --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
+}
+
+/* Dark: explicit choice. Keep identical to the block above. */
+:root[data-theme="dark"] {
+  --color-bg: #0a0f2c;
+  --color-surface: #111736;
+  --color-surface-2: #182050;
+  --color-text: #e8ebf7;
+  --color-text-muted: #9aa3c7;
+  --color-accent: #9aabff;
+  --color-accent-contrast: #0a0f2c;
+  --color-success: #5cc48f;
+  --color-warn: #ffb86b;
+  --color-danger: #ff9a9a;
+  --color-border: #263066;
+  --color-border-input: #5d6795;
+  --color-focus-ring: #9aabff;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 1px 1px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}

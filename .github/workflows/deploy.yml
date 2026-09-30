@@ -16,6 +16,7 @@ on:
       - 'migrations/**'
       - 'dashboard/**'
       - 'scripts/**'
+      - 'packages/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch: {}
 
@@ -54,6 +55,9 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+      - name: Design tokens contrast check
+        run: node scripts/contrast-check.mjs
 
       # Docker's build context is each family's own directory, so the
       # canonical images/common/opalix-init.sh is copied into both. See
