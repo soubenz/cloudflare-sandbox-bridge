@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opalix Ops</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▣</text></svg>">
+<!-- Applies a saved theme before first paint; a module script would flash the other one. -->
+<script src="/theme-init.js"></script>
+<link rel="stylesheet" href="/design/tokens.css">
+<link rel="stylesheet" href="/design/fonts.css">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header class="bar">
+  <div class="bar-top">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">▣</span> <strong>Opalix Ops</strong></div>
+    <div class="bar-actions">
+      <button id="btnTheme" class="btn btn-ghost btn-icon" type="button" aria-label="Theme: system. Switch to light."><span id="themeIcon" aria-hidden="true">◐</span></button>
+      <button id="btnSignOut" class="btn btn-ghost" type="button">Sign out</button>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Sections" id="tabs"></nav>
+</header>
+
+<main id="main"></main>
+
+<dialog id="confirm" class="dialog" aria-labelledby="confirmTitle" aria-describedby="confirmBody">
+  <form method="dialog" class="dialog-card">
+    <h2 id="confirmTitle"></h2>
+    <p id="confirmBody"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn" id="confirmNo" value="cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="confirmYes">Confirm</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+<script type="module" src="/dist/app.js"></script>
+</body>
+</html>

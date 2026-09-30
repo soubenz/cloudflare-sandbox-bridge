@@ -1,0 +1,44 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "opalix-admin",
+  "compatibility_date": "2026-09-22",
+
+  // The owner's back office: sessions, pools, catalogue, usage and cost,
+  // users, waitlist and feedback. Its own Worker, on its own origin, with its
+  // own password and cookie, so a leaked learner-console cookie opens nothing
+  // here. It holds SANDBOX_API_KEY and is the only thing in the browser's
+  // reach that does; the browser gets a cookie and nothing more.
+  //
+  // Every request goes through the Worker first (run_worker_first), so the
+  // password gate cannot be walked around by asking for an asset directly.
+  "main": "./dist-worker/worker.js",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+
+  // A service binding, not an HTTPS call: a Worker cannot fetch another Worker
+  // over workers.dev (Cloudflare answers error 1042), and a binding never
+  // leaves the edge. The API still authenticates the request: the key travels
+  // as a bearer header and its router does not care how the request arrived.
+  "services": [
+    { "binding": "API", "service": "opalix-sandbox" }
+  ],
+
+  "vars": {
+    // Only the path is used; the origin makes it a well-formed Request.
+    "API_BASE": "https://opalix-sandbox.internal"
+  },
+
+  // Five login attempts a minute per address (429 + Retry-After beyond that).
+  // namespace_id only has to be unique within the Cloudflare account: the
+  // site's waitlist limiter uses 1001 and the console's login limiter 1002.
+  "ratelimits": [
+    { "name": "LOGIN_LIMIT", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } }
+  ]
+  // Secrets (wrangler secret put --config admin/wrangler.jsonc):
+  //   SANDBOX_API_KEY       the API's service key; never reaches the browser
+  //   ADMIN_PASSWORD        what the login page checks
+  //   ADMIN_COOKIE_SECRET   signs the session cookie
+}

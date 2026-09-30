@@ -1,0 +1,5 @@
+# Built by admin/build.mjs on deploy; none of this is source.
+dist-worker/
+public/dist/
+# Copied from packages/design at build time, so it can never drift from it.
+public/design/

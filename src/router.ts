@@ -15,6 +15,7 @@ import { corsMiddleware } from './cors';
 import { queryUsage, resolveWindow } from './session/usage';
 import { readSolutionFiles } from './session/solution';
 import { TarError } from './lib/tar';
+import { mountAdmin } from './admin';
 
 export function createRouter(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
@@ -405,6 +406,9 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     if (before !== undefined && !Number.isFinite(before)) throw ApiError.badRequest('bad_cursor', '`before` must be an epoch-ms number');
     return c.json(await userChecks(c.env, c.req.param('uid'), { lab: q.lab || undefined, limit: clampLimit(q.limit), before }));
   });
+
+  // The admin panel's routes (service key only), kept in their own module.
+  mountAdmin(app);
 
   return app;
 }

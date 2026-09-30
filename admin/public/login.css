@@ -1,0 +1,49 @@
+/* The login page, before anyone is signed in. Design tokens come from
+   /design/tokens.css; nothing here is inline. */
+* { box-sizing: border-box; }
+body.login {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: var(--fs-md)/1.5 var(--font-sans);
+}
+.login-card {
+  width: 100%;
+  max-width: 340px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-4);
+  box-shadow: var(--shadow-2);
+  padding: var(--space-5);
+}
+.login-card h1 { font: 600 var(--fs-xl)/1.2 var(--font-display); margin: 0 0 var(--space-2); }
+.login-card p { color: var(--color-text-muted); font-size: var(--fs-sm); margin: 0 0 var(--space-4); }
+.login-card label { display: block; font-size: var(--fs-sm); font-weight: 600; margin-bottom: var(--space-1); }
+.login-card input {
+  width: 100%;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-input);
+  border-radius: var(--radius-2);
+  padding: var(--space-2) var(--space-3);
+}
+.login-card input:focus-visible, .login-card button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.login-card button {
+  width: 100%;
+  margin-top: var(--space-3);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--color-accent-contrast);
+  background: var(--color-accent);
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  padding: var(--space-2) var(--space-3);
+}
+.login-card .err { color: var(--color-danger); font-size: var(--fs-sm); margin-top: var(--space-3); min-height: 1.5em; }

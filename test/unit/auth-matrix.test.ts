@@ -15,14 +15,15 @@ import { readFileSync } from 'node:fs';
  * it reads the handler bodies and checks which auth helper each one calls.
  */
 const router = readFileSync('src/router.ts', 'utf8');
+const admin = readFileSync('src/admin.ts', 'utf8');
 
 /** The body of `app.<method>('<path>', …)` up to the next route registration. */
-function handlerFor(method: string, path: string): string {
+function handlerFor(method: string, path: string, source: string = router): string {
   const needle = `app.${method}('${path}'`;
-  const start = router.indexOf(needle);
-  if (start === -1) throw new Error(`route not found in src/router.ts: ${method.toUpperCase()} ${path}`);
-  const next = router.indexOf('\n  app.', start + needle.length);
-  return router.slice(start, next === -1 ? undefined : next);
+  const start = source.indexOf(needle);
+  if (start === -1) throw new Error(`route not found: ${method.toUpperCase()} ${path}`);
+  const next = source.indexOf('\n  app.', start + needle.length);
+  return source.slice(start, next === -1 ? undefined : next);
 }
 
 const SERVICE_KEY_ONLY: Array<[string, string]> = [
@@ -43,6 +44,17 @@ const SERVICE_KEY_ONLY: Array<[string, string]> = [
   ['get', '/users/:uid/checks'],
 ];
 
+/** The admin panel's routes live in src/admin.ts and are service-key only. */
+const ADMIN_SERVICE_KEY_ONLY: Array<[string, string]> = [
+  ['get', '/admin/sessions'],
+  ['get', '/admin/usage/summary'],
+  ['get', '/admin/users'],
+  ['get', '/admin/waitlist'],
+  ['get', '/admin/feedback'],
+  ['get', '/labs/:slug/versions'],
+  ['post', '/labs/:slug/promote'],
+];
+
 /** Reachable with a session token — the browser holds one of these legitimately. */
 const SESSION_TOKEN: Array<[string, string]> = [
   ['get', '/sessions/:id'],
@@ -60,6 +72,12 @@ const SESSION_TOKEN: Array<[string, string]> = [
 ];
 
 describe('route auth matrix', () => {
+  it.each(ADMIN_SERVICE_KEY_ONLY)('admin: %s %s requires the service key and nothing weaker', (method, path) => {
+    const body = handlerFor(method, path, admin);
+    expect(body).toContain('requireServiceAuth(');
+    expect(body).not.toContain('requireBrowserAuth(');
+  });
+
   it.each(SERVICE_KEY_ONLY)('%s %s requires the service key', (method, path) => {
     expect(handlerFor(method, path)).toContain('requireServiceAuth(');
   });
@@ -121,6 +139,10 @@ describe('route auth matrix', () => {
       if (!body.includes('requireServiceAuth(') && !body.includes('requireBrowserAuth(')) {
         holes.push(`${method!.toUpperCase()} ${path}`);
       }
+    }
+    for (const m of admin.matchAll(/\n  app\.(get|post|put|delete|all)\('([^']+)'/g)) {
+      const [, method, path] = m;
+      if (!handlerFor(method!, path!, admin).includes('requireServiceAuth(')) holes.push(`admin ${method!.toUpperCase()} ${path}`);
     }
     expect(holes, `routes with no auth check: ${holes.join(', ')}`).toEqual([]);
   });

@@ -357,3 +357,22 @@ Every route above talks to the container only through `src/session/backend.ts`'s
 future non-Cloudflare backend (rented VMs, k3s, Kata — the "cluster backend"
 in the product plan, or a cost-driven move off Cloudflare per the pricing
 review) implements the same interface; no route or manifest field changes.
+
+## Admin routes (service key only)
+
+These back the admin panel (`admin/`, see `docs/admin.md`). Every one requires
+the service key; a session token is refused. They are registered by
+`src/admin.ts`.
+
+| Route | Returns |
+|---|---|
+| `GET /admin/sessions?state=&lab=&user=&limit=&before=` | Sessions in any state, newest first, with cost, running seconds, completion and hints delivered. `limit` defaults to 50 (max 200); `before` is a `created_at` cursor in ms; the reply carries `next` when there is more. |
+| `GET /admin/usage/summary?from=&to=` | Totals, the top 20 labs by cost, cost per UTC day, and `completion` (`completed`, `ended`, `rate`) for the window (default the last 30 days). The LLM figure is self-reported by the container, not reconciled against billing. |
+| `GET /admin/users?limit=&before=` | Each distinct `user_id` with session count, last session, total cost, completed count and plan when a `users` row exists. |
+| `GET /admin/waitlist?limit=&before=` | Waitlist rows, newest first; `{ available: false, rows: [] }` if the table does not exist. |
+| `GET /admin/feedback?limit=&before=` | Lab feedback and site feedback merged newest first, each with a `source`; `missing` names a table that does not exist. |
+| `GET /labs/:slug/versions` | Every published version of a lab with its manifest title, version and estimated minutes, and which is `current` and `previous`. |
+| `POST /labs/:slug/promote` body `{ "version": "1.2.0" }` | Points `current` at that version (the old one becomes `previous`) and rebuilds the catalogue index. `404 unknown_version` if it was never published; promoting the current version is a no-op apart from the index rebuild. |
+
+Only a missing table or column is reported as `available: false`; any other
+database error is a 500.
