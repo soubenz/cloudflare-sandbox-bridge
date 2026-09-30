@@ -107,9 +107,9 @@ def _conversation_id(raw_body, field):
     Deliberately not tied to the request's layout. Which conversation loses
     an append is keyed to the conversation id, and the ``conversation``
     field only exists because agent/store.py happens to send one today. A
-    learner who renames that field, or nests it, is not making the bug worse
-    and should not silently turn the fault off. So: match the id anywhere in
-    the whole request body first, and fall back to the named field.
+    learner who renames that field, or nests it, must not silently switch
+    the fault off. So: match the id anywhere in the whole request body first,
+    and fall back to the named field.
     """
     match = re.search(r"\bC-\d{4}\b", raw_body)
     if match:

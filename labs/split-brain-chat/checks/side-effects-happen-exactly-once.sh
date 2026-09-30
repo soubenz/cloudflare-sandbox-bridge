@@ -12,4 +12,4 @@ if [ -z "$PY" ]; then
   echo '{"pass": false, "message": "grader bug: no python3 on PATH inside the container"}'
   exit 1
 fi
-exec "$PY" "$HERE/_harness.py" side-effects-happen-exactly-once
+exec "$PY" -B "$HERE/_harness.py" side-effects-happen-exactly-once

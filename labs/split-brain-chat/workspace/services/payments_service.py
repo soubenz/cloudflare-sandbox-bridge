@@ -97,10 +97,9 @@ def _conversation_id(raw_body, field):
     Deliberately not tied to the request's layout. Which conversation's first
     instruction fails is keyed to the conversation id, and the
     ``conversation`` field only exists because agent/payments.py happens to
-    send one today. A learner who renames or nests it is not making the bug
-    worse and should not silently turn the faults off and then be told their
-    retries are missing. So: match the id anywhere in the whole request body
-    first, and fall back to the named field.
+    send one today. A learner who renames or nests it must not silently
+    switch the faults off. So: match the id anywhere in the whole request
+    body first, and fall back to the named field.
     """
     match = re.search(r"\bC-\d{4}\b", raw_body)
     if match:

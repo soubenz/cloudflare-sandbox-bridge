@@ -40,6 +40,9 @@ customer whose ticket hits a failure still needs an answer. An agent that
 stops retrying stops sending duplicates — by dropping work instead, which
 is the same bug wearing a better disguise, and it is graded.
 
+At minute 8 six more tickets land, which will make any duplicates louder; checks
+run against what is true at the end.
+
 ## Checking your work
 
 **Run checks** resets both services, runs *your* `run_agent.py` over the

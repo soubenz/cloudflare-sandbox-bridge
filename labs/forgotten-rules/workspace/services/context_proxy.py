@@ -169,8 +169,8 @@ def _turn_id(raw_body, blob, turns, payload):
     (T-01 to T-11)" is a sensible thing to put in a prompt -- and reading the
     highest of those as the turn being answered attributed six calls to the
     wrong turn and reported a working fix as having answered nothing. A
-    learner who rewrites the request builder is not making the bug worse and
-    must not silently turn the record's per-turn view off.
+    learner who rewrites the request builder must not silently switch the
+    record's per-turn view off.
     """
     present = [t["id"] for t in turns if t["needle"] and t["needle"] in blob]
     if present:

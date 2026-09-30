@@ -78,8 +78,7 @@ def _ticket_id(prompt):
     Deliberately not tied to the prompt's layout. Which tickets fail is
     keyed to the ticket id, and the labelled `Ticket ID:` line only exists
     because agent/llm.py happens to write one today. A learner who
-    reformats that prompt is not making the bug worse, and should not
-    silently turn the failures off and be told their retries are missing.
+    reformats that prompt must not silently switch the failures off.
     So: match the id anywhere in the text, and fall back to the label.
     """
     match = re.search(r"\bT-\d+\b", prompt)
