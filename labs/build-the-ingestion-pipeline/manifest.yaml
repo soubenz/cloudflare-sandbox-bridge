@@ -113,11 +113,11 @@ pressure: []
 
 checks:
   # None of these read the learner's code. Each shares one grader-run's
-  # worth of setup with the other two (its own throwaway `grading`
+  # worth of setup with the other three (its own throwaway `grading`
   # database on this same Postgres server, its own scratch copy of the
   # source documents, four calls to the learner's own ingest/run.py) --
   # see checks/_harness.py. Sequential on purpose: whichever check runs
-  # first pays the setup cost and the other two just read its result.
+  # first pays the setup cost and the other three just read its result.
   - name: rerun-is-idempotent
     script: rerun-is-idempotent.sh
     timeout_s: 120
@@ -130,6 +130,16 @@ checks:
     parallel: false
   - name: deletes-are-real
     script: deletes-are-real.sh
+    timeout_s: 120
+    weight: 1
+    parallel: false
+  # Reads the same four runs' row versions (Postgres xmin): rows of
+  # documents whose content did not change must keep the xmin they were
+  # first written with. A TRUNCATE-and-reinsert (or delete-and-reinsert, or
+  # an ON CONFLICT DO UPDATE that always writes) passes the three checks
+  # above -- ids are content hashes -- and fails this one.
+  - name: unchanged-rows-are-untouched
+    script: unchanged-rows-are-untouched.sh
     timeout_s: 120
     weight: 1
     parallel: false
@@ -152,7 +162,10 @@ hints:
       changed. Editing a document changes what its chunks hash to, which
       means its old chunks are now stored under ids nothing computes
       anymore -- they don't get overwritten by ON CONFLICT, they just sit
-      there forever unless something explicitly deletes them.
+      there forever unless something explicitly deletes them. And a chunk
+      that IS already stored, byte-for-byte, needs no write at all -- an
+      upsert that overwrites it anyway, or a run that clears the table
+      first, rewrites rows nothing asked it to.
   # ~45% of timeout_minutes.
   - after_minutes: 40
     text: >-

@@ -24,7 +24,7 @@ first write -- that is your job, every time you change what is live, so
 that a rollback has something correct to read.
 
 The functions below are the shape of the job, not the job done. Fill in
-each TODO. Nothing here calls ContextForge for you.
+each function. Nothing here calls ContextForge for you.
 """
 import json
 import os

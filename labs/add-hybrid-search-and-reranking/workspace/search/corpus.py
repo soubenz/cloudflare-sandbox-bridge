@@ -18,7 +18,12 @@ purpose so that:
     ahead on raw (pseudo-)vector similarity while a document with the
     literal term the user typed sits behind it in keyword rank alone --
     exposing what happens when two differently-scaled raw numbers are
-    just added together.
+    just added together;
+  - one query has a lexical false positive (a document that repeats the
+    query's own words but is about something else) that tops the keyword
+    list, while the document that really answers it shares only a couple
+    of words with the query and tops the vector list -- so keyword
+    results cannot simply be put first.
 """
 
 DOCUMENTS = [
@@ -171,4 +176,18 @@ DOCUMENTS = [
                  "meaningful if the billing period lengths match -- feed the "
                  "report's own period_days field into any month-over-month "
                  "comparison rather than assuming every month is equal."),
+
+    # --- clock_display: the keyword false-positive for the "keeps its time
+    # through a power cut" query. Lexically it is a great match (forget,
+    # time, power, loss, keep, clock, run all appear) but it is about how
+    # the clock is DISPLAYED, not about what survives a power cut. It
+    # contains no trigger phrase of any concept, so it embeds to an
+    # arbitrary, unrelated vector. ---
+    ("clock-1", "Clock display options: the Aurora T3 Pro keeps the clock "
+                "running on its home screen in either 12-hour or 24-hour "
+                "format. If you have ever forgotten to set the time format, "
+                "open Settings > Display > Clock; power-saving dimming "
+                "causes a loss of brightness only, and a clock running at "
+                "the wrong time of day means the time zone is wrong."),
+
 ]

@@ -48,10 +48,21 @@ if it turns out to be a mistake. Three things have to hold the whole time:
 
 ## Checking your work
 
-Checks call your `rollout.py` functions directly and drive the real
-scenario against your real, running ContextForge -- register v2, snapshot,
-cut over, roll back -- watching `caller.py` and ContextForge's own state
-throughout. They never read your code as text.
+Checks drive the real scenario against your real, running ContextForge --
+register v2, snapshot, cut over, roll back -- watching `caller.py` and
+ContextForge's own state throughout. They run your `rollout.py` from its
+command line, as the `learner` user, one command per step, and never read
+or import your code:
+
+```bash
+python3 -B rollout.py register-v2
+python3 -B rollout.py snapshot
+python3 -B rollout.py cutover v2
+python3 -B rollout.py rollback
+```
+
+Exit status 0 means the step worked; anything else means it failed (the last
+line of stderr is quoted back to you). Keep those four commands working.
 
 | Check | Passes when |
 |---|---|

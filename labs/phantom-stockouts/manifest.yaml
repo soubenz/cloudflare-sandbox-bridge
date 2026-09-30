@@ -65,8 +65,14 @@ env:
   # The shop's rule since the weekend: a stock figure older than fifteen
   # minutes is not a stock figure. Nothing in the agent consults it yet.
   MAX_READING_AGE_S: "900"
-  # The faults, fixed per SKU so every run of the graders sees the same
-  # readings. Nothing here is random and nothing here branches on the clock.
+  # The DEFAULT faults, fixed per SKU: what a learner sees by hand. The
+  # graders do not use them -- each grader run resets the stock service with
+  # a random seed (POST /api/reset?seed=N), which picks which SKUs get each
+  # fault from the queue's SKUs (deterministic for the seed, and never the
+  # SKU that really is sold out) and reports the choice on /api/faults; the
+  # checks derive their expectations from that, so a hardcoded list of the
+  # SKUs below fails. Every seed still yields two degraded-then-recovers SKUs.
+  # Nothing here branches on the clock.
   #
   #   SKU-5062 and SKU-9915 hit the slow shard on their first request and are
   #   answered properly on the next one. still-answers-on-good-data needs

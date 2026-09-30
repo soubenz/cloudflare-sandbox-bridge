@@ -39,11 +39,14 @@
 # makes the keyword-only check a real, necessary check rather than a
 # redundant one.
 #
-# The corpus (workspace/search/corpus.py, 27 short Aurora-T3-Pro support
-# articles across ~14 topics) and all four grading queries were tuned
+# The corpus (workspace/search/corpus.py, 28 short Aurora-T3-Pro support
+# articles across ~14 topics) and all five grading queries were tuned
 # against REAL measured ts_rank and cosine-similarity numbers, not designed
 # on paper -- see this lab's own build report for the exact numbers proving
-# each of the three checks discriminates a different failure mode, and one
+# each of the three checks discriminates a different failure mode (the
+# fifth query, on the lexical false positive, sits in the third check and
+# is what stops "keyword results first, then append vector results and
+# dedupe" from passing), and one
 # real, worth-recording finding from that process: pgvector's raw cosine
 # similarity and Postgres's raw ts_rank do not merely differ in scale by
 # some fixed factor that a naive implementation could get lucky on --
@@ -133,7 +136,7 @@ services:
     healthcheck:
       type: http
       path: /health
-      # Startup creates the extension/table and seeds 27 short documents
+      # Startup creates the extension/table and seeds 28 short documents
       # the first time only -- generous margin for a slow container.
       timeout_s: 60
     ui: false

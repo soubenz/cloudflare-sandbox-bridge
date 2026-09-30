@@ -6,14 +6,34 @@ gateway+database so grading never touches what the learner is looking
 at), there is nothing to substitute here: the only way to grade "does
 your rollout mechanism actually work" is to actually run it, against the
 one real, live ContextForge the learner has been working in. So this
-harness imports the learner's OWN workspace/rollout/rollout.py by path
-and calls its functions directly -- register_v2(), snapshot(),
-cutover_to("v2"), rollback() -- exactly once per grading run, driving the
-real scenario the graded outcomes describe, and records everything it
-observed along the way into results.json (shared across all check
-scripts in this run via the same results.json + results.lock pattern as
-hard-budget-per-team and one-endpoint-one-key). It never reads any of the
-learner's source as text.
+harness runs the learner's OWN workspace/rollout/rollout.py through its
+command line -- `rollout.py register-v2`, `snapshot`, `cutover v2`,
+`rollback` -- exactly once each per grading run, driving the real scenario
+the graded outcomes describe, and records everything it observed along the
+way into results.json (shared across all check scripts in this run via the
+same results.json + results.lock pattern as hard-budget-per-team and
+one-endpoint-one-key). It never reads any of the learner's source as text,
+and it never imports it: the learner's code runs in a child process, as the
+`learner` user when the grader itself is root, never inside this process.
+
+THE PROTOCOL (the learner's contract with the grader; also in brief.md).
+Each step is one invocation of the existing entry point, with the workspace
+`rollout/` directory as cwd:
+
+    python3 -B rollout.py register-v2
+    python3 -B rollout.py snapshot
+    python3 -B rollout.py cutover v2
+    python3 -B rollout.py rollback
+
+  * exit status 0 means the step worked; anything else means it failed. The
+    last non-empty line of stderr is quoted back to the learner.
+  * stdout is free-form. If its LAST non-empty line is a JSON object, that
+    object may say `{"ok": false, "error": "why"}`, which fails the step even
+    at exit 0. Anything else on stdout is ignored.
+  * A traceback that ends in NotImplementedError is reported as "not
+    implemented yet", which is what the untouched skeleton does.
+  * The step's own state (state.yaml, snapshots/) is what the next step
+    reads, exactly as when the learner runs the commands by hand.
 
 What "driving the scenario" actually does, in order:
   1. Capture the ORIGINAL server_id from state.yaml, and mint this
@@ -51,7 +71,6 @@ What "driving the scenario" actually does, in order:
      state.yaml or the learner's own token -- that the v1 shape is served
      again at that exact address.
 """
-import importlib.util
 import json
 import os
 import subprocess
@@ -85,6 +104,10 @@ REGISTRATION_TAIL_S = 6.0          # keep polling caller.py a little past regist
 ROLLBACK_BOUND_S = 8.0             # generous margin: the PUT itself measured 0.04-0.15s live, and even
                                     # polling caller.py (its own process-start + several HTTP round trips)
                                     # to confirm it, end to end, measured 1.2-1.7s across three full runs
+ROLLOUT_STEP_TIMEOUT_S = 60         # one rollout.py invocation may not run longer than this
+RUNUSER = "/usr/sbin/runuser"
+LEARNER_USER = "learner"
+LOCK_STALE_S = 300                 # a results.lock older than this is a dead run
 SAMPLER_THREADS = 4                # concurrent GET pollers during cutover+rollback, for sampling density
 
 
@@ -122,12 +145,51 @@ def _http(method, path, body=None, token=None, timeout=10, extra_headers=None):
         return None, str(e)
 
 
+def _as_learner(argv):
+    """The learner's code never runs as the grader's own user. As root (the
+    real container) it goes through `runuser -u learner --`; as anyone else
+    (a local dry run) it runs directly."""
+    if hasattr(os, "geteuid") and os.geteuid() == 0 and os.path.exists(RUNUSER):
+        return [RUNUSER, "-u", LEARNER_USER, "--"] + list(argv)
+    return list(argv)
+
+
+def _run_rollout_step(name, *args):
+    """Runs one rollout.py command in a child process (see THE PROTOCOL in
+    the module docstring). Returns None on success, else a message."""
+    label = " ".join((name,) + args)
+    try:
+        proc = subprocess.run(
+            _as_learner(["python3", "-B", ROLLOUT_PY] + [name] + list(args)),
+            cwd=os.path.dirname(ROLLOUT_PY), capture_output=True, text=True,
+            timeout=ROLLOUT_STEP_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return "`rollout.py %s` did not finish within %ss" % (label, ROLLOUT_STEP_TIMEOUT_S)
+    except OSError as e:
+        return "could not run `rollout.py %s`: %r" % (label, e)
+    err_lines = [ln for ln in (proc.stderr or "").splitlines() if ln.strip()]
+    if "NotImplementedError" in (proc.stderr or ""):
+        return "`rollout.py %s` is not implemented yet (raises NotImplementedError)" % label
+    if proc.returncode != 0:
+        return "`rollout.py %s` exited %d: %s" % (label, proc.returncode, err_lines[-1][:300] if err_lines else "no error output")
+    out_lines = [ln for ln in (proc.stdout or "").splitlines() if ln.strip()]
+    if out_lines:
+        try:
+            last = json.loads(out_lines[-1])
+        except ValueError:
+            last = None
+        if isinstance(last, dict) and last.get("ok") is False:
+            return "`rollout.py %s` reported failure: %s" % (label, str(last.get("error") or "no reason given")[:300])
+    return None
+
+
 def _run_caller():
     """One real invocation of the learner-visible caller.py. Returns the
     parsed {"pass":..., "message":...} dict, or a synthetic failing one if
     it crashed / produced nothing parseable."""
     try:
-        proc = subprocess.run([sys.executable, "-B", CALLER_PY], capture_output=True, text=True, timeout=20)
+        proc = subprocess.run(_as_learner(["python3", "-B", CALLER_PY]), capture_output=True, text=True, timeout=20)
     except subprocess.TimeoutExpired:
         return {"pass": False, "message": "caller.py did not finish within 20s"}
     out = (proc.stdout or "").strip()
@@ -136,13 +198,6 @@ def _run_caller():
         return json.loads(line)
     except ValueError:
         return {"pass": False, "message": "caller.py produced no parseable result (stdout=%r stderr=%r)" % (proc.stdout, proc.stderr)}
-
-
-def _import_rollout():
-    spec = importlib.util.spec_from_file_location("learner_rollout", ROLLOUT_PY)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _mint_witness_token(server_id):
@@ -228,8 +283,6 @@ def _build_results():
         return results
     v1_tool_name = v1_tool["name"]
 
-    rollout = _import_rollout()
-
     # --- stage 1: register_v2() ---
     # Two independent signals, both running for the whole window (through
     # register_v2() and a short tail after it returns): caller.py itself
@@ -253,14 +306,8 @@ def _build_results():
     for t in callers + samplers:
         t.start()
 
-    register_error = None
     t0 = time.time()
-    try:
-        rollout.register_v2()
-    except NotImplementedError:
-        register_error = "register_v2() is not implemented yet (raises NotImplementedError)"
-    except Exception as e:  # noqa: BLE001
-        register_error = "register_v2() raised: %r" % (e,)
+    register_error = _run_rollout_step("register-v2")
     register_elapsed = time.time() - t0
     if register_elapsed > REGISTRATION_POLL_TIMEOUT_S:
         register_error = register_error or "register_v2() took longer than %ss" % REGISTRATION_POLL_TIMEOUT_S
@@ -297,13 +344,7 @@ def _build_results():
         return results
 
     # --- stage 2: snapshot(), then cutover_to("v2") with dense sampling ---
-    try:
-        rollout.snapshot()
-        snapshot_error = None
-    except NotImplementedError:
-        snapshot_error = "snapshot() is not implemented yet (raises NotImplementedError)"
-    except Exception as e:  # noqa: BLE001
-        snapshot_error = "snapshot() raised: %r" % (e,)
+    snapshot_error = _run_rollout_step("snapshot")
     results["snapshot_error"] = snapshot_error
 
     samples = []
@@ -312,13 +353,7 @@ def _build_results():
     for s in samplers:
         s.start()
 
-    cutover_error = None
-    try:
-        rollout.cutover_to("v2")
-    except NotImplementedError:
-        cutover_error = "cutover_to() is not implemented yet (raises NotImplementedError)"
-    except Exception as e:  # noqa: BLE001
-        cutover_error = "cutover_to('v2') raised: %r" % (e,)
+    cutover_error = _run_rollout_step("cutover", "v2")
     results["cutover_error"] = cutover_error
 
     results["post_cutover_caller_result"] = None if cutover_error else _run_caller()
@@ -330,12 +365,7 @@ def _build_results():
         rollback_error = "skipped: cutover_to did not succeed"
     else:
         t0 = time.time()
-        try:
-            rollout.rollback()
-        except NotImplementedError:
-            rollback_error = "rollback() is not implemented yet (raises NotImplementedError)"
-        except Exception as e:  # noqa: BLE001
-            rollback_error = "rollback() raised: %r" % (e,)
+        rollback_error = _run_rollout_step("rollback")
 
         if rollback_error is None:
             deadline = t0 + ROLLBACK_BOUND_S
@@ -371,6 +401,14 @@ def get_results():
     if os.path.exists(RESULTS_PATH):
         with open(RESULTS_PATH) as f:
             return json.load(f)
+
+    # A run that died mid-scenario leaves its lock behind; treat one older than
+    # any legitimate scenario as stale rather than failing every later run.
+    try:
+        if time.time() - os.path.getmtime(LOCK_PATH) > LOCK_STALE_S:
+            os.remove(LOCK_PATH)
+    except OSError:
+        pass
 
     got_lock = False
     try:
@@ -518,7 +556,12 @@ def main():
     if len(sys.argv) != 2 or sys.argv[1] not in COMMANDS:
         print(json.dumps({"pass": False, "message": "usage: _harness.py {%s}" % "|".join(COMMANDS)}))
         sys.exit(2)
-    COMMANDS[sys.argv[1]]()
+    try:
+        COMMANDS[sys.argv[1]]()
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001 - a grader crash is a verdict, not a traceback
+        _finish(False, "grader error: %r" % (e,))
 
 
 if __name__ == "__main__":

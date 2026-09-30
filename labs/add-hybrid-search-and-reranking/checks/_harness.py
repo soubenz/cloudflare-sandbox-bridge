@@ -9,7 +9,7 @@ previous run's state or a learner's own experiments in psql can never leak
 in), and the learner's CURRENT workspace/search/fusion.py -- then calls it
 with four real HTTP requests, exactly the way any caller would.
 
-Design of the four queries (see corpus.py's own header for the corpus
+Design of the five queries (see corpus.py's own header for the corpus
 side of this): each is built to make a DIFFERENT one of the three checks
 discriminate a correct fusion from a broken one -- see brief.md for the
 worked explanation and the report this lab shipped with for the numbers
@@ -27,6 +27,12 @@ proving it live.
     but a decoy (sched-1) has a slightly higher RAW vector-similarity
     number -- exposes a fusion that sorts by raw, un-normalized score
     instead of by rank (or another scale-invariant combination).
+  - semantic_vs_false_positive: the right answer (batt-1) is a
+    (pseudo-)semantic match that shares only "time" and "power" with the
+    query; a decoy (clock-1) repeats most of the query's own words (forgets,
+    time, power, loss, keep, clock, running) but is about how the clock is
+    displayed, so it is a lexical false positive. See the comment above
+    QUERIES for the expected ranking and why.
 
 That setup costs real time (a fresh database, a fresh subprocess), so it
 happens once per check *run*, not once per check -- see one-endpoint-one-
@@ -87,6 +93,37 @@ QUERIES = {
         "k": 5,
         "expect_doc": "api-1",
         "decoy_doc": "sched-1",
+    },
+    # Fifth query -- a keyword false positive must lose to a semantic match.
+    #
+    # EXPECTED WINNER: batt-1 (backup battery keeps the clock through a
+    # power outage). It is the ONLY correct answer: the user is asking
+    # whether the thermostat keeps its time through a power loss.
+    #
+    # WHY, per signal (real numbers on this corpus, measured with the
+    # shipped db.py):
+    #   keyword: clock-1 is rank 1 (ts_rank ~0.048) -- it repeats "forgets",
+    #            "time", "power", "loss", "keep", "clock", "run" from the
+    #            query -- but it is about clock DISPLAY format/brightness.
+    #            batt-1 shares only "time" and "power" with the query, and is
+    #            rank 2 (~0.029).
+    #   vector:  the query contains the phrase "forgets the time after power
+    #            loss", a battery_backup trigger, so it embeds next to
+    #            batt-1 (rank 1, cosine ~0.72). clock-1 contains no trigger
+    #            phrase of any concept, embeds to an unrelated vector, and
+    #            is nowhere in the vector top-5.
+    # Rank-based fusion (RRF) gives batt-1 1/61 + 1/62 against clock-1's
+    # 1/61; a min-max weighted blend gives batt-1 ~0.77 against ~0.50. But
+    # "keyword results first, then append the vector results that aren't
+    # already there, dedupe" puts clock-1 first, because it tops the keyword
+    # list -- the four queries above never separate that strategy from a real
+    # fusion, since in each of them the keyword winner is also the answer or
+    # is absent. batt-1 must be ranked first, with clock-1 nowhere above it.
+    "semantic_vs_false_positive": {
+        "query": "My old one forgets the time after power loss. Does this one keep the clock running?",
+        "k": 5,
+        "expect_doc": "batt-1",
+        "false_positive_doc": "clock-1",
     },
 }
 
@@ -398,11 +435,33 @@ def check_no_duplicate_or_dominated_results():
             "adding their raw, differently-scaled numbers together"
             % (dominance_ids[0], dominance_ids, correct, decoy, correct, correct),
         )
+    fp_q = r.get("semantic_vs_false_positive") or {}
+    if fp_q.get("status") != 200:
+        _finish(False, "POST /search returned HTTP %r for the false-positive query, expected 200" % fp_q.get("status"))
+    fp_ids = _ids(fp_q)
+    if not fp_ids:
+        _finish(False, "POST /search's response for the false-positive query had no usable `results` list")
+
+    fp_spec = QUERIES["semantic_vs_false_positive"]
+    winner = fp_spec["expect_doc"]
+    false_pos = fp_spec["false_positive_doc"]
+    if fp_ids[0] != winner:
+        _finish(
+            False,
+            "the false-positive query ('%s') ranked %r first (got %r), not %r -- %r repeats the "
+            "query's own words (it tops the keyword list) but is about how the clock is displayed; "
+            "%r is the article that answers whether the device keeps its time through a power loss "
+            "(it tops the vector list and is also in the keyword list), so it must beat a document "
+            "that only matches on words. Putting every keyword result first and appending the vector "
+            "results is not a fusion"
+            % (fp_spec["query"], fp_ids[0], fp_ids, winner, false_pos, winner),
+        )
     _finish(
         True,
-        "the dedup query returns %r exactly once, and the dominance query correctly ranks %r "
-        "above the raw-vector-score decoy %r"
-        % (dedup_target, correct, decoy),
+        "the dedup query returns %r exactly once, the dominance query ranks %r above the "
+        "raw-vector-score decoy %r, and the false-positive query ranks the semantic match %r above "
+        "the keyword false positive %r"
+        % (dedup_target, correct, decoy, winner, false_pos),
     )
 
 

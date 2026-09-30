@@ -7,6 +7,10 @@ SOURCE_DOCS_DIR since the last run:
   * Run it twice against an UNCHANGED source directory: the store must
     come out exactly as the first run left it -- same rows, same ids, no
     duplicates.
+  * Rows whose content did not change are left completely alone by every
+    run: never deleted and re-inserted, never rewritten in place -- not
+    even to refresh a timestamp. Only chunks that are new, or gone, get
+    written or removed.
   * Run it after one document's CONTENT CHANGED: the store must end up
     with only the new content for that document -- the old chunks must be
     gone, not sitting alongside the new ones.

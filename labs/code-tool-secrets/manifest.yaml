@@ -11,6 +11,8 @@
 # starting and the program running). Each is locally reasonable; what is
 # missing is the thing none of them does.
 #
+# Brief length: the 700-word exception (500 is the target) is deliberate for this build lab.
+#
 # Titled by symptom, as house style requires, and the symptom is a sentence
 # somebody said out loud in an incident channel.
 #
@@ -43,10 +45,10 @@ objectives:
   - "Decide what a child process inherits -- its environment, its directory, its resource ceilings -- at the moment it is created, because afterwards is too late"
   - "Prove a boundary holds from what an independent service and the filesystem recorded, rather than from what the tool says about itself"
 # Building a boundary is more work than finding a bug: 60-75 minutes for
-# someone who knows the mechanism exists, and the last hint names it at 34.
-# 90 leaves room for the second half -- making the tool still work -- which is
-# where most of the real thinking is.
-timeout_minutes: 90
+# someone who knows the mechanism exists, and the last hint, which names it,
+# comes at 55. 120 leaves room for the second half -- making the tool still
+# work -- which is where most of the real thinking is.
+timeout_minutes: 120
 idle_minutes: 10
 
 env:
@@ -165,7 +167,7 @@ hints:
       in the call that starts it -- `subprocess` takes an argument for each one,
       including a callable it runs in the child after the fork and before the
       exec, which is the only moment `resource.setrlimit` can be applied.
-  - after_minutes: 34
+  - after_minutes: 55
     text: >-
       The fifth cannot be set from outside, because opening a file is not
       something the process was given, it is something the process can ask for.

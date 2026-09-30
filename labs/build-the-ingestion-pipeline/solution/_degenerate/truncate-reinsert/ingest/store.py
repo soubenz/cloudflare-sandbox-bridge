@@ -59,12 +59,6 @@ def chunk_id(doc_id, chunk_index, content):
 
 
 def upsert_chunk(id_, doc_id, chunk_index, content, embedding):
-    # The id is a hash of (doc_id, chunk_index, content), so a row that is
-    # already stored under this id already holds exactly this chunk: there
-    # is nothing to overwrite. DO NOTHING (rather than the shipped
-    # DO UPDATE) leaves an unchanged row completely untouched -- same
-    # tuple, same xmin, same updated_at -- instead of rewriting it on every
-    # run.
     sql = (
         "INSERT INTO %s (id, doc_id, chunk_index, content, embedding, updated_at) "
         "VALUES (%s, %s, %s, %s, %s, now()) "
@@ -78,6 +72,10 @@ def upsert_chunk(id_, doc_id, chunk_index, content, embedding):
         _vector_literal(embedding),
     )
     _psql(sql, capture=False)
+
+
+def truncate_all():
+    _psql("TRUNCATE TABLE %s;" % TABLE, capture=False)
 
 
 def read_chunk_ids_for_doc(doc_id):

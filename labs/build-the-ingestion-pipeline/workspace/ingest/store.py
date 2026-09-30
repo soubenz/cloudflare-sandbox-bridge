@@ -5,10 +5,12 @@ PGDATABASE/PGUSER are already in the environment), not a Python driver --
 one less thing to install, and every statement below is plain, readable
 SQL.
 
-`ensure_schema`, `upsert_chunk`, `read_chunk_ids_for_doc`,
-`read_doc_ids_in_store` and `delete_chunks` are given and work. Three
-things are NOT finished, and making ingestion actually repeatable --
-survive a rerun, an edit, a deletion -- is the point of this lab:
+`ensure_schema`, `read_chunk_ids_for_doc`, `read_doc_ids_in_store` and
+`delete_chunks` are given and work. `upsert_chunk` works too, but it
+writes the row on every call, whether or not anything about it changed --
+check that against the contract in run.py's docstring. Three things are
+NOT finished, and making ingestion actually repeatable -- survive a
+rerun, an edit, a deletion -- is the point of this lab:
 
   1. `chunk_id()` returns a fresh random id on every call. Read its
      docstring before touching anything else.
@@ -85,7 +87,8 @@ def chunk_id(doc_id, chunk_index, content):
 
 def upsert_chunk(id_, doc_id, chunk_index, content, embedding):
     """Insert this chunk, or, if a row with this id already exists,
-    overwrite it in place."""
+    overwrite it in place. As written, that overwrite happens on every
+    call, including when the stored row is already identical."""
     sql = (
         "INSERT INTO %s (id, doc_id, chunk_index, content, embedding, updated_at) "
         "VALUES (%s, %s, %s, %s, %s, now()) "

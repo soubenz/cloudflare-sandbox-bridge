@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# DEGENERATE variant, never published: truncate-and-reinsert (overlay on solution/ingest/).
 """Ingest every document under SOURCE_DOCS_DIR into the vector store.
 
 This must hold no matter how many times it runs, or what changed in
@@ -53,6 +54,11 @@ def _read_docs(source_dir):
 def ingest(source_dir=None):
     source_dir = source_dir or SOURCE_DOCS_DIR
     store.ensure_schema()
+    # DEGENERATE (never published): wipe the table, then re-insert
+    # everything. Ids are content hashes, so a rerun still yields the same
+    # ids, updates replace, and deletes are real -- but every row is
+    # rewritten on every run.
+    store.truncate_all()
     docs = _read_docs(source_dir)
 
     upserted = 0

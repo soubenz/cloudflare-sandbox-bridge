@@ -10,16 +10,26 @@ said comes from the chat service's record of what went to the customer.
 
 Determinism comes from the services, not from this file: the stock service
 decides which SKUs it serves a reading for, which it refuses in the body of a
-200, which it has no row for and which it answers out of its cache, as a fixed
-function of (SKU, requests seen since the last reset). Resetting first is what
-makes a check repeatable no matter how many times the learner ran the agent by
-hand, and it also clears the degraded window the pressure event opens.
+200, which it has no row for and which it answers out of its cache, as a
+function of (seed, SKU, requests seen since the last reset). Resetting first
+is what makes a check repeatable no matter how many times the learner ran the
+agent by hand, and it also clears the degraded window the pressure event opens.
+
+Which SKUs are faulty is *not* the same on every grader run. Each run resets
+the stock service with a fresh random seed (``OPALIX_GRADER_SEED`` pins it,
+for reproducing a failure), the service picks the faulty SKUs from that seed,
+and this file reads the choice back from the service and derives every
+expectation from it. A list of the SKUs that are broken by default therefore
+gets no credit here: under a seed those are not the broken ones. The service
+restores its default faults once the log has been read, so a run by hand after
+Run checks is unchanged.
 
 Run as:  python3 _harness.py <check-name>
 """
 
 import json
 import os
+import random
 import subprocess
 import sys
 import urllib.request
@@ -34,15 +44,13 @@ RUN_TIMEOUT_S = float(os.environ.get("OPALIX_AGENT_RUN_TIMEOUT_S", "90"))
 MAX_ATTEMPTS = int(os.environ.get("MAX_ATTEMPTS", "3"))
 MAX_READING_AGE_S = int(os.environ.get("MAX_READING_AGE_S", "900"))
 
-# The fault config, read from the same manifest env the services read. These
-# are the graders' preconditions: which SKUs the stock service refuses in the
-# body of a 200, which it has no row for, which it answers out of a stale
-# cache, and which of them come good when asked a second time. A SKU in none
-# of these lists is one the service reads properly the first time.
-DEGRADED = [s for s in os.environ.get("INVENTORY_DEGRADED_SKUS", "").split(",") if s]
-STUCK = [s for s in os.environ.get("INVENTORY_STUCK_SKUS", "").split(",") if s]
-BLANK = [s for s in os.environ.get("INVENTORY_BLANK_SKUS", "").split(",") if s]
-CACHED = [s for s in os.environ.get("INVENTORY_CACHED_SKUS", "").split(",") if s]
+# The fault config is NOT read from the manifest env here. The stock service
+# chooses it from this run's seed and reports it (run["faults"]): which SKUs it
+# refuses in the body of a 200 (stuck), has no row for (blank), answers out of
+# a stale cache (cached), and which of them come good when asked a second time
+# (degraded). A SKU in none of these lists is one the service reads properly
+# the first time.
+FAULT_KEYS = ("degraded", "stuck", "blank", "cached")
 
 READING = "served_reading"
 # What the stock service calls the things it served that were not readings.
@@ -76,6 +84,7 @@ def _get(url, timeout=20):
 
 
 def _post(url, timeout=10):
+    """POSTs an empty JSON body; returns the parsed reply."""
     request = urllib.request.Request(url, data=b"{}", method="POST")
     request.add_header("Content-Type", "application/json")
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -108,9 +117,23 @@ def load_queue():
     ]
 
 
-def run_agent():
+def _read_faults(source, payload):
+    """The faulty SKUs out of a service reply, or a verdict that the lab is broken."""
+    faults = (payload or {}).get("faults")
+    if not isinstance(faults, dict) or not all(isinstance(faults.get(k), list) for k in FAULT_KEYS):
+        verdict(False, (
+            "grader bug: the stock service's %s did not say which SKUs it made faulty for this "
+            "run (no `faults` with %s in it), so there is nothing to grade the run against."
+            % (source, "/".join(FAULT_KEYS))))
+    return faults
+
+
+def run_agent(expected):
     """Resets both services, runs the agent once, returns what happened."""
-    _post(INVENTORY_URL + "/api/reset")
+    seed = int(os.environ.get("OPALIX_GRADER_SEED") or random.SystemRandom().randrange(1, 2 ** 31))
+    pool = ",".join(sorted({q["sku"] for q in expected}))
+    reset = _post("%s/api/reset?seed=%d&pool=%s" % (INVENTORY_URL, seed, pool))
+    _read_faults("reset reply", reset)
     _post(CHAT_URL + "/api/reset")
     try:
         proc = subprocess.run(
@@ -126,13 +149,25 @@ def run_agent():
     except OSError as err:
         verdict(False, "could not run `python3 %s`: %s" % (AGENT, err))
 
-    return {
+    run = {
+        "seed": seed,
         "exit_code": proc.returncode,
         "stdout": proc.stdout.decode("utf-8", "replace"),
         "stderr": proc.stderr.decode("utf-8", "replace").strip(),
         "inventory": _get(INVENTORY_URL + "/api/log"),
         "chat": _get(CHAT_URL + "/api/log"),
     }
+    # What the service says it faulted, read after the run so that it is the
+    # record and not a promise; it must agree with what the reset told us.
+    run["faults"] = _read_faults("/api/faults", {"faults": _get(INVENTORY_URL + "/api/faults")})
+    if any(run["faults"][k] != reset["faults"][k] for k in FAULT_KEYS):
+        verdict(False, "grader bug: the stock service changed its faulty SKUs mid-run.")
+    # Hand the default faults back, keeping the log the learner will read.
+    try:
+        _post(INVENTORY_URL + "/api/faults")
+    except Exception:  # noqa: BLE001 - restoring is a courtesy, never a verdict
+        pass
+    return run
 
 
 def crashed(run):
@@ -209,21 +244,24 @@ def listing(items, limit=4):
     return shown
 
 
-def groups(expected):
-    """The three kinds of SKU in this queue, from the fault config.
+def groups(run, expected):
+    """The three kinds of SKU in this queue, from the faults the service chose
+    for this run.
 
     ``blind`` never yields a reading however often it is asked; ``recovering``
     yields one on the second ask; ``clean`` yields one on the first.
     """
-    blind = {q["sku"] for q in expected if q["sku"] in set(STUCK) | set(BLANK) | set(CACHED)}
-    recovering = {q["sku"] for q in expected if q["sku"] in DEGRADED} - blind
+    faults = run["faults"]
+    blind_skus = set(faults["stuck"]) | set(faults["blank"]) | set(faults["cached"])
+    blind = {q["sku"] for q in expected if q["sku"] in blind_skus}
+    recovering = {q["sku"] for q in expected if q["sku"] in set(faults["degraded"])} - blind
     clean = {q["sku"] for q in expected} - blind - recovering
     return blind, recovering, clean
 
 
 def faults_fired(run, expected):
     """None if this run saw the bad readings the fault config promises."""
-    blind, recovering, _ = groups(expected)
+    blind, recovering, _ = groups(run, expected)
     missing = sorted(
         sku for sku in blind | recovering
         if not bad_for(run, sku) and not requests_for(run, sku)
@@ -231,16 +269,16 @@ def faults_fired(run, expected):
     unread = sorted(sku for sku in blind if readings_for(run, sku))
     if not blind and not recovering:
         return (
-            "this queue has no SKU that the stock service mishandles, so there is nothing "
-            "here to prove anything on. The lab's fault config (INVENTORY_STUCK_SKUS, "
-            "INVENTORY_BLANK_SKUS, INVENTORY_CACHED_SKUS, INVENTORY_DEGRADED_SKUS) has to "
-            "name SKUs that are in %s." % os.path.basename(QUEUE)
+            "this queue has no SKU that the stock service mishandled in this run (it chose "
+            "%s), so there is nothing here to prove anything on. The queue %s has to hold "
+            "SKUs the stock service can fault." % (
+                listing(sorted(set(sum((run["faults"][k] for k in FAULT_KEYS), [])))),
+                os.path.basename(QUEUE))
         )
     if unread:
         return (
-            "the stock service served a proper reading for %s, which it is configured never "
-            "to read (it is in INVENTORY_STUCK_SKUS, INVENTORY_BLANK_SKUS or "
-            "INVENTORY_CACHED_SKUS). That is the lab misconfigured, not the fix." % listing(unread)
+            "the stock service served a proper reading for %s, which it had chosen never "
+            "to read in this run. That is the lab misbehaving, not the fix." % listing(unread)
         )
     if len(missing) == len(blind | recovering):
         return (
@@ -292,7 +330,7 @@ def check_never_states_unverified_stock(run, expected):
             counts.get(question["sku"], "?"),
         ))
 
-    blind, _, _ = groups(expected)
+    blind, _, _ = groups(run, expected)
     honest = [q for q in expected if q["sku"] in blind and replies.get(q["id"])]
     numbered = [q for q in expected
                 if replies.get(q["id"]) and replies[q["id"]][-1]["states_level"]]
@@ -315,7 +353,7 @@ def check_still_answers_on_good_data(run, expected):
     if problem:
         verdict(False, problem)
 
-    blind, recovering, clean = groups(expected)
+    blind, recovering, clean = groups(run, expected)
     counts = shelf(run)
     # A SKU the shop does not stock has no shelf figure to be right about, so
     # it is nobody's idea of a question with a good answer. (Only reachable if
@@ -325,7 +363,7 @@ def check_still_answers_on_good_data(run, expected):
         verdict(False, (
             "this queue has nothing for this check to be about: it needs SKUs the stock "
             "service reads properly (%d of them here) and at least one it only reads on the "
-            "second ask (%d here). That is the lab's fault config, not the fix."
+            "second ask (%d here). That is the lab's fault selection, not the fix."
         ) % (len(readable), len(recovering)))
 
     replies = sent_replies(run)
@@ -522,7 +560,7 @@ def main():
         verdict(False, "%s in %s has no sku, and every grader here reasons per SKU."
                 % (listing(unskued), os.path.basename(QUEUE)))
 
-    run = run_agent()
+    run = run_agent(expected)
     problem = crashed(run)
     if problem:
         verdict(False, problem)

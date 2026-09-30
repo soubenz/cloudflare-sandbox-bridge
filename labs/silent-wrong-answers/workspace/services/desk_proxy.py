@@ -157,7 +157,7 @@ def _question_id(raw_body, prompt):
     refuses is keyed to the question id, and the ``metadata.question_id``
     field and the labelled ``Question:`` line only exist because agent/model.py
     happens to write them today. A learner who rewrites the prompt builder,
-    or drops the metadata, is not making the bug worse and must not silently
+    or drops the metadata, is not making anything worse and must not silently
     turn the faults off. So: match the id anywhere in the whole request body
     first, and fall back to a labelled line.
     """

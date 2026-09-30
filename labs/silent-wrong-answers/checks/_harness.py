@@ -448,10 +448,18 @@ def check_the_trace_is_proportionate(run, expected):
             "kept -- and a span the store refused is not in the trace at all."
         ) % (len(oversize), listing([r["why"] for r in oversize], 2)))
 
-    if not all_spans:
-        verdict(True, (
-            "no spans were recorded, so there is no volume to be disproportionate. What that "
-            "costs is graded by `every-turn-is-attributable`, not here."))
+    if not all_spans or not turns:
+        # An empty trace is not a proportionate one: it is the cheapest trace
+        # there is, and passing it would hand this check to a desk that
+        # records nothing at all (which also happens to be what turning the
+        # tracing off looks like).
+        verdict(False, (
+            "no spans were recorded for this run (%d exchange(s) went through the proxy, %d "
+            "span(s) reached the trace store, %d refused), so there is no trace to be "
+            "proportionate about. A trace that is small because it is empty is not the "
+            "goal: record a handful of spans per turn -- enough to say which question, which "
+            "clauses and which exchange -- and stay inside the budget."
+        ) % (len(exchanges(run)), len(all_spans), len(rejected(run))))
 
     too_many = sorted((r for r in turns if r["spans"] > MAX_SPANS_PER_TURN),
                       key=lambda r: -r["spans"])

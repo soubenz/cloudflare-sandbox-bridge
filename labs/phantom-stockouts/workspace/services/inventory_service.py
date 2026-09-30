@@ -28,16 +28,21 @@ Four things about it are worth reading before you debug the agent:
    header carries an age. The only thing that makes it old is the timestamp.
 
 4. It fails, and caches, and comes good again, on purpose and
-   deterministically, for fixed lists of SKUs read from its environment at
-   start-up. Nothing here is random and nothing here branches on the clock.
-   (``as_of`` is a value in a body, not a branch: which SKUs are served from
-   the cache is fixed, and the graders assert on the outcome this service
-   recorded rather than on any elapsed time.)
+   deterministically. By default the faulty SKUs are fixed lists read from
+   its environment at start-up, so what you see by hand is the same every
+   time. ``POST /api/reset?seed=<int>`` instead chooses which SKUs get each
+   fault from the catalogue, as a pure function of the seed: the graders
+   reset with a different seed on every run and read the choice back from
+   ``/api/faults``, so the SKUs that are broken when you look are not the
+   ones that are broken when you are graded. Nothing branches on the clock.
+   (``as_of`` is a value in a body, not a branch, and the graders assert on
+   the outcome this service recorded rather than on any elapsed time.)
 
 The service runs as root from the lab manifest. Editing this file does not
 change the running service.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -48,7 +53,8 @@ from urllib.parse import parse_qs, urlsplit
 
 PORT = int(os.environ.get("INVENTORY_PORT", "8925"))
 
-# Deterministic fault injection, all of it keyed to the SKU:
+# Deterministic fault injection, all of it keyed to the SKU. The env below is
+# the default assignment; POST /api/reset?seed=N re-picks it (see pick_faults).
 #
 #   DEGRADED_*   the slow shard: the first N requests for the SKU come back
 #                200 with status "degraded" and no items, and everything
@@ -69,7 +75,8 @@ CACHED = [s for s in os.environ.get("INVENTORY_CACHED_SKUS", "").split(",") if s
 CACHE_AGE_S = int(os.environ.get("INVENTORY_CACHE_AGE_S", "64800"))
 SLOW_SECONDS = float(os.environ.get("INVENTORY_SLOW_SECONDS", "4.0"))
 
-ROUTES = ("/api/stock", "/api/shelf", "/api/log", "/api/reset", "/api/degrade", "/healthz")
+ROUTES = ("/api/stock", "/api/shelf", "/api/log", "/api/reset", "/api/faults", "/api/degrade",
+          "/healthz")
 
 # What is actually on the shelf, right now, whatever this service manages to
 # say about it. `cached_on_hand` is what the cache in front of it still
@@ -89,8 +96,65 @@ CATALOGUE = [
 ]
 SHELF = {row["sku"]: row for row in CATALOGUE}
 
+# How many SKUs a seeded reset makes slow-shard ("degraded then recovers").
+# At least one has to exist under any seed, or still-answers-on-good-data has
+# nothing to prove a retry on.
+SEEDED_DEGRADED = 2
+
+
+def _env_faults():
+    """The faults the manifest env names: what a learner sees by hand."""
+    return {
+        "seed": None,
+        "degraded": list(DEGRADED),
+        "stuck": list(STUCK),
+        "blank": list(BLANK),
+        "cached": list(CACHED),
+        # None = serve what the row's own cached_on_hand says, as always.
+        "cached_on_hand": None,
+    }
+
+
+def _rank(seed, sku):
+    # sha256, not random.Random: the same seed must pick the same SKUs on
+    # every Python the lab might ever run on.
+    return hashlib.sha256(("%d:%s" % (seed, sku)).encode("utf-8")).hexdigest()
+
+
+def pick_faults(seed, pool=None):
+    """Which SKUs get which fault for this seed. Pure: same seed, same answer.
+
+    Only SKUs with something on the shelf are candidates, so the SKU that
+    really is sold out stays a plain reading whatever the seed. ``pool``
+    (SKUs the caller is going to ask about) narrows the candidates so every
+    fault lands on a SKU that is actually asked about; too small a pool to
+    hold every fault is ignored. The three faults that never yield a reading
+    (stuck, blank, cached) avoid the SKUs the env gives those faults, so a
+    list of the SKUs that are broken by default is wrong under every seed.
+    """
+    stocked = [row["sku"] for row in CATALOGUE if row["on_hand"] > 0]
+    allowed = [sku for sku in stocked if pool is None or sku in pool]
+    if len(allowed) < SEEDED_DEGRADED + 3:
+        allowed = stocked
+    ranked = sorted(allowed, key=lambda sku: _rank(seed, sku))
+    default_blind = set(STUCK) | set(BLANK) | set(CACHED)
+    fresh = [sku for sku in ranked if sku not in default_blind]
+    blind = (fresh if len(fresh) >= 3 else ranked)[:3]
+    rest = [sku for sku in ranked if sku not in blind]
+    return {
+        "seed": seed,
+        "degraded": rest[:SEEDED_DEGRADED],
+        "stuck": [blind[0]],
+        "blank": [blind[1]],
+        "cached": [blind[2]],
+        # Friday evening it was sold out, whatever is on the shelf now.
+        "cached_on_hand": 0,
+    }
+
+
 _lock = threading.Lock()
 _state = {
+    "faults": _env_faults(),
     "requests": [],     # every request, with what was served for it
     "asked": {},        # sku -> requests answered since the last reset
     # The Friday afternoon the pressure event puts back on. Off by default,
@@ -128,7 +192,7 @@ def _sku(raw_request, params):
     come good is keyed to the SKU, and the ``sku`` query parameter only has
     that name because agent/inventory.py happens to use it today. A learner
     who switches to a path segment, a header or a POST body while looking
-    around is not making the bug worse, and should not silently turn the
+    around is not making anything worse, and should not silently turn the
     faults off and then be told their retries are missing. So: match the SKU
     anywhere in the whole request line first, and fall back to the parameter.
     """
@@ -218,20 +282,23 @@ def stock(sku):
             _record(sku, attempt, "served_partial_row", body)
             return 200, body, 0.0
 
-        if sku in STUCK or (sku in DEGRADED and attempt <= DEGRADED_CALLS):
+        faults = _state["faults"]
+        if sku in faults["stuck"] or (sku in faults["degraded"] and attempt <= DEGRADED_CALLS):
             body = _degraded(sku)
             _record(sku, attempt, "served_degraded", body)
             return 200, body, 0.0
 
-        if sku in BLANK:
+        if sku in faults["blank"]:
             body = {"status": "ok", "as_of": _stamp(), "items": [], "_age_s": 0}
             _record(sku, attempt, "served_no_row", body)
             return 200, body, 0.0
 
-        if sku in CACHED:
+        if sku in faults["cached"]:
             row = SHELF.get(sku) or {}
-            body = _reading(sku, offset_s=CACHE_AGE_S,
-                            on_hand=row.get("cached_on_hand", row.get("on_hand", 0)))
+            stale = faults["cached_on_hand"]
+            if stale is None:
+                stale = row.get("cached_on_hand", row.get("on_hand", 0))
+            body = _reading(sku, offset_s=CACHE_AGE_S, on_hand=stale)
             _record(sku, attempt, "served_from_cache", body)
             return 200, body, 0.0
 
@@ -280,6 +347,7 @@ def snapshot(include_requests=True):
                 "max_reading_age_s": int(os.environ.get("MAX_READING_AGE_S", "900")),
                 "degrading": bool(_state["degrade"]["on"]),
             },
+            "faults": _public_faults(),
             "by_sku": rows,
             "shelf": [
                 {"sku": r["sku"], "item": r["item"], "on_hand": r["on_hand"]}
@@ -291,11 +359,35 @@ def snapshot(include_requests=True):
         return out
 
 
-def reset():
+def _public_faults():
+    """What the service is currently faulting, for /api/faults and the log."""
+    faults = _state["faults"]
+    return {key: faults[key] for key in ("seed", "degraded", "stuck", "blank", "cached")}
+
+
+def reset(seed=None, pool=None):
+    """Clears the record. With a seed, also re-picks which SKUs are faulty;
+    without one, the faults go back to the ones the env names."""
     with _lock:
         _state["requests"] = []
         _state["asked"] = {}
         _state["degrade"] = {"on": False, "served": 0}
+        _state["faults"] = _env_faults() if seed is None else pick_faults(seed, pool)
+        return _public_faults()
+
+
+def restore_faults():
+    """Back to the env's faults without touching the record. The graders call
+    this once they have read the log, so a run by hand after Run checks sees
+    the faults it always saw."""
+    with _lock:
+        _state["faults"] = _env_faults()
+        return _public_faults()
+
+
+def faults():
+    with _lock:
+        return _public_faults()
 
 
 def start_degrading():
@@ -418,6 +510,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "service": "inventory"})
         if route == "/api/log":
             return self._send(200, snapshot())
+        if route == "/api/faults":
+            return self._send(200, faults())
         if route == "/api/shelf":
             # Same numbers, last 20 requests only, for the page that polls it.
             data = snapshot()
@@ -444,8 +538,21 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         route = _route(self.path)
         if route == "/api/reset":
-            reset()
-            return self._send(200, {"ok": True})
+            # ?seed=<int> picks which SKUs are faulty from the catalogue (and
+            # &pool=SKU-a,SKU-b narrows the candidates); no seed keeps the
+            # env's faults. The reply says which SKUs ended up faulty.
+            query = parse_qs(urlsplit(self.path).query)
+            seed, pool = None, None
+            try:
+                if query.get("seed"):
+                    seed = int(query["seed"][0])
+                if query.get("pool"):
+                    pool = set(re.findall(r"SKU-\d{4}", ",".join(query["pool"])))
+            except ValueError:
+                return self._send(400, {"error": {"message": "seed must be an integer"}})
+            return self._send(200, {"ok": True, "faults": reset(seed, pool)})
+        if route == "/api/faults":
+            return self._send(200, {"ok": True, "faults": restore_faults()})
         if route == "/api/degrade":
             return self._send(200, start_degrading())
         if route == "/api/stock":
@@ -466,7 +573,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     print(
-        "inventory listening on :%d (degraded for %s x%d, stuck %s, no row for %s, "
+        "inventory listening on :%d (by default: degraded for %s x%d, stuck %s, no row for %s, "
         "cache %ds old for %s; %d SKUs on the shelf)"
         % (
             PORT, ",".join(DEGRADED) or "-", DEGRADED_CALLS, ",".join(STUCK) or "-",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared grader for build-the-ingestion-pipeline's three checks.
+"""Shared grader for build-the-ingestion-pipeline's four checks.
 
 Never reads the learner's code. Instead it runs the learner's OWN
 workspace/ingest/run.py as a subprocess, four times in a row, against:
@@ -16,10 +16,24 @@ workspace/ingest/run.py as a subprocess, four times in a row, against:
     replace), phase 4 removes a document entirely (proves deletes are
     real).
 
+Every snapshot also records each row's Postgres `xmin` (the id of the
+transaction that wrote that row version). An INSERT stamps a new xmin, and
+so does an UPDATE (it writes a new row version) -- and so does a
+DELETE + re-INSERT or a TRUNCATE + re-INSERT. A row that no run ever
+touched keeps the xmin it was born with. The fourth check
+(`unchanged-rows-are-untouched`) uses that: across every transition
+between two phases it takes the rows belonging to documents whose content
+did NOT change and requires each one to still be there, with the same
+xmin. That is the only thing distinguishing a real incremental pipeline
+from one that wipes the table and re-inserts everything each run -- the
+other three checks cannot tell those apart, because chunk ids are content
+hashes and come out identical either way. No schema change is needed:
+`xmin` exists on every Postgres row.
+
 Every fact a check needs -- a row count, an id set, whether a phrase is
 still findable, which doc_id a real pgvector nearest-neighbor query
 returns -- is read straight out of the grading database with plain SQL,
-and recorded once in results.json so all three checks can share one run's
+and recorded once in results.json so all four checks can share one run's
 setup, the same shared-run/lock-file shape as
 labs/one-endpoint-one-key/checks/_harness.py.
 """
@@ -205,7 +219,8 @@ def _table_exists():
 
 
 def _snapshot():
-    """Every row currently in the grading store: id, doc_id, content.
+    """Every row currently in the grading store: id, doc_id, content, and
+    the row version's xmin (as text).
 
     Read back as one JSON aggregate rather than tab-separated lines --
     chunk content legitimately contains embedded newlines (this lab's own
@@ -218,7 +233,7 @@ def _snapshot():
         return {"count": 0, "ids": [], "rows": []}
     out = _psql(
         "SELECT COALESCE(json_agg(json_build_object("
-        "'id', id, 'doc_id', doc_id, 'content', content) ORDER BY id"
+        "'id', id, 'doc_id', doc_id, 'content', content, 'xmin', xmin::text) ORDER BY id"
         "), '[]')::text FROM chunks;",
         GRADER_DB,
     )
@@ -526,10 +541,74 @@ def check_deletes_are_real():
     )
 
 
+def _unchanged_transitions():
+    """(label, before_phase, after_phase, unchanged_doc_ids) for every step
+    between two ingestion phases. A document counts as unchanged when it is
+    present in both source versions with byte-identical text."""
+    steps = [
+        ("phase 1 -> 2 (nothing changed)", "phase1", "phase2", V1, V1),
+        ("phase 2 -> 3 (bravo edited)", "phase2", "phase3", V1, V2),
+        ("phase 3 -> 4 (charlie removed)", "phase3", "phase4", V2, V3),
+    ]
+    out = []
+    for label, before, after, src_before, src_after in steps:
+        same = sorted(d for d in src_before if d in src_after and src_before[d] == src_after[d])
+        out.append((label, before, after, same))
+    return out
+
+
+def check_unchanged_rows_are_untouched():
+    r = get_results()
+    if r.get("setup_error"):
+        _finish(False, r["setup_error"])
+
+    total = 0
+    rewritten = 0
+    details = []
+    for label, before, after, same_docs in _unchanged_transitions():
+        b_rows = (r.get(before) or {}).get("rows") or []
+        a_rows = (r.get(after) or {}).get("rows") or []
+        # Identify a row by what it says (doc_id + content), not by its id,
+        # so this holds whatever id scheme the learner chose.
+        after_xmins = {}
+        for row in a_rows:
+            after_xmins.setdefault((row["doc_id"], row["content"]), set()).add(row.get("xmin"))
+        step_total = 0
+        step_bad = 0
+        for row in b_rows:
+            if row["doc_id"] not in same_docs:
+                continue
+            step_total += 1
+            if row.get("xmin") is None or row["xmin"] not in after_xmins.get((row["doc_id"], row["content"]), set()):
+                step_bad += 1
+        total += step_total
+        rewritten += step_bad
+        if step_bad:
+            details.append("%d of %d in %s" % (step_bad, step_total, label))
+
+    if total == 0:
+        _finish(False, "grading-infrastructure problem: no unchanged rows were recorded before any rerun to compare against")
+    if rewritten:
+        _finish(
+            False,
+            "%d of %d row(s) belonging to documents whose content did NOT change were rewritten by a "
+            "rerun (%s) -- each was deleted and re-inserted, or updated in place, when it should have "
+            "been left alone. Only chunks that are new or gone should be written or removed; an "
+            "unchanged chunk already in the store must not be touched at all"
+            % (rewritten, total, "; ".join(details)),
+        )
+    _finish(
+        True,
+        "0 of %d row(s) belonging to unchanged documents were rewritten across three reruns: every one "
+        "kept the same row version (xmin) it was first written with" % total,
+    )
+
+
 COMMANDS = {
     "rerun-is-idempotent": check_rerun_is_idempotent,
     "updates-replace-not-append": check_updates_replace_not_append,
     "deletes-are-real": check_deletes_are_real,
+    "unchanged-rows-are-untouched": check_unchanged_rows_are_untouched,
 }
 
 

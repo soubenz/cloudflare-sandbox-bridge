@@ -3,6 +3,8 @@
 # _harness.py) -- checks (a) a query where the same document is a strong
 # match on both signals appears exactly once, and (b) a query designed to
 # expose a raw-score-scale bug ranks the true answer first, not the decoy
-# with the bigger raw vector-similarity number.
+# with the bigger raw vector-similarity number, and (c) a query whose
+# keyword winner is a lexical false positive ranks the semantic match
+# above it (fails "keyword first, then append vector results").
 set -uo pipefail
 exec python3 -B "$(dirname "$0")/_harness.py" no-duplicate-or-dominated-results
