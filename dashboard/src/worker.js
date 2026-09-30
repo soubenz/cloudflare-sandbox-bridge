@@ -124,6 +124,58 @@ function relay(res) {
   });
 }
 
+/**
+ * The catalogue with this person's progress folded in.
+ *
+ * `GET /labs` and `GET /users/:uid/progress` are independent, so they are
+ * asked for together. Progress is an enhancement: a 404 (an API from before
+ * the route), a 500 or a malformed body all read as "no progress yet", never
+ * as a failed catalogue -- the launcher still has to list the labs. Only the
+ * catalogue's own failure is passed through. Each lab gets
+ * `progress: {attempts, best_score, passed_all, last_run_at} | null`.
+ */
+async function labsWithProgress(env, subject) {
+  const [labsRes, progressRes] = await Promise.all([
+    callApi(env, '/labs'),
+    callApi(env, `/users/${encodeURIComponent(subject)}/progress`).catch(() => null),
+  ]);
+  if (!labsRes.ok) return relay(labsRes);
+  let labs;
+  try {
+    const body = await labsRes.json();
+    labs = Array.isArray(body) ? body : body.labs;
+  } catch {
+    return json({ error: 'the API returned a catalogue this console cannot read' }, 502);
+  }
+  if (!Array.isArray(labs)) return json({ error: 'the API returned a catalogue this console cannot read' }, 502);
+
+  const bySlug = new Map();
+  if (progressRes?.ok) {
+    try {
+      const body = await progressRes.json();
+      for (const p of Array.isArray(body?.labs) ? body.labs : []) bySlug.set(p.slug, p);
+    } catch {
+      /* unreadable progress is no progress */
+    }
+  }
+  return json(
+    labs.map((lab) => {
+      const p = bySlug.get(lab.slug);
+      return {
+        ...lab,
+        progress: p
+          ? {
+              attempts: p.attempts ?? 0,
+              best_score: p.best_score ?? null,
+              passed_all: Boolean(p.passed_all),
+              last_run_at: p.last_run_at ?? null,
+            }
+          : null,
+      };
+    })
+  );
+}
+
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
@@ -285,8 +337,14 @@ async function route(request, env) {
       return url.pathname.startsWith('/api/') ? json({ error: 'not signed in' }, 401) : loginPage();
     }
 
+    // Who the console thinks you are: the cookie's subject, so the header
+    // can say so. Nothing secret -- the browser already holds the cookie.
+    if (url.pathname === '/api/me' && request.method === 'GET') {
+      return json({ sub: subject });
+    }
+
     if (url.pathname === '/api/labs' && request.method === 'GET') {
-      return relay(await callApi(env, '/labs'));
+      return labsWithProgress(env, subject);
     }
 
     if (url.pathname === '/api/start' && request.method === 'POST') {

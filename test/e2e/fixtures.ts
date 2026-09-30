@@ -66,15 +66,19 @@ export function consoleErrorsFor(page: Page): string[] {
  * own localStorage does not survive between them — the id and token are
  * held here and re-seeded.
  */
-export async function openConsole(page: Page): Promise<void> {
+export async function openConsole(page: Page, { onboarded = true }: { onboarded?: boolean } = {}): Promise<void> {
   await signIn(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.evaluate(
-    ([api, session]) => {
+    ([api, session, seen]) => {
       localStorage.setItem('opalix.apiBase', api as string);
       if (session) localStorage.setItem('opalix.session', session as string);
+      // A first visit opens a modal <dialog> over the launcher, which would
+      // swallow every click below it. Specs that are not about it have
+      // already read it; 13-launcher-groups.spec.ts opts out to test it.
+      if (seen) localStorage.setItem('opalixOnboarded', '1');
     },
-    [API, sharedSession] as const
+    [API, sharedSession, onboarded] as const
   );
   await page.reload({ waitUntil: 'domcontentloaded' });
   // The console decides between resuming a session and showing the picker

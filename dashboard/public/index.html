@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
 <title>Opalix lab console</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▣</text></svg>">
+<!-- Applies a saved theme before first paint; a module script would flash the other one. -->
+<script src="./theme-init.js"></script>
 <link rel="stylesheet" href="./dist/xterm.css">
 <link rel="stylesheet" href="./styles.css">
 </head>
@@ -39,14 +40,27 @@
   <div class="brand"><span class="brand-mark" aria-hidden="true">▣</span> <strong>Opalix</strong> <span class="muted">lab console</span></div>
 
   <div class="bar-session" id="sessionBar" hidden>
-    <span class="pill" id="statePill">—</span>
+    <span class="pill" id="statePill" title="">—</span>
     <span class="pill pill-stream" id="streamPill" role="status" title="Live updates are interrupted; the console keeps checking on its own" hidden>reconnecting…</span>
     <span class="session-lab">
       <span class="session-title" id="sessionTitle"></span>
       <span class="mono muted small" id="sessionLab"></span>
     </span>
-    <span class="mono muted small session-id" id="sessionId"></span>
     <span class="timer" id="expiryTimer" title="Time until the hard timeout"></span>
+    <!-- The session id is on the state pill's tooltip; this copy is for screen readers and support. -->
+    <span class="sr-only" id="sessionId"></span>
+
+    <span class="bar-stats" id="barStats" role="group" aria-label="Session progress">
+      <span class="stat" title="Checks passing in the latest run">
+        <span class="stat-label">Checks</span> <b class="stat-value" id="statChecks">—</b>
+      </span>
+      <span class="stat" title="Hints unlocked out of the lab's hints">
+        <span class="stat-label">Hints</span> <b class="stat-value" id="statHints">—</b>
+      </span>
+      <span class="stat" id="statCostWrap" title="Approximate spend by this session so far">
+        <span class="sr-only">Cost</span> <b class="stat-value" id="statCost">—</b>
+      </span>
+    </span>
   </div>
 
   <div class="bar-actions">
@@ -56,6 +70,9 @@
       <button id="btnEnd" class="btn btn-danger" disabled>End session</button>
     </div>
     <button id="btnBackToLabs" class="btn btn-primary" hidden>← Back to labs</button>
+    <button id="btnTheme" class="btn btn-tiny btn-ghost btn-icon" type="button" aria-label="Theme: system. Switch to light."><span id="themeIcon" aria-hidden="true">◐</span></button>
+    <button id="btnHelp" class="btn btn-tiny btn-ghost btn-icon" type="button" aria-label="How this console works" title="How this console works">?</button>
+    <span class="identity" id="identity" title="Signed in as" hidden><span class="sr-only">Signed in as </span><span class="mono small" id="identityName"></span></span>
     <button id="btnSignOut" class="btn btn-tiny btn-ghost" type="button" title="Sign out of the console on this browser">Sign out</button>
   </div>
 </header>
@@ -70,6 +87,17 @@
       another while one is live takes you back to the one you have.
     </p>
   </div>
+  <!-- Filled when a lab is remembered and the API says it is still up. -->
+  <div class="resume-card" id="resumeCard" role="status" hidden></div>
+  <div class="lab-filters" id="labFilters" hidden>
+    <div class="filter-search">
+      <label class="sr-only" for="labSearch">Search labs by title, summary or name</label>
+      <input id="labSearch" type="search" placeholder="Search labs" autocomplete="off">
+      <button id="btnClearFilters" type="button" class="btn btn-tiny btn-ghost" hidden>Clear filters</button>
+    </div>
+    <div class="filter-chips" id="filterChips"></div>
+  </div>
+  <p class="empty-state" id="labNoMatch" hidden>No labs match these filters.</p>
   <div id="labList" class="lab-list" aria-busy="true">
     <div class="lab-skeleton" aria-hidden="true"></div>
     <div class="lab-skeleton" aria-hidden="true"></div>
@@ -237,46 +265,42 @@
   </aside>
 </main>
 
-<!-- Operator view -->
-<section class="ops" id="ops" hidden>
-  <h1>Pools</h1>
-  <p class="muted small">
-    Warm containers are claimed instantly; a cold start pays for image
-    placement. Priming only grows a pool — draining is the only way to shrink
-    one, and it is also how a rebuilt image reaches new sessions.
-  </p>
-  <div class="tiles" id="poolTiles"></div>
-
-  <div class="ops-auth">
-    <label for="opsKey" class="small">
-      Service key — required for prime and drain, and turns on operator
-      mode (the lab activity panel) in this tab. Kept in this tab only.
-    </label>
-    <div class="row">
-      <input id="opsKey" type="password" placeholder="SANDBOX_API_KEY" autocomplete="off">
-      <button id="btnSaveKey" class="btn btn-tiny">Use key</button>
-      <span class="small muted" id="opsKeyStatus" aria-live="polite"></span>
-    </div>
-  </div>
-
-  <div class="ops-auth" id="eventStreamBlock" hidden>
-    <h2 class="small muted">Event stream <span id="eventCount"></span></h2>
-    <p class="muted small">
-      Every event the session emits, including the telemetry a learner has no
-      use for — metrics, cost, check progress, state transitions.
-    </p>
-    <ol class="events" id="eventList"></ol>
-  </div>
-  <p class="muted small ops-locked" id="eventStreamLocked">
-    Enter a service key above to see the raw event stream.
-  </p>
-</section>
-
 <footer class="footer">
   <span class="small muted">API <span class="mono" id="apiLabel"></span></span>
   <span class="footer-spacer"></span>
-  <button id="btnOps" class="btn btn-tiny btn-ghost" aria-pressed="false">Operator</button>
+  <a class="footer-link" href="https://opalix-site.soubenz94.workers.dev/status" target="_blank" rel="noopener">Status</a>
+  <a class="footer-link" href="https://opalix-site.soubenz94.workers.dev/feedback" target="_blank" rel="noopener">Feedback</a>
 </footer>
+
+<!-- First run, and whenever the header "?" is pressed. -->
+<dialog class="dialog dialog-wide" id="onboarding" aria-labelledby="onboardingTitle">
+  <div class="dialog-card">
+    <h2 id="onboardingTitle">How this console works</h2>
+    <p class="muted small">A lab is a real container. Four things are worth knowing before you start one.</p>
+    <dl class="onboarding-blocks">
+      <div>
+        <dt>Brief, terminal and editor</dt>
+        <dd>Every lab opens on its Brief, which says what you are asked to do. Work in the Terminal, or open a file from the Workspace list in the Editor and save it with <kbd>Ctrl</kbd> <kbd>S</kbd>.</dd>
+      </div>
+      <div>
+        <dt>Checks</dt>
+        <dd>Checks are graded and you can re-run them as often as you like. Each carries a weight, and your score is the weighted share that passes. A failing check says why.</dd>
+      </div>
+      <div>
+        <dt>Hints</dt>
+        <dd>Hints unlock on a timer. The ones still to come are listed as locked, each with a countdown; there is no way to open one early.</dd>
+      </div>
+      <div>
+        <dt>Pressure</dt>
+        <dd>Some labs change under you around a stated minute. The checks run against what is true at the end, not against what was true when you started.</dd>
+      </div>
+    </dl>
+    <p class="muted small onboarding-timers"><strong>Timers.</strong> The header counts down to a hard limit, and a lab left alone ends after a warning. End with a snapshot to keep your work and pick it up again.</p>
+    <div class="dialog-actions">
+      <button type="button" id="btnOnboardingDone" class="btn btn-primary" autofocus>Got it</button>
+    </div>
+  </div>
+</dialog>
 
 <!-- End session: keep the work or throw it away, decided by the learner. -->
 <dialog class="dialog" id="endDialog" aria-labelledby="endDialogTitle">

@@ -42,7 +42,6 @@ const state = {
   terminal: null,
   events: null, // EventSource
   expiresAt: null,
-  eventCount: 0,
   openFile: null,
   editor: null,
   /** The open file has edits that have not been written back. */
@@ -81,9 +80,8 @@ const state = {
   /** Wall-clock end of the idle countdown, and its interval. */
   idleDeadline: 0,
   idleTimer: 0,
-  /** Operator mode: a service key the API accepted, in this tab. */
-  admin: false,
-  serviceKey: sessionStorage.getItem('opalix.serviceKey') || '',
+  /** setInterval id of the resume card's "m:ss left". */
+  resumeTimer: 0,
 };
 
 // ------------------------------------------------------------------ toast
@@ -104,12 +102,36 @@ function toast(message, tone = 'info', ms) {
   toastTimer = setTimeout(() => (el.hidden = true), ms ?? (tone === 'bad' ? 10_000 : 5000));
 }
 
+// ---------------------------------------------------------------- storage
+
+/** localStorage for per-browser conveniences; blocked storage just means they do not stick. */
+function lsGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function lsSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* private mode: fine for this tab */
+  }
+}
+
 // ---------------------------------------------------------------- launcher
 
 /** The catalogue, kept so a running session can show its lab's context. */
 const labsBySlug = new Map();
 
 const DIFFICULTY_LEVEL = { intro: 1, core: 2, advanced: 3 };
+const DIFFICULTIES = ['intro', 'core', 'advanced'];
+const STATUS_FILTERS = [
+  ['todo', 'Not started'],
+  ['done', 'Done'],
+];
 
 /**
  * A launch error is shown inside the card that failed, so it has to be
@@ -134,6 +156,7 @@ async function loadLabs() {
   const list = $('labList');
   parkLaunchError();
   $('labCount').textContent = '';
+  $('labFilters').hidden = true;
   if (!list.querySelector('.lab-skeleton')) showLabSkeleton();
   try {
     const labs = await api.labs();
@@ -143,8 +166,13 @@ async function loadLabs() {
         '<div class="empty-state"><p>No labs are published yet.</p><p class="muted small">Publish one with <code>opalix labs publish</code>, then reload.</p></div>';
       return;
     }
-    $('labCount').textContent = `${labs.length} available`;
-    for (const lab of labs) list.append(labCard(lab));
+    // Every lab is known before any card is drawn: a card names its
+    // prerequisite by title, and that lab may sit in a later group.
+    for (const lab of labs) labsBySlug.set(lab.slug, lab);
+    const passed = passedSlugs(labs);
+    groupLabs(labs).forEach((group, i) => list.append(groupSection(group, i, passed)));
+    renderFilters(labs);
+    applyFilters();
   } catch (err) {
     if (/^401:/.test(err.message)) {
       // The console cookie is gone (expired, or signed out in another tab).
@@ -169,12 +197,108 @@ async function loadLabs() {
     });
   } finally {
     list.removeAttribute('aria-busy');
+    renderResumeCard();
   }
 }
 
-function labCard(lab) {
+// -------------------------------------------------------- grouping and locks
+
+/** Finite numbers sort by value; anything else (a manifest that has not set it) sorts last. */
+const rank = (v) => (Number.isFinite(v) ? v : Infinity);
+const cmp = (a, b) => (a === b ? 0 : a < b ? -1 : 1);
+
+/**
+ * The API already answers in (path, module, order, slug) order; this is the
+ * same order, applied again so the console does not depend on it — and so a
+ * catalogue with no path or module at all falls back to slug order. Labs
+ * with no path sort last, together.
+ */
+function compareLabs(a, b) {
+  return (
+    cmp(Boolean(a.path) ? 0 : 1, Boolean(b.path) ? 0 : 1) ||
+    cmp(String(a.path ?? ''), String(b.path ?? '')) ||
+    cmp(rank(a.module), rank(b.module)) ||
+    cmp(rank(a.order), rank(b.order)) ||
+    cmp(a.slug, b.slug)
+  );
+}
+
+/**
+ * Consecutive labs sharing a path and module form one group. Labs with no
+ * path (a module without a path is not a place) share the one group
+ * `path: ''`, which is shown as "All labs" with no module heading.
+ */
+function groupLabs(labs) {
+  const groups = [];
+  for (const lab of [...labs].sort(compareLabs)) {
+    const path = lab.path ? String(lab.path) : '';
+    const module = path && Number.isFinite(lab.module) ? lab.module : null;
+    const key = `${path}\u0000${module}`;
+    let group = groups[groups.length - 1];
+    if (!group || group.key !== key) groups.push((group = { key, path, module, labs: [] }));
+    group.labs.push(lab);
+  }
+  return groups;
+}
+
+/** "agent-foundations" → "Agent foundations". */
+function humanize(path) {
+  const words = path.replace(/[-_]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function groupTitle(group) {
+  if (!group.path) return 'All labs';
+  return group.module != null ? `${humanize(group.path)} · Module ${group.module}` : humanize(group.path);
+}
+
+/** Slugs this person has passed every check of. */
+function passedSlugs(labs) {
+  return new Set(labs.filter((lab) => lab.progress?.passed_all).map((lab) => lab.slug));
+}
+
+/**
+ * The first prerequisite this person has not passed, or null when the lab is
+ * open. A prerequisite the catalogue does not list counts as unmet: it cannot
+ * have been passed through this console.
+ */
+function unmetPrerequisite(lab, passed) {
+  return (lab.prerequisites ?? []).find((slug) => !passed.has(slug)) ?? null;
+}
+
+function groupSection(group, index, passed) {
+  const total = group.labs.length;
+  const done = group.labs.filter((lab) => passed.has(lab.slug)).length;
+  const section = document.createElement('section');
+  section.className = 'lab-group';
+  section.dataset.path = group.path;
+  if (group.module != null) section.dataset.module = String(group.module);
+  section.setAttribute('aria-labelledby', `group-head-${index}`);
+  section.innerHTML = `
+    <h2 class="group-head" id="group-head-${index}">
+      <span class="group-title"></span>
+      <span class="group-done"></span>
+    </h2>
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-label="Labs done in this group"><span></span></div>
+    <div class="lab-cards"></div>`;
+  section.querySelector('.group-title').textContent = groupTitle(group);
+  section.querySelector('.group-done').textContent = `${done}/${total} done`;
+  const bar = section.querySelector('.progress');
+  bar.setAttribute('aria-valuemax', String(total));
+  bar.setAttribute('aria-valuenow', String(done));
+  bar.firstElementChild.style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
+  const cards = section.querySelector('.lab-cards');
+  for (const lab of group.labs) cards.append(labCard(lab, unmetPrerequisite(lab, passed)));
+  return section;
+}
+
+/** best_score is a 0-1 fraction of the weighted points. */
+const percent = (score) => Math.round((Number(score) <= 1 ? Number(score) * 100 : Number(score)) || 0);
+
+function labCard(lab, lockedBy = null) {
   const row = document.createElement('article');
-  row.className = 'lab';
+  const done = Boolean(lab.progress?.passed_all);
+  row.className = `lab${done ? ' lab-done' : ''}${lockedBy ? ' lab-locked' : ''}`;
   // The slug is the lab's identity. It is rendered inside .lab-sub as
   // prose, where "hello" is also a substring of "gateway-hello", so
   // carry it as an attribute too: that is what lets anything selecting
@@ -185,8 +309,12 @@ function labCard(lab) {
   row.setAttribute('aria-labelledby', titleId);
   row.innerHTML = `
     <div class="lab-meta">
-      <h2 class="lab-title"></h2>
+      <div class="lab-title-row">
+        <h3 class="lab-title"></h3>
+        <span class="chip chip-done" hidden></span>
+      </div>
       <div class="lab-sub"></div>
+      <p class="lab-lock" hidden></p>
       <p class="lab-summary"></p>
       <div class="lab-objectives-wrap">
         <p class="lab-objectives-label">You will practise</p>
@@ -197,6 +325,12 @@ function labCard(lab) {
   const title = row.querySelector('.lab-title');
   title.id = titleId;
   title.textContent = lab.title;
+
+  if (done) {
+    const chip = row.querySelector('.chip-done');
+    chip.textContent = `Done · best ${percent(lab.progress.best_score)}%`;
+    chip.hidden = false;
+  }
 
   // Enough to choose a lab without spending a container to find out what
   // it is. The title alone never carried that — "Hello, sandbox" says
@@ -223,7 +357,14 @@ function labCard(lab) {
     ['type', lab.type],
   ];
   if (lab.difficulty) facts.push(['difficulty', lab.difficulty]);
-  if (lab.timeout_minutes) facts.push(['time', `${lab.timeout_minutes} min`]);
+  // The expected time and the kill timer are different promises: say both
+  // when the manifest gives both.
+  if (lab.estimated_minutes) {
+    facts.push(['time', `~${lab.estimated_minutes} min${lab.timeout_minutes ? ` · ${lab.timeout_minutes} min limit` : ''}`]);
+  } else if (lab.timeout_minutes) {
+    facts.push(['time', `${lab.timeout_minutes} min`]);
+  }
+  if (lab.tier === 'free') facts.push(['tier', 'Free']);
   const sub = row.querySelector('.lab-sub');
   facts.forEach(([kind, text], i) => {
     if (i) {
@@ -236,23 +377,259 @@ function labCard(lab) {
     const chip = document.createElement('span');
     chip.className = `chip chip-${kind}`;
     if (kind === 'difficulty') chip.dataset.level = String(DIFFICULTY_LEVEL[text] ?? 0);
-    if (kind === 'time') chip.title = 'Hard time limit for the session';
+    if (kind === 'time') {
+      chip.title = lab.estimated_minutes
+        ? 'Expected time to finish, and the hard time limit for the session'
+        : 'Hard time limit for the session';
+    }
     chip.textContent = text;
     sub.append(chip);
   });
 
-  labsBySlug.set(lab.slug, lab);
-  row.querySelector('button').addEventListener('click', () => startSession(lab.slug, row));
+  const button = row.querySelector('.lab-start');
+  if (lockedBy) {
+    const need = labsBySlug.get(lockedBy)?.title ?? lockedBy;
+    const lock = row.querySelector('.lab-lock');
+    lock.textContent = `Locked until ${need} passes`;
+    lock.hidden = false;
+    // aria-disabled rather than disabled: it stays focusable, so its title
+    // (the reason) is reachable, and a click is simply ignored.
+    button.setAttribute('aria-disabled', 'true');
+    button.title = `Locked until ${need} passes. Pass every check of that lab to unlock this one.`;
+  }
+  button.addEventListener('click', () => {
+    if (button.getAttribute('aria-disabled') === 'true') return;
+    startSession(lab.slug, row);
+  });
   return row;
+}
+
+// ------------------------------------------------------------ filters
+
+const FILTERS_KEY = 'opalixFilters';
+const filters = { q: '', difficulty: new Set(), family: new Set(), status: new Set() };
+
+function restoreFilters() {
+  try {
+    const saved = JSON.parse(lsGet(FILTERS_KEY) ?? 'null');
+    if (!saved || typeof saved !== 'object') return;
+    filters.q = typeof saved.q === 'string' ? saved.q : '';
+    for (const key of ['difficulty', 'family', 'status']) {
+      filters[key] = new Set(Array.isArray(saved[key]) ? saved[key].filter((v) => typeof v === 'string') : []);
+    }
+  } catch {
+    /* unreadable saved filters are no filters */
+  }
+}
+restoreFilters();
+
+function saveFilters() {
+  lsSet(
+    FILTERS_KEY,
+    JSON.stringify({
+      q: filters.q,
+      difficulty: [...filters.difficulty],
+      family: [...filters.family],
+      status: [...filters.status],
+    })
+  );
+}
+
+const filtersActive = () =>
+  Boolean(filters.q.trim()) || filters.difficulty.size > 0 || filters.family.size > 0 || filters.status.size > 0;
+
+/** Search box and one row of toggle chips per facet; the chips are real buttons with aria-pressed. */
+function renderFilters(labs) {
+  const host = $('filterChips');
+  host.innerHTML = '';
+  const families = [...new Set(labs.map((lab) => lab.family).filter(Boolean))].sort();
+  // A saved family that has since left the catalogue would hide everything.
+  filters.family = new Set([...filters.family].filter((f) => families.includes(f)));
+  const facets = [
+    ['difficulty', 'Difficulty', DIFFICULTIES.map((d) => [d, d])],
+    ['family', 'Family', families.map((f) => [f, f])],
+    ['status', 'Status', STATUS_FILTERS],
+  ];
+  for (const [key, label, options] of facets) {
+    if (!options.length) continue;
+    const group = document.createElement('div');
+    group.className = 'chip-group';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', label);
+    const name = document.createElement('span');
+    name.className = 'chip-group-label';
+    name.setAttribute('aria-hidden', 'true');
+    name.textContent = label;
+    group.append(name);
+    for (const [value, text] of options) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'filter-chip';
+      chip.dataset.filter = key;
+      chip.dataset.value = value;
+      chip.textContent = text;
+      chip.setAttribute('aria-pressed', String(filters[key].has(value)));
+      chip.addEventListener('click', () => {
+        if (!filters[key].delete(value)) filters[key].add(value);
+        chip.setAttribute('aria-pressed', String(filters[key].has(value)));
+        saveFilters();
+        applyFilters();
+      });
+      group.append(chip);
+    }
+    host.append(group);
+  }
+  $('labSearch').value = filters.q;
+  $('labFilters').hidden = false;
+}
+
+/** not started / started / done, from the progress the Worker merged in. */
+function labStatus(lab) {
+  if (lab.progress?.passed_all) return 'done';
+  return lab.progress?.attempts > 0 ? 'started' : 'todo';
+}
+
+function labMatches(lab) {
+  const q = filters.q.trim().toLowerCase();
+  if (q && !`${lab.title} ${lab.summary ?? ''} ${lab.slug}`.toLowerCase().includes(q)) return false;
+  if (filters.difficulty.size && !filters.difficulty.has(lab.difficulty)) return false;
+  if (filters.family.size && !filters.family.has(lab.family)) return false;
+  if (filters.status.size && !filters.status.has(labStatus(lab))) return false;
+  return true;
+}
+
+/** Hides what does not match rather than rebuilding, so a launch error inside a card survives typing. */
+function applyFilters() {
+  const list = $('labList');
+  const cards = [...list.querySelectorAll('.lab')];
+  let shown = 0;
+  for (const card of cards) {
+    const lab = labsBySlug.get(card.dataset.slug);
+    const match = Boolean(lab) && labMatches(lab);
+    card.hidden = !match;
+    if (match) shown++;
+  }
+  for (const group of list.querySelectorAll('.lab-group')) group.hidden = !group.querySelector('.lab:not([hidden])');
+  $('labCount').textContent = `${shown} of ${cards.length} labs`;
+  $('labNoMatch').hidden = shown > 0 || !cards.length;
+  $('btnClearFilters').hidden = !filtersActive();
+}
+
+function clearFilters() {
+  filters.q = '';
+  filters.difficulty.clear();
+  filters.family.clear();
+  filters.status.clear();
+  saveFilters();
+  $('labSearch').value = '';
+  for (const chip of $('filterChips').querySelectorAll('.filter-chip')) chip.setAttribute('aria-pressed', 'false');
+  applyFilters();
+}
+
+// -------------------------------------------------------------- resume card
+
+let resumeToken = 0;
+
+/**
+ * "You have a lab running". The launcher is what a learner sees after a
+ * sign-in that lost the tab, or a session that was left with the remembered
+ * record still in place; either way the lab is there and the fastest thing
+ * to offer is the way back into it. The status is asked without recovery:
+ * a refused token means the remembered session is gone, not that one should
+ * be started to find out.
+ */
+async function renderResumeCard() {
+  const host = $('resumeCard');
+  const mine = ++resumeToken;
+  clearInterval(state.resumeTimer);
+  host.hidden = true;
+  host.innerHTML = '';
+  const saved = rememberedSession();
+  if (!saved?.id || !saved?.token || state.session) return;
+  let status;
+  try {
+    status = await api.status(saved.id, saved.token, { recover: false });
+  } catch {
+    return;
+  }
+  const running = status?.meta?.state;
+  if (mine !== resumeToken || state.session || (running !== 'running' && running !== 'starting')) return;
+
+  const slug = status.meta.lab_slug ?? saved.lab;
+  const title = labsBySlug.get(slug)?.title ?? slug;
+  host.innerHTML = `
+    <p class="resume-text">
+      <strong>You have a lab running</strong> — <span class="resume-title"></span>
+      <span class="resume-left mono muted"></span>
+    </p>
+    <span class="resume-actions">
+      <button type="button" class="btn btn-primary" id="btnRejoin">Rejoin</button>
+      <button type="button" class="btn btn-ghost btn-link" id="btnDiscard">Discard</button>
+    </span>`;
+  host.querySelector('.resume-title').textContent = title;
+
+  const skew = Number.isFinite(status.server_time) ? status.server_time - Date.now() : 0;
+  const expires = status.meta.expires_at;
+  const left = host.querySelector('.resume-left');
+  const tick = () => {
+    if (!expires) return (left.textContent = '');
+    const ms = expires - skew - Date.now();
+    left.textContent = ms > 0 ? `· ${formatClock(ms)} left` : '· time is up';
+  };
+  tick();
+  state.resumeTimer = setInterval(tick, 1000);
+
+  host.querySelector('#btnRejoin').addEventListener('click', () => startSession(slug, host));
+  host.querySelector('#btnDiscard').addEventListener('click', () => discardRemembered(saved, host));
+  host.hidden = false;
+}
+
+/**
+ * Ends the remembered lab without opening it. The record is dropped only
+ * once the API has agreed the session is over: forgetting first would leave
+ * a container running that nothing on this browser can reach.
+ */
+async function discardRemembered(saved, host) {
+  if (!confirm('Discard the running lab? Its container is destroyed and unsaved work is lost.')) return;
+  const button = host.querySelector('#btnDiscard');
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    await api.end(saved.id, saved.token, false);
+    forgetSession();
+    clearInterval(state.resumeTimer);
+    host.hidden = true;
+    host.innerHTML = '';
+  } catch (err) {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    toast(`Could not discard the lab — ${err.message}`, 'bad');
+  }
+}
+
+// -------------------------------------------------------------- onboarding
+
+const ONBOARDED_KEY = 'opalixOnboarded';
+
+/** Once per browser, on the launcher; the header "?" opens it again on demand. */
+function showOnboarding() {
+  const dialog = $('onboarding');
+  if (!dialog.open) dialog.showModal();
+}
+
+function maybeShowOnboarding() {
+  if (!lsGet(ONBOARDED_KEY)) showOnboarding();
 }
 
 async function startSession(slug, card) {
   const error = $('launchError');
   error.hidden = true;
   error.className = 'notice notice-bad';
-  const buttons = document.querySelectorAll('.lab button');
+  const buttons = document.querySelectorAll('.lab button, .resume-card button');
   buttons.forEach((b) => (b.disabled = true));
   const button = card?.querySelector('button');
+  // The resume card's button says "Rejoin", a lab card's says "Start".
+  const label = button?.textContent;
   if (button) {
     button.textContent = 'Starting…';
     button.setAttribute('aria-busy', 'true');
@@ -292,7 +669,7 @@ async function startSession(slug, card) {
   } finally {
     buttons.forEach((b) => (b.disabled = false));
     if (button) {
-      button.textContent = 'Start';
+      button.textContent = label;
       button.removeAttribute('aria-busy');
     }
   }
@@ -319,7 +696,6 @@ function enterSession() {
   state.expanded.clear();
   state.service = null;
   state.checksRunning = false;
-  $('eventList').innerHTML = '';
   $('checksPanel').innerHTML = '<p class="muted small">Not run yet. Run checks to grade your work so far.</p>';
   $('checksSummary').textContent = '';
   delete $('checksSummary').dataset.tone;
@@ -354,13 +730,13 @@ function enterSession() {
   $('sessionBar').hidden = false;
   $('sessionActions').hidden = false;
   $('btnBackToLabs').hidden = true;
-  // Deliberately does not touch the operator panel: resuming is async, and
-  // forcing it closed here slammed it shut under anyone who opened it
-  // while the console was still booting.
 
   setSessionLab(state.session.lab);
+  // The id is for support, not for the bar: it lives on the state pill's
+  // tooltip, and in a visually hidden node so it can still be read out.
   $('sessionId').textContent = state.session.id;
-  $('sessionId').title = `Session ${state.session.id}`;
+  $('statePill').title = `Session ${state.session.id}`;
+  clearInterval(state.resumeTimer);
   for (const id of ['btnChecks', 'btnChecksInline', 'btnSnapshot', 'btnEnd']) $(id).disabled = false;
 
   openEventStream();
@@ -399,13 +775,12 @@ function openEventStream() {
       handleEvent(type, tone, parse(ev.data));
     });
   }
-  // `metrics` fires every 30s; it updates the header rather than the log,
-  // which would otherwise drown everything else.
+  // `metrics` fires every 30s; it updates the header's cost, which is the
+  // only place it is shown.
   es.addEventListener('metrics', (ev) => {
     const data = parse(ev.data);
     // The API sends `cost_usd`; `cost.usd` is the older shape.
-    const usd = data?.cost_usd ?? data?.cost?.usd;
-    if (usd != null) $('sessionId').title = `Session ${state.session?.id ?? ''} · ≈ $${Number(usd).toFixed(4)} so far`;
+    setCostStat(data?.cost_usd ?? data?.cost?.usd);
   });
   // The browser reconnects by itself and sends Last-Event-ID, so nothing
   // is lost across a blip. What the learner needs is to know the page is
@@ -419,7 +794,6 @@ function openEventStream() {
   es.onerror = () => {
     state.streamErrors++;
     setStreamPill(true);
-    addEvent('warn', 'stream', 'Event stream dropped; the browser will retry.');
     // CLOSED means the browser has given up (a refused token, a bad
     // response) and will not retry on its own.
     if (state.streamErrors >= STREAM_ERRORS_BEFORE_POLLING || es.readyState === EventSource.CLOSED) startStreamFallback();
@@ -479,7 +853,6 @@ function applyStatus(status) {
 }
 
 function handleEvent(type, tone, data) {
-  addEvent(tone, type, summarize(type, data));
   noticeFor(type, tone, data);
   bootProgress(type, data);
 
@@ -543,38 +916,12 @@ function onContainerRestarted() {
   pollUntilRunning();
 }
 
-function summarize(type, data) {
-  if (!data) return '';
-  switch (type) {
-    case 'session.state':
-      return data.reason ? `${data.state} (${data.reason})` : data.state;
-    case 'service.health':
-      return `${data.service}: ${data.health}`;
-    case 'pressure':
-      return `${data.title} — ${data.message}`;
-    case 'hint':
-      return data.text;
-    case 'check.started':
-      return `${data.total} check${data.total === 1 ? '' : 's'} running`;
-    case 'check.result':
-      return `${data.name}: ${data.pass ? 'pass' : 'fail'}`;
-    case 'check.finished':
-      return `${data.passed}/${data.total} passed`;
-    case 'alert':
-      return `${data.kind}${data.error ? `: ${data.error}` : ''}`;
-    case 'cost':
-      return `$${Number(data.usd ?? 0).toFixed(4)}`;
-    default:
-      return JSON.stringify(data).slice(0, 160);
-  }
-}
-
 /**
  * The curated side of the event stream, for the "Lab activity" pane.
  *
- * The raw log is operations telemetry — state transitions, check progress,
- * metrics, cost. This is the part of the same stream that is about the lab
- * itself — pressure events, hints, warnings — as prose rather than rows.
+ * The rest of the stream is operations telemetry — state transitions, check
+ * progress, metrics — and is not shown here. This is the part of it that is
+ * about the lab itself — pressure events, hints, warnings — as prose.
  * The pane is shown to every learner: it is how a pressure event, an idle
  * warning or a service going down reaches someone who is not reading the
  * Hints panel.
@@ -618,19 +965,6 @@ function addNotice(tone, title, detail) {
   list.prepend(li);
   while (list.children.length > 100) list.lastElementChild.remove();
   $('noticeEmpty').hidden = true;
-}
-
-function addEvent(tone, what, detail) {
-  const li = document.createElement('li');
-  li.className = `ev-${tone}`;
-  li.innerHTML = `<span class="when"></span><span class="what"></span><span class="detail"></span>`;
-  li.querySelector('.when').textContent = new Date().toLocaleTimeString([], { hour12: false });
-  li.querySelector('.what').textContent = what;
-  li.querySelector('.detail').textContent = detail ?? '';
-  const list = $('eventList');
-  list.prepend(li);
-  while (list.children.length > 300) list.lastElementChild.remove();
-  $('eventCount').textContent = `${++state.eventCount}`;
 }
 
 // A restart can start a second poll while the first is still sleeping, and
@@ -1132,8 +1466,6 @@ function backToLabs() {
   $('sessionBar').hidden = true;
   $('sessionActions').hidden = true;
   $('workspace').hidden = true;
-  $('ops').hidden = true;
-  $('btnOps').setAttribute('aria-pressed', 'false');
   $('launcher').hidden = false;
   $('expiryTimer').textContent = '';
   $('btnNewFile').disabled = false;
@@ -1164,7 +1496,7 @@ function attachSessionTerminal() {
     container: $('term'),
     sessionId: state.session.id,
     token: state.session.token,
-    onNotice: (text) => addEvent('warn', 'terminal', text),
+    onNotice: (text) => addNotice('warn', 'Terminal', text),
     onStatus: setTerminalStatus,
     // Any keystroke answers the idle warning.
     onInput: hideIdleBanner,
@@ -1213,6 +1545,84 @@ function stopExpiryTimer() {
 function formatClock(ms) {
   const total = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+// ---------------------------------------------------------- header stats
+
+const NO_VALUE = '—';
+
+/** "2/4" from a tally of the latest run, or a dash before any run. */
+function setChecksStat(t) {
+  $('statChecks').textContent = t ? `${t.passed}/${t.count}` : NO_VALUE;
+}
+
+/** "1/3": hints delivered over the lab's hint slots. */
+function setHintsStat() {
+  const h = state.hints;
+  const slots = h ? hintSlots(h) : 0;
+  $('statHints').textContent = slots ? `${h.delivered.length}/${slots}` : NO_VALUE;
+}
+
+/** "≈ $0.03" from `status().cost.usd` or a `metrics` event; a missing number leaves what is shown. */
+function setCostStat(usd) {
+  if (usd == null || !Number.isFinite(Number(usd))) return;
+  const n = Number(usd);
+  $('statCost').textContent = n > 0 && n < 0.005 ? '< $0.01' : `≈ $${n.toFixed(2)}`;
+  $('statCostWrap').title = `About $${n.toFixed(4)} spent by this session so far`;
+}
+
+function resetBarStats() {
+  setChecksStat(null);
+  setHintsStat();
+  $('statCost').textContent = NO_VALUE;
+  $('statCostWrap').title = 'Approximate spend by this session so far';
+}
+
+// ------------------------------------------------------- theme and identity
+
+const THEME_KEY = 'opalixTheme';
+const THEMES = ['light', 'dark', 'system'];
+const THEME_ICON = { light: '☀', dark: '☾', system: '◐' };
+
+function currentTheme() {
+  const saved = lsGet(THEME_KEY);
+  return THEMES.includes(saved) ? saved : 'system';
+}
+
+/**
+ * `data-theme` on <html> picks the palette; without it the browser's own
+ * preference decides (the stylesheet declares `color-scheme: light dark`).
+ * The same rule runs in theme-init.js before first paint, so a saved choice
+ * does not flash the other theme.
+ */
+function applyTheme(mode) {
+  const root = document.documentElement;
+  if (mode === 'system') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', mode);
+  const next = THEMES[(THEMES.indexOf(mode) + 1) % THEMES.length];
+  const button = $('btnTheme');
+  button.setAttribute('aria-label', `Theme: ${mode}. Switch to ${next}.`);
+  button.title = `Theme: ${mode} — click for ${next}`;
+  $('themeIcon').textContent = THEME_ICON[mode];
+}
+
+$('btnTheme').addEventListener('click', () => {
+  const next = THEMES[(THEMES.indexOf(currentTheme()) + 1) % THEMES.length];
+  lsSet(THEME_KEY, next);
+  applyTheme(next);
+});
+applyTheme(currentTheme());
+
+/** Who the console thinks you are — the cookie's subject, asked of the Worker. */
+async function showIdentity() {
+  try {
+    const { sub } = await api.me();
+    if (typeof sub !== 'string' || !sub) return;
+    $('identityName').textContent = sub;
+    $('identity').hidden = false;
+  } catch {
+    /* an older Worker has no /api/me; the header simply omits it */
+  }
 }
 
 // ---------------------------------------------------------------- banners
@@ -1316,6 +1726,7 @@ function absorbStatus(status, { celebrate = false } = {}) {
     state.hints = status.hints;
     renderHints();
   }
+  setCostStat(status?.cost?.usd);
   if (state.checksRunning) return;
   if (status?.checks) renderChecks(status.checks);
   showResultIfComplete(status?.checks, celebrate);
@@ -1353,8 +1764,6 @@ async function runChecks() {
     refreshStatus();
   } catch (err) {
     state.checksRunning = false;
-    addEvent('bad', 'checks', err.message);
-    // Where the learner is looking, rather than only in the operator log.
     panel.innerHTML = `${previous}<p class="notice notice-bad small" role="alert"></p>`;
     panel.querySelector('.notice').textContent = `The checks could not run — ${err.message}`;
   } finally {
@@ -1406,9 +1815,11 @@ function renderChecks(run) {
     panel.innerHTML = '<p class="muted small">Not run yet. Run checks to grade your work so far.</p>';
     summary.textContent = '';
     delete summary.dataset.tone;
+    setChecksStat(null);
     return;
   }
   const t = tally(run.results);
+  setChecksStat(t);
   summary.textContent = summaryText(t);
   summary.dataset.tone = t.passed === t.count ? 'good' : t.passed ? 'warn' : 'bad';
 
@@ -1519,18 +1930,22 @@ function lockedHintBox(index, afterMinutes) {
   return box;
 }
 
+/** How many hint slots a lab has: whatever is larger of the total, the schedule and what has been delivered. */
+const hintSlots = (h) => Math.max(h.total, h.schedule.length, ...h.delivered.map((d) => d.index + 1));
+
 const hintSignature = (h) => JSON.stringify([h.total, h.schedule, h.delivered.map((d) => d.index)]);
 
 /** Every hint slot from status(): delivered ones open, the rest locked with a countdown. */
 function renderHints() {
   const hints = state.hints;
   if (!hints) return;
+  setHintsStat();
   const sig = hintSignature(hints);
   if (sig === state.hintSig && $('hintsPanel').querySelector('[data-hint]')) return;
   state.hintSig = sig;
   const panel = $('hintsPanel');
   panel.innerHTML = '';
-  const slots = Math.max(hints.total, hints.schedule.length, ...hints.delivered.map((d) => d.index + 1));
+  const slots = hintSlots(hints);
   if (!slots) {
     panel.innerHTML = '<p class="muted small">This lab has no hints.</p>';
   }
@@ -1573,6 +1988,7 @@ function renderHint(data) {
     state.hints.delivered.sort((a, b) => a.index - b.index);
     state.hints.total = Math.max(state.hints.total, index + 1);
     state.hintSig = hintSignature(state.hints);
+    setHintsStat();
   }
   // A replayed stream sends the same hint again; show each one once.
   const key = String(index ?? data.text);
@@ -1676,6 +2092,7 @@ function resetSessionFeedback() {
   state.history = [];
   state.hints = null;
   state.hintSig = '';
+  resetBarStats();
   state.startedAt = null;
   state.clockSkew = 0;
   state.resultShown = false;
@@ -2116,89 +2533,22 @@ function showView(view, tabEl) {
   }
 }
 
-// ---------------------------------------------------------------- operator
-
-async function refreshPools() {
-  const host = $('poolTiles');
-  try {
-    const pools = await api.pools(state.serviceKey || undefined);
-    host.innerHTML = '';
-    for (const [family, pool] of Object.entries(pools)) {
-      host.append(poolTile(family, pool));
-    }
-    // GET /pools answers only to the service key, so a 200 here is proof
-    // the key in this tab is real — which is what operator mode means.
-    setAdmin(Boolean(state.serviceKey));
-  } catch (err) {
-    host.innerHTML = '<p class="error"></p>';
-    host.querySelector('p').textContent = err.message;
-    if (/^401:/.test(err.message)) setAdmin(false);
-  }
-}
-
-/**
- * Operator mode: the raw event stream and the pool actions, behind a
- * service key the API accepts. The lab activity pane is not part of it —
- * that is for every learner.
- */
-function setAdmin(on) {
-  state.admin = on;
-  $('btnOps').classList.toggle('btn-admin', on);
-  $('btnOps').title = on ? 'Operator mode is on in this tab' : '';
-  // The telemetry a learner has no use for — state transitions, check
-  // progress, metrics — stays behind the same key.
-  $('eventStreamBlock').hidden = !on;
-  $('eventStreamLocked').hidden = on;
-}
-
-function poolTile(family, pool) {
-  // GET /pools reports warm and claimed as counts, not collections.
-  const warm = pool.warm ?? 0;
-  const claimed = pool.claimed ?? 0;
-  const stats = pool.stats ?? {};
-  const hitRate = stats.claims ? Math.round((stats.warm_hits / stats.claims) * 100) : null;
-
-  const tile = document.createElement('div');
-  tile.className = 'tile';
-  tile.innerHTML = `
-    <div class="tile-label"></div>
-    <div class="tile-value"></div>
-    <div class="tile-sub"></div>
-    <div class="tile-actions">
-      <button class="btn btn-tiny" data-act="prime">Prime +1</button>
-      <button class="btn btn-tiny" data-act="drain">Drain</button>
-    </div>`;
-  tile.querySelector('.tile-label').textContent = `${family} pool`;
-  tile.querySelector('.tile-value').textContent = `${warm} warm`;
-  tile.querySelector('.tile-sub').textContent =
-    `${claimed} claimed · target ${pool.config?.target ?? '?'}` +
-    (hitRate === null ? '' : ` · ${hitRate}% warm hits of ${stats.claims}`);
-
-  tile.querySelector('[data-act="prime"]').addEventListener('click', async () => {
-    await withKey(() => api.primePool(family, (pool.config?.target ?? 0) + 1, state.serviceKey));
-  });
-  tile.querySelector('[data-act="drain"]').addEventListener('click', async () => {
-    await withKey(() => api.drainPool(family, state.serviceKey));
-  });
-  return tile;
-}
-
-async function withKey(fn) {
-  if (!state.serviceKey) {
-    $('opsKeyStatus').textContent = 'Prime and drain need the service key.';
-    return;
-  }
-  try {
-    await fn();
-    $('opsKeyStatus').textContent = 'done';
-    refreshPools();
-  } catch (err) {
-    $('opsKeyStatus').textContent = err.message;
-  }
-}
-
 // ---------------------------------------------------------------- wiring
 
+$('btnHelp').addEventListener('click', showOnboarding);
+// Escape and the button both count as having read it.
+$('onboarding').addEventListener('close', () => lsSet(ONBOARDED_KEY, '1'));
+$('btnOnboardingDone').addEventListener('click', () => {
+  // Set now, not only on the dialog's async `close` event.
+  lsSet(ONBOARDED_KEY, '1');
+  $('onboarding').close();
+});
+$('labSearch').addEventListener('input', () => {
+  filters.q = $('labSearch').value;
+  saveFilters();
+  applyFilters();
+});
+$('btnClearFilters').addEventListener('click', clearFilters);
 $('btnChecks').addEventListener('click', runChecks);
 $('btnChecksInline').addEventListener('click', runChecks);
 
@@ -2216,7 +2566,7 @@ $('feedbackForm').addEventListener('change', () => {
 $('feedbackForm').addEventListener('submit', sendFeedback);
 
 // A snapshot used to report nothing to the learner either way: success was
-// silent and failure went only to the operator's log.
+// silent and failure went nowhere the learner would look.
 $('btnSnapshot').addEventListener('click', async () => {
   const button = $('btnSnapshot');
   button.disabled = true;
@@ -2226,7 +2576,6 @@ $('btnSnapshot').addEventListener('click', async () => {
     await api.snapshot(state.session.id, state.session.token);
     toast(`Snapshot saved at ${new Date().toLocaleTimeString([], { hour12: false })}.`, 'good');
   } catch (err) {
-    addEvent('bad', 'snapshot', err.message);
     toast(`Snapshot failed — ${err.message}`, 'bad');
   } finally {
     button.textContent = 'Snapshot';
@@ -2264,7 +2613,6 @@ async function endSession(snapshot) {
   } catch (err) {
     // Say so, but still go home: the container is gone or was never there,
     // and leaving a dead workspace on screen helps nobody.
-    addEvent('bad', 'end', err.message);
     addNotice('bad', 'Could not end cleanly', err.message);
     toast(`The session may not have ended cleanly — ${err.message}`, 'bad');
   } finally {
@@ -2291,23 +2639,6 @@ $('btnSignOut')?.addEventListener('click', async () => {
   // login form because the cookie is gone.
   await fetch('/auth/logout', { method: 'POST' }).catch(() => {});
   location.reload();
-});
-
-$('btnOps').addEventListener('click', () => {
-  const showing = $('ops').hidden;
-  $('ops').hidden = !showing;
-  $('btnOps').setAttribute('aria-pressed', String(showing));
-  $('workspace').hidden = showing || !state.session;
-  $('launcher').hidden = showing || Boolean(state.session);
-  if (showing) refreshPools();
-});
-
-$('btnSaveKey').addEventListener('click', () => {
-  state.serviceKey = $('opsKey').value.trim();
-  sessionStorage.setItem('opalix.serviceKey', state.serviceKey);
-  $('opsKeyStatus').textContent = state.serviceKey ? 'key set for this tab' : 'cleared';
-  if (!state.serviceKey) setAdmin(false);
-  refreshPools();
 });
 
 $('btnRefreshFiles').addEventListener('click', refreshFiles);
@@ -2421,11 +2752,9 @@ function showSignedOut() {
   error.hidden = false;
 }
 
+showIdentity();
 $('saveShortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘S' : 'Ctrl+S';
 $('apiLabel').textContent = apiBase();
-// A key pasted earlier in this tab turns operator mode back on after a
-// reload, once the API has confirmed it still accepts it.
-if (state.serviceKey) refreshPools();
 resumeOrShowLabs();
 
 /**
@@ -2455,6 +2784,8 @@ async function resumeOrShowLabs() {
     // and showing the picker. Anything that races that decision — a test,
     // or a person clicking straight away — can wait for it.
     document.body.dataset.booted = '1';
+    // Only over the picker: someone already inside a lab has found their way.
+    if (!state.session) maybeShowOnboarding();
   }
 }
 

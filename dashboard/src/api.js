@@ -3,9 +3,10 @@
  * every call here is cross-origin and depends on the API's CORS allowlist
  * naming this origin.
  *
- * Two credentials, matching the API: a short-lived session token minted by
- * the start call, used for everything inside a session; and the service key,
- * which the dashboard only holds if an operator pastes one for pool actions.
+ * One credential here: the short-lived session token minted by the start
+ * call, used for everything inside a session. Anything that needs the
+ * service credential goes through this console's own Worker (`sameOrigin`
+ * below), which holds it; the browser never does.
  */
 const DEFAULT_API = 'https://opalix-sandbox.soubenz94.workers.dev';
 
@@ -46,10 +47,9 @@ function refreshToken() {
   return refreshing;
 }
 
-async function request(path, { method = 'GET', body, token, serviceKey, raw, recover = true, retried = false } = {}) {
+async function request(path, { method = 'GET', body, token, raw, recover = true, retried = false } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
-  else if (serviceKey) headers.Authorization = `Bearer ${serviceKey}`;
   if (body !== undefined && !raw) headers['Content-Type'] = 'application/json';
 
   const res = await fetch(`${apiBase()}${path}`, {
@@ -73,7 +73,7 @@ async function request(path, { method = 'GET', body, token, serviceKey, raw, rec
     if (res.status === 401 && token && recover) {
       if (!retried) {
         const fresh = await refreshToken().catch(() => null);
-        if (fresh) return request(path, { method, body, token: fresh, serviceKey, raw, retried: true });
+        if (fresh) return request(path, { method, body, token: fresh, raw, retried: true });
       } else {
         // Refused even with a token the API had just issued: the sign-in
         // itself is what has gone.
@@ -113,7 +113,10 @@ async function sameOrigin(path, init = {}) {
 const BUSY_RETRY_MS = 30_000;
 
 export const api = {
+  /** The catalogue, each lab carrying `progress` for the signed-in subject (or null). */
   labs: () => sameOrigin('/api/labs'),
+  /** The console's signed-in subject: `{sub}`. */
+  me: () => sameOrigin('/api/me'),
 
   /**
    * Starting a session goes through this console's own Worker, which holds
@@ -167,12 +170,6 @@ export const api = {
   readFile: (id, token, path) => request(`/sessions/${id}/files/${path}`, { token }),
   writeFile: (id, token, path, content) =>
     request(`/sessions/${id}/files/${path}`, { method: 'PUT', body: content, raw: true, token }),
-
-  pools: (serviceKey) => request('/pools', { serviceKey }),
-  primePool: (family, target, serviceKey) =>
-    request(`/pools/${family}/prime`, { method: 'POST', body: { target }, serviceKey }),
-  drainPool: (family, serviceKey) =>
-    request(`/pools/${family}/drain`, { method: 'POST', serviceKey }),
 };
 
 /** EventSource cannot set headers, so browser-facing routes take ?token=. */

@@ -44,11 +44,12 @@ test.describe('lab launcher', () => {
     await openConsole(page);
     await page.waitForSelector('.lab');
     const sub = await page.locator('.lab .lab-sub').first().textContent();
-    // e.g. "hello@1.0.0 · agent · build · intro · 60 min" — difficulty and
-    // duration are optional in the manifest, so they are matched as such
+    // e.g. "hello@1.0.0 · agent · build · intro · 60 min", or with the newer
+    // manifest fields "… · ~20 min · 60 min limit · Free". Difficulty, the
+    // time chip and the tier chip are optional, so they are matched as such
     // rather than pinned, but slug, version, family and type always lead.
     expect(sub).toMatch(
-      /^[a-z0-9-]+@\d+\.\d+\.\d+ · (agent|gateway) · (build|break-fix|scale)( · (intro|core|advanced))?( · \d+ min)?$/
+      /^[a-z0-9-]+@\d+\.\d+\.\d+ · (agent|gateway) · (build|break-fix|scale)( · (intro|core|advanced))?( · (~\d+ min · \d+ min limit|\d+ min))?( · Free)?$/
     );
   });
 
@@ -81,6 +82,23 @@ test.describe('lab launcher', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#labList .error')).toBeVisible({ timeout: 30_000 });
     await page.unroute('**/api/labs');
+  });
+
+  test('counts the labs it shows as "N of M labs"', async ({ page }) => {
+    await openConsole(page);
+    await page.waitForSelector('.lab');
+    const total = await page.locator('.lab').count();
+    await expect(page.locator('#labCount')).toHaveText(`${total} of ${total} labs`);
+  });
+
+  test('puts every card inside a group with a heading', async ({ page }) => {
+    await openConsole(page);
+    await page.waitForSelector('.lab');
+    // Labs the manifests have not yet placed in a path and module all land
+    // under one "All labs" group, so this holds for either catalogue.
+    expect(await page.locator('.lab-group').count()).toBeGreaterThan(0);
+    expect(await page.locator('.lab-group > h2.group-head').count()).toBe(await page.locator('.lab-group').count());
+    expect(await page.locator('.lab:not(.lab-group .lab)').count()).toBe(0);
   });
 
   test('names the API it is talking to', async ({ page }) => {

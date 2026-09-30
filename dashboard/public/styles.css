@@ -5,7 +5,10 @@
  * is for focus, selection and the one primary action in a place.
  */
 :root {
-  color-scheme: dark;
+  /* Both are declared; `data-theme` on <html> (set by the header toggle, and
+     by theme-init.js before first paint) picks one, and with neither set the
+     browser's own preference decides. The palette below is the dark one. */
+  color-scheme: light dark;
 
   --bg: #0e1116;
   --surface: #151a21;
@@ -48,6 +51,53 @@
   --right-w: 320px;
   --control-h: 32px;
   --control-h-sm: 26px;
+}
+
+/* A minimal light palette so the theme toggle visibly works; the design-system
+   card owns the real one. Listed twice because CSS cannot share a rule between
+   an attribute selector and a media query. */
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f6;
+  --surface-3: #e3e8ef;
+  --border: #d5dae3;
+  --border-strong: #b3bccb;
+  --ink: #141a23;
+  --ink-2: #3a4556;
+  --ink-muted: #5a6577;
+  /* The terminal and the editor keep their dark palettes (terminal.js and
+     editor.js set their own colours), so the well around them stays dark. */
+  --term-bg: #0b0e13;
+  /* Status and accent colours darkened to hold 4.5:1 on white. */
+  --accent: #1d5fa8;
+  --good: #16744f;
+  --warn: #8a5a0b;
+  --bad: #b3363f;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #f0f2f6;
+    --surface-3: #e3e8ef;
+    --border: #d5dae3;
+    --border-strong: #b3bccb;
+    --ink: #141a23;
+    --ink-2: #3a4556;
+    --ink-muted: #5a6577;
+    /* The terminal and the editor keep their dark palettes (terminal.js and
+       editor.js set their own colours), so the well around them stays dark. */
+    --term-bg: #0b0e13;
+    /* Status and accent colours darkened to hold 4.5:1 on white. */
+    --accent: #1d5fa8;
+    --good: #16744f;
+    --warn: #8a5a0b;
+    --bad: #b3363f;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -97,7 +147,7 @@ code { font-family: var(--mono); font-size: 0.92em; }
 :focus:not(:focus-visible) { outline: none; }
 
 /* Eyebrow: the small uppercase label used for every panel heading. */
-.eyebrow, .block h2, .objectives h3, .lab-objectives-label, .tab-group-label, .hint-label, .tile-label {
+.eyebrow, .block h2, .objectives h3, .lab-objectives-label, .tab-group-label, .hint-label, .chip-group-label {
   font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
@@ -155,7 +205,7 @@ code { font-family: var(--mono); font-size: 0.92em; }
   min-width: 0; flex: 1;
   overflow: hidden;
 }
-.session-lab { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; }
+.session-lab { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; overflow: hidden; }
 .session-title {
   font-weight: 600; font-size: var(--fs-md);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -163,8 +213,14 @@ code { font-family: var(--mono); font-size: 0.92em; }
 }
 .session-title:empty { display: none; }
 #sessionLab { white-space: nowrap; }
-.session-id { white-space: nowrap; }
-.bar-actions { margin-left: auto; display: flex; gap: var(--s2); flex-shrink: 0; }
+.bar-actions { margin-left: auto; display: flex; align-items: center; gap: var(--s2); flex-shrink: 0; }
+
+/* Checks, hints and cost: the right-hand end of the session cluster. */
+.bar-stats { display: flex; align-items: baseline; gap: var(--s4); margin-left: auto; flex-shrink: 0; }
+.stat { display: inline-flex; align-items: baseline; gap: var(--s1); white-space: nowrap; font-size: var(--fs-sm); }
+.stat-label { color: var(--ink-muted); }
+.stat-value { font-family: var(--mono); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.identity { color: var(--ink-2); white-space: nowrap; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; padding: 0 var(--s1); }
 .session-actions { display: flex; gap: var(--s2); }
 
 .pill {
@@ -217,8 +273,8 @@ code { font-family: var(--mono); font-size: 0.92em; }
   cursor: pointer;
   transition: background-color 0.12s, border-color 0.12s, color 0.12s;
 }
-.btn:hover:not(:disabled) { background: var(--surface-3); border-color: #465264; }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--surface-3); border-color: var(--ink-muted); }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
 .btn[aria-busy="true"] { cursor: progress; opacity: 0.8; }
 .btn-primary {
   background: color-mix(in oklab, var(--accent) 22%, var(--surface-2));
@@ -234,9 +290,11 @@ code { font-family: var(--mono); font-size: 0.92em; }
 }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
 .btn-ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
-.btn-ghost[aria-pressed="true"], .btn-admin { border-color: color-mix(in oklab, var(--accent) 55%, var(--border)); color: var(--accent); }
+.btn-ghost[aria-pressed="true"] { border-color: color-mix(in oklab, var(--accent) 55%, var(--border)); color: var(--accent); }
 .btn-tiny { height: var(--control-h-sm); padding: 0 var(--s2); font-size: var(--fs-sm); }
 .btn-icon { width: var(--control-h-sm); padding: 0; font-size: var(--fs-md); }
+/* A button that reads as a link: the "Discard" beside a primary action. */
+.btn-link { text-decoration: underline; text-underline-offset: 3px; padding: 0 var(--s2); }
 
 kbd {
   font-family: var(--mono);
@@ -258,18 +316,63 @@ kbd {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- launcher ---------- */
-.launcher, .ops {
+.launcher {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: var(--s6) var(--s5) 56px;
 }
-.launcher > *, .ops > * { max-width: 880px; margin-inline: auto; }
+.launcher > * { max-width: 880px; margin-inline: auto; }
 .launcher-head { margin-bottom: var(--s5); }
 .launcher h1 { font-size: var(--fs-xl); margin: 0 0 var(--s2); display: flex; align-items: baseline; gap: var(--s3); }
 .launcher h1 .count { font-size: var(--fs-md); font-weight: 400; color: var(--ink-muted); }
 .launcher-head p { margin: 0; max-width: 68ch; }
-.lab-list { display: grid; gap: var(--s3); }
+/* Every child of the launcher is capped at the same width, so the filters,
+   the resume card and the groups share one column. */
+.lab-list { display: grid; gap: var(--s6); }
+
+.resume-card {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s4);
+  margin-bottom: var(--s5); padding: var(--s3) var(--s4);
+  border: 1px solid color-mix(in oklab, var(--accent) 55%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
+}
+.resume-text { flex: 1 1 280px; margin: 0; min-width: 0; }
+.resume-left { margin-left: var(--s1); }
+.resume-actions { display: flex; align-items: center; gap: var(--s2); }
+.resume-card > .notice { flex-basis: 100%; margin: 0; }
+
+.lab-filters { display: grid; gap: var(--s3); margin-bottom: var(--s5); }
+.filter-search { display: flex; align-items: center; gap: var(--s2); }
+.filter-search input { flex: 1; max-width: 360px; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
+.chip-group { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--s1); }
+.chip-group-label { margin-right: var(--s1); }
+.filter-chip {
+  height: 24px; padding: 0 10px;
+  border: 1px solid var(--border-strong); border-radius: 999px;
+  background: transparent; color: var(--ink-2);
+  font: 500 var(--fs-sm)/1 var(--sans); cursor: pointer;
+}
+.filter-chip:hover { background: var(--surface-2); color: var(--ink); }
+.filter-chip[aria-pressed="true"] {
+  color: var(--ink);
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 20%, var(--surface));
+}
+#labNoMatch { margin: 0 auto var(--s5); }
+
+/* One block per path and module: a heading with its tally, a 4px bar, then the cards. */
+.lab-group { display: grid; gap: var(--s2); }
+.group-head {
+  display: flex; align-items: baseline; gap: var(--s3);
+  margin: 0; font-size: var(--fs-lg); font-weight: 600;
+}
+.group-done { margin-left: auto; font: 500 var(--fs-sm)/1 var(--mono); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.progress { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-bottom: var(--s2); }
+.progress > span { display: block; height: 100%; background: var(--good); }
+.lab-cards { display: grid; gap: var(--s3); }
 
 .lab {
   display: grid;
@@ -283,7 +386,21 @@ kbd {
 }
 .lab:hover { border-color: var(--border-strong); }
 .lab-meta { min-width: 0; }
+.lab-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
 .lab-title { font-size: var(--fs-lg); font-weight: 600; line-height: 1.35; margin: 0; }
+.chip-done {
+  color: var(--good);
+  border-color: color-mix(in oklab, var(--good) 45%, var(--border));
+  background: color-mix(in oklab, var(--good) 10%, var(--surface));
+}
+.lab-done { border-color: color-mix(in oklab, var(--good) 35%, var(--border)); }
+/* Locked, not hidden: the card says what to pass first. */
+.lab-locked { border-style: dashed; }
+.lab-lock {
+  margin: var(--s2) 0 0; padding-left: var(--s2);
+  border-left: 2px solid var(--warn);
+  color: var(--ink-2); font-size: var(--fs-sm);
+}
 .lab-start { min-width: 88px; align-self: start; }
 .lab > .notice { grid-column: 1 / -1; margin-top: 0; }
 
@@ -302,6 +419,7 @@ kbd {
 }
 .chip-id { font-family: var(--mono); background: transparent; color: var(--ink-muted); padding-left: 0; border-color: transparent; }
 .chip-time { font-family: var(--mono); }
+.chip-tier { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 45%, var(--border)); }
 /* Difficulty as one, two or three bars — never a status colour. */
 .chip-difficulty { --pip2: var(--border-strong); --pip3: var(--border-strong); }
 .chip-difficulty::before {
@@ -629,8 +747,8 @@ pre.logs-tail {
 
 /* ---------- lab activity (every learner) ---------- */
 /*
- * Same list mechanics as the operator event log, but read as prose: the
- * type and payload are dropped and the title carries the weight.
+ * A list of events read as prose: the type and payload are dropped and the
+ * title carries the weight.
  */
 #noticeList li { align-items: baseline; }
 #noticeList li.ev-bad { box-shadow: inset 2px 0 0 var(--bad); }
@@ -638,9 +756,6 @@ pre.logs-tail {
 #noticeList li.ev-good { box-shadow: inset 2px 0 0 var(--good); }
 .notice-title { color: var(--ink); font-weight: 600; }
 .notice-body { color: var(--ink-2); }
-
-/* The operator's raw log sits inside a scrolling panel rather than a pane. */
-.ops .events { max-height: 340px; border: 1px solid var(--border); border-radius: var(--radius); margin-top: var(--s2); }
 
 /* ---------- checks and hints ---------- */
 .check { display: flex; gap: var(--s2); align-items: baseline; padding: 5px 0; font-size: var(--fs-sm); line-height: 1.5; }
@@ -732,17 +847,8 @@ pre.logs-tail {
   100% { opacity: 0; transform: translate3d(var(--dx), 110px, 0) rotate(var(--r)); }
 }
 
-/* ---------- operator ---------- */
-.ops h1 { font-size: var(--fs-xl); margin-block: 0 6px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s3); margin: 20px auto; }
-.tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px var(--s4); }
-.tile-value { font-family: var(--mono); font-size: 26px; line-height: 1.2; margin-top: var(--s1); }
-.tile-sub { font-size: var(--fs-xs); color: var(--ink-muted); margin-top: 2px; }
-.tile-actions { display: flex; gap: 6px; margin-top: 10px; }
-
-.ops-auth { margin-top: var(--s5); padding-top: var(--s4); border-top: 1px solid var(--border); }
-.row { display: flex; gap: var(--s2); align-items: center; margin-top: 6px; flex-wrap: wrap; }
-input[type="password"], input[type="text"] {
+/* ---------- inputs ---------- */
+input[type="password"], input[type="text"], input[type="search"] {
   height: var(--control-h-sm);
   background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
   color: var(--ink); padding: 0 10px; font-family: var(--mono); font-size: var(--fs-sm); min-width: min(280px, 100%);
@@ -760,6 +866,8 @@ input:focus-visible { outline-offset: 0; border-color: var(--accent); }
   overflow: hidden;
 }
 .footer-spacer { flex: 1; }
+.footer-link { color: var(--ink-2); font-size: var(--fs-sm); text-decoration: none; padding: 0 var(--s1); }
+.footer-link:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 
 /* ---------- dialog ---------- */
 .dialog {
@@ -771,7 +879,13 @@ input:focus-visible { outline-offset: 0; border-color: var(--accent); }
 }
 .dialog::backdrop { background: rgba(14, 17, 22, 0.86); backdrop-filter: blur(2px); }
 .dialog-card { padding: var(--s5) var(--s5) var(--s4); }
+.dialog-wide { width: min(560px, calc(100vw - 32px)); }
 .dialog-card h2 { font-size: var(--fs-lg); margin: 0 0 var(--s2); }
+.onboarding-blocks { display: grid; gap: var(--s3); margin: var(--s4) 0; }
+.onboarding-blocks > div { padding-left: var(--s3); border-left: 2px solid var(--border-strong); }
+.onboarding-blocks dt { font-weight: 600; }
+.onboarding-blocks dd { margin: 2px 0 0; color: var(--ink-2); font-size: var(--fs-md); line-height: 1.55; }
+.onboarding-timers { margin: 0; }
 .dialog-card p { margin: 0; }
 .dialog-actions { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: flex-end; margin-top: var(--s5); }
 
@@ -798,7 +912,12 @@ input:focus-visible { outline-offset: 0; border-color: var(--accent); }
    folds under it rather than taking width from the terminal. */
 @media (max-width: 1200px) {
   :root { --left-w: 244px; }
-  .session-id { display: none; }
+  /* The bar is tight here: the stats keep their numbers and lose their labels
+     visually — still read out, and each stat has a tooltip. */
+  .stat-label {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
   .workspace.has-activity {
     grid-template-columns: var(--left-w) minmax(0, 1fr);
     grid-template-areas: "left center" "right center";
@@ -825,7 +944,9 @@ input:focus-visible { outline-offset: 0; border-color: var(--accent); }
   .pane-center { order: -1; height: 72vh; flex-shrink: 0; border-bottom: 1px solid var(--border); }
   .pane-left, .pane-right { border: 0; border-bottom: 1px solid var(--border); overflow: visible; }
   .files { max-height: 40vh; }
-  .launcher, .ops { padding: var(--s5) var(--s4) var(--s6); overflow: visible; }
+  .launcher { padding: var(--s5) var(--s4) var(--s6); overflow: visible; }
+  .bar-stats { gap: var(--s3); }
+  .filter-search input { max-width: none; }
   .lab { grid-template-columns: 1fr; }
   .lab-start { justify-self: start; }
   .modal-card { padding: var(--s5); }

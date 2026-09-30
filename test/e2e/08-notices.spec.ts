@@ -14,8 +14,9 @@ test.describe('lab notices', () => {
     // Labelled for what it is, not for who it is for.
     await expect(session.locator('#activityPane h2')).toHaveText('Lab activity');
     await expect(session.locator('#activityPane .block-meta')).toHaveCount(0);
-    // The raw event log is still operator-only.
-    await expect(session.locator('#ops')).toBeHidden();
+    // The raw event log and the operator panel no longer exist here.
+    await expect(session.locator('#ops')).toHaveCount(0);
+    await expect(session.locator('#eventList')).toHaveCount(0);
   });
 
   test('turns a pressure event into a notice', async ({ session }) => {
