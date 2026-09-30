@@ -26,7 +26,7 @@ rationale; this README is the quick-start.
   CSS plus one Worker endpoint (`npm run dev:site`, `npm run deploy:site`).
 - `test/unit` — fast, plain-Node unit tests (no Docker required).
 - `test/integration` — end-to-end tests against a running Worker (`wrangler
-  dev` with Docker, or staging).
+  dev` with Docker, or the deployed Worker).
 - `migrations/` — D1 schema.
 - `docs/` — API reference, lab-authoring guide, and the Phase 0 spike
   write-up template.
@@ -45,7 +45,7 @@ npm run dev                      # wrangler dev — needs Docker for the contain
 Deploying needs a Cloudflare account with Containers enabled, an R2 bucket
 per binding, a D1 database (`npm run d1:migrate`), and the secrets listed
 in `wrangler.jsonc`'s comment (`wrangler secret put SANDBOX_API_KEY`, etc).
-`npm run deploy` / `npm run deploy:staging`.
+`npm run deploy`.
 
 ## Using the CLI
 
@@ -68,7 +68,8 @@ templating, session-token auth, the timer scheduler, check-output parsing).
 It is deployed: the API Worker, the dashboard Worker and the site are
 deployed from `main` by GitHub Actions (`.github/workflows/deploy.yml` and
 `deploy-site.yml`). There are 39 labs under `labs/` (25 gateway-family, 14
-agent-family). There is no deployed staging environment: `wrangler.jsonc`
-still defines a `staging` env, but it holds a placeholder D1 id and no workflow
-deploys it. See `docs/spike.md` for the measurements taken against the live
+agent-family). There is no staging environment. The pre-production checks
+are in CI: the image-size gate (`scripts/image-size-gate.mjs`, which fails the
+build when an image exceeds 85% of its instance disk) and, after deploy, the
+smoke test against the live Worker. See `docs/spike.md` for the measurements taken against the live
 deployment.

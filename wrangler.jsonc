@@ -15,7 +15,7 @@
       "class_name": "AgentLab",
       "image": "./images/agent/Dockerfile",
       "instance_type": "standard-1",
-      "max_instances": 20
+      "max_instances": 10
     },
     {
       "class_name": "GatewayLab",
@@ -40,7 +40,7 @@
       // MLflow, ContextForge, Jaeger, otelcol-contrib, Presidio) and is
       // likely to keep accumulating.
       "instance_type": { "vcpu": 1, "memory_mib": 8192, "disk_mb": 16000 },
-      "max_instances": 20
+      "max_instances": 10
     }
   ],
   "durable_objects": {
@@ -81,6 +81,11 @@
     "PUBLIC_BASE_URL": "https://opalix-sandbox.soubenz94.workers.dev",
     "POOL_TARGET_AGENT": "1",
     "POOL_TARGET_GATEWAY": "1",
+    // Time-of-day override of the targets above, UTC, first matching rule
+    // wins; unset or unparseable falls back to POOL_TARGET_*. A warm gateway
+    // slot is ~$108/month around the clock and ~$45 on this schedule.
+    "POOL_SCHEDULE_AGENT": "mon-fri 06-20=1; *=0",
+    "POOL_SCHEDULE_GATEWAY": "mon-fri 06-20=1; *=0",
     "LLM_HOST": "gateway.ai.cloudflare.com",
     "AI_GATEWAY_NAME": "opalix",
     // A small model on purpose: Workers AI text generation is capped at 300
@@ -94,62 +99,11 @@
     "DASHBOARD_ORIGIN": "https://opalix-dashboard.soubenz94.workers.dev,http://localhost:8788"
   },
   // Secrets (wrangler secret put): SANDBOX_API_KEY, SESSION_TOKEN_SECRET,
-  // R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, AI_GATEWAY_TOKEN.
+  // R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, AI_GATEWAY_TOKEN, ALERT_WEBHOOK_URL.
   // Optional: SANDBOX_API_KEY_PREVIOUS -- set only during a SANDBOX_API_KEY
   // rotation window; see docs/runbooks/secrets-rotation.md.
   "triggers": {
     "crons": ["*/5 * * * *"]
   },
-  "preview_urls": false,
-  "env": {
-    "staging": {
-      "name": "opalix-sandbox-staging",
-      "containers": [
-        {
-          "class_name": "AgentLab",
-          "image": "./images/agent/Dockerfile",
-          "instance_type": "standard-1",
-          "max_instances": 5
-        },
-        {
-          "class_name": "GatewayLab",
-          "image": "./images/gateway/Dockerfile",
-          // Kept in sync with the production block above -- see its comment.
-          "instance_type": { "vcpu": 1, "memory_mib": 8192, "disk_mb": 16000 },
-          "max_instances": 5
-        }
-      ],
-      "durable_objects": {
-        "bindings": [
-          { "class_name": "AgentLab", "name": "AGENT_LAB" },
-          { "class_name": "GatewayLab", "name": "GATEWAY_LAB" },
-          { "class_name": "Pool", "name": "POOL" },
-          { "class_name": "Session", "name": "SESSION" }
-        ]
-      },
-      "r2_buckets": [
-        { "binding": "BACKUP_BUCKET", "bucket_name": "opalix-backups-staging" },
-        { "binding": "LABS_BUCKET", "bucket_name": "opalix-labs-staging" }
-      ],
-      "d1_databases": [
-        { "binding": "DB", "database_name": "opalix-staging", "database_id": "REPLACE_WITH_STAGING_D1_ID", "migrations_dir": "./migrations" }
-      ],
-      "vars": {
-        "BACKUP_BUCKET_NAME": "opalix-backups-staging",
-        "CLOUDFLARE_ACCOUNT_ID": "8f5baf938da8f184c5431050d65eef08",
-        "LOCATION_HINT": "weur",
-        "PUBLIC_BASE_URL": "https://labs-api-staging.opalix.ai",
-        "POOL_TARGET_AGENT": "0",
-        "POOL_TARGET_GATEWAY": "0",
-        "LLM_HOST": "gateway.ai.cloudflare.com",
-        "AI_GATEWAY_NAME": "opalix-staging",
-        "LLM_MODEL": "workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8",
-        "MIRROR_HOST": "mirror.opalix.ai",
-    // The dashboard is its own Worker, so every browser call to this API is
-    // cross-origin. Listed explicitly rather than "*": the list is visible
-    // in config and changes without touching code.
-    "DASHBOARD_ORIGIN": "https://opalix-dashboard.soubenz94.workers.dev,http://localhost:8788"
-      }
-    }
-  }
+  "preview_urls": false
 }

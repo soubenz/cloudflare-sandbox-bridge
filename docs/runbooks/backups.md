@@ -21,7 +21,7 @@ Verify:
 npx wrangler r2 bucket lifecycle list opalix-backups
 ```
 
-The output must show rule `expire-snapshots`, prefix `backups/`, 8 days. Repeat for `opalix-backups-staging` if staging is in use. Do not omit the prefix: a bucket-wide rule would also expire `d1/` exports.
+The output must show rule `expire-snapshots`, prefix `backups/`, 8 days. There is no staging bucket to repeat this for. Do not omit the prefix: a bucket-wide rule would also expire `d1/` exports.
 
 ## D1 backup
 

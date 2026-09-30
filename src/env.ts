@@ -25,6 +25,12 @@ export interface Env {
   PUBLIC_BASE_URL: string;
   POOL_TARGET_AGENT: string;
   POOL_TARGET_GATEWAY: string;
+  /** Optional time-of-day override of POOL_TARGET_AGENT, UTC, e.g. "mon-fri 06-20=1; *=0". See src/lib/pool-schedule.ts. */
+  POOL_SCHEDULE_AGENT?: string;
+  POOL_SCHEDULE_GATEWAY?: string;
+  /** Optional per-hour price in USD (string number) used by GET /usage; defaults 0.074 agent, 0.148 gateway. */
+  PRICE_PER_HOUR_AGENT?: string;
+  PRICE_PER_HOUR_GATEWAY?: string;
   LLM_HOST: string;
   /** AI Gateway name on the account; with LLM_HOST and the account id it forms the compat endpoint. */
   AI_GATEWAY_NAME: string;
@@ -43,4 +49,6 @@ export interface Env {
   R2_SECRET_ACCESS_KEY: string;
   /** Cloudflare API token with Workers AI access; injected into model calls by llmOutbound. */
   AI_GATEWAY_TOKEN: string;
+  /** Optional. Slack- or Discord-compatible webhook URL that receives pool degraded/recovered alerts. */
+  ALERT_WEBHOOK_URL?: string;
 }

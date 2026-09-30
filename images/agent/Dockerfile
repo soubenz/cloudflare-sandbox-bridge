@@ -1,15 +1,22 @@
 # syntax=docker/dockerfile:1
 # Agent lab family: Python agent runtime + LiteLLM + Grafana.
 #
-# `next-python` is the floating preview tag, matching package.json's
-# @cloudflare/sandbox dependency (also "next", not a pinned version) — the
-# two float together so they can't drift apart silently. Confirmed to exist
-# on Docker Hub (docker.io/cloudflare/sandbox tags) on 23 Sep 2026; an
-# earlier guess at a pinned "0.13.0-next-python" tag was wrong (never
-# published — real pinned preview tags look like "0.13.0-next.776.1-python").
-# Before GA, switch both this and package.json's dependency to matching
-# exact pinned versions for a reproducible build.
-FROM docker.io/cloudflare/sandbox:next-python
+# Everything in this image is pinned to what the deployed image was actually
+# running (captured live 30 Sep 2026): the base tag below, the apt versions
+# that matter, the Grafana .deb's sha256, and every Python package via the
+# requirements-*.txt files next to this Dockerfile (full `pip freeze` output,
+# transitive dependencies included). To move any of it forward, change it
+# here on purpose; nothing floats on a rebuild any more.
+#
+# 0.13.0-next.776.1-python is what the floating `next-python` tag pointed at
+# when the deployed image was built (SANDBOX_VERSION=0.13.0-next.776.1 is
+# baked into it; same digest as `next-python` on Docker Hub, 30 Sep 2026).
+# package.json's @cloudflare/sandbox dependency is still the `next` tag,
+# which package-lock.json resolved to 0.13.0-next.769.1 -- the tag drifted
+# between the two. Pin package.json to 0.13.0-next.776.1 too so the SDK and
+# the container agree. (An earlier guess at "0.13.0-next-python" was wrong;
+# real pinned preview tags look like "0.13.0-next.776.1-python".)
+FROM docker.io/cloudflare/sandbox:0.13.0-next.776.1-python
 
 # --- System packages ---
 # musl: the Grafana .deb below depends on it; installing it here (while apt
@@ -37,7 +44,10 @@ RUN printf 'set -g status off\nset -g history-limit 10000\nset -g mouse on\n' > 
 
 # --- Grafana (OSS) ---
 ARG GRAFANA_VERSION=11.4.0
+# sha256 of the 11.4.0 amd64 .deb (matches the checksum Grafana publishes on
+# its download page); bump it together with GRAFANA_VERSION.
 RUN curl -fsSL "https://dl.grafana.com/oss/release/grafana_${GRAFANA_VERSION}_amd64.deb" -o /tmp/grafana.deb \
+    && echo "4cff89724f4a06f53fc1187c6c2011206084baf13da6d443c2fb14b4ba272bb0  /tmp/grafana.deb" | sha256sum -c - \
     && dpkg -i /tmp/grafana.deb \
     && rm -f /tmp/grafana.deb
 
@@ -83,20 +93,28 @@ ENV GF_PLUGINS_PREINSTALL_DISABLED=true
 # python-build-standalone interpreter) does not put a `pip` binary on PATH,
 # confirmed by a real CI build failure (23 Sep 2026, "pip: not found").
 #
-# `"mcp<2"` alongside the deliberately-unpinned litellm[proxy] (see the
-# file header on why this stays floating): a live verification run found
-# this shared environment had resolved mcp 2.2.0 (litellm 1.103.0's own
-# mcp constraint had loosened past the gateway image's pinned
-# litellm==1.102.1, which still declares `mcp>=1.28.1,<2.0` -- see
+# litellm[proxy]==1.102.2 is what the deployed image was running (the gateway
+# image is on 1.102.1; the two were never forced to match), and every one of
+# its dependencies is pinned in requirements-system.txt. That file lists only
+# what this Dockerfile installs: matplotlib, pandas, ipython (and numpy,
+# which soundfile merely requires) come from the base image, whose tag is
+# pinned above, so they are left out on purpose.
+#
+# mcp==1.30.0 is pinned inside the same file, replacing the old `"mcp<2"`:
+# a live verification run had found this shared environment resolve mcp
+# 2.2.0 (litellm 1.103.0's own mcp constraint had loosened past the gateway
+# image's litellm==1.102.1, which still declares `mcp>=1.28.1,<2.0` -- see
 # images/gateway/Dockerfile's own note on that). Every Module 2 tool
 # server (weather_tool_server.py, calculator_tool_server.py, and every
 # other labs/*/workspace/**/*_server.py invoked via plain `python3`, not
 # the ContextForge venv) imports `mcp.server.fastmcp.FastMCP`, the v1 API
 # -- renamed to `MCPServer` in mcp 2.x, confirmed live via the exact
-# ModuleNotFoundError naming the rename. Pinning the major version here,
-# not editing any lab, keeps litellm itself free to float as intended
-# while fixing the actual break.
-RUN python3 -m pip install --no-cache-dir "litellm[proxy]" "mcp<2"
+# ModuleNotFoundError naming the rename. Keep mcp on 1.x whenever this file
+# is regenerated.
+COPY requirements-system.txt /tmp/req/
+RUN python3 -m pip install --no-cache-dir -r /tmp/req/requirements-system.txt \
+    && python3 -m pip show litellm | grep -qx 'Version: 1.102.2' \
+    && python3 -m pip show mcp | grep -qx 'Version: 1.30.0'
 
 # Python's httpx/requests (unlike curl and urllib) verify against
 # certifi's bundled CA list, not the system store, so they ignore the CA
@@ -111,7 +129,8 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 # --- ContextForge (mcp-contextforge-gateway), for Path 2 Module 2's tool-gateway labs ---
-# Pinned to 1.0.10: every lab in this module was proven against exactly this
+# Pinned to 1.0.10 (in requirements-contextforge.txt, with its full frozen
+# dependency tree): every lab in this module was proven against exactly this
 # version, and its own quirks are load-bearing (see labs/*/manifest.yaml
 # header comments for the associated_tools casing trap, the token scope
 # shape, the deprecated-flag-is-inert bug, and the admin UI's login
@@ -126,16 +145,22 @@ ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 # for it) into its own venv, alongside the base image's own 3.11 default
 # -- so litellm, matplotlib/numpy/pandas and everything else already
 # installed against python3 stay on 3.11 untouched.
+#
+# python3.12/python3.12-venv are pinned to the deadsnakes build that was
+# running (3.12.14-1+jammy1). A PPA only indexes its current build, so once
+# deadsnakes publishes a newer 3.12 for jammy this exact version disappears
+# and the build fails loudly at the apt-get install: bump it on purpose then.
+COPY requirements-contextforge.txt /tmp/req/
 RUN apt-get update -o Acquire::Retries=3 \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
     software-properties-common gnupg \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && apt-get update -o Acquire::Retries=3 \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
-    python3.12 python3.12-venv \
+    python3.12=3.12.14-1+jammy1 python3.12-venv=3.12.14-1+jammy1 \
     && rm -rf /var/lib/apt/lists/* \
     && python3.12 -m venv /opt/contextforge-venv \
-    && /opt/contextforge-venv/bin/pip install --no-cache-dir "mcp-contextforge-gateway==1.0.10" \
+    && /opt/contextforge-venv/bin/pip install --no-cache-dir -r /tmp/req/requirements-contextforge.txt \
     && /opt/contextforge-venv/bin/pip show mcp-contextforge-gateway | grep -qx 'Version: 1.0.10'
 
 # The package's two console-script entry points (mcpgateway, the CLI a lab's

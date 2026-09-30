@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import WebSocket from 'ws';
 import { OpalixClient } from '../../cli/src/client';
-import { readSse } from './helpers';
+import { execViaTerminal, readSse } from './helpers';
 
 /**
  * Tier 2 of the test plan: the routes the lifecycle smoke test never
@@ -118,6 +118,41 @@ describeIfConfigured('sandbox API routes', () => {
       await session.deleteFile(sessionId, 'scratch.txt');
       await expect(session.readFile(sessionId, 'scratch.txt')).rejects.toThrow(/404/);
     }, 60_000);
+
+    // Card B-09: the learner owns /workspace and can plant symlinks in it.
+    // The Worker's file operations run as root, so they must not follow them.
+    describe('symlinks planted by the learner', () => {
+      beforeAll(async () => {
+        const { exitCode } = await execViaTerminal(
+          session.terminalUrl(sessionId),
+          'ln -s /opt/lab /workspace/leak; ln -s /etc/hostname /workspace/x; mkdir -p /workspace/d; ln -s /etc /workspace/d/etc'
+        );
+        expect(exitCode).toBe(0);
+      }, 90_000);
+
+      it('will not read through a link to a root-only directory', async () => {
+        await expect(session.readFile(sessionId, 'leak')).rejects.toThrow(/\b4\d\d\b/);
+        await expect(session.readFile(sessionId, 'leak/pressure')).rejects.toThrow(/\b4\d\d\b/);
+      }, 60_000);
+
+      it('will not read through a link to a file outside the workspace', async () => {
+        await expect(session.readFile(sessionId, 'x')).rejects.toThrow(/\b4\d\d\b/);
+      }, 60_000);
+
+      it('will not list through a link', async () => {
+        await expect(session.listFiles(sessionId, 'd/etc')).rejects.toThrow(/\b4\d\d\b/);
+      }, 60_000);
+
+      it('will not write through a link, and nothing lands outside the workspace', async () => {
+        await expect(session.writeFile(sessionId, 'd/etc/opalix-probe', 'pwned')).rejects.toThrow(/\b4\d\d\b/);
+        const { output } = await execViaTerminal(
+          session.terminalUrl(sessionId),
+          'test -e /etc/opalix-probe && echo present || echo absent'
+        );
+        expect(output).toMatch(/^\s*absent\s*$/m);
+        expect(output).not.toMatch(/^\s*present\s*$/m);
+      }, 60_000);
+    });
 
     it('413s a write over the 2 MB limit', async () => {
       await expect(

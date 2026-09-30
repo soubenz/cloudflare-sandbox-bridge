@@ -9,7 +9,7 @@ import { defineConfig } from 'vitest/config';
  * with a local Docker daemon — not available in every dev/CI environment
  * (this repo's own sandbox included) — so DO-level and container-level
  * behavior is verified in the integration suite (vitest.integration.config.ts)
- * against `wrangler dev` or staging instead. See docs/spike.md.
+ * against `wrangler dev` or the deployed Worker instead. See docs/spike.md.
  */
 export default defineConfig({
   test: {

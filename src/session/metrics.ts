@@ -19,16 +19,29 @@ const MEMORY_GIB_SECOND_USD = 0.0000025;
 const DISK_GB_SECOND_USD = 0.00000007;
 const RATE_PER_SECOND_USD = VCPU * VCPU_SECOND_USD + MEMORY_GIB * MEMORY_GIB_SECOND_USD + DISK_GB * DISK_GB_SECOND_USD;
 
-/** Called by the metrics alarm (every 30s while running). Updates the running cost estimate and emits it. */
+/**
+ * Called by the metrics alarm (every 30s while running) and once more when
+ * the session ends. Accumulates compute time incrementally: each tick adds
+ * only the time since `accounted_until`, so a resume (which resets
+ * `started_at`) no longer zeroes what earlier runs already cost, and the gap
+ * between end and resume is never billed.
+ */
 export async function tickMetrics(rt: SessionRuntime): Promise<void> {
   const meta = await rt.requireMeta();
   if (!meta.started_at) return;
   const cost = await rt.cost();
-  const running_s = Math.floor((Date.now() - meta.started_at) / 1000);
+  const now = Date.now();
+  // A cost record without `accounted_until` predates this accounting and
+  // derived its `running_s` from `started_at`, so counting from `started_at`
+  // again would double it; start that record over from zero.
+  const base = cost.accounted_until === undefined ? 0 : cost.running_s;
+  const since = Math.max(cost.accounted_until ?? meta.started_at, meta.started_at);
+  const delta = Math.max(0, now - since);
+  // Millisecond precision: flooring each 30s tick would shed up to a second per tick.
+  const running_s = Math.round(base * 1000 + delta) / 1000;
   const usd = running_s * RATE_PER_SECOND_USD;
-  const next = { ...cost, running_s, usd };
-  await rt.putCost(next);
-  emitEvent(rt, 'metrics', { running_s, cost_usd: Number(usd.toFixed(4)), llm_cost_usd: Number(cost.llm_usd.toFixed(4)) });
+  await rt.putCost({ ...cost, running_s, usd, accounted_until: now });
+  emitEvent(rt, 'metrics', { running_s: Math.floor(running_s), cost_usd: Number(usd.toFixed(4)), llm_cost_usd: Number(cost.llm_usd.toFixed(4)) });
 }
 
 /** Called by POST /sessions/{id}/events when the LLM Worker reports spend for a call. */

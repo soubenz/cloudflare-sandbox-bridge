@@ -10,6 +10,40 @@ async function runOrThrow(rt: SessionRuntime, argv: readonly [string, ...string[
 }
 
 /**
+ * Archives are staged in a root-only directory, never the world-writable
+ * temp dir: the learner can write there and could otherwise replace an
+ * archive between the Worker's writeFile and the extract exec. Init creates
+ * this directory at boot; ensureStageDir repeats it (idempotent, root) for
+ * a warm container that predates that change. The SDK's writeFile has no
+ * permissions option and is not known to create parents, so the directory
+ * is created in its own exec first and the archive is chmod 0600'd inside
+ * the single extract command.
+ */
+export const STAGE_DIR = '/run/opalix/stage';
+
+export function stagePath(id: string): string {
+  return `${STAGE_DIR}/${id}.tgz`;
+}
+
+export async function ensureStageDir(rt: SessionRuntime): Promise<void> {
+  await runOrThrow(
+    rt,
+    ['sh', '-c', `mkdir -p ${STAGE_DIR} && chmod 0700 /run/opalix ${STAGE_DIR} && chown root:root /run/opalix ${STAGE_DIR}`],
+    'stage dir setup'
+  );
+}
+
+/** Shell prefix for an extract command: refuse a non-root-owned archive, then lock its mode. */
+export function archiveGuard(archive: string): string {
+  return `[ "$(stat -c %u ${archive})" = 0 ] || exit 97; chmod 0600 ${archive}`;
+}
+
+/** Best-effort removal so a failed extract leaves no archive behind. */
+export async function removeStaged(rt: SessionRuntime, archive: string): Promise<void> {
+  await rt.backend().exec(['rm', '-f', archive]).catch(() => {});
+}
+
+/**
  * Extracts workspace.tgz (learner-visible files) to /workspace as the
  * `learner` user. Skipped on resume when a snapshot is restored instead
  * (see lifecycle.resume) — restoreBackup() replaces this entirely.
@@ -22,12 +56,22 @@ export async function hydrateWorkspaceFiles(rt: SessionRuntime, labSlug: string,
   const backend = rt.backend();
   const workspaceObj = await rt.env.LABS_BUCKET.get(workspaceKey(labSlug, labVersion));
   if (!workspaceObj) throw new Error(`workspace bundle missing for ${labSlug}@${labVersion}`);
-  await backend.writeFile('/tmp/opalix-workspace.tgz', workspaceObj.body);
-  await runOrThrow(
-    rt,
-    ['sh', '-c', 'tar xzf /tmp/opalix-workspace.tgz -C /workspace --no-same-owner && chown -R learner:learner /workspace && rm -f /tmp/opalix-workspace.tgz'],
-    'workspace hydrate'
-  );
+  const archive = stagePath(`workspace-${crypto.randomUUID()}`);
+  await ensureStageDir(rt);
+  try {
+    await backend.writeFile(archive, workspaceObj.body);
+    await runOrThrow(
+      rt,
+      [
+        'sh',
+        '-c',
+        `${archiveGuard(archive)} && tar xzf ${archive} -C /workspace --no-same-owner && chown -R learner:learner /workspace && rm -f ${archive}`,
+      ],
+      'workspace hydrate'
+    );
+  } finally {
+    await removeStaged(rt, archive);
+  }
 }
 
 /**
@@ -44,16 +88,22 @@ export async function hydratePressureScripts(rt: SessionRuntime, labSlug: string
   const backend = rt.backend();
   const privateObj = await rt.env.LABS_BUCKET.get(privateKey(labSlug, labVersion));
   if (!privateObj) throw new Error(`private bundle missing for ${labSlug}@${labVersion}`);
-  await backend.writeFile('/tmp/opalix-private.tgz', privateObj.body);
-  await runOrThrow(
-    rt,
-    [
-      'sh',
-      '-c',
-      "rm -rf /opt/lab && mkdir -m 700 -p /opt/lab && tar xzf /tmp/opalix-private.tgz -C /opt/lab --no-same-owner --wildcards 'pressure/*' 2>/dev/null; chown -R root:root /opt/lab && rm -f /tmp/opalix-private.tgz",
-    ],
-    'private bundle hydrate'
-  );
+  const archive = stagePath(`private-${crypto.randomUUID()}`);
+  await ensureStageDir(rt);
+  try {
+    await backend.writeFile(archive, privateObj.body);
+    await runOrThrow(
+      rt,
+      [
+        'sh',
+        '-c',
+        `${archiveGuard(archive)}; rm -rf /opt/lab && mkdir -m 700 -p /opt/lab && tar xzf ${archive} -C /opt/lab --no-same-owner --wildcards 'pressure/*' 2>/dev/null; chown -R root:root /opt/lab && rm -f ${archive}`,
+      ],
+      'private bundle hydrate'
+    );
+  } finally {
+    await removeStaged(rt, archive);
+  }
 }
 
 /**

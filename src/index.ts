@@ -2,6 +2,7 @@ import { createRouter } from './router';
 import type { Env } from './env';
 import { poolTarget } from './families/registry';
 import { poolStub } from './do/pool';
+import { resolvePoolTarget } from './lib/pool-schedule';
 import { deleteExpiredSnapshots, shouldSweepSnapshots } from './session/d1';
 
 // Re-export every Durable Object class so wrangler can wire up bindings.
@@ -28,7 +29,18 @@ export default {
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     for (const family of ['agent', 'gateway'] as const) {
       const stub = poolStub(env, family);
-      ctx.waitUntil(stub.initConfig(family, poolTarget(env, family)).then(() => stub.prime()));
+      // Time-of-day target (POOL_SCHEDULE_<FAMILY>, UTC); the static POOL_TARGET_<FAMILY> var is the fallback.
+      const schedule = family === 'agent' ? env.POOL_SCHEDULE_AGENT : env.POOL_SCHEDULE_GATEWAY;
+      const target = resolvePoolTarget(schedule, poolTarget(env, family), new Date(controller.scheduledTime));
+      ctx.waitUntil(
+        (async () => {
+          await stub.initConfig(family, target);
+          // prime() only ever grows the pool, so shrink it explicitly when the target dropped.
+          const { warm } = await stub.stats();
+          if (warm > target) await stub.drain(target);
+          await stub.prime();
+        })()
+      );
     }
 
     // Hourly: drop D1 snapshot rows past their TTL. R2 objects are expired by the bucket lifecycle rule (docs/runbooks/backups.md).

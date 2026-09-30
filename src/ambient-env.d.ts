@@ -22,5 +22,7 @@ declare namespace Cloudflare {
     R2_SECRET_ACCESS_KEY: string;
     /** Cloudflare API token with Workers AI access; injected into model calls by llmOutbound. */
   AI_GATEWAY_TOKEN: string;
+    /** Optional. Slack- or Discord-compatible webhook URL that receives pool degraded/recovered alerts. */
+    ALERT_WEBHOOK_URL?: string;
   }
 }

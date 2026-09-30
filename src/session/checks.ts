@@ -4,6 +4,7 @@ import { emitEvent } from './events';
 import { privateKey } from '../labs/bundle';
 import { newId } from '../lib/ids';
 import { insertCheckRun, bestEffort } from './d1';
+import { ensureStageDir, stagePath, archiveGuard, removeStaged } from './hydrate';
 
 /**
  * Runs the lab's checker scripts and returns structured, per-criterion
@@ -26,7 +27,7 @@ export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?
   emitEvent(rt, 'check.started', { run_id: runId, total: checksToRun.length });
 
   try {
-    await stageCheckScripts(rt, dir);
+    await stageCheckScripts(rt, dir, runId);
     const parallel = checksToRun.filter((c) => c.parallel);
     const sequential = checksToRun.filter((c) => !c.parallel);
 
@@ -63,38 +64,46 @@ export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?
 
 const STAGE_TIMEOUT_MS = 60_000;
 
-async function stageCheckScripts(rt: SessionRuntime, dir: string): Promise<void> {
+async function stageCheckScripts(rt: SessionRuntime, dir: string, runId: string): Promise<void> {
   const meta = await rt.requireMeta();
   const obj = await rt.env.LABS_BUCKET.get(privateKey(meta.lab_slug, meta.lab_version));
   if (!obj) throw new Error(`private bundle missing for ${meta.lab_slug}@${meta.lab_version}`);
   const backend = rt.backend();
-  await backend.writeFile('/tmp/opalix-checks-stage.tgz', obj.body);
-  // tar's stderr was discarded and its status was thrown away by the
-  // trailing `rm`, so the exit check below could never see a failed
-  // extraction: every grader would instead die with a bare "no such file"
-  // and nothing would say why. Keep tar's status, keep its stderr, and
-  // clean up either way.
-  const proc = await backend.exec([
-    'sh',
-    '-c',
-    `mkdir -m 700 -p ${dir} || exit 1
-tar xzf /tmp/opalix-checks-stage.tgz -C ${dir} --no-same-owner --wildcards 'checks/*'
+  const archive = stagePath(`checks-${runId}`);
+  await ensureStageDir(rt);
+  try {
+    await backend.writeFile(archive, obj.body);
+    // tar's stderr was discarded and its status was thrown away by the
+    // trailing `rm`, so the exit check below could never see a failed
+    // extraction: every grader would instead die with a bare "no such file"
+    // and nothing would say why. Keep tar's status, keep its stderr, and
+    // clean up either way. The archive sits in a root-only directory and
+    // is refused unless root-owned (exit 97), so the learner cannot swap it.
+    const proc = await backend.exec([
+      'sh',
+      '-c',
+      `${archiveGuard(archive)} || exit $?
+mkdir -m 700 -p ${dir} || exit 1
+tar xzf ${archive} -C ${dir} --no-same-owner --wildcards 'checks/*'
 status=$?
-rm -f /tmp/opalix-checks-stage.tgz
+rm -f ${archive}
 chown -R root:root ${dir}
 chmod 700 ${dir}
 exit $status`,
-  ]);
-  // Bounded, unlike every other output() call here: a wedged tar would
-  // otherwise hang the whole check run with no deadline at all. utf8 so the
-  // failure message below is text rather than a byte array.
-  const out = await proc.output({ encoding: 'utf8', timeout: STAGE_TIMEOUT_MS });
-  if (out.exitCode !== 0) {
-    const why = (out.stderr || out.stdout || '').trim().slice(-400);
-    throw new Error(
-      `failed to stage check scripts (exit ${out.exitCode})${why ? `: ${why}` : ''}. ` +
-        `The lab's private bundle must contain a checks/ directory.`
-    );
+    ]);
+    // Bounded, unlike every other output() call here: a wedged tar would
+    // otherwise hang the whole check run with no deadline at all. utf8 so the
+    // failure message below is text rather than a byte array.
+    const out = await proc.output({ encoding: 'utf8', timeout: STAGE_TIMEOUT_MS });
+    if (out.exitCode !== 0) {
+      const why = (out.stderr || out.stdout || '').trim().slice(-400);
+      throw new Error(
+        `failed to stage check scripts (exit ${out.exitCode})${why ? `: ${why}` : ''}. ` +
+          `The lab's private bundle must contain a checks/ directory.`
+      );
+    }
+  } finally {
+    await removeStaged(rt, archive);
   }
 }
 

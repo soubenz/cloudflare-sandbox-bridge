@@ -7,6 +7,12 @@
 # Worker and mirror host so this is a belt-and-braces step, not load-bearing.
 set -euo pipefail
 
+# Root-only staging area for archives the Session DO writes and then
+# extracts (see src/session/hydrate.ts). Never the world-writable temp dir:
+# the learner can write there and could swap an archive between the
+# Worker's writeFile and its extract exec.
+mkdir -p /run/opalix/stage && chmod 0700 /run/opalix && chmod 0700 /run/opalix/stage && chown root:root /run/opalix /run/opalix/stage
+
 CA_SRC=/etc/cloudflare/certs/cloudflare-containers-ca.crt
 if [ -f "$CA_SRC" ]; then
   cp "$CA_SRC" /usr/local/share/ca-certificates/opalix-outbound-ca.crt

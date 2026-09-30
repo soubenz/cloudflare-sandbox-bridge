@@ -36,12 +36,30 @@ export async function insertSession(env: Env, meta: SessionMeta): Promise<void> 
     .run();
 }
 
-export async function updateSession(env: Env, meta: SessionMeta): Promise<void> {
+/** Final cost of a session, written to D1 when it ends (columns added in migration 0005). */
+export interface SessionCostRow {
+  cost_usd: number;
+  llm_usd: number;
+  running_s: number;
+}
+
+export async function updateSession(env: Env, meta: SessionMeta, cost?: SessionCostRow): Promise<void> {
+  const base = [meta.state, meta.sandbox_id ?? null, meta.started_at ?? null, meta.expires_at ?? null, meta.ended_at ?? null, meta.end_reason ?? null, meta.resumed_count];
+  if (!cost) {
+    await env.DB.prepare(
+      `UPDATE sessions SET state = ?, sandbox_id = ?, started_at = ?, expires_at = ?, ended_at = ?, end_reason = ?, resumed_count = ?
+       WHERE id = ?`
+    )
+      .bind(...base, meta.id)
+      .run();
+    return;
+  }
   await env.DB.prepare(
-    `UPDATE sessions SET state = ?, sandbox_id = ?, started_at = ?, expires_at = ?, ended_at = ?, end_reason = ?, resumed_count = ?
+    `UPDATE sessions SET state = ?, sandbox_id = ?, started_at = ?, expires_at = ?, ended_at = ?, end_reason = ?, resumed_count = ?,
+       cost_usd = ?, llm_usd = ?, running_s = ?
      WHERE id = ?`
   )
-    .bind(meta.state, meta.sandbox_id ?? null, meta.started_at ?? null, meta.expires_at ?? null, meta.ended_at ?? null, meta.end_reason ?? null, meta.resumed_count, meta.id)
+    .bind(...base, cost.cost_usd, cost.llm_usd, cost.running_s, meta.id)
     .run();
 }
 

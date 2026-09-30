@@ -1,0 +1,39 @@
+# Opalix gateway image -- /opt/opalix/venvs/see-why-a-document-matched (Python 3.10.12).
+# Captured 30 Sep 2026 from the deployed gateway image. Source: `/opt/opalix/venvs/see-why-a-document-matched/bin/pip freeze` of the running gateway image.
+# Every version below is what was actually running, transitive dependencies included,
+# so an image build reproduces the deployed environment.
+# Installed with `pip install --no-cache-dir -r`. No hashes on purpose: --require-hashes
+# needs a download pass over every wheel. To bump, re-freeze a scratch build and replace this file.
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+click==8.5.0
+exceptiongroup==1.3.1
+fastapi==0.142.1
+googleapis-common-protos==1.75.5
+h11==0.16.0
+httptools==0.8.0
+idna==3.20
+openinference-semantic-conventions==0.1.39
+opentelemetry-api==1.45.0
+opentelemetry-exporter-http-transport==0.66b0
+opentelemetry-exporter-otlp-common==0.66b0
+opentelemetry-exporter-otlp-proto-common==1.45.0
+opentelemetry-exporter-otlp-proto-http==1.45.0
+opentelemetry-proto==1.45.0
+opentelemetry-sdk==1.45.0
+opentelemetry-semantic-conventions==0.66b0
+protobuf==7.36.2
+psycopg2-binary==2.9.13
+pydantic==2.13.5
+pydantic_core==2.46.5
+python-dotenv==1.2.3
+PyYAML==6.0.3
+starlette==1.7.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+urllib3==2.8.0
+uvicorn[standard]==0.54.0
+uvloop==0.22.1
+watchfiles==1.3.0
+websockets==16.1.1

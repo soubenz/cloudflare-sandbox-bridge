@@ -11,7 +11,9 @@ Two credential kinds:
   `POST /labs/publish`, `POST /pools/:family/prime`, `POST /pools/:family/drain`,
   `/users/*`, and `POST /sessions/{id}/events`. The read-only catalogue and
   pool routes (`GET /labs`, `GET /labs/:slug`, `GET /pools`,
-  `GET /pools/:family`) require it too. **No route is open.** There was once
+  `GET /pools/:family`), `GET /usage` and `GET /health?deep=1` require it
+  too. Only plain `GET /health` is open (it returns nothing but `{ ok: true }`).
+  **No other route is open.** There was once
   a var that opened several of them so the console could work without a
   credential; the console now has a server side that holds the key, so the
   var and the route it guarded are gone.
@@ -46,10 +48,12 @@ minutes are usable now.
 | Method | Path | Auth | Notes |
 |---|---|---|---|
 | GET | `/health` | none | liveness → `{ ok: true }` |
+| GET | `/health?deep=1` | service | probes D1, R2 (`labs/index.json`) and both pools → `200 { ok: true, checks: { d1, r2, pools: { agent: { degraded, warm }, gateway } } }`, or `503 { ok: false, failing: [...], checks }` naming what failed; a degraded pool counts as failing³ |
+| GET | `/usage?from=&to=` | service | estimated container spend per family from D1 sessions (epoch ms; default last 30 days) → `{ from, to, by_family: { agent: { hours, usd, sessions }, gateway }, total_usd }`; see `docs/runbooks/cost.md` |
 | GET | `/labs` | service¹ | catalogue → `[{ slug, version, title, type, family }]` |
 | GET | `/labs/:slug` | service¹ | current version + manifest → `{ version, manifest }` |
 | POST | `/labs/publish` | service | multipart: `manifest`, `workspace`, `private` files → `201 { slug, version }` |
-| GET | `/pools`, `/pools/:family` | service¹ | warm pool stats → `{ warm, claimed, config, stats }` |
+| GET | `/pools`, `/pools/:family` | service¹ | warm pool stats → `{ warm, claimed, config, stats }`; `stats` includes `consecutive_start_failures`, `degraded`, and `last_start_error` / `last_start_error_at` when a start has failed |
 | POST | `/pools/:family/prime` | service | `{ target? }` → `{ ok: true }`; only ever grows the pool |
 | POST | `/pools/:family/drain` | service | destroys every warm container; claimed ones are untouched → `{ ok: true }` |
 | POST | `/sessions` | service | `{ lab, user_id }` → `202 { id, state, token, urls }` |
@@ -71,6 +75,13 @@ minutes are usable now.
 
 ¹ Service key required. Nothing opens these.
 
+³ A pool is `degraded` once its target is above 0, it has no warm containers,
+and three consecutive container starts have failed. The Pool posts a JSON
+body `{ text, content }` (Slack reads `text`, Discord reads `content`) to the
+optional `ALERT_WEBHOOK_URL` secret when it becomes degraded, and again when
+the next start succeeds. `.github/workflows/probe.yml` calls
+`/health?deep=1` from outside Cloudflare every ten minutes.
+
 ² `POST /sessions` and `POST /sessions/start` differ only in what they do
 about a conflict. `POST /sessions` is a strict create: a second live session
 for the same `user_id` is a `409`, which is what the CLI and the integration
@@ -86,6 +97,28 @@ name to its proxy URL. Only services with `ui: true` appear in that map.
 reports — `cost`, `llm.call` and `alert`. Any other value is rejected with
 `400 unknown_event_type`. An `llm.call` whose `data.cost_usd` is a number is
 added to the session's running LLM spend.
+
+## Pool schedule
+
+`POOL_TARGET_<FAMILY>` is a fixed warm-container count. To vary it by time of
+day, set the optional `POOL_SCHEDULE_AGENT` / `POOL_SCHEDULE_GATEWAY` var. The
+cron (every 5 minutes) evaluates it at the cron's scheduled time, in **UTC**,
+and passes the result to the pool; when the target drops below the number of
+warm containers, the surplus is destroyed (oldest first), not left running.
+
+```
+"mon-fri 07-21=1; *=0"
+```
+
+Rules are separated by `;` and the first match wins. A rule is
+`<days> <HH-HH>=<target>` or `*=<target>`. Days are `*`, or a comma list of
+names and ranges (`mon-fri`, `sat,sun`, `mon,wed-fri`). Hours are `[start,
+end)`, 0-24, with start below end (no overnight windows; write two rules on
+adjacent days). The example keeps one warm container from 07:00 to 20:59 UTC
+on weekdays and none otherwise. If the var is unset or empty, or does not
+parse (logged once), or no rule matches, `POOL_TARGET_<FAMILY>` applies.
+A manual `POST /pools/:family/prime { target }` is overwritten at the next
+cron tick either way.
 
 ## Errors
 
@@ -105,6 +138,8 @@ the RPC boundary.
 | 403 | `not_exposed` | service proxy for a service with `ui: false` |
 | 404 | `not_found` | an unknown DO sub-route; SDK not-found errors |
 | 404 | `lab_not_found` | no published lab with that slug |
+| 400 | `bad_window` | `GET /usage` with a `from`/`to` that is not a non-negative number, or `from >= to` |
+| 400 | `bad_path` | a `/files` path that is not under `/workspace` — lexically, after `realpath` resolution (symlinks included), or because `learner` cannot access it |
 | 404 | `unknown_family` | a `/pools/:family` path that is not `agent` or `gateway` |
 | 404 | `unknown_service` | restart or proxy for a service not in the lab |
 | 409 | `active_session_exists` | the user already has a live session (the D1 unique index) |

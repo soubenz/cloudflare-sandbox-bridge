@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from './env';
 import { isFamily } from './families/registry';
-import { loadCurrentManifest, loadCatalogue, publishLab } from './labs/bundle';
+import { loadCurrentManifest, loadCatalogue, publishLab, INDEX_KEY } from './labs/bundle';
 import { parseManifest } from './labs/manifest';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
@@ -10,6 +10,7 @@ import { insertSession } from './session/d1';
 import { poolStub } from './do/pool';
 import { newId } from './lib/ids';
 import { corsMiddleware } from './cors';
+import { queryUsage, resolveWindow } from './session/usage';
 
 export function createRouter(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
@@ -22,7 +23,15 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     return apiErr.toResponse();
   });
 
-  app.get('/health', (c) => c.json({ ok: true }));
+  // Plain GET /health is public liveness. `?deep=1` exercises D1, R2 and the
+  // pools, which is what an external probe wants; it costs real reads and
+  // reveals pool state, so it takes the service key.
+  app.get('/health', async (c) => {
+    if (c.req.query('deep') !== '1') return c.json({ ok: true });
+    requireServiceAuth(c.req.raw, c.env);
+    const { body, status } = await deepHealth(c.env);
+    return c.json(body, status);
+  });
 
   // --- Labs catalogue (service auth; the app backend proxies this to learners) ---
 
@@ -89,6 +98,14 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     if (!isFamily(family)) throw ApiError.notFound('unknown_family', `No family "${family}"`);
     await poolStub(c.env, family).drain();
     return c.json({ ok: true });
+  });
+
+  // --- Usage / spend estimate (service auth) ---
+
+  app.get('/usage', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const window = resolveWindow(c.req.query('from'), c.req.query('to'), Date.now());
+    return c.json(await queryUsage(c.env, window));
   });
 
   // --- Sessions ---
@@ -262,6 +279,52 @@ export function createRouter(): Hono<{ Bindings: Env }> {
   });
 
   return app;
+}
+
+type CheckResult = 'ok' | string;
+
+/** Runs one health check, reporting `ok` or the error message rather than throwing. */
+async function check(fn: () => Promise<unknown>): Promise<CheckResult> {
+  try {
+    await fn();
+    return 'ok';
+  } catch (err) {
+    return `fail: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+/** Body and status for GET /health?deep=1: D1, R2 and both pools. Any failing check makes it a 503 that names the check. */
+async function deepHealth(env: Env) {
+  const poolFamilies = ['agent', 'gateway'] as const;
+  const pools: Record<string, { degraded: boolean; warm: number } | { error: string }> = {};
+  const [d1, r2] = await Promise.all([
+    check(() => env.DB.prepare('SELECT 1').first()),
+    check(async () => {
+      // head() resolves null for a missing key rather than throwing.
+      if (!(await env.LABS_BUCKET.head(INDEX_KEY))) throw new Error(`${INDEX_KEY} not found`);
+    }),
+    ...poolFamilies.map(async (f) => {
+      try {
+        const s = await poolStub(env, f).stats();
+        pools[f] = { degraded: s.stats.degraded, warm: s.warm };
+      } catch (err) {
+        pools[f] = { error: err instanceof Error ? err.message : String(err) };
+      }
+    }),
+  ]);
+  const failing = [
+    ...(d1 === 'ok' ? [] : ['d1']),
+    ...(r2 === 'ok' ? [] : ['r2']),
+    ...poolFamilies.flatMap((f) => {
+      const p = pools[f]!;
+      return 'error' in p ? [`pools.${f}`] : p.degraded ? [`pools.${f} (degraded)`] : [];
+    }),
+  ];
+  const ok = failing.length === 0;
+  return {
+    status: ok ? (200 as const) : (503 as const),
+    body: { ok, ...(ok ? {} : { failing }), checks: { d1, r2, pools } },
+  };
 }
 
 /** Shared by POST /sessions and the dev endpoint; the only difference between them is who may call. */

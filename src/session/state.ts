@@ -24,6 +24,10 @@ export interface SessionMeta {
   ended_at?: number;
   end_reason?: EndReason;
   resumed_count: number;
+  /** When the current `recovering` spell began; cleared on success or failure. Lets the health tick end a recovery that never finishes. */
+  recovering_since?: number;
+  /** Consecutive failed recover() runs since the last success. */
+  recover_failures?: number;
   /**
    * Hash of the address that opened the session, for the dev route's
    * per-address cap. Never shown, never reversed, and absent for sessions
@@ -105,6 +109,8 @@ export interface CostState {
   running_s: number;
   usd: number;
   llm_usd: number;
+  /** Compute time up to this instant (ms) is already in `running_s`. Set on each metrics tick and at resume, so the ended gap is never billed. */
+  accounted_until?: number;
 }
 
 const KEYS = {

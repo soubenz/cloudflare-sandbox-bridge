@@ -3,6 +3,9 @@ import type { Env, Family } from '../env';
 import { cloudflareBackend } from '../session/backend';
 import { newId } from '../lib/ids';
 import { isFamily } from '../families/registry';
+import { degradedTransition, degradedMessage, recoveredMessage, postAlert } from '../lib/pool-health';
+
+export { degradedTransition };
 
 interface WarmEntry {
   sandbox_id: string;
@@ -31,6 +34,13 @@ interface PoolStats {
   start_ms_total: number;
   failures: number;
   capacity_backoff_until: number;
+  /** Message of the most recent failed refill start. */
+  last_start_error?: string;
+  last_start_error_at?: number;
+  /** Failed refill starts since the last successful one. */
+  consecutive_start_failures: number;
+  /** True once the pool has had no warm containers and 3+ consecutive failed starts; cleared by the next successful start. */
+  degraded: boolean;
 }
 
 const REFILL_INTERVAL_MS = 30_000;
@@ -53,7 +63,12 @@ const defaultStats = (): PoolStats => ({
   start_ms_total: 0,
   failures: 0,
   capacity_backoff_until: 0,
+  consecutive_start_failures: 0,
+  degraded: false,
 });
+
+/** Stored stats from before the degraded fields existed lack them; fill the gaps. */
+const withDefaults = (stats: Partial<PoolStats> | undefined): PoolStats => ({ ...defaultStats(), ...stats });
 
 /**
  * One Pool DO per lab family (`env.POOL.idFromName(family)`). Keeps a small
@@ -117,7 +132,7 @@ export class Pool extends DurableObject<Env> {
     await this.ctx.storage.put('claimed', claimed);
   }
   private async bumpStats(patch: Partial<PoolStats>): Promise<void> {
-    const stats = (await this.ctx.storage.get<PoolStats>('stats')) ?? defaultStats();
+    const stats = withDefaults(await this.ctx.storage.get<PoolStats>('stats'));
     await this.ctx.storage.put('stats', { ...stats, ...patch });
   }
 
@@ -126,7 +141,7 @@ export class Pool extends DurableObject<Env> {
     const config = await this.getConfig();
     const warm = await this.getWarm();
     const claimed = await this.getClaimed();
-    const stats = (await this.ctx.storage.get<PoolStats>('stats')) ?? defaultStats();
+    const stats = withDefaults(await this.ctx.storage.get<PoolStats>('stats'));
 
     const entry = warm.shift();
     await this.setWarm(warm);
@@ -157,7 +172,7 @@ export class Pool extends DurableObject<Env> {
       this.getClaimed(),
       this.ctx.storage.get<PoolStats>('stats'),
     ]);
-    return { warm: warm.length, claimed: Object.keys(claimed).length, config, stats: stats ?? defaultStats() };
+    return { warm: warm.length, claimed: Object.keys(claimed).length, config, stats: withDefaults(stats) };
   }
 
   async prime(target?: number): Promise<void> {
@@ -166,12 +181,18 @@ export class Pool extends DurableObject<Env> {
     await this.alarm();
   }
 
-  /** Destroys every warm (unassigned) container. Claimed containers are left untouched. */
-  async drain(): Promise<void> {
+  /**
+   * Destroys warm (unassigned) containers. With no argument, every one; with
+   * `keep`, only the surplus above `keep`, oldest first (they are the closest
+   * to being recycled anyway). Claimed containers are left untouched.
+   */
+  async drain(keep = 0): Promise<void> {
     const warm = await this.getWarm();
-    await this.setWarm([]);
+    const kept = Math.max(0, Math.floor(keep));
+    const surplus = warm.length > kept ? warm.slice(0, warm.length - kept) : [];
+    await this.setWarm(warm.slice(surplus.length));
     const config = await this.getConfig();
-    await Promise.allSettled(warm.map((w) => cloudflareBackend(this.env, config.family, w.sandbox_id).destroy()));
+    await Promise.allSettled(surplus.map((w) => cloudflareBackend(this.env, config.family, w.sandbox_id).destroy()));
   }
 
   private async scheduleAlarm(delayMs = REFILL_INTERVAL_MS): Promise<void> {
@@ -183,7 +204,7 @@ export class Pool extends DurableObject<Env> {
   async alarm(): Promise<void> {
     const config = await this.getConfig();
     const now = Date.now();
-    const stats = (await this.ctx.storage.get<PoolStats>('stats')) ?? defaultStats();
+    const stats = withDefaults(await this.ctx.storage.get<PoolStats>('stats'));
 
     // 1. Ping warm containers older than ping_every_s; drop and destroy
     //    failures, and recycle any that have outlived MAX_WARM_AGE_MS.
@@ -223,27 +244,54 @@ export class Pool extends DurableObject<Env> {
       let started = 0;
       let startMs = 0;
       let capacityHit = false;
+      const fresh = withDefaults(await this.ctx.storage.get<PoolStats>('stats'));
+      let consecutive = fresh.consecutive_start_failures;
+      let lastError = fresh.last_start_error;
+      let lastErrorAt = fresh.last_start_error_at;
       for (const r of results) {
         if (r.status === 'fulfilled') {
           warm.push(r.value);
           started += 1;
           startMs += r.value.ready_at - r.value.created_at;
+          consecutive = 0;
         } else {
-          const name = (r.reason as { name?: string } | undefined)?.name;
+          const reason = r.reason as { name?: string; message?: string } | undefined;
+          consecutive += 1;
+          lastError = reason?.message ? `${reason.name ?? 'Error'}: ${reason.message}` : String(r.reason);
+          lastErrorAt = Date.now();
           // Only a genuine capacity signal backs the pool off. Matching
           // any ApiError hid permanent failures (a bad image, a 500)
           // behind a 5-minute "try again later".
-          if (name === 'ApiError:503:container_unavailable') capacityHit = true;
+          if (reason?.name === 'ApiError:503:container_unavailable') capacityHit = true;
         }
       }
-      const updatedStats = (await this.ctx.storage.get<PoolStats>('stats')) ?? defaultStats();
       await this.bumpStats({
-        starts: updatedStats.starts + started,
-        start_ms_total: updatedStats.start_ms_total + startMs,
-        capacity_backoff_until: capacityHit ? now + 5 * 60_000 : updatedStats.capacity_backoff_until,
+        starts: fresh.starts + started,
+        start_ms_total: fresh.start_ms_total + startMs,
+        capacity_backoff_until: capacityHit ? now + 5 * 60_000 : fresh.capacity_backoff_until,
+        consecutive_start_failures: consecutive,
+        last_start_error: lastError,
+        last_start_error_at: lastErrorAt,
       });
     }
     await this.setWarm(warm);
+
+    // 2b. Degraded flag: tell the operator once when the pool cannot start
+    //     containers at all, and once when it can again.
+    const health = withDefaults(await this.ctx.storage.get<PoolStats>('stats'));
+    const transition = degradedTransition({
+      degraded: health.degraded,
+      target: config.target,
+      warm: warm.length,
+      failures: health.consecutive_start_failures,
+    });
+    if (transition === 'degrade') {
+      await this.bumpStats({ degraded: true });
+      await postAlert(this.env.ALERT_WEBHOOK_URL, degradedMessage(config.family, health.last_start_error));
+    } else if (transition === 'recover') {
+      await this.bumpStats({ degraded: false });
+      await postAlert(this.env.ALERT_WEBHOOK_URL, recoveredMessage(config.family));
+    }
 
     // 3. Reap claimed entries no one ever released (orphaned sessions).
     const claimed = await this.getClaimed();

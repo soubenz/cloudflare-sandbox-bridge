@@ -11,7 +11,6 @@
     "dev:dashboard": "npm run build:dashboard && wrangler dev --config dashboard/wrangler.jsonc --port 8788",
     "dev:site": "wrangler dev --config site/wrangler.jsonc --port 8789",
     "deploy:site": "wrangler deploy --config site/wrangler.jsonc",
-    "deploy:staging": "wrangler deploy --env staging --containers-rollout=immediate",
     "types": "wrangler types",
     "typecheck": "npm run types && tsc --noEmit",
     "test": "vitest run",
@@ -21,7 +20,6 @@
     "test:e2e:headed": "playwright test --headed",
     "opalix": "tsx cli/src/index.ts",
     "d1:migrate": "wrangler d1 migrations apply opalix --remote",
-    "d1:migrate:staging": "wrangler d1 migrations apply opalix --env staging --remote",
     "lab:publish": "tsx cli/src/index.ts labs publish",
     "typecheck:cli": "tsc --noEmit -p cli/tsconfig.json",
     "typecheck:all": "npm run typecheck && npm run typecheck:cli"
@@ -56,6 +54,7 @@
     "codemirror": "^6.0.2",
     "commander": "^13.0.0",
     "esbuild": "^0.28.2",
+    "jsonc-parser": "^3.3.1",
     "playwright": "^1.63.0",
     "tsx": "^4.19.2",
     "typescript": "^5.9.3",

@@ -1,7 +1,7 @@
 import type { Family } from '../env';
 import type { LabManifest } from '../labs/manifest';
 import { renderManifest } from '../labs/manifest';
-import type { SessionRuntime, SessionMeta, SnapshotEntry } from './state';
+import type { SessionRuntime, SessionMeta, SnapshotEntry, TimerKind } from './state';
 import { emitEvent, hasActiveEventClients } from './events';
 import { BASE_ALLOWED_HOSTS } from '../families/egress';
 import { scheduleTimer, cancelTimersOfKind, cancelTimersExcept, popDueTimers, rearmAlarm } from './timers';
@@ -33,6 +33,20 @@ const HEALTH_INTERVAL_IDLE_MS = 60_000;
 const METRICS_INTERVAL_MS = 30_000;
 const CLEANUP_AFTER_MS = 60 * 60_000;
 const PURGE_DEFAULT_AFTER_MS = 7 * 24 * 60 * 60_000;
+/** A session stuck in `recovering` this long is dead; the health tick ends it. */
+const RECOVERING_TIMEOUT_MS = 5 * 60_000;
+/** Consecutive failed recoveries after which the health tick gives up and ends the session. */
+const MAX_RECOVER_FAILURES = 3;
+
+/**
+ * Timers that re-arm themselves at the end of a successful run. handleAlarm
+ * pops a timer before running it, so one throw would otherwise end the chain
+ * for the rest of the session; the catch below re-arms these kinds.
+ */
+const RECURRING: Partial<Record<TimerKind, number>> = {
+  health: HEALTH_INTERVAL_IDLE_MS,
+  metrics: METRICS_INTERVAL_MS,
+};
 
 export interface CreateSessionInput {
   userId: string;
@@ -251,13 +265,40 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
       if (timer.kind === 'start' || timer.kind === 'resume') {
         await endSession(rt, 'error').catch(() => {});
       }
+      await rescheduleRecurring(rt, timer.kind).catch(() => {});
     }
   }
   await rearmAlarm(rt);
 }
 
+/**
+ * Re-arms a recurring timer whose handler threw. Skips when the session is
+ * over, and when a timer of that kind is already queued (the handler may have
+ * re-scheduled itself before it threw), so it can never double-schedule.
+ */
+async function rescheduleRecurring(rt: SessionRuntime, kind: TimerKind): Promise<void> {
+  const interval = RECURRING[kind];
+  if (interval === undefined) return;
+  if ((await rt.requireMeta()).state === 'ended') return;
+  if ((await rt.timers()).some((t) => t.kind === kind)) return;
+  await scheduleTimer(rt, kind, Date.now() + interval);
+}
+
 async function runHealthTick(rt: SessionRuntime): Promise<void> {
   const meta = await rt.requireMeta();
+  if (
+    (meta.state === 'recovering' && Date.now() - (meta.recovering_since ?? 0) > RECOVERING_TIMEOUT_MS) ||
+    (meta.recover_failures ?? 0) >= MAX_RECOVER_FAILURES
+  ) {
+    await endSession(rt, 'error');
+    return;
+  }
+  if (meta.state === 'recovering') {
+    // Not stale yet. Keep polling, otherwise nothing would ever notice a
+    // recovery that never finishes (this early return does not re-arm).
+    await scheduleTimer(rt, 'health', Date.now() + HEALTH_INTERVAL_IDLE_MS);
+    return;
+  }
   if (meta.state !== 'running') return;
 
   if (await allServicesGone(rt)) {
@@ -280,50 +321,63 @@ async function runHealthTick(rt: SessionRuntime): Promise<void> {
 export async function recover(rt: SessionRuntime, reason: string): Promise<void> {
   const meta = await rt.requireMeta();
   if (meta.state === 'recovering') return;
-  await rt.patchMeta({ state: 'recovering' });
-  emitEvent(rt, 'container.restarted', { reason });
+  await rt.patchMeta({ state: 'recovering', recovering_since: Date.now() });
+  try {
+    emitEvent(rt, 'container.restarted', { reason });
 
-  await rt.backend().ensureRunning();
+    await rt.backend().ensureRunning();
 
-  const snapshots = await rt.snapshots();
-  const manifest = await rt.requireManifest();
-  if (snapshots[0]) {
-    await rt.backend().restoreBackup({ id: snapshots[0].backup_id, dir: snapshots[0].dir });
-    await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
-  } else if (await workspaceSurvived(rt)) {
-    // The container was replaced, but /workspace still has files in it, so
-    // the filesystem did not go with it — re-hydrating here would overwrite
-    // the learner's work with the published bundle and call it recovery.
-    // Second line of defence behind allServicesGone's port probe: a restart
-    // that lost nothing must not be "recovered" into one that lost
-    // everything.
-    emitEvent(rt, 'alert', {
-      kind: 'recover_workspace_kept',
-      message: 'Container was replaced but the workspace survived; leaving your files untouched.',
+    const snapshots = await rt.snapshots();
+    const manifest = await rt.requireManifest();
+    if (snapshots[0]) {
+      await rt.backend().restoreBackup({ id: snapshots[0].backup_id, dir: snapshots[0].dir });
+      await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
+    } else if (await workspaceSurvived(rt)) {
+      // The container was replaced, but /workspace still has files in it, so
+      // the filesystem did not go with it — re-hydrating here would overwrite
+      // the learner's work with the published bundle and call it recovery.
+      // Second line of defence behind allServicesGone's port probe: a restart
+      // that lost nothing must not be "recovered" into one that lost
+      // everything.
+      emitEvent(rt, 'alert', {
+        kind: 'recover_workspace_kept',
+        message: 'Container was replaced but the workspace survived; leaving your files untouched.',
+      });
+      await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
+    } else {
+      emitEvent(rt, 'alert', { kind: 'recover_no_snapshot', message: 'No snapshot to restore; progress since session start was lost.' });
+      await hydrateWorkspaceFiles(rt, meta.lab_slug, meta.lab_version);
+      await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
+    }
+
+    const llmToken = await mintLlmToken(rt.env, rt.sessionId);
+    await applySessionEnv(rt, {
+      OPALIX_SESSION_ID: rt.sessionId,
+      OPALIX_SESSION_TOKEN: llmToken,
+      OPALIX_BASE_URL: rt.env.PUBLIC_BASE_URL,
+      LLM_BASE_URL: llmBaseUrl(rt.env),
+      LLM_MODEL: rt.env.LLM_MODEL,
+      ...manifest.env,
     });
-    await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
-  } else {
-    emitEvent(rt, 'alert', { kind: 'recover_no_snapshot', message: 'No snapshot to restore; progress since session start was lost.' });
-    await hydrateWorkspaceFiles(rt, meta.lab_slug, meta.lab_version);
-    await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
+
+    await applyEgressAllowlist(rt, manifest);
+    await relaunchAllServices(rt);
+    await resetTerminal(rt);
+
+    await rt.patchMeta({ state: 'running', recovering_since: undefined, recover_failures: undefined });
+    emitEvent(rt, 'session.state', { state: 'running', recovered: true });
+  } catch (err) {
+    // Never leave the session in `recovering`: the health tick skips it, and
+    // recover() refuses to re-enter it, so a throw here used to wedge the
+    // session until DELETE. Go back to `running` so the next health tick
+    // retries; runHealthTick ends the session after repeated failures.
+    emitEvent(rt, 'alert', { kind: 'recover_failed', error: String(err) });
+    await rt.patchMeta({
+      state: 'running',
+      recovering_since: undefined,
+      recover_failures: (meta.recover_failures ?? 0) + 1,
+    });
   }
-
-  const llmToken = await mintLlmToken(rt.env, rt.sessionId);
-  await applySessionEnv(rt, {
-    OPALIX_SESSION_ID: rt.sessionId,
-    OPALIX_SESSION_TOKEN: llmToken,
-    OPALIX_BASE_URL: rt.env.PUBLIC_BASE_URL,
-    LLM_BASE_URL: llmBaseUrl(rt.env),
-    LLM_MODEL: rt.env.LLM_MODEL,
-    ...manifest.env,
-  });
-
-  await applyEgressAllowlist(rt, manifest);
-  await relaunchAllServices(rt);
-  await resetTerminal(rt);
-
-  await rt.patchMeta({ state: 'running' });
-  emitEvent(rt, 'session.state', { state: 'running', recovered: true });
 }
 
 /**
@@ -431,6 +485,9 @@ async function runResume(rt: SessionRuntime): Promise<void> {
 
   const now = Date.now();
   const expiresAt = now + manifest.timeout_minutes * 60_000;
+  // running_s / usd carry over from before the end; only the accounting
+  // cursor moves, so the time the session spent ended is not billed.
+  await rt.putCost({ ...(await rt.cost()), accounted_until: now });
   const next = await rt.patchMeta({
     state: 'running',
     started_at: now,
@@ -465,6 +522,13 @@ export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reas
   const meta = await rt.requireMeta();
   if (meta.state === 'ended') return; // idempotent
 
+  // Last tick, so the cost D1 records is not up to a metrics interval stale.
+  // Only a session that was actually running has time left to account for,
+  // and this must never stop the session from ending.
+  if (meta.state === 'running' || meta.state === 'recovering') {
+    await tickMetrics(rt).catch((err) => emitEvent(rt, 'alert', { kind: 'final_metrics_failed', error: String(err) }));
+  }
+
   if (snapshot && meta.sandbox_id && (meta.state === 'running' || meta.state === 'recovering')) {
     await snapshotNow(rt, reason === 'user' ? 'user' : reason).catch((err) =>
       emitEvent(rt, 'alert', { kind: 'snapshot_on_end_failed', error: String(err) })
@@ -496,7 +560,15 @@ export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reas
   await cancelTimersExcept(rt, 'cleanup');
   await scheduleTimer(rt, 'cleanup', now + CLEANUP_AFTER_MS);
 
-  bestEffort(updateSession(rt.env, next), 'updateSession(ended)');
+  const finalCost = await rt.cost().catch(() => undefined);
+  bestEffort(
+    updateSession(
+      rt.env,
+      next,
+      finalCost && { cost_usd: finalCost.usd, llm_usd: finalCost.llm_usd, running_s: Math.round(finalCost.running_s) }
+    ),
+    'updateSession(ended)'
+  );
   emitEvent(rt, 'session.state', { state: 'ended', reason });
 }
 

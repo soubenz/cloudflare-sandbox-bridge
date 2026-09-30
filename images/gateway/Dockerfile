@@ -7,14 +7,27 @@
 # package or a plain GitHub release this Dockerfile can just curl (unlike
 # Jaeger/otelcol-contrib below) — pulled here as a separate build stage and
 # copied out, proven against real Qdrant 1.19.1 in the Module 3 feasibility
-# investigation (scratchpad retrieval-inv/FINDINGS.md).
-FROM qdrant/qdrant:v1.19.1 AS qdrant-src
+# investigation (scratchpad retrieval-inv/FINDINGS.md). Pinned by digest too
+# (the multi-arch index digest of v1.19.1 on Docker Hub, 30 Sep 2026): a tag
+# can be re-pushed, a digest cannot.
+#
+# Everything in this image is pinned to what the deployed image was actually
+# running (captured live 30 Sep 2026): the base tag, the apt versions that
+# matter, the sha256 of every downloaded binary, and every Python package via
+# the requirements-*.txt files next to this Dockerfile (full `pip freeze`
+# output, transitive dependencies included). To move any of it forward,
+# change it here on purpose; nothing floats on a rebuild any more.
+FROM qdrant/qdrant:v1.19.1@sha256:12364fe851b9f17356fc88189fc06d1b521262e04659ec7345975b00c9246a10 AS qdrant-src
 
-# `next` is the floating preview tag matching package.json's
-# @cloudflare/sandbox dependency ("next") — see images/agent/Dockerfile's
-# comment for why this floats rather than pins, and the same 23 Sep 2026
+# 0.13.0-next.776.1 is what the floating `next` tag pointed at when the
+# deployed image was built (SANDBOX_VERSION=0.13.0-next.776.1 is baked into it;
+# same digest as `next` on Docker Hub, 30 Sep 2026). package.json's
+# @cloudflare/sandbox dependency is still the `next` tag, which
+# package-lock.json resolved to 0.13.0-next.769.1 -- the tag drifted between
+# the two; pin package.json to 0.13.0-next.776.1 too so the SDK and the
+# container agree. See images/agent/Dockerfile's comment for the 23 Sep 2026
 # correction (a guessed "0.13.0-next" tag never existed).
-FROM docker.io/cloudflare/sandbox:next
+FROM docker.io/cloudflare/sandbox:0.13.0-next.776.1
 
 # musl: the Grafana .deb below depends on it — see images/agent/Dockerfile's
 # comment for why it's installed here, before apt's lists are dropped,
@@ -57,16 +70,33 @@ RUN for attempt in 1 2 3; do \
 # only entered Ubuntu's own archive at noble (24.04). The PGDG apt repo is
 # the only real path for a package matching this image's PG14, and it has
 # one: postgresql-14-pgvector 0.8.6-1.pgdg22.04+2 (confirmed against PGDG's
-# own published jammy-pgdg package index). CREATE EXTENSION vector, both
+# own published jammy-pgdg package index). Installed at the exact PGDG
+# builds that were running: postgresql-14=14.24-1.pgdg22.04+2 (pgvector's
+# dependency pulls the server up from Ubuntu's build to this one, so it is
+# named here rather than left to that side effect) and
+# postgresql-14-pgvector=0.8.6-1.pgdg22.04+2. PGDG keeps only recent builds
+# in its index, so a future rebuild that can no longer find one of these
+# fails loudly at the apt-get install: bump it on purpose then.
+#
+# The signing key is checked by fingerprint (B97B 0AFC AA1A 47F0 44F2 44A0
+# 7FCC 7D46 ACCC 4CF8, the PostgreSQL Debian Repository key), on the armored
+# download and again on the dearmored keyring, before it is trusted.
+# `--with-colons` because gpg's human-readable output spaces the fingerprint
+# out in groups of four. CREATE EXTENSION vector, both
 # distance operators, and both IVFFlat and HNSW indexes were all proven
 # live against a real PG14 in the Module 3 feasibility investigation
 # (scratchpad retrieval-inv/FINDINGS.md); build-pg-template.sh below
 # re-proves CREATE EXTENSION at image build time against this image's own
 # Postgres, not just the investigation's.
-RUN curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
+RUN curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /tmp/pgdg.asc \
+    && gpg --show-keys --with-colons --fingerprint /tmp/pgdg.asc | grep -q '^fpr:::::::::B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:$' \
+    && gpg --dearmor -o /usr/share/keyrings/pgdg.gpg /tmp/pgdg.asc \
+    && gpg --show-keys --with-colons --fingerprint /usr/share/keyrings/pgdg.gpg | grep -q '^fpr:::::::::B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:$' \
+    && rm -f /tmp/pgdg.asc \
     && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt jammy-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update -o Acquire::Retries=3 \
-    && apt-get install -y --no-install-recommends -o Acquire::Retries=3 postgresql-14-pgvector \
+    && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
+       postgresql-14=14.24-1.pgdg22.04+2 postgresql-14-pgvector=0.8.6-1.pgdg22.04+2 \
     && rm -rf /var/lib/apt/lists/* \
     && dpkg -l postgresql-14-pgvector | grep -q '^ii'
 
@@ -79,7 +109,11 @@ RUN printf 'set -g status off\nset -g history-limit 10000\nset -g mouse on\n' > 
 
 
 ARG GRAFANA_VERSION=11.4.0
+# sha256 of the 11.4.0 amd64 .deb (matches the checksum Grafana publishes on
+# its download page); bump it together with GRAFANA_VERSION. The same goes for
+# every other download below: a version bump means a new sha256 next to it.
 RUN curl -fsSL "https://dl.grafana.com/oss/release/grafana_${GRAFANA_VERSION}_amd64.deb" -o /tmp/grafana.deb \
+    && echo "4cff89724f4a06f53fc1187c6c2011206084baf13da6d443c2fb14b4ba272bb0  /tmp/grafana.deb" | sha256sum -c - \
     && dpkg -i /tmp/grafana.deb \
     && rm -f /tmp/grafana.deb
 
@@ -122,6 +156,7 @@ ENV GF_PLUGINS_PREINSTALL_DISABLED=true
 
 ARG PROMETHEUS_VERSION=2.55.1
 RUN curl -fsSL "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz" -o /tmp/prom.tgz \
+    && echo "19700bdd42ec31ee162e4079ebda4cd0a44432df4daa637141bdbea4b1cd8927  /tmp/prom.tgz" | sha256sum -c - \
     && tar -xzf /tmp/prom.tgz -C /opt \
     && mv /opt/prometheus-${PROMETHEUS_VERSION}.linux-amd64 /opt/prometheus \
     && rm -f /tmp/prom.tgz
@@ -163,6 +198,7 @@ ENV QDRANT__SERVICE__STATIC_CONTENT_DIR=/opt/opalix/qdrant-static
 # otel-inv/FINDINGS.md.
 ARG JAEGER_VERSION=2.21.0
 RUN curl -fsSL "https://github.com/jaegertracing/jaeger/releases/download/v${JAEGER_VERSION}/jaeger-${JAEGER_VERSION}-linux-amd64.tar.gz" -o /tmp/jaeger.tgz \
+    && echo "f5741318ea2c3a2e64a1e1fffafcd1b03872ed0783ec5e7675fb6c686bfc7a5a  /tmp/jaeger.tgz" | sha256sum -c - \
     && tar -xzf /tmp/jaeger.tgz -C /opt \
     && mv "/opt/jaeger-${JAEGER_VERSION}-linux-amd64" /opt/jaeger \
     && ln -s /opt/jaeger/jaeger /usr/local/bin/jaeger \
@@ -186,6 +222,7 @@ RUN mkdir -p /opt/opalix/bin && ln -s /usr/local/bin/jaeger /opt/opalix/bin/jaeg
 # OCB build was considered and not attempted (scratchpad otel-inv/FINDINGS.md).
 ARG OTELCOL_VERSION=0.161.0
 RUN curl -fsSL "https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/otelcol-contrib_${OTELCOL_VERSION}_linux_amd64.tar.gz" -o /tmp/otelcol.tgz \
+    && echo "778c689efa681ff6e4722ce9f66b9b7f57c3ba009ab2e2b43dc2e0315862c731  /tmp/otelcol.tgz" | sha256sum -c - \
     && mkdir -p /opt/otelcol-contrib \
     && tar -xzf /tmp/otelcol.tgz -C /opt/otelcol-contrib \
     && ln -s /opt/otelcol-contrib/otelcol-contrib /usr/local/bin/otelcol-contrib \
@@ -197,7 +234,8 @@ RUN curl -fsSL "https://github.com/open-telemetry/opentelemetry-collector-releas
 # lab (labs/onboard-yourself-the-way-a-new-team-sees-it), which is
 # family: gateway but needs the tool-gateway ContextForge already proven
 # for Module 2's agent-family labs. Same exact setup as
-# images/agent/Dockerfile (pinned 1.0.10, Python 3.12 from deadsnakes in
+# images/agent/Dockerfile (pinned 1.0.10 -- requirements-contextforge.txt,
+# the full frozen dependency tree -- Python 3.12 from deadsnakes in
 # its own venv since no version with the multi-tenancy features these
 # labs need supports this image's own default Python either) -- see that
 # file's own comments for the full reasoning, not repeated here.
@@ -215,6 +253,11 @@ RUN curl -fsSL "https://github.com/open-telemetry/opentelemetry-collector-releas
 # decision any lab should have to make in every manifest.
 ENV JQ_FILTER_EXECUTION=inprocess
 
+# python3.12/python3.12-venv are pinned to the deadsnakes build that was
+# running (3.12.14-1+jammy1). A PPA only indexes its current build, so once
+# deadsnakes publishes a newer 3.12 for jammy this exact version disappears
+# and the build fails loudly at the apt-get install: bump it on purpose then.
+#
 # The python3.12 shadowing below is a wrapper script, not a symlink --
 # three real CI build failures on the agent image (27 Sep 2026) before
 # landing on this. A /usr/local/bin-only symlink still raised
@@ -237,16 +280,17 @@ ENV JQ_FILTER_EXECUTION=inprocess
 # repointed at it, before /usr/bin/python3.12 is touched at all. Needed
 # because a lab invoking `python3.12 -m mcpgateway` directly -- exactly
 # what this lab does -- would otherwise fail the same way.
+COPY requirements-contextforge.txt /tmp/req/
 RUN apt-get update -o Acquire::Retries=3 \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
     software-properties-common \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && apt-get update -o Acquire::Retries=3 \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=3 \
-    python3.12 python3.12-venv \
+    python3.12=3.12.14-1+jammy1 python3.12-venv=3.12.14-1+jammy1 \
     && rm -rf /var/lib/apt/lists/* \
     && python3.12 -m venv /opt/contextforge-venv \
-    && /opt/contextforge-venv/bin/pip install --no-cache-dir "mcp-contextforge-gateway==1.0.10" \
+    && /opt/contextforge-venv/bin/pip install --no-cache-dir -r /tmp/req/requirements-contextforge.txt \
     && /opt/contextforge-venv/bin/pip show mcp-contextforge-gateway | grep -qx 'Version: 1.0.10' \
     && ln -s /opt/contextforge-venv/bin/mcpgateway /usr/local/bin/mcpgateway \
     && ln -s /opt/contextforge-venv/bin/mcpgateway-server /usr/local/bin/mcpgateway-server \
@@ -264,14 +308,28 @@ RUN apt-get update -o Acquire::Retries=3 \
 # pip 23.0.1+ / newer Ubuntu releases that enforce PEP 668. Confirmed by a
 # real CI build failure (23 Sep 2026, "no such option: --break-system-packages").
 #
-# Pinned to 1.102.1: the exact version "litellm[proxy]" resolves to today
-# and the one proven live in docs/spike.md. `litellm[proxy]` does NOT
+# Pinned to 1.102.1: the exact version "litellm[proxy]" resolved to and the
+# one proven live in docs/spike.md. `litellm[proxy]` does NOT
 # install the `prisma` Python package (confirmed live: right after this
 # install, `pip3 show prisma` finds nothing, and starting the proxy against
 # Postgres crashes with `ModuleNotFoundError: No module named 'prisma'`),
 # so prisma==0.15.0 -- the version the build-time `prisma generate` step
 # below matches -- is installed alongside it explicitly.
-RUN pip3 install --no-cache-dir "litellm[proxy]==1.102.1" "prisma==0.15.0" locust \
+#
+# requirements-system.txt is the full `pip3 freeze` of this shared
+# environment as deployed: litellm[proxy]==1.102.1, prisma==0.15.0,
+# locust==2.46.0, mlflow==3.16.1 and every other package below, with all
+# their transitive dependencies. Because every version is fixed, the four
+# install layers this section used to be (litellm+prisma+locust, then
+# fastapi/uvicorn/psycopg, then flask/OTel, then the mlflow anchor) can no
+# longer resolve differently depending on order: the first layer installs
+# the whole set, the two middle layers only assert what they used to install,
+# and the mlflow layer re-runs the same file as the resolver anchor it has
+# always been (a no-op unless something has drifted). Packages owned by
+# Ubuntu's apt (six, distro, oauthlib, dbus-python, python-apt, ...) are not in
+# the file; the apt versions satisfy everything that needs them.
+COPY requirements-system.txt /tmp/req/
+RUN pip3 install --no-cache-dir -r /tmp/req/requirements-system.txt \
     && pip3 show litellm | grep -qx 'Version: 1.102.1'
 
 # fastapi/uvicorn/psycopg2-binary, for Path 2 Module 3's pgvector labs: a
@@ -292,8 +350,11 @@ RUN pip3 install --no-cache-dir "litellm[proxy]==1.102.1" "prisma==0.15.0" locus
 # psycopg2, but that file is given lab infrastructure, not something to
 # rewrite to match its siblings' choice -- installing the package it
 # actually names is the smaller, more faithful fix.
-RUN pip3 install --no-cache-dir fastapi "uvicorn[standard]" psycopg2-binary "psycopg[binary]" \
-    && python3 -c "import fastapi, uvicorn, psycopg2, psycopg"
+#
+# Already installed by requirements-system.txt above (fastapi==0.142.1,
+# uvicorn[standard]==0.54.0, psycopg2-binary==2.9.13, psycopg[binary]==3.3.6);
+# this layer only asserts it.
+RUN python3 -c "import fastapi, uvicorn, psycopg2, psycopg"
 
 # flask/requests + the OTel SDK and its Flask/requests auto-instrumentation,
 # for Path 2 Module 4's tracing labs: a live verification run found three
@@ -311,11 +372,12 @@ RUN pip3 install --no-cache-dir fastapi "uvicorn[standard]" psycopg2-binary "psy
 # Flask/requests instrumentation above, since LiteLLM's proxy is a FastAPI
 # app whose provider calls go through httpx, not Flask/requests), and
 # neither package existed in this image either.
-RUN pip3 install --no-cache-dir flask requests opentelemetry-sdk \
-    opentelemetry-exporter-otlp-proto-http opentelemetry-instrumentation-flask \
-    opentelemetry-instrumentation-requests opentelemetry-instrumentation-fastapi \
-    opentelemetry-instrumentation-httpx \
-    && python3 -c "import flask, requests, opentelemetry.sdk.trace, opentelemetry.instrumentation.flask, opentelemetry.instrumentation.requests, opentelemetry.instrumentation.fastapi, opentelemetry.instrumentation.httpx"
+#
+# Already installed by requirements-system.txt above (flask==3.1.3,
+# requests==2.34.2, opentelemetry-sdk==1.45.0, the 1.45.0 OTLP/HTTP exporter and
+# the 0.66b0 flask/requests/fastapi/httpx instrumentation); this layer only
+# asserts it.
+RUN python3 -c "import flask, requests, opentelemetry.sdk.trace, opentelemetry.instrumentation.flask, opentelemetry.instrumentation.requests, opentelemetry.instrumentation.fastapi, opentelemetry.instrumentation.httpx"
 
 # MLflow, for Path 2's model-catalogue lab: its model registry's aliases
 # drive which provider model a LiteLLM alias points to. Pinned to 3.16.1,
@@ -326,7 +388,12 @@ RUN pip3 install --no-cache-dir flask requests opentelemetry-sdk \
 #
 # litellm and prisma are named again at their pins so pip resolves MLflow
 # around them instead of upgrading a dependency they were proven with.
-RUN pip3 install --no-cache-dir "mlflow==3.16.1" "litellm[proxy]==1.102.1" "prisma==0.15.0" \
+#
+# requirements-system.txt (mlflow==3.16.1, litellm[proxy]==1.102.1,
+# prisma==0.15.0, all transitive pins) is run again here, deliberately: the
+# same file as the first layer, which has already installed all of it, so this
+# is the anchor kept in its original place and a no-op unless something drifted.
+RUN pip3 install --no-cache-dir -r /tmp/req/requirements-system.txt \
     && pip3 show mlflow | grep -qx 'Version: 3.16.1' \
     && pip3 show litellm | grep -qx 'Version: 1.102.1' \
     && pip3 show prisma | grep -qx 'Version: 0.15.0' \
@@ -392,8 +459,9 @@ ENV MLFLOW_DISABLE_AGENT_HINT=1
 # start, exactly the kind of image/lab integration mismatch live testing
 # exists to catch. Conforming the image to the already-tested lab, not
 # editing the lab to match a path nothing else depends on.
+COPY requirements-phoenix.txt /tmp/req/
 RUN python3 -m venv /opt/opalix/venvs/phoenix \
-    && /opt/opalix/venvs/phoenix/bin/pip install --no-cache-dir "arize-phoenix==20.16.0" \
+    && /opt/opalix/venvs/phoenix/bin/pip install --no-cache-dir -r /tmp/req/requirements-phoenix.txt \
     && /opt/opalix/venvs/phoenix/bin/pip show arize-phoenix | grep -qx 'Version: 20.16.0' \
     && ln -s /opt/opalix/venvs/phoenix/bin/phoenix /usr/local/bin/phoenix \
     && test -x /usr/local/bin/phoenix \
@@ -412,10 +480,9 @@ ENV PHOENIX_WASM_BINARY_PATH=/opt/opalix/assets/phoenix-wasm/pyodide.wasm
 # above -- never actually tested against this real image at build time).
 # Same conform-the-image-to-the-tested-lab reasoning as Phoenix's path
 # fix above.
+COPY requirements-see-why.txt /tmp/req/
 RUN python3 -m venv /opt/opalix/venvs/see-why-a-document-matched \
-    && /opt/opalix/venvs/see-why-a-document-matched/bin/pip install --no-cache-dir \
-    fastapi "uvicorn[standard]" psycopg2-binary opentelemetry-sdk \
-    opentelemetry-exporter-otlp-proto-http openinference-semantic-conventions \
+    && /opt/opalix/venvs/see-why-a-document-matched/bin/pip install --no-cache-dir -r /tmp/req/requirements-see-why.txt \
     && /opt/opalix/venvs/see-why-a-document-matched/bin/python -c "import fastapi, uvicorn, psycopg2, opentelemetry.sdk.trace, openinference.semconv.trace"
 
 # Presidio + spaCy, for Module 7's labs/strip-personal-data-before-it-leaves.
@@ -446,7 +513,11 @@ RUN python3 -m venv /opt/opalix/venvs/see-why-a-document-matched \
 # the way `phoenix` or `mcpgateway` are invoked directly.
 #
 # en_core_web_sm and es_core_news_sm are pre-downloaded here, at build
-# time, and loaded once as a smoke test -- exactly like Phoenix's WASM
+# time, as exact-version wheels (3.8.0 each, the spaCy releases matching
+# spacy==3.8.16) pinned in requirements-presidio.txt as `<name> @ <url>` from
+# the explosion/spacy-models GitHub releases -- the URLs `spacy download`
+# itself resolves to, minus its compatibility-table lookup that could pick a
+# different model version. They are loaded once as a smoke test -- exactly like Phoenix's WASM
 # binary and this project's other model/binary pre-fetches, because lab
 # containers have no network at runtime (the egress fence) and a bare
 # `AnalyzerEngine()` with no explicit model config would otherwise try to
@@ -457,11 +528,12 @@ RUN python3 -m venv /opt/opalix/venvs/see-why-a-document-matched \
 # both English and Spanish text using exactly these two models, and
 # confirming the whole pipeline needs no network at all once they're on
 # disk (tested inside a real `unshare --net` namespace).
+COPY requirements-presidio.txt /tmp/req/
 RUN python3 -m venv /opt/opalix/venvs/presidio \
-    && /opt/opalix/venvs/presidio/bin/pip install --no-cache-dir \
-       "presidio-analyzer==2.2.364" "presidio-anonymizer==2.2.364" "spacy==3.8.16" \
-    && /opt/opalix/venvs/presidio/bin/python -m spacy download en_core_web_sm \
-    && /opt/opalix/venvs/presidio/bin/python -m spacy download es_core_news_sm \
+    && /opt/opalix/venvs/presidio/bin/pip install --no-cache-dir -r /tmp/req/requirements-presidio.txt \
+    && /opt/opalix/venvs/presidio/bin/pip show spacy | grep -qx 'Version: 3.8.16' \
+    && /opt/opalix/venvs/presidio/bin/pip show en_core_web_sm | grep -qx 'Version: 3.8.0' \
+    && /opt/opalix/venvs/presidio/bin/pip show es_core_news_sm | grep -qx 'Version: 3.8.0' \
     && /opt/opalix/venvs/presidio/bin/python -c "\
 import presidio_analyzer, presidio_anonymizer, spacy; \
 spacy.load('en_core_web_sm'); \

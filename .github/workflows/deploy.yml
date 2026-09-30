@@ -7,6 +7,16 @@ name: Deploy
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'images/**'
+      - 'wrangler.jsonc'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'migrations/**'
+      - 'dashboard/**'
+      - 'scripts/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch: {}
 
 concurrency:
@@ -28,6 +38,10 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The container-change check below diffs github.event.before..sha,
+          # which a depth-1 clone does not contain.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -56,6 +70,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npx wrangler deploy --dry-run --env=""
 
+      # The dry-run built both images locally. Fail before deploying if one has
+      # outgrown 85% of its instance type's disk: the failure otherwise only
+      # shows after deploy, as ImagePullError with the whole pool stuck in
+      # `provisioning` (see the GatewayLab comment in wrangler.jsonc).
+      - name: Image size gate
+        run: node scripts/image-size-gate.mjs
+
       # Before the deploy, never after: a Worker that writes a column its
       # database does not have yet fails every session it tries to create.
       # `migrations apply` tracks what it has run, so re-running is a no-op.
@@ -78,6 +99,60 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npx wrangler deploy --config dashboard/wrangler.jsonc
+
+      # Decide whether this push changed the container images or their
+      # config. Only then is there a rollout to wait for and a pool to drain.
+      # workflow_dispatch always counts as changed; so does an unusable
+      # `before` (first push, force push, unreachable commit).
+      - name: Detect container changes
+        id: containers
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          changed=true
+          if [ "$EVENT_NAME" = "push" ] && [ -n "$BEFORE" ] \
+             && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
+             && files="$(git diff --name-only "$BEFORE" "$GITHUB_SHA")"; then
+            if echo "$files" | grep -Eq '^(images/|wrangler\.jsonc$)'; then
+              changed=true
+            else
+              changed=false
+            fi
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "Container images or wrangler.jsonc changed: $changed"
+
+      # `--containers-rollout=immediate` returns before Cloudflare finishes
+      # rolling out (docs/spike.md, "A deploy lesson"); draining inside that
+      # window refills the pool on the previous image.
+      - name: Wait for container rollout
+        if: steps.containers.outputs.changed == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # No such secret is defined yet; fall back to the id already in wrangler.jsonc's vars.
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '8f5baf938da8f184c5431050d65eef08' }}
+        run: bash scripts/wait-for-rollout.sh
+
+      - name: Drain warm pools
+        if: steps.containers.outputs.changed == 'true'
+        env:
+          OPALIX_URL: ${{ secrets.OPALIX_URL }}
+          OPALIX_KEY: ${{ secrets.OPALIX_KEY }}
+        run: bash scripts/drain-pools.sh
+
+      # Last on purpose: the dashboard deploy above is trivially rolled back,
+      # so a failing smoke test does not need to block it.
+      - name: Smoke test
+        env:
+          OPALIX_URL: ${{ secrets.OPALIX_URL }}
+          OPALIX_KEY: ${{ secrets.OPALIX_KEY }}
+        run: |
+          if [ -z "$OPALIX_URL" ] || [ -z "$OPALIX_KEY" ]; then
+            echo "::notice::OPALIX_URL/OPALIX_KEY secrets not set; skipping smoke test."
+            exit 0
+          fi
+          npx vitest run test/integration/smoke.test.ts --config vitest.integration.config.ts
 
       # The build output reports manifest bytes, not image size, so the
       # only way to answer "how big is the agent image" (a spike question,

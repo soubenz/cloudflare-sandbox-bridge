@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Env, Family } from '../env';
 import type { LabManifest } from '../labs/manifest';
 import { SessionRuntime } from '../session/state';
-import type { SessionMeta, ChecksRun, ServiceRuntime, SnapshotEntry } from '../session/state';
+import type { SessionMeta, ChecksRun, CostState, ServiceRuntime, SnapshotEntry } from '../session/state';
 import * as lifecycle from '../session/lifecycle';
 import { openEventStream, emitEvent, type EventType } from '../session/events';
 import { openTerminalSocket, handleClientMessage, handleClientClose } from '../session/terminal';
@@ -10,6 +10,7 @@ import { proxyService } from '../session/proxy';
 import { runChecks } from '../session/checks';
 import { restartService as restartServiceImpl } from '../session/services';
 import { recordLlmCost } from '../session/metrics';
+import { readWorkspaceFile, writeWorkspaceFile, listWorkspaceDir, deleteWorkspaceFile } from '../session/files';
 import { ApiError, fromSdkError } from '../lib/errors';
 
 /**
@@ -46,10 +47,11 @@ export class Session extends DurableObject<Env> {
     services: Record<string, ServiceRuntime>;
     snapshots: SnapshotEntry[];
     checks?: ChecksRun;
+    cost: CostState;
   }> {
     const meta = await this.rt.requireMeta();
-    const [services, snapshots, checks] = await Promise.all([this.rt.services(), this.rt.snapshots(), this.rt.lastChecks()]);
-    return { meta, services, snapshots, checks };
+    const [services, snapshots, checks, cost] = await Promise.all([this.rt.services(), this.rt.snapshots(), this.rt.lastChecks(), this.rt.cost()]);
+    return { meta, services, snapshots, checks, cost };
   }
 
   async runChecks(only?: string[]): Promise<ChecksRun> {
@@ -78,20 +80,20 @@ export class Session extends DurableObject<Env> {
 
   async readFile(path: string) {
     await this.rt.requireRunning();
-    return this.rt.backend().readFile(path);
+    return readWorkspaceFile(this.rt, path);
   }
   async writeFile(path: string, content: string): Promise<void> {
     await this.rt.requireRunning();
-    await this.rt.backend().writeFile(path, content);
+    await writeWorkspaceFile(this.rt, path, content);
     await this.rt.touchInput();
   }
   async listFiles(path: string) {
     await this.rt.requireRunning();
-    return this.rt.backend().listFiles(path);
+    return listWorkspaceDir(this.rt, path);
   }
   async deleteFile(path: string): Promise<void> {
     await this.rt.requireRunning();
-    await this.rt.backend().deleteFile(path);
+    await deleteWorkspaceFile(this.rt, path);
     await this.rt.touchInput();
   }
 

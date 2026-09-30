@@ -38,6 +38,7 @@ const SERVICE_KEY_ONLY: Array<[string, string]> = [
   ['post', '/pools/:family/drain'],
   ['post', '/sessions/:id/events'],
   ['get', '/users/:uid/sessions'],
+  ['get', '/usage'],
 ];
 
 /** Reachable with a session token — the browser holds one of these legitimately. */
@@ -57,6 +58,18 @@ describe('route auth matrix', () => {
 
   it.each(SESSION_TOKEN)('%s %s accepts a session token', (method, path) => {
     expect(handlerFor(method, path)).toContain('requireBrowserAuth(');
+  });
+
+  it('GET /health is public but /health?deep=1 requires the service key', () => {
+    const body = handlerFor('get', '/health');
+    const deepGate = body.indexOf("c.req.query('deep') !== '1'");
+    const auth = body.indexOf('requireServiceAuth(');
+    const deepWork = body.indexOf('deepHealth(');
+    expect(deepGate, 'the plain path must return before anything else').toBeGreaterThan(-1);
+    expect(auth, 'the deep path must call requireServiceAuth').toBeGreaterThan(deepGate);
+    expect(deepWork, 'auth must run before the deep checks').toBeGreaterThan(auth);
+    // The early return for the plain path sits before the auth call.
+    expect(body.slice(deepGate, auth)).toContain('return c.json({ ok: true })');
   });
 
   it('has no unauthenticated session-start route', () => {

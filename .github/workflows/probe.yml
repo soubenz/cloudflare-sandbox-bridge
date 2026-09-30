@@ -1,0 +1,35 @@
+# External uptime probe: every 10 minutes, call the deployed API's deep health
+# check from outside Cloudflare. A failing run (non-2xx, timeout, or a 503 from
+# a degraded pool / unreachable D1 or R2) turns the workflow red, and GitHub
+# emails the repository's watchers about failed scheduled runs.
+#
+# Operator setup: add two repository secrets (Settings -> Secrets and
+# variables -> Actions -> New repository secret):
+#   OPALIX_URL  the API base URL, no trailing slash, e.g. https://opalix-sandbox.soubenz94.workers.dev
+#   OPALIX_KEY  the service key (the SANDBOX_API_KEY Worker secret)
+# Until both are set the job passes with a notice and probes nothing.
+name: probe
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Deep health check
+        env:
+          OPALIX_URL: ${{ secrets.OPALIX_URL }}
+          OPALIX_KEY: ${{ secrets.OPALIX_KEY }}
+        run: |
+          # GitHub cannot `if:` on secrets, so check emptiness here.
+          if [ -z "$OPALIX_URL" ] || [ -z "$OPALIX_KEY" ]; then
+            echo "::notice::OPALIX_URL/OPALIX_KEY not set; skipping"
+            exit 0
+          fi
+          curl -fsS --max-time 20 -H "Authorization: Bearer $OPALIX_KEY" "$OPALIX_URL/health?deep=1"
