@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import type { Env } from './env';
 import { isFamily } from './families/registry';
 import { loadCurrentManifest, listCatalogue, publishLab, INDEX_KEY } from './labs/bundle';
@@ -17,6 +17,10 @@ import { queryUsage, resolveWindow } from './session/usage';
 export function createRouter(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
 
+  // Registered first, so it wraps corsMiddleware: it answers the preflight
+  // for these routes itself and adds `Access-Control-Allow-Credentials` to
+  // the response corsMiddleware has already given an origin.
+  app.use('/sessions/:id/services/:name/*', credentialedCors());
   app.use('*', corsMiddleware());
   app.use('*', previousKeyHeader());
 
@@ -256,6 +260,21 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     await requireBrowserAuth(c.req.raw, c.env, id);
     const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
     return c.json(await stub.restartService(c.req.param('name')));
+  });
+
+  // Sets the service-proxy cookie from a credentialed fetch, so the console
+  // can point an iframe and an "open in new tab" link at a URL with no token
+  // in it. Registered before the `/services/:name/*` proxy route below, which
+  // would otherwise take it. A service key is refused: the cookie would carry
+  // it, and the cookie is only ever meant to hold a session token.
+  app.post('/sessions/:id/services/:name/session', async (c) => {
+    const id = c.req.param('id');
+    const auth = await requireBrowserAuth(c.req.raw, c.env, id);
+    if (auth.kind !== 'session') {
+      throw new ApiError(403, 'session_token_required', 'This route sets a session cookie and needs a session token, not the service key');
+    }
+    const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
+    return stub.fetch(c.req.raw);
   });
 
   app.post('/sessions/:id/snapshot', async (c) => {
@@ -509,3 +528,43 @@ function sessionUrls(env: Env, sessionId: string, uiServices: string[]) {
   };
 }
 
+/**
+ * CORS for the routes the console calls with `credentials: 'include'` — the
+ * cookie mint and the service proxy. A credentialed response is only
+ * readable by the page if it names the caller's origin (never `*`) and sets
+ * `Access-Control-Allow-Credentials: true`; corsMiddleware echoes the
+ * matched origin but does not set the second header, and it answers
+ * preflights before any route runs, so both are added here. The origin
+ * list is the same `DASHBOARD_ORIGIN` var, so an origin that is not allowed
+ * gets no CORS headers at all, as before.
+ */
+function credentialedCors(): MiddlewareHandler<{ Bindings: Env }> {
+  return async (c, next) => {
+    const origin = c.req.header('Origin');
+    const list = (c.env.DASHBOARD_ORIGIN ?? '').split(',').map((o) => o.trim()).filter(Boolean);
+    const allowed = origin && list.includes(origin) ? origin : undefined;
+
+    if (allowed && c.req.method === 'OPTIONS' && c.req.header('Access-Control-Request-Method')) {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': allowed,
+          'Access-Control-Allow-Credentials': 'true',
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+          'Access-Control-Allow-Headers': c.req.header('Access-Control-Request-Headers') ?? 'Authorization,Content-Type',
+          'Access-Control-Max-Age': '86400',
+          Vary: 'Origin',
+        },
+      });
+    }
+
+    await next();
+    // A WebSocket upgrade's 101 cannot be copied into a new Response.
+    if (!allowed || c.req.header('Upgrade')?.toLowerCase() === 'websocket') return;
+    const headers = new Headers(c.res.headers);
+    headers.set('Access-Control-Allow-Origin', allowed);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+    headers.append('Vary', 'Origin');
+    c.res = new Response(c.res.body, { status: c.res.status, statusText: c.res.statusText, headers });
+  };
+}

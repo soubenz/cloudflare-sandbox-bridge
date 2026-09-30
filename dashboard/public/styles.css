@@ -648,6 +648,32 @@ kbd {
   background: var(--bg);
 }
 
+/* A service that is not answering: shown in place of the iframe. */
+.service-down {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--s4);
+  background: var(--bg);
+  overflow: auto;
+}
+.service-down-card {
+  max-width: 480px; width: 100%;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.service-down-card .modal-actions { margin-top: var(--s2); }
+.service-down-card details { width: 100%; text-align: left; }
+.service-down-card summary { cursor: pointer; }
+
+/* Health dot on a service tab; same three-way split as the service list. */
+.svc-dot {
+  display: inline-block; width: 7px; height: 7px; margin-right: 6px;
+  border-radius: 50%; vertical-align: middle;
+  background: var(--ink-muted);
+}
+.svc-dot[data-health="healthy"] { background: var(--good); }
+.svc-dot[data-health="unhealthy"], .svc-dot[data-health="restarting"] { background: var(--warn); }
+.svc-dot[data-health="unknown"] { background: var(--ink-muted); }
+
 /* ---------- boot modal ---------- */
 .modal {
   position: fixed; inset: 0; z-index: 50;

@@ -55,6 +55,7 @@ const SESSION_TOKEN: Array<[string, string]> = [
   ['get', '/sessions/:id/checks'],
   ['get', '/sessions/:id/progress-summary'],
   ['post', '/sessions/:id/feedback'],
+  ['post', '/sessions/:id/services/:name/session'],
 ];
 
 describe('route auth matrix', () => {
@@ -76,6 +77,17 @@ describe('route auth matrix', () => {
     expect(deepWork, 'auth must run before the deep checks').toBeGreaterThan(auth);
     // The early return for the plain path sits before the auth call.
     expect(body.slice(deepGate, auth)).toContain('return c.json({ ok: true })');
+  });
+
+  it('the service cookie route refuses the service key and is registered before the proxy', () => {
+    // The cookie would carry whatever bearer authenticated, so a service key
+    // must never reach the DO handler; and `/services/:name/*` would swallow
+    // the route if it were registered first.
+    const body = handlerFor('post', '/sessions/:id/services/:name/session');
+    expect(body).toContain("auth.kind !== 'session'");
+    expect(router.indexOf("app.post('/sessions/:id/services/:name/session'")).toBeLessThan(
+      router.indexOf("app.all('/sessions/:id/services/:name/*'")
+    );
   });
 
   it('has no unauthenticated session-start route', () => {

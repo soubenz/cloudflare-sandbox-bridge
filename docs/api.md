@@ -20,7 +20,9 @@ Two credential kinds:
 - **Session token** — minted by `POST /sessions`, `POST /sessions/start`
   and `POST /sessions/{id}/resume`. Accepted as
   `Authorization: Bearer <token>`, `?token=<token>` (browser links), or the
-  `opx_s_{id}` cookie the service proxy sets on first use. Required on every
+  `opx_s_{id}` cookie the service proxy sets on first use (or that
+  `POST /sessions/{id}/services/{name}/session` sets on request — see
+  [Service cookie](#service-cookie)). Required on every
   other `/sessions/{id}/*` route. A session token only authenticates its own
   session — using it against a different session id is rejected.
 
@@ -69,7 +71,8 @@ minutes are usable now.
 | GET | `/sessions/:id/events` | session | SSE, replays from `Last-Event-ID` |
 | POST | `/sessions/:id/events` | service | `{ type, data }` — the LLM Worker reporting cost/calls |
 | POST | `/sessions/:id/services/:name/restart` | session | → the service's `ServiceRuntime`. The request body is ignored: the service is relaunched from the spec fixed at session start, so its command, working directory and env cannot be changed by a restart |
-| ANY | `/sessions/:id/services/:name/*` | session | path-based UI proxy |
+| POST | `/sessions/:id/services/:name/session` | session | sets the service-proxy cookie so a UI can be opened with no `?token=` in its URL → `204` with `Set-Cookie: opx_s_{id}=<the caller's session token>; Path=/sessions/{id}/; HttpOnly; Secure; SameSite=None; Partitioned`. The token goes in `Authorization: Bearer`; the service key is refused (`403 session_token_required`) because it would end up in the cookie. `404 unknown_service`, `403 not_exposed` and `400 no_port` are the proxy's own errors for a service that cannot be proxied. Health is not checked: a service that is down still gets its cookie, and the proxy then answers `502 service_down`. CORS: the response and its preflight name the calling origin from `DASHBOARD_ORIGIN` and carry `Access-Control-Allow-Credentials: true`, so the console can call it with `credentials: 'include'`; the proxy routes carry the same headers |
+| ANY | `/sessions/:id/services/:name/*` | session | path-based UI proxy. A document `GET` (`Accept: text/html`) with `?token=` sets the cookie and answers `302` to the same URL without `token`; any other request carrying `?token=` is proxied as before with the cookie set on the response |
 | WS | `/sessions/:id/terminal` | session | relayed PTY |
 | POST | `/sessions/:id/snapshot` | session | → the new `SnapshotEntry` |
 | POST | `/sessions/:id/touch` | session | refreshes the idle clock ("I'm here") exactly as a file write does, without doing any work; 204, or `409 not_running` |
@@ -118,6 +121,28 @@ marked `ended` with `end_reason: "error"`.
 The `urls` object on a session start is
 `{ status, terminal, events, services }`, where `services` maps a service
 name to its proxy URL. Only services with `ui: true` appear in that map.
+
+### Service cookie
+
+A service UI lives on the API's origin, not the console's, so an iframe or an
+"open in new tab" link needs the session token to get in. Putting it in the
+URL leaves it in the address bar, the history and any `Referer`. Instead the
+console calls `POST /sessions/{id}/services/{name}/session` with
+`credentials: 'include'` and `Authorization: Bearer <token>`; the `204`
+carries
+
+```
+Set-Cookie: opx_s_{id}=<session token>; Path=/sessions/{id}/; HttpOnly; Secure; SameSite=None; Partitioned
+```
+
+and every later request under `/sessions/{id}/` (the iframe, the link, the
+service's own assets) authenticates with the cookie. `Partitioned` is the
+one attribute beyond the plain third-party form: without it current browsers
+drop the cookie, because the console and the API are different sites. The
+`?token=` path sets the identical cookie (one helper, `sessionCookie` in
+`src/session/proxy.ts`). A browser that refuses the cookie anyway (third-party
+cookies blocked outright) gets `401` from the proxy, and the console falls
+back to a `?token=` iframe URL.
 
 `POST /sessions/{id}/events` accepts only the three types the LLM Worker
 reports — `cost`, `llm.call` and `alert`. Any other value is rejected with
@@ -168,7 +193,8 @@ the RPC boundary.
 | 400 | `bad_path` | a `/files` path that is not under `/workspace` — lexically, after `realpath` resolution (symlinks included), or because `learner` cannot access it |
 | 400 | `unknown_event_type` | `POST /sessions/{id}/events` with a type outside the injectable set (`cost`, `llm.call`, `alert`, `pressure`, `hint`, `session.idle_warning`, `session.expiring`, `session.state`, `service.health`) |
 | 404 | `unknown_family` | a `/pools/:family` path that is not `agent` or `gateway` |
-| 404 | `unknown_service` | restart or proxy for a service not in the lab |
+| 403 | `session_token_required` | `POST /sessions/{id}/services/{name}/session` called with the service key |
+| 404 | `unknown_service` | restart, cookie route or proxy for a service not in the lab |
 | 400 | `bad_feedback` | `POST /sessions/{id}/feedback` with a `rating` that is not an integer 1-5, a `text` that is not a string or is over 2000 characters, or a body that is not an object |
 | 400 | `bad_cursor` | `GET /users/{uid}/checks` with a `before` that is not a number |
 | 409 | `active_session_exists` | the user already has a live session (the D1 unique index) |

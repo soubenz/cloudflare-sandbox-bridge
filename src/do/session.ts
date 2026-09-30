@@ -7,7 +7,7 @@ import type { SessionMeta, ChecksRun, ServiceRuntime, SnapshotEntry, SessionStat
 import * as lifecycle from '../session/lifecycle';
 import { openEventStream, emitEvent, type EventType } from '../session/events';
 import { openTerminalSocket, handleClientMessage, handleClientClose } from '../session/terminal';
-import { proxyService } from '../session/proxy';
+import { proxyService, mintServiceCookie } from '../session/proxy';
 import { runChecks } from '../session/checks';
 import { restartService as restartServiceImpl } from '../session/services';
 import { recordLlmCost } from '../session/metrics';
@@ -172,6 +172,9 @@ export class Session extends DurableObject<Env> {
       }
       if (rest[0] === 'events') {
         return openEventStream(this.rt, request.headers.get('Last-Event-ID'));
+      }
+      if (rest[0] === 'services' && rest[1] && rest[2] === 'session' && rest.length === 3 && request.method === 'POST') {
+        return mintServiceCookie(this.rt, request, rest[1], this.rt.sessionId);
       }
       if (rest[0] === 'services' && rest[1]) {
         return proxyService(this.rt, request, rest[1], this.rt.sessionId);

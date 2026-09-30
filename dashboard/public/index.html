@@ -242,8 +242,22 @@
         <button id="btnServiceReload" class="btn btn-tiny">Reload</button>
         <a id="serviceOpen" class="btn btn-tiny" target="_blank" rel="noopener noreferrer" href="#">Open in new tab ↗</a>
       </div>
-      <div class="service-body">
+      <div class="service-body" id="servicePanel">
         <iframe id="serviceFrame" title="Service UI"></iframe>
+        <div class="service-down" id="serviceDown" role="alert" hidden>
+          <div class="empty-state service-down-card">
+            <p><strong id="serviceDownName"></strong> is not answering</p>
+            <p class="muted small">Its process is down or still starting. Restart it, or retry in a moment.</p>
+            <div class="modal-actions">
+              <button id="btnServiceDownRestart" class="btn btn-primary" type="button">Restart</button>
+              <button id="btnServiceDownRetry" class="btn" type="button">Retry</button>
+            </div>
+            <details id="serviceDownLogsBox" hidden>
+              <summary class="small muted">Last log lines</summary>
+              <pre class="logs-tail" id="serviceDownLogs"></pre>
+            </details>
+          </div>
+        </div>
         <div class="service-loading" id="serviceLoading" hidden>
           <div class="spinner" aria-hidden="true"></div>
           <p class="small muted" id="serviceLoadingText">Loading…</p>

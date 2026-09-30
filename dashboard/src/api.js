@@ -153,6 +153,20 @@ export const api = {
     request(`/sessions/${id}?snapshot=${snapshot ? 1 : 0}`, { method: 'DELETE', token }),
   restartService: (id, token, name) =>
     request(`/sessions/${id}/services/${encodeURIComponent(name)}/restart`, { method: 'POST', token }),
+  /**
+   * Asks the API to set the service-proxy cookie, so the iframe can load a
+   * URL with no token in it. Resolves the HTTP status (204 = cookie set);
+   * rejects only on a network/CORS failure, which is what an API that
+   * predates this route looks like from a credentialed cross-origin fetch.
+   */
+  serviceSession: async (id, token, name) => {
+    const res = await fetch(`${apiBase()}/sessions/${id}/services/${encodeURIComponent(name)}/session`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
+    });
+    return res.status;
+  },
   touch: (id, token) => request(`/sessions/${id}/touch`, { method: 'POST', token }),
   resume: (id, token) => request(`/sessions/${id}/resume`, { method: 'POST', token }),
   snapshot: (id, token) => request(`/sessions/${id}/snapshot`, { method: 'POST', token }),
@@ -183,4 +197,9 @@ export function terminalUrl(id, token) {
 
 export function serviceUrl(id, token, name) {
   return `${apiBase()}/sessions/${id}/services/${name}/?token=${encodeURIComponent(token)}`;
+}
+
+/** The service URL with no credential in it; the `opx_s_` cookie carries the session. */
+export function serviceBaseUrl(id, name) {
+  return `${apiBase()}/sessions/${id}/services/${name}/`;
 }

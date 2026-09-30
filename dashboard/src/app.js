@@ -1,4 +1,4 @@
-import { api, apiBase, configureAuth, eventsUrl, serviceUrl } from './api.js';
+import { api, apiBase, configureAuth, eventsUrl, serviceUrl, serviceBaseUrl } from './api.js';
 import { attachTerminal } from './terminal.js';
 
 const $ = (id) => document.getElementById(id);
@@ -52,6 +52,16 @@ const state = {
   expanded: new Set(),
   /** The service whose UI is loaded in the iframe, so revisiting it does not reload it. */
   service: null,
+  /** The service whose "not answering" card is showing, so a tab click retries it. */
+  serviceDown: null,
+  /** Bumped per openService, so a slow cookie/pre-flight for an earlier click cannot overwrite a later one. */
+  serviceOpenSeq: 0,
+  /**
+   * The browser did not accept the service cookie (or the API predates the
+   * route), so the iframe was pointed at a `?token=` URL. Set once, no toast;
+   * mirrored as `data-cookie-fallback` on #servicePanel.
+   */
+  serviceCookieFallback: false,
   checksRunning: false,
   /** `status().manifest_summary`, so a run can be judged against every check the lab has. */
   summary: null,
@@ -695,6 +705,10 @@ function enterSession() {
   state.dirty = false;
   state.expanded.clear();
   state.service = null;
+  state.serviceDown = null;
+  state.serviceOpenSeq++;
+  $('serviceDown').hidden = true;
+  $('serviceFrame').hidden = false;
   state.checksRunning = false;
   $('checksPanel').innerHTML = '<p class="muted small">Not run yet. Run checks to grade your work so far.</p>';
   $('checksSummary').textContent = '';
@@ -2414,7 +2428,13 @@ function renderServiceTabs() {
     tab.setAttribute('aria-selected', 'false');
     tab.setAttribute('aria-controls', 'viewService');
     tab.title = `Open the ${name} service`;
-    tab.textContent = name;
+    tab.dataset.service = name;
+    tab.dataset.health = 'unknown';
+    const dot = document.createElement('span');
+    dot.className = 'svc-dot';
+    dot.dataset.health = 'unknown';
+    dot.setAttribute('aria-hidden', 'true');
+    tab.append(dot, name);
     tab.addEventListener('click', () => openService(name, tab));
     host.append(tab);
   }
@@ -2452,6 +2472,13 @@ function renderServiceList(services) {
 }
 
 function setServiceHealth(name, health) {
+  const tab = [...$('serviceTabs').children].find((el) => el.dataset.service === name);
+  if (tab) {
+    tab.dataset.health = health;
+    tab.title = `Open the ${name} service (${health})`;
+    const dot = tab.querySelector('.svc-dot');
+    if (dot) dot.dataset.health = health;
+  }
   const li = [...$('serviceList').children].find((el) => el.dataset.service === name);
   const el = li?.querySelector('.svc-health');
   if (!el) return;
@@ -2490,22 +2517,94 @@ async function restartService(name, button) {
  * that one. Re-pointing it on every tab click reloaded the service's UI
  * each time the learner came back from the terminal, and threw away
  * wherever they had navigated to inside it.
+ *
+ * The iframe and the "open in new tab" link carry no token: the API is
+ * asked to set the session cookie first (a credentialed fetch), then the
+ * service URL is probed once. A 502 there shows the "not answering" card
+ * instead of a broken frame. If the browser will not keep the cookie, or
+ * the API has no such route, the iframe alone falls back to `?token=`.
  */
-function openService(name, tab, { reload = false } = {}) {
+async function openService(name, tab, { reload = false } = {}) {
   const frame = $('serviceFrame');
-  // The proxy takes ?token= on the first hit and redirects to a cookie,
-  // so the iframe is pointed at the tokenised URL when it (re)loads.
-  const url = serviceUrl(state.session.id, state.session.token, name);
+  const { id, token } = state.session;
+  const base = serviceBaseUrl(id, name);
   $('serviceName').textContent = name;
-  $('serviceOpen').href = url;
-  if (reload || state.service !== name || !frame.getAttribute('src')) {
-    state.service = name;
-    $('serviceLoadingText').textContent = `Loading ${name}…`;
-    $('serviceLoading').hidden = false;
-    $('serviceStatus').textContent = '';
-    frame.src = url;
+  $('serviceOpen').href = base;
+
+  const loaded = state.service === name && frame.getAttribute('src') && state.serviceDown !== name;
+  if (!reload && loaded) {
+    showView('service', tab);
+    return;
   }
+
+  const seq = ++state.serviceOpenSeq;
+  state.service = name;
+  state.serviceDown = null;
+  $('serviceDown').hidden = true;
+  frame.hidden = false;
+  $('serviceLoadingText').textContent = `Loading ${name}…`;
+  $('serviceLoading').hidden = false;
+  $('serviceStatus').textContent = '';
   showView('service', tab);
+
+  let useToken = false;
+  let status = 0;
+  try {
+    status = await api.serviceSession(id, token, name);
+  } catch {
+    /* an API without the route fails the credentialed CORS check */
+  }
+  if (seq !== state.serviceOpenSeq) return;
+  if (status === 204) {
+    status = await probeService(base);
+    if (seq !== state.serviceOpenSeq) return;
+    // The cookie was set but not sent back: third-party cookies are blocked.
+    if (status === 401 || status === 403) useToken = true;
+  } else {
+    useToken = true;
+  }
+
+  if (useToken) {
+    if (!state.serviceCookieFallback) {
+      state.serviceCookieFallback = true;
+      $('servicePanel').dataset.cookieFallback = '1';
+    }
+    status = await probeService(serviceUrl(id, token, name));
+    if (seq !== state.serviceOpenSeq) return;
+  }
+
+  if (status === 502) {
+    showServiceDown(name);
+    return;
+  }
+  frame.src = useToken ? serviceUrl(id, token, name) : base;
+}
+
+/**
+ * One credentialed GET of the service URL, for its status alone. Resolves 0
+ * when the answer cannot be read (network error, or an opaque redirect from
+ * a service that redirects itself), which is treated as "go ahead and load".
+ */
+async function probeService(url) {
+  try {
+    const res = await fetch(url, { credentials: 'include', redirect: 'manual' });
+    return res.status;
+  } catch {
+    return 0;
+  }
+}
+
+/** The card that replaces the iframe when a service is not answering. */
+function showServiceDown(name) {
+  state.serviceDown = name;
+  $('serviceLoading').hidden = true;
+  $('serviceFrame').hidden = true;
+  $('serviceDownName').textContent = name;
+  // Logs only come with a `service.health` event, and only from a failed start.
+  const logs = bootServices.get(name)?.logs;
+  $('serviceDownLogs').textContent = logs ?? '';
+  $('serviceDownLogsBox').hidden = !logs;
+  $('serviceDown').hidden = false;
 }
 
 function showView(view, tabEl) {
@@ -2665,6 +2764,24 @@ $('btnBootRetry').addEventListener('click', () => {
 $('serviceFrame').addEventListener('load', () => {
   $('serviceLoading').hidden = true;
 });
+$('btnServiceDownRetry').addEventListener('click', () => {
+  if (state.service) openService(state.service, $('serviceTabs').querySelector('.tab-active') ?? undefined, { reload: true });
+});
+$('btnServiceDownRestart').addEventListener('click', (event) => {
+  if (state.service) restartService(state.service, event.currentTarget);
+});
+// A new tab is a first-party context, where the partitioned cookie set for
+// the embed is not sent; so the link carries no token at rest and the
+// click opens the tokenised URL, which the proxy immediately redirects to
+// the token-less one. Middle-click is the same; the context menu still
+// gets the plain href.
+function openServiceTab(event) {
+  if (!state.session || !state.service || event.button > 1) return;
+  event.preventDefault();
+  window.open(serviceUrl(state.session.id, state.session.token, state.service), '_blank', 'noopener,noreferrer');
+}
+$('serviceOpen').addEventListener('click', openServiceTab);
+$('serviceOpen').addEventListener('auxclick', openServiceTab);
 $('btnServiceReload').addEventListener('click', () => {
   if (state.service) openService(state.service, $('serviceTabs').querySelector('.tab-active') ?? undefined, { reload: true });
 });
