@@ -16,6 +16,12 @@ terminal, one after another, would get for free. A `MARKER` line is echoed
 before and after each block so this script can tell the three blocks'
 outputs apart afterward.
 
+What each block is expected to produce is read out of QUICKSTART.md's own
+prose (the key's "models" list, the reply text and echoed model name, the
+refusal status code) -- never hard-coded here -- so a doc whose claims
+change, or a gateway that stops matching them, both fail with a message
+quoting the documented value.
+
 Each block's check reads only the fields QUICKSTART.md actually promises.
 It deliberately never compares a full response body against a fixed
 string: LiteLLM stamps every response with its own `created` (a real,
@@ -35,6 +41,29 @@ DOC_PATH = os.path.join(HERE, "QUICKSTART.md")
 
 BLOCK_RE = re.compile(r"```bash\n(.*?)```", re.DOTALL)
 RUN_TIMEOUT_S = 30
+
+
+def _claim(doc_text, pattern, what):
+    """The first capture group of `pattern` in the doc's prose, or a
+    ValueError saying which claim could not be found."""
+    m = re.search(pattern, doc_text, re.DOTALL)
+    if not m:
+        raise ValueError("could not find the doc's claim about %s" % what)
+    return m.group(1)
+
+
+def _read_claims(doc_text):
+    """What the doc's prose says each block produces."""
+    return {
+        "models": json.loads(_claim(
+            doc_text, r'`"models"`\s+field\s+that\s+is\s+exactly\s+`(\[.*?\])`', 'the key\'s "models" field')),
+        "content": _claim(
+            doc_text, r'`"content":\s*"([^"]+)"`', "choices[0].message.content"),
+        "model": _claim(
+            doc_text, r'top-level\s+`"model"`\s+field\s+will\s+echo\s+`"([^"]+)"`', 'the top-level "model" field'),
+        "status": _claim(
+            doc_text, r'It\s+should\s+be\s+`(\d{3})`', "the refusal's HTTP status code"),
+    }
 
 
 def _finish(passed, message):
@@ -81,7 +110,7 @@ def _run_all_blocks(blocks):
     return outputs, proc.stderr
 
 
-def _check_create_key(output):
+def _check_create_key(output, claims):
     try:
         data = json.loads(output.strip())
     except ValueError:
@@ -89,46 +118,47 @@ def _check_create_key(output):
     key = data.get("key")
     if not isinstance(key, str) or not key.startswith("sk-"):
         return False, "block 1 (get a key): the doc says the response has a \"key\" field starting with sk-, but got %r" % key
-    if data.get("models") != ["team-chat"]:
+    if data.get("models") != claims["models"]:
         return False, (
-            "block 1 (get a key): the doc says this key's \"models\" is exactly [\"team-chat\"], "
-            "but the gateway actually returned %r" % data.get("models")
+            "block 1 (get a key): the doc says this key's \"models\" is exactly %s, "
+            "but the gateway actually returned %s" % (json.dumps(claims["models"]), json.dumps(data.get("models")))
         )
     return True, None
 
 
-def _check_chat_completion(output):
+def _check_chat_completion(output, claims):
     try:
         data = json.loads(output.strip())
     except ValueError:
         return False, "block 2 (make your first call): the gateway's real response wasn't JSON: %r" % output[:300]
     if "error" in data:
         return False, (
-            "block 2 (make your first call): the doc says calling model \"team-chat\" succeeds, but the "
-            "gateway refused it: %r" % data.get("error")
+            "block 2 (make your first call): the doc says calling model \"team-chat\" succeeds and "
+            "returns \"%s\" in choices[0].message.content, but the gateway refused it: %r"
+            % (claims["content"], data.get("error"))
         )
     model = data.get("model")
     content = ((data.get("choices") or [{}])[0].get("message") or {}).get("content")
-    if model != "team-chat":
+    if model != claims["model"]:
         return False, (
             "block 2 (make your first call): the doc says the response's \"model\" field echoes back "
-            "\"team-chat\", but the gateway actually returned %r" % model
+            "\"%s\", but the gateway actually returned %r" % (claims["model"], model)
         )
-    if content != "reply from deployment a":
+    if content != claims["content"]:
         return False, (
             "block 2 (make your first call): the doc says you'll see "
-            "\"reply from deployment a\" in choices[0].message.content, but the gateway actually "
-            "returned %r" % content
+            "\"%s\" in choices[0].message.content, but the gateway actually "
+            "returned %r" % (claims["content"], content)
         )
     return True, None
 
 
-def _check_scope_refusal(output):
+def _check_scope_refusal(output, claims):
     status = output.strip()
-    if status != "403":
+    if status != claims["status"]:
         return False, (
             "block 3 (confirm you're actually scoped): the doc says calling \"platform-internal\" with "
-            "your team key prints 403, but it actually printed %r" % status
+            "your team key prints %s, but it actually printed %r" % (claims["status"], status)
         )
     return True, None
 
@@ -142,6 +172,11 @@ def main():
             doc_text = f.read()
     except OSError as e:
         _finish(False, "could not read %s: %s" % (DOC_PATH, e))
+
+    try:
+        claims = _read_claims(doc_text)
+    except ValueError as e:
+        _finish(False, "QUICKSTART.md: %s" % e)
 
     blocks = _extract_blocks(doc_text)
     if len(blocks) != len(CHECKS):
@@ -157,7 +192,7 @@ def main():
         _finish(False, str(e))
 
     for check, output in zip(CHECKS, outputs):
-        ok, message = check(output)
+        ok, message = check(output, claims)
         if not ok:
             _finish(False, message)
 

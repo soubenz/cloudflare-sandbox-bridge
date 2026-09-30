@@ -3,8 +3,8 @@
 In production this is a separate service that somebody else's scheduler
 starts. Here `run_traffic.py` starts it and stops it again on the way out --
 a manifest service is launched as root from a fixed argv, and a learner
-editing its file would not change the running process, which is exactly
-wrong for the code this lab asks you to fix. See relay/relay_server.py.
+editing its file would not change the running process, which would defeat
+the point of editing it. See relay/relay_server.py.
 """
 
 import os

@@ -50,7 +50,15 @@
 # gateway's own configuration. The middle check renames `team-chat`
 # through a real admin-API call, re-runs verify_docs.py, and requires a
 # real, specific failure before renaming it back -- see that file's
-# docstring for the full sequence.
+# docstring for the full sequence. A second check rewrites the doc's own
+# statement of what the key is granted and requires a failure quoting the
+# documented value, so a verify_docs.py that never reads the doc (and just
+# hard-codes `team-chat`) cannot pass.
+#
+# solution/_degenerate/ is never published (solution/ is not packed by
+# `labs publish`; checks/ is packed wholesale, so it lives here and not
+# under checks/) and exists only to prove the checks discriminate: it is
+# the doc-ignoring cheat, and it must fail catches-a-wrong-key-scope.
 slug: keep-the-docs-and-the-example-true
 version: 1.0.0
 title: "Keep the docs and the example true"
@@ -150,11 +158,12 @@ pressure: []
 checks:
   # None of these read verify_docs.py's source. Each shares one grader-run's
   # worth of setup (running the learner's own verify_docs.py as a real
-  # subprocess against the live gateway, once before and once during a
-  # real, temporary rename of the model alias its examples depend on, then
-  # twice more after it's restored) -- see checks/_harness.py. Sequential
-  # on purpose: whichever check runs first pays that cost and the other two
-  # just read its result.
+  # subprocess against the live gateway: once as-is, once during a real,
+  # temporary rename of the model alias its examples depend on, once
+  # against a doc whose stated key scope has been made wrong, then twice
+  # more after everything is restored) -- see checks/_harness.py.
+  # Sequential on purpose: whichever check runs first pays that cost (five
+  # short runs) and the others just read its result.
   - name: doc-example-verifies-as-true
     script: doc-example-verifies-as-true.sh
     timeout_s: 120
@@ -167,6 +176,14 @@ checks:
     script: catches-a-renamed-model-alias.sh
     timeout_s: 120
     weight: 2
+    parallel: false
+  # The other anti-cheat: rewrites the doc's own statement of the key's
+  # granted models and requires a failure naming the documented value. Only
+  # a verify_docs.py that actually reads the doc can produce one.
+  - name: catches-a-wrong-key-scope
+    script: catches-a-wrong-key-scope.sh
+    timeout_s: 120
+    weight: 1
     parallel: false
   - name: comparison-is-not-flaky
     script: comparison-is-not-flaky.sh

@@ -1,27 +1,12 @@
 #!/usr/bin/env python3
 """Verify that QUICKSTART.md is still true.
 
-QUICKSTART.md has three fenced ```bash code blocks. Each one is meant to be
-copy-pasted into a real shell against the gateway that's already running in
-this session ($LITELLM_URL, $LITELLM_MASTER_KEY are both in your
-environment) -- and each one is followed by prose that says exactly what
-running it should produce.
+Compares what docs/QUICKSTART.md says with what the live gateway
+($LITELLM_URL, $LITELLM_MASTER_KEY) actually does, and reports the result
+as a single final line: {"pass": true|false, "message": "..."}.
 
-This script's job: pull those three blocks out of the doc, run them for
-real against the live gateway, and check the real output against what the
-doc claims. Not "does this look like a curl command" -- does the gateway
-actually still answer the way the doc says it does, right now.
-
-TODO(you): as shipped, `_run_block` below never actually calls the
-gateway. It only checks that a block is well-formed shell (`bash -n`,
-which parses a script without running it). That means this script always
-reports "pass" no matter what the gateway actually does -- a QUICKSTART.md
-that is completely wrong about the gateway's behavior still sails through.
-Make `_run_block` actually execute each block (the three blocks need to
-run in a way that lets `export TEAM_KEY=...` from block 1 be visible to
-blocks 2 and 3, the same way a learner pasting them one after another into
-one terminal would get that for free), and check the *real* output against
-what QUICKSTART.md's own prose says should come back.
+On a mismatch the message should say what the doc claims and what the
+gateway did instead.
 """
 
 import json

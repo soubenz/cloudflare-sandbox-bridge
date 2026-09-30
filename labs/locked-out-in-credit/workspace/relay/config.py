@@ -49,8 +49,7 @@ MAX_COMPLETION_TOKENS = _i("MAX_COMPLETION_TOKENS", "120")
 
 # The number this lab is about: what one tenant may spend before its calls
 # are refused. The same number for every tenant on purpose -- a flat
-# allowance is the simplest budget there is, and the bug here has nothing to
-# do with the number being wrong. It is scoped to the wrong thing.
+# allowance is the simplest budget there is.
 TENANT_BUDGET_TOKENS = _i("TENANT_BUDGET_TOKENS", "1500")
 
 # How long to wait for the relay's own process to come up.

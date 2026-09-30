@@ -17,7 +17,7 @@ two stories.
 |---|---|
 | **jaeger** tab | Real Jaeger UI. No login. Search by service, or paste a trace id directly. |
 | `services/gateway.py` | The entry point. `POST /ingest` starts the request, calls the worker, and returns the trace id it used -- in its own JSON response, so you always know exactly which trace to go look at. Already correctly instrumented; you don't need to touch it. |
-| `worker/worker.py` | **This is what you fix.** `POST /process` does its own local work, then forwards the job to storage with a second call. Its spans have real durations and real attributes already -- they're just not part of the trace that got them there. |
+| `worker/worker.py` | `POST /process` does its own local work, then forwards the job to storage with a second call. Its spans have real durations and real attributes already; the worker's spans are not part of the trace that reached it. |
 | `services/storage.py` | Where the worker's job ends up. `POST /store` normally succeeds; a request body carrying `"trigger_error": true` makes it deliberately fail, with a real error status on its own span. Already correctly instrumented; you don't need to touch it. |
 
 Everything here uses the real OpenTelemetry SDK's own auto-instrumentation

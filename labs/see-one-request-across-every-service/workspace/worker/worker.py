@@ -7,15 +7,9 @@ broker), this service does its own local step, then forwards the job on to
 storage for persistence with a second POST call. Three real, separate hops:
 caller -> gateway -> (here) -> storage.
 
-Your job: make this service's spans land in the SAME trace Jaeger already
-shows for the gateway's own request, correctly nested under whatever called
-each of them -- not a second, disconnected trace that happens to start here.
-Every span below already carries real attributes and a real duration; only
-where it's rooted is wrong.
-
-Use the OTel SDK's own instrumentation and propagators (this file already
-imports opentelemetry-instrumentation-flask and -requests below) -- nothing
-here should ever read or write a `traceparent` header by hand.
+Spans are exported over OTLP/HTTP to the collector and show up in Jaeger
+under the service name `opalix-worker`. Each span carries its own attributes
+and duration. Nothing here reads or writes a `traceparent` header by hand.
 """
 import os
 import time
@@ -27,7 +21,6 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.flask import FlaskInstrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
 
 OTLP_ENDPOINT = os.environ["OTLP_HTTP_ENDPOINT"]
@@ -42,9 +35,6 @@ provider.add_span_processor(
 trace.set_tracer_provider(provider)
 
 app = Flask(__name__)
-# TODO: this service never wires up FlaskInstrumentor. Every span it
-# creates below is therefore a fresh root -- it never picks up whatever
-# trace context the caller sent.
 RequestsInstrumentor().instrument()
 tracer = provider.get_tracer("opalix.worker")
 

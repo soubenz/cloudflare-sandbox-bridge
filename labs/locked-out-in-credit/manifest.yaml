@@ -1,5 +1,5 @@
-# P3-01 in the lab catalogue: path 3, Building an AI Platform. Multi-tenant
-# budgets on a shared model gateway.
+# Path 2 (ai-platform), Module 1's break-fix lab: multi-tenant budgets on a
+# shared model gateway.
 #
 # Break-fix, titled by symptom rather than by the concept being taught. One
 # planted bug, in workspace/relay/budget.py: the ledger that is supposed to
@@ -35,7 +35,7 @@ module: 1
 order: 6
 tier: pro
 estimated_minutes: 20
-difficulty: advanced
+difficulty: core
 summary: >-
   One relay serves four tenants' calls to the same model. Three of them, all
   well under their own budget, started getting refused the same morning a

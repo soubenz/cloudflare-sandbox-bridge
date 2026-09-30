@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Outcome-based: resets the ledger service, runs the learner's own
-# `run_traffic.py` over the lab traffic, and grades what the ledger
-# recorded. The work lives in _harness.py, which all three graders share.
+# Outcome-based: the learner's own `run_traffic.py` is run once per grading
+# run and all three checks read its result. See _harness.py.
 set -uo pipefail
 PATH="${PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -10,4 +9,4 @@ if [ -z "$PY" ]; then
   echo '{"pass": false, "message": "grader bug: no python3 on PATH inside the container"}'
   exit 1
 fi
-exec "$PY" "$HERE/_harness.py" a-tenant-that-spent-its-allowance-is-actually-cut-off
+exec "$PY" -B "$HERE/_harness.py" a-tenant-that-spent-its-allowance-is-actually-cut-off

@@ -9,28 +9,61 @@ is about which calls reached the upstream ledger, for which tenant, and at
 what cost, all of it read from the request bodies the ledger itself
 received, never from what the relay claims about itself.
 
+One traffic run serves all three checks. A run takes minutes against a real
+model and the relay owns a fixed port, so three checks must not each do it.
+Check scripts are staged fresh into one shared directory for the run and
+deleted afterward (docs/lab-authoring.md), so that directory -- the one this
+file sits in -- doubles as scratch space for exactly one run: whichever check
+runs first takes `results.lock` (atomic create-exclusive), resets the ledger,
+runs the traffic once and writes `results.json`; the others wait for that
+file and read it. A lock older than the longest check's timeout belongs to a
+holder that was killed, and is removed. Every check then applies its own
+pass/fail reading to the same recorded facts.
+
 Determinism comes from the traffic file and the ledger's own token count,
 not from this file and not from the provider: the same traffic, replayed
 through a correct relay, produces the same admissions on every run, whether
 or not a real model answered.
 
-Run as:  python3 _harness.py <check-name>
+Run as:  python3 -B _harness.py <check-name>
 """
 
+import glob
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
+import time
 import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+RESULTS_PATH = os.path.join(HERE, "results.json")
+LOCK_PATH = os.path.join(HERE, "results.lock")
+
+def _env_num(name, default, cast):
+    try:
+        return cast(os.environ.get(name, default))
+    except ValueError:
+        return cast(default)
+
 
 WORKSPACE = os.environ.get("OPALIX_WORKSPACE", "/workspace")
 UPSTREAM_URL = os.environ.get("UPSTREAM_URL", "http://127.0.0.1:8933").rstrip("/")
 TRAFFIC_FILE = os.environ.get("TRAFFIC_FILE", os.path.join(WORKSPACE, "traffic.json"))
 DRIVER = os.path.join(WORKSPACE, "run_traffic.py")
-RUN_TIMEOUT_S = float(os.environ.get("OPALIX_AGENT_RUN_TIMEOUT_S", "150"))
+RUN_TIMEOUT_S = _env_num("OPALIX_AGENT_RUN_TIMEOUT_S", "150", float)
 
-TENANT_BUDGET_TOKENS = int(os.environ.get("TENANT_BUDGET_TOKENS", "1500"))
-MAX_COMPLETION_TOKENS = int(os.environ.get("MAX_COMPLETION_TOKENS", "120"))
+# The longest timeout_s in manifest.yaml's checks[]. A lock whose mtime is
+# older than this cannot belong to a live holder -- the platform would have
+# killed it -- so it is stale. A waiter gives up a little before its own
+# timeout so it can still say why.
+LONGEST_CHECK_TIMEOUT_S = _env_num("OPALIX_LONGEST_CHECK_TIMEOUT_S", "200", float)
+WAIT_S = LONGEST_CHECK_TIMEOUT_S - 10
+
+TENANT_BUDGET_TOKENS = _env_num("TENANT_BUDGET_TOKENS", "1500", int)
+MAX_COMPLETION_TOKENS = _env_num("MAX_COMPLETION_TOKENS", "120", int)
 
 
 def verdict(passed, message):
@@ -64,7 +97,7 @@ def _tok(text):
 
 
 def load_workloads():
-    """tenant -> (request count, total token cost) computed straight from the
+    """tenant -> [request count, total token cost] computed straight from the
     traffic file, the same formula the ledger uses."""
     with open(TRAFFIC_FILE, "r", encoding="utf-8") as handle:
         data = json.load(handle)
@@ -74,43 +107,57 @@ def load_workloads():
         tenant = item["tenant"]
         cost = _tok(item["text"]) + 4 + MAX_COMPLETION_TOKENS
         n, total = workloads.get(tenant, (0, 0))
-        workloads[tenant] = (n + 1, total + cost)
+        workloads[tenant] = [n + 1, total + cost]
     return workloads
 
 
 def run_traffic():
-    """Resets the ledger, runs the relay once over the full traffic file,
-    returns what happened."""
+    """Resets the ledger, runs the relay once over the full traffic file.
+    Returns (run, None) or (None, why-the-run-could-not-happen)."""
     _post(UPSTREAM_URL + "/api/reset")
     try:
         proc = subprocess.run(
-            [sys.executable, DRIVER, TRAFFIC_FILE],
+            [sys.executable, "-B", DRIVER, TRAFFIC_FILE],
             cwd=WORKSPACE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=RUN_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
-        verdict(False, "`python3 run_traffic.py` did not finish within %ds. A relay that "
-                       "keeps retrying a refusal, or that never refuses anything, takes "
-                       "longer than one that decides once and moves on." % int(RUN_TIMEOUT_S))
+        return None, ("`python3 run_traffic.py` did not finish within %ds. A relay that "
+                      "keeps retrying a refusal, or that never refuses anything, takes "
+                      "longer than one that decides once and moves on." % int(RUN_TIMEOUT_S))
     except OSError as err:
-        verdict(False, "could not run `python3 %s`: %s" % (DRIVER, err))
+        return None, "could not run `python3 %s`: %s" % (DRIVER, err)
 
     return {
         "exit_code": proc.returncode,
         "stdout": proc.stdout.decode("utf-8", "replace"),
         "stderr": proc.stderr.decode("utf-8", "replace").strip(),
         "ledger": _get(UPSTREAM_URL + "/api/log", timeout=30),
-    }
+    }, None
+
+
+# The driver's closing tally, printed on every completed run:
+#   relay: N served, M refused for budget, K failed outright
+SUMMARY_RE = re.compile(r"^relay: \d+ served, \d+ refused for budget, \d+ failed outright\s*$",
+                        re.MULTILINE)
 
 
 def crashed(run):
-    tail = [line for line in run["stderr"].splitlines() if line.strip()]
-    if tail and ("Traceback" in run["stderr"] or run["exit_code"] not in (0, 1)):
-        return "the relay did not run: `python3 run_traffic.py` exited %d -- %s" % (
-            run["exit_code"], tail[-1][:200])
-    return None
+    """A crash is an exit code other than 0 or 1, a Traceback on stderr, or an
+    exit 1 without the driver's closing tally. Exit 1 *with* the tally is a
+    completed run in which some calls failed outright (a live-gateway hiccup);
+    the ledger-based checks decide what that means."""
+    code = run["exit_code"]
+    if code in (0, 1) and "Traceback" not in run["stderr"] and \
+            (code == 0 or SUMMARY_RE.search(run["stdout"])):
+        return None
+    lines = [l for l in run["stderr"].splitlines() if l.strip()] or \
+            [l for l in run["stdout"].splitlines() if l.strip()]
+    return "the relay did not run cleanly: `python3 run_traffic.py` exited %d%s -- %s" % (
+        code, "" if code != 1 or "Traceback" in run["stderr"] else " without finishing its summary",
+        lines[-1][:200] if lines else "no output")
 
 
 def calls(run):
@@ -255,39 +302,20 @@ CHECKS = {
 }
 
 
-def main():
-    name = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("OPALIX_CHECK_NAME", "")
-    if name not in CHECKS:
-        verdict(False, "grader bug: unknown check %r (expected one of %s)"
-                % (name, ", ".join(sorted(CHECKS))))
 
-    if not os.path.isfile(DRIVER):
-        verdict(False, "%s is gone. The graders run `python3 run_traffic.py`; keep that "
-                       "entry point." % DRIVER)
-    if not os.path.isfile(TRAFFIC_FILE):
-        verdict(False, "the traffic file %s is gone; the graders run the relay over it."
-                % TRAFFIC_FILE)
+# --- the one shared run ------------------------------------------------------
 
-    problem = reachable("upstream", UPSTREAM_URL)
-    if problem:
-        verdict(False, problem)
 
-    try:
-        workloads = load_workloads()
-    except Exception as err:  # noqa: BLE001
-        verdict(False, "could not read the traffic file %s: %s" % (TRAFFIC_FILE, err))
-    if len(workloads) < 2:
-        verdict(False, "the traffic file %s names fewer than two tenants; there is nothing "
-                       "for a multi-tenant budget check to prove." % TRAFFIC_FILE)
-
-    run = run_traffic()
+def fatal_problem(run, workloads):
+    """What is wrong with the run as a whole, before any single check reads it,
+    or None. Shared by all three checks, so all three say the same thing."""
     problem = crashed(run)
     if problem:
-        verdict(False, problem)
+        return problem
 
     seen = calls(run)
     if not seen:
-        verdict(False, (
+        return ((
             "not one request reached the model. The traffic file has %d tenant(s) with "
             "requests in it, and at least the ones with room in their budget should have "
             "been served. Refusing everyone is not a way to stay inside anyone's budget."
@@ -295,7 +323,7 @@ def main():
 
     stray = [c for c in seen if c["tenant"] == "unknown"]
     if stray:
-        verdict(False, (
+        return ((
             "the ledger could not tell which tenant %d of %d admitted request(s) belonged "
             "to. It looks for each known tenant id anywhere in the request body, so "
             "`unknown` means none of them were there -- keep the tenant's own id somewhere "
@@ -304,15 +332,147 @@ def main():
 
     if not any(c["outcome"] == "answered" for c in seen):
         worst = seen[-1]
-        verdict(False, (
+        return ((
             "not one of the %d admitted request(s) came back with a reply, so there is "
             "nothing here to grade about who got served. The ledger recorded the last one "
             "as `%s`%s. Check that the relay forwards an admitted call to $UPSTREAM_URL and "
             "returns what comes back."
         ) % (len(seen), worst["outcome"], " (%s)" % worst["note"][:140] if worst.get("note") else ""))
+    return None
 
-    CHECKS[name](run, workloads)
+
+def build_results(fingerprint):
+    """Runs the traffic once and records everything the checks need. A problem
+    that stops the run being graded at all is recorded as `fatal`."""
+    results = {"fingerprint": fingerprint, "fatal": None, "workloads": None, "run": None}
+
+    if not os.path.isfile(DRIVER):
+        results["fatal"] = ("%s is gone. The graders run `python3 run_traffic.py`; keep "
+                            "that entry point." % DRIVER)
+        return results
+    if not os.path.isfile(TRAFFIC_FILE):
+        results["fatal"] = ("the traffic file %s is gone; the graders run the relay over "
+                            "it." % TRAFFIC_FILE)
+        return results
+
+    problem = reachable("upstream", UPSTREAM_URL)
+    if problem:
+        results["fatal"] = problem
+        return results
+
+    try:
+        workloads = load_workloads()
+    except Exception as err:  # noqa: BLE001
+        results["fatal"] = "could not read the traffic file %s: %s" % (TRAFFIC_FILE, err)
+        return results
+    results["workloads"] = workloads
+    if len(workloads) < 2:
+        results["fatal"] = ("the traffic file %s names fewer than two tenants; there is "
+                            "nothing for a multi-tenant budget check to prove." % TRAFFIC_FILE)
+        return results
+
+    run, why = run_traffic()
+    if why:
+        results["fatal"] = why
+        return results
+    results["run"] = run
+    results["fatal"] = fatal_problem(run, workloads)
+    return results
+
+
+def _fingerprint():
+    """Identifies what the learner handed in, so a results file left over from
+    a different workspace state is never mistaken for this run's."""
+    digest = hashlib.sha256()
+    paths = sorted(glob.glob(os.path.join(WORKSPACE, "relay", "*.py")))
+    paths += [DRIVER, TRAFFIC_FILE]
+    for path in paths:
+        digest.update(path.encode("utf-8"))
+        try:
+            with open(path, "rb") as handle:
+                digest.update(handle.read())
+        except OSError:
+            digest.update(b"<missing>")
+    return digest.hexdigest()
+
+
+def _read_results(fingerprint):
+    try:
+        with open(RESULTS_PATH, "r", encoding="utf-8") as handle:
+            results = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return results if results.get("fingerprint") == fingerprint else None
+
+
+def _take_lock():
+    try:
+        fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        return False
+    os.close(fd)
+    return True
+
+
+def _remove_stale_lock():
+    try:
+        age = time.time() - os.path.getmtime(LOCK_PATH)
+    except OSError:
+        return
+    if age > LONGEST_CHECK_TIMEOUT_S:
+        try:
+            os.remove(LOCK_PATH)
+        except OSError:
+            pass
+
+
+def get_results():
+    """The shared results, running the one traffic run if this is the first
+    check to ask for it."""
+    fingerprint = _fingerprint()
+    deadline = time.time() + WAIT_S
+    while True:
+        results = _read_results(fingerprint)
+        if results is not None:
+            return results
+
+        if _take_lock():
+            try:
+                results = _read_results(fingerprint) or build_results(fingerprint)
+                tmp = RESULTS_PATH + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as handle:
+                    json.dump(results, handle)
+                os.replace(tmp, RESULTS_PATH)
+                return results
+            finally:
+                try:
+                    os.remove(LOCK_PATH)
+                except OSError:
+                    pass
+
+        _remove_stale_lock()
+        if time.time() > deadline:
+            raise RuntimeError("timed out after %ds waiting for another check to finish "
+                               "the shared traffic run" % int(WAIT_S))
+        time.sleep(0.5)
+
+
+def main():
+    name = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("OPALIX_CHECK_NAME", "")
+    if name not in CHECKS:
+        verdict(False, "grader bug: unknown check %r (expected one of %s)"
+                % (name, ", ".join(sorted(CHECKS))))
+
+    results = get_results()
+    if results.get("fatal"):
+        verdict(False, results["fatal"])
+    CHECKS[name](results["run"], results["workloads"])
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as err:  # noqa: BLE001 - a grader fault must never read as a learner pass
+        print(json.dumps({"pass": False,
+                          "message": "grader error: %s: %s" % (type(err).__name__, err)}))
+        sys.exit(1)

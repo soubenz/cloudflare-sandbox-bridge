@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared grader for keep-the-docs-and-the-example-true's three checks.
+"""Shared grader for keep-the-docs-and-the-example-true's four checks.
 
 Never reads the learner's verify_docs.py source. Instead it runs the
 learner's own workspace/docs/verify_docs.py as a real subprocess, against
@@ -27,8 +27,18 @@ database-backed model, added by gateway/seed_model.py through
 LiteLLM refuses to edit or delete a config-file model through this same
 API.
 
+A second, independent step proves verify_docs.py actually *reads the doc*:
+this harness rewrites the one line of QUICKSTART.md that states what the
+generated key is granted (its `"models"` field) so it claims an alias the
+gateway never granted, runs verify_docs.py again, and requires a failure
+whose message names that documented-but-wrong value. A script that
+hard-codes its expected names and never opens the doc cannot produce that
+message. The original doc is backed up first and put back byte-for-byte in a
+`finally` (and, if a grading run was killed mid-way, on the next run's
+startup), so the learner's QUICKSTART.md is never left altered.
+
 That rename-and-restore only has to happen once per check *run*, not once
-per check (three separate check scripts, each its own process) -- so, like
+per check (separate check scripts, each its own process) -- so, like
 the other two gateway labs' harnesses, whichever check script asks first
 does the real work and caches the result in `results.json` next to this
 file; the other two just read it. A lock file (`results.lock`, atomic
@@ -40,6 +50,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -54,6 +65,10 @@ LOCK_PATH = os.path.join(HERE, "results.lock")
 # stand-in workspace while developing/testing the lab itself.
 WORKSPACE_DIR = os.environ.get("WORKSPACE_DIR", "/workspace")
 VERIFY_PY = os.path.join(WORKSPACE_DIR, "docs", "verify_docs.py")
+DOC_PATH = os.path.join(WORKSPACE_DIR, "docs", "QUICKSTART.md")
+# Kept outside checks/ (which is staged fresh and deleted after every run) so
+# a grading run that is killed mid-mutation can still be healed next time.
+DOC_BACKUP_PATH = os.path.join(tempfile.gettempdir(), "opalix-keep-the-docs-quickstart.orig")
 
 LITELLM_URL = os.environ.get("LITELLM_URL", "http://127.0.0.1:4000").rstrip("/")
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
@@ -65,6 +80,19 @@ LITELLM_PARAMS = {
     "api_base": "http://127.0.0.1:8961/a/v1",
     "api_key": "unused",
 }
+
+# The one line of QUICKSTART.md that states what the generated key is granted,
+# and what the wrong-scope check rewrites it to say. `team-search` appears
+# nowhere else in the doc or the gateway, so a failure message containing it
+# can only have come from a script that read the doc.
+SCOPE_CLAIM = '["team-chat"]'
+WRONG_SCOPE_CLAIM = '["team-search"]'
+WRONG_SCOPE_TOKEN = "team-search"
+
+# Values QUICKSTART.md itself states about the calls that break when the
+# alias is renamed. A failure message about the rename must quote at least
+# one of them (it says what the doc claimed), not merely name the alias.
+DOCUMENTED_VALUE_TOKENS = ["reply from deployment a", SCOPE_CLAIM, "choices[0].message"]
 
 RUN_TIMEOUT_S = 60
 RESTORE_RETRIES = 5
@@ -129,6 +157,77 @@ def _run_verify_docs():
     }
 
 
+def _read_bytes(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def _write_bytes_in_place(path, data):
+    # Truncate-and-write (not replace) so the learner's ownership and mode on
+    # QUICKSTART.md are untouched.
+    with open(path, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def _restore_doc_from_backup():
+    """Puts QUICKSTART.md back from the backup if one exists (a previous run
+    was killed mid-mutation, or this run is finishing). Returns None on
+    success or an error string."""
+    if not os.path.exists(DOC_BACKUP_PATH):
+        return None
+    try:
+        original = _read_bytes(DOC_BACKUP_PATH)
+        _write_bytes_in_place(DOC_PATH, original)
+        if _read_bytes(DOC_PATH) != original:
+            return "QUICKSTART.md did not read back identical after restore"
+        os.remove(DOC_BACKUP_PATH)
+        return None
+    except OSError as e:
+        return "could not restore QUICKSTART.md: %r" % (e,)
+
+
+def _wrong_scope_doc(text):
+    """Returns the doc text with the key-scope claim rewritten, or None if
+    the doc has no such line. Only the line that says the key's `"models"`
+    is `exactly [...]` is touched."""
+    out, changed = [], False
+    for line in text.split("\n"):
+        if not changed and '"models"' in line and "exactly" in line and SCOPE_CLAIM in line:
+            line = line.replace(SCOPE_CLAIM, WRONG_SCOPE_CLAIM, 1)
+            changed = True
+        out.append(line)
+    return "\n".join(out) if changed else None
+
+
+def _run_verify_docs_on_wrong_scope_doc():
+    """Runs verify_docs.py against a QUICKSTART.md whose stated key scope is
+    wrong, then restores the doc. Returns (result_dict, error_or_None)."""
+    try:
+        original = _read_bytes(DOC_PATH)
+    except OSError as e:
+        return None, "could not read %s: %r" % (DOC_PATH, e)
+    mutated = _wrong_scope_doc(original.decode("utf-8"))
+    if mutated is None:
+        return None, "could not find the line in QUICKSTART.md that states the key's granted models"
+    try:
+        _write_bytes_in_place(DOC_BACKUP_PATH, original)
+    except OSError as e:
+        return None, "could not back up QUICKSTART.md before mutating it: %r" % (e,)
+    try:
+        try:
+            _write_bytes_in_place(DOC_PATH, mutated.encode("utf-8"))
+            result = _run_verify_docs()
+        finally:
+            restore_err = _restore_doc_from_backup()
+        if restore_err:
+            return None, restore_err
+        return result, None
+    except OSError as e:
+        return None, "could not mutate QUICKSTART.md: %r" % (e,)
+
+
 def _find_model_id(name):
     status, body = _http("GET", "/model/info")
     if status != 200 or not isinstance(body, dict):
@@ -181,6 +280,11 @@ def _ensure_restored():
 def _build_results():
     results = {"setup_error": None}
 
+    doc_err = _restore_doc_from_backup()
+    if doc_err:
+        results["setup_error"] = "could not heal QUICKSTART.md left over from an interrupted grading run: %s" % doc_err
+        return results
+
     # Self-heal first: a previous run that crashed mid-rename must not
     # poison this one.
     restore_err = _ensure_restored()
@@ -222,7 +326,14 @@ def _build_results():
                 )
                 return results
 
-        # --- 3. run it twice more against the now-restored (unchanged)
+        # --- 3. state the wrong key scope in the doc itself and run it again ---
+        scope_result, scope_err = _run_verify_docs_on_wrong_scope_doc()
+        if scope_err:
+            results["setup_error"] = "wrong-key-scope step failed: %s -- a grading-infrastructure problem" % scope_err
+            return results
+        results["result_wrong_scope"] = scope_result
+
+        # --- 4. run it twice more against the now-restored (unchanged)
         # doc, to catch a comparison that's flaky even when nothing is wrong ---
         results["result_restored_a"] = _run_verify_docs()
         results["result_restored_b"] = _run_verify_docs()
@@ -308,7 +419,39 @@ def check_catches_a_renamed_model_alias():
             "verify_docs.py correctly failed after %r was renamed, but its message doesn't name %r as what "
             "broke: %r" % (REAL_NAME, REAL_NAME, message),
         )
-    _finish(True, "verify_docs.py caught the renamed model alias and named it: %s" % message)
+    if not any(token in message for token in DOCUMENTED_VALUE_TOKENS):
+        _finish(
+            False,
+            "verify_docs.py failed after %r was renamed and named the alias, but its message doesn't say "
+            "what QUICKSTART.md claimed it would get (expected it to quote a documented value such as %s): %r"
+            % (REAL_NAME, " or ".join(repr(t) for t in DOCUMENTED_VALUE_TOKENS), message),
+        )
+    _finish(True, "verify_docs.py caught the renamed model alias, named it and quoted the doc: %s" % message)
+
+
+def check_catches_a_wrong_key_scope():
+    r = get_results()
+    if r.get("setup_error"):
+        _finish(False, r["setup_error"])
+
+    result = r.get("result_wrong_scope") or {}
+    if result.get("pass") is not False:
+        _finish(
+            False,
+            "rewrote the line of QUICKSTART.md that says what the generated key is granted so it claims %s "
+            "(the gateway grants %s), then re-ran verify_docs.py -- it should have reported a failure and "
+            "instead reported: pass=%r message=%r. A verify script that never reads the doc cannot notice "
+            "this." % (WRONG_SCOPE_CLAIM, SCOPE_CLAIM, result.get("pass"), result.get("message")),
+        )
+    message = (result.get("message") or "")
+    if WRONG_SCOPE_TOKEN not in message:
+        _finish(
+            False,
+            "verify_docs.py failed after QUICKSTART.md's stated key scope was changed to %s, but its message "
+            "doesn't name the documented value %r that it compared the gateway against: %r"
+            % (WRONG_SCOPE_CLAIM, WRONG_SCOPE_TOKEN, message),
+        )
+    _finish(True, "verify_docs.py caught the doc's wrong key scope and named the documented value: %s" % message)
 
 
 def check_comparison_is_not_flaky():
@@ -334,6 +477,7 @@ def check_comparison_is_not_flaky():
 COMMANDS = {
     "doc-example-verifies-as-true": check_doc_example_verifies_as_true,
     "catches-a-renamed-model-alias": check_catches_a_renamed_model_alias,
+    "catches-a-wrong-key-scope": check_catches_a_wrong_key_scope,
     "comparison-is-not-flaky": check_comparison_is_not_flaky,
 }
 
