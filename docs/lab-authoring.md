@@ -235,6 +235,13 @@ with `cwd: /opt/lab`, see the full session env, and are killed after 30
 seconds; they are extracted root-owned and mode 0700, so the learner cannot
 read them ahead of time.
 
+## Learning content
+
+A lab can teach before it tests with a `learn/` folder: a story, lessons,
+quiz questions and, for explore labs, the graded fields. It is documented in
+[learning-content.md](learning-content.md). `labs learn-check <dir>` validates
+it, and `labs publish` refuses a lab whose `learn/` does not compile.
+
 ## Lint
 
 `scripts/lint-labs.mjs` checks the mistakes that have shipped in real labs.
@@ -259,6 +266,7 @@ errors, with a one-line reason. `labs test` does not lint.
 | `hints-duplicate` | error | `hints.md` contains the first 40 characters (whitespace-normalised) of any manifest `hints[].text`, which un-gates that hint |
 | `brief-length` | warning / error | `brief.md` is over 500 words (warning) or 700 words (error), not counting fenced code blocks |
 | `pressure-undisclosed` | error | the manifest has a non-empty `pressure[]` and `brief.md` never contains the word "minute" (any case) |
+| `lesson-leaks-answer` | warning | a `learn/concepts/*.md` lesson contains, as a whole word (letters, digits, `_` and `-` do not end a word) and ignoring case, a string value of six or more characters from `solution/answers.json`. Numbers, booleans and short values are ignored; a lab with no `solution/answers.json` is skipped |
 | `harness-stale-lock` | warning | `checks/_harness.py` mentions a `.lock` file but lacks either a staleness check (`getmtime` / `st_mtime`) or a `try:` / `except Exception` around main |
 
 ### Canonical ports

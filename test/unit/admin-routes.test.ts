@@ -471,6 +471,7 @@ describe('service key only', () => {
       'get /admin/users',
       'get /admin/waitlist',
       'get /admin/feedback',
+      'get /admin/learning',
       'get /labs/:slug/versions',
       'post /labs/:slug/promote',
     ]);

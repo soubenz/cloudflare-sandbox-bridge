@@ -2,6 +2,7 @@ import type { Env } from '../env';
 import type { LabManifest } from './manifest';
 import { parseManifest } from './manifest';
 import { ApiError } from '../lib/errors';
+import { LearnBundleSchema, parseLearnBundle, type LearnBundle } from './learn';
 
 export function manifestKey(slug: string, version: string): string {
   return `labs/${slug}/${version}/manifest.json`;
@@ -19,6 +20,16 @@ export function privateKey(slug: string, version: string): string {
  */
 export function solutionKey(slug: string, version: string): string {
   return `labs/${slug}/${version}/solution.tgz`;
+}
+/**
+ * The lab's compiled learning layer (story, lessons, quiz, graded fields) as
+ * one JSON document: `LearnBundle`, validated by `parseLearnBundle` at
+ * publish. Unlike solution.tgz it is meant for learners, so GET
+ * /labs/:slug/learn serves it; it never holds anything from checks/ or
+ * solution/.
+ */
+export function learnKey(slug: string, version: string): string {
+  return `labs/${slug}/${version}/learn.json`;
 }
 export function currentKey(slug: string): string {
   return `labs/${slug}/current`;
@@ -47,6 +58,8 @@ export interface LabIndexEntry {
   prerequisites?: string[];
   tier: LabManifest['tier'];
   estimated_minutes?: number;
+  /** True when the current version ships a learning layer (`learn.json`), so the console can offer "Before you begin" without fetching it. */
+  has_learn: boolean;
 }
 
 /** Resolves a lab's current published version and manifest. Used by POST /sessions and GET /labs/{slug}. */
@@ -60,10 +73,29 @@ export async function loadCurrentManifest(env: Env, slug: string): Promise<{ ver
   return { version, manifest };
 }
 
+/**
+ * The learning layer of a lab's current version, or null when the lab is
+ * published but ships none. An unpublished lab is 404 `lab_not_found`, like
+ * `loadCurrentManifest`. Read with the bundle's own schema only: the concept
+ * registry can change after a publish, and a lab that was valid then must
+ * not start failing to serve now.
+ */
+export async function loadCurrentLearn(env: Env, slug: string): Promise<{ version: string; learn: LearnBundle } | null> {
+  const currentObj = await env.LABS_BUCKET.get(currentKey(slug));
+  if (!currentObj) throw ApiError.notFound('lab_not_found', `No published lab "${slug}"`);
+  const version = (await currentObj.text()).trim();
+  const obj = await env.LABS_BUCKET.get(learnKey(slug, version));
+  if (!obj) return null;
+  const parsed = LearnBundleSchema.safeParse(await obj.json());
+  if (!parsed.success) throw ApiError.internal(`lab "${slug}" version "${version}" has a learn.json that does not parse`);
+  return { version, learn: parsed.data };
+}
+
 export async function loadCatalogue(env: Env): Promise<LabIndexEntry[]> {
   const obj = await env.LABS_BUCKET.get(INDEX_KEY);
   if (!obj) return [];
-  return (await obj.json()) as LabIndexEntry[];
+  // An index written before the learning layer has no `has_learn`; those labs have none.
+  return ((await obj.json()) as Array<Omit<LabIndexEntry, 'has_learn'> & { has_learn?: boolean }>).map((e) => ({ ...e, has_learn: e.has_learn === true }));
 }
 
 export interface CatalogueQuery {
@@ -128,6 +160,11 @@ export function compareCatalogueEntries(a: LabIndexEntry, b: LabIndexEntry): num
  * one it is stored on its own, at `solutionKey`, and never served by a
  * catalogue route; a forced re-publish that carries none removes the one the
  * version already had, so the stored bundle always matches the last publish.
+ * The same holds for `learn.json` (the compiled learning layer): the Worker
+ * validates it with `parseLearnBundle` before anything is written, because
+ * it must not trust the CLI, and stores the parsed (defaults filled) form.
+ * A bundle that does not validate is `400 invalid_learn_bundle` and nothing
+ * of the publish is stored.
  *
  * A version is immutable once published: re-publishing the same
  * `<slug>/<version>` is `409 version_exists` unless `force` is true, because
@@ -144,11 +181,22 @@ export async function publishLab(
     privateTgz: ReadableStream | ArrayBuffer;
     /** Optional: the lab's solution/ as a gzip tarball (see `solutionKey`). */
     solutionTgz?: ReadableStream | ArrayBuffer;
+    /** Optional: the compiled learn/ folder, as parsed JSON (see `learnKey`). Validated here. */
+    learnJson?: unknown;
     force?: boolean;
   }
 ): Promise<{ slug: string; version: string; warnings: string[] }> {
   const manifest = parseManifest(input.manifestJson);
   const { slug, version } = manifest;
+
+  let learn: LearnBundle | undefined;
+  if (input.learnJson !== undefined) {
+    try {
+      learn = parseLearnBundle(input.learnJson);
+    } catch (err) {
+      throw ApiError.badRequest('invalid_learn_bundle', err instanceof Error ? err.message : String(err));
+    }
+  }
 
   if (input.force !== true && (await env.LABS_BUCKET.head(manifestKey(slug, version)))) {
     throw ApiError.conflict(
@@ -167,6 +215,13 @@ export async function publishLab(
       ? env.LABS_BUCKET.put(solutionKey(slug, version), input.solutionTgz)
       : input.force === true
         ? env.LABS_BUCKET.delete(solutionKey(slug, version))
+        : Promise.resolve(),
+    learn !== undefined
+      ? env.LABS_BUCKET.put(learnKey(slug, version), JSON.stringify(learn, null, 2), {
+          httpMetadata: { contentType: 'application/json' },
+        })
+      : input.force === true
+        ? env.LABS_BUCKET.delete(learnKey(slug, version))
         : Promise.resolve(),
   ]);
 
@@ -219,7 +274,8 @@ export async function rebuildIndex(env: Env): Promise<LabIndexEntry[]> {
     await Promise.all(
       pending.slice(i, i + WIDTH).map(async (slug) => {
         try {
-          const { manifest } = await loadCurrentManifest(env, slug);
+          const { version, manifest } = await loadCurrentManifest(env, slug);
+          const hasLearn = (await env.LABS_BUCKET.head(learnKey(slug, version))) !== null;
           entries.push({
             slug: manifest.slug,
             version: manifest.version,
@@ -236,6 +292,7 @@ export async function rebuildIndex(env: Env): Promise<LabIndexEntry[]> {
             prerequisites: manifest.prerequisites,
             tier: manifest.tier,
             estimated_minutes: manifest.estimated_minutes,
+            has_learn: hasLearn,
           });
         } catch {
           // Skip a slug whose current pointer is briefly inconsistent mid-publish.

@@ -10,7 +10,7 @@
 // with Finding = { rule, file, line, message }. This only READS the lab.
 //
 // Rules: leak, python-no-B, port-kill, port, hints-duplicate, brief-length,
-// pressure-undisclosed, harness-stale-lock. See "Lint" in docs/lab-authoring.md.
+// pressure-undisclosed, harness-stale-lock, lesson-leaks-answer. See "Lint" in docs/lab-authoring.md.
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -361,6 +361,47 @@ function ruleHarnessStaleLock(dir, add) {
   add('warning', 'harness-stale-lock', file, lineOf(text, ref.index), `_harness.py uses a lock file (${ref[0]}) but is missing ${missing.join(" and ")}; a crashed run can leave the lock and fail every later run`);
 }
 
+/**
+ * A learn/ lesson that spells out a value the lab's solution/answers.json
+ * gives. Lessons teach the concept, not the answer to this lab's graded
+ * questions. Low-noise on purpose: only string values of at least six
+ * characters are looked for (numbers, booleans and short choice ids such as
+ * "a" would match ordinary prose), as a whole word and ignoring case, and
+ * the lab is skipped when it has no solution/answers.json. A warning only.
+ */
+const MIN_ANSWER_LENGTH = 6;
+function ruleLessonLeaksAnswer(dir, add) {
+  const answersFile = join(dir, 'solution', 'answers.json');
+  const lessonsDir = join(dir, 'learn', 'concepts');
+  if (!existsSync(answersFile) || !existsSync(lessonsDir)) return;
+  let answers;
+  try {
+    answers = JSON.parse(readFileSync(answersFile, 'utf8'));
+  } catch {
+    return; // the lab's own checks report an unreadable answers file
+  }
+  if (!answers || typeof answers !== 'object') return;
+  const values = [...new Set(Object.values(answers).filter((v) => typeof v === 'string' && v.trim().length >= MIN_ANSWER_LENGTH).map((v) => v.trim()))];
+  if (values.length === 0) return;
+  const word = '[\\p{L}\\p{N}_-]';
+  const patterns = values.map((v) => ({
+    value: v,
+    re: new RegExp(`(?<!${word})${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!${word})`, 'iu'),
+  }));
+  for (const file of walkFiles(lessonsDir)) {
+    if (!file.endsWith('.md')) continue;
+    const text = readText(file);
+    if (text === null) continue;
+    // The whole file is read, front matter included: the recap is shown to every learner.
+    for (const { value, re } of patterns) {
+      const hit = re.exec(text);
+      if (hit) {
+        add('warning', 'lesson-leaks-answer', file, lineOf(text, hit.index), `the lesson contains "${value}", a value from solution/answers.json; a lesson should teach the idea, not give away a graded answer`);
+      }
+    }
+  }
+}
+
 // --------------------------------------------------------------------- API
 
 /**
@@ -378,6 +419,7 @@ export function lintLab(dir) {
   rulePythonNoB(dir, add);
   rulePortKill(dir, add);
   ruleHarnessStaleLock(dir, add);
+  ruleLessonLeaksAnswer(dir, add);
 
   const m = loadManifest(dir);
   if (m.error) {

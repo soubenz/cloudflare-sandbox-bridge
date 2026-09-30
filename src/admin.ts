@@ -21,6 +21,8 @@ const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const BY_LAB_LIMIT = 20;
 const BY_DAY_LIMIT = 366;
 const MAX_STATES = 8;
+const LEARNING_QUESTION_LIMIT = 500;
+const LEARNING_CONCEPT_LIMIT = 200;
 /** Larger than any created_at, so an absent cursor is just "everything". */
 const NO_CURSOR = Number.MAX_SAFE_INTEGER;
 
@@ -356,6 +358,84 @@ export function mountAdmin(app: Hono<{ Bindings: Env }>): void {
       rows,
       ...(merged.length > limit ? { next: rows[rows.length - 1]!.created_at } : {}),
     });
+  });
+
+  // --- Learning analytics: how learners answer the quiz questions ---
+
+  // Aggregates of the anonymous learn_answers table (no user id anywhere on
+  // it). `?lab=` narrows to one lab, `?from=` / `?to=` to a window (default:
+  // all time). Onboarding answers have no lab and come back with
+  // `lab_slug: null`. Rows are ordered so the weakest questions (lowest
+  // percent_correct, then most attempts) come first.
+  app.get('/admin/learning', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const q = c.req.query();
+    const from = parseInstant('from', q.from);
+    const to = parseInstant('to', q.to);
+    if (from !== undefined && to !== undefined && from >= to) throw ApiError.badRequest('bad_window', 'from must be earlier than to');
+    if (q.lab !== undefined && q.lab !== '' && !SLUG.test(q.lab)) throw ApiError.badRequest('bad_lab', 'lab must be a lab slug');
+
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (from !== undefined) {
+      where.push('created_at >= ?');
+      params.push(from);
+    }
+    if (to !== undefined) {
+      where.push('created_at < ?');
+      params.push(to);
+    }
+    if (q.lab) {
+      where.push('lab_slug = ?');
+      params.push(q.lab);
+    }
+    const clause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+
+    try {
+      const [byQuestion, byConcept] = await Promise.all([
+        c.env.DB.prepare(
+          `SELECT lab_slug, question_id, MAX(concept) AS concept,
+                  COUNT(*) AS attempts, SUM(correct) AS correct
+             FROM learn_answers ${clause}
+            GROUP BY lab_slug, question_id
+            ORDER BY (1.0 * SUM(correct) / COUNT(*)) ASC, attempts DESC, lab_slug ASC, question_id ASC
+            LIMIT ?`
+        )
+          .bind(...params, LEARNING_QUESTION_LIMIT)
+          .all<Record<string, string | number | null>>(),
+        c.env.DB.prepare(
+          `SELECT concept, COUNT(*) AS attempts, SUM(correct) AS correct
+             FROM learn_answers ${clause}
+            GROUP BY concept
+            ORDER BY concept ASC
+            LIMIT ?`
+        )
+          .bind(...params, LEARNING_CONCEPT_LIMIT)
+          .all<Record<string, string | number | null>>(),
+      ]);
+      const percent = (correct: number, attempts: number) => (attempts > 0 ? round((100 * correct) / attempts, 1) : null);
+      const questions = (byQuestion.results ?? []).map((r) => {
+        const attempts = Number(r.attempts);
+        const correct = Number(r.correct ?? 0);
+        return {
+          lab_slug: (r.lab_slug as string | null) ?? null,
+          question_id: String(r.question_id),
+          concept: String(r.concept),
+          attempts,
+          correct,
+          percent_correct: percent(correct, attempts),
+        };
+      });
+      const concepts = (byConcept.results ?? []).map((r) => {
+        const attempts = Number(r.attempts);
+        const correct = Number(r.correct ?? 0);
+        return { concept: String(r.concept), attempts, correct, percent_correct: percent(correct, attempts) };
+      });
+      return c.json({ available: true, ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}), questions, concepts });
+    } catch (err) {
+      if (!isMissingSchema(err)) throw err;
+      return c.json({ available: false, questions: [], concepts: [] });
+    }
   });
 
   // --- Catalogue: versions and promotion ---

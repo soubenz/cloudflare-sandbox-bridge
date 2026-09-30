@@ -102,6 +102,27 @@ export function buildSolutionTgz(solutionDir: string): { tgz: Buffer; files: str
   return { tgz, files };
 }
 
+/**
+ * The lab's learn/ folder as the JSON the Worker stores at `learn.json`, or
+ * undefined when the lab has no learn/ folder. Throws an Error listing every
+ * problem when the folder does not compile, so a lab with broken learning
+ * content is never published (the same check as `labs learn-check`). The
+ * Worker validates the bundle again on its side; this only spares the author
+ * a round trip.
+ */
+export function buildLearnUpload(dir: string): { json: string; lessons: number; questions: number; fields: number } | undefined {
+  const result = compileLearnDir(dir);
+  if (result === null) return undefined;
+  if (result.problems.length > 0) {
+    const n = result.problems.length;
+    throw new Error(
+      `refusing to publish ${dir}: learn/ has ${n} problem${n === 1 ? '' : 's'}:\n${result.problems.map((p) => `  - ${p}`).join('\n')}\n(fix them; \`labs learn-check ${dir}\` prints the same list)`
+    );
+  }
+  const b = result.bundle!;
+  return { json: JSON.stringify(b), lessons: b.concepts.length, questions: b.questions.length, fields: b.fields.length };
+}
+
 function buildTgz(sourceDir: string, subdirs: string[]): Buffer {
   const staging = mkdtempSync(join(tmpdir(), 'opalix-publish-'));
   try {
@@ -162,7 +183,7 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
   labs
     .command('publish <dir>')
     .description(
-      'Publish a lab directory (manifest.yaml, workspace/, checks/, pressure/, and solution/ minus _degenerate/ — stored privately, shown to learners once they have earned it)'
+      'Publish a lab directory (manifest.yaml, workspace/, checks/, pressure/, and solution/ minus _degenerate/ — stored privately, shown to learners once they have earned it; learn/ is compiled and refused if it has problems)'
     )
     .option('--force', 'overwrite a version that is already published (default: the server answers 409 version_exists)')
     .option('--skip-lint', 'publish even if `labs lint` reports errors')
@@ -179,6 +200,10 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
         }
       }
       const manifestJson = parseYaml(readFileSync(manifestPath, 'utf8'));
+
+      // Compile learn/ before packing anything: a lab whose learning content
+      // does not check out is refused with every problem listed.
+      const learn = buildLearnUpload(dir);
 
       // workspace.tgz gets everything a learner should see, laid out exactly as
       // it should land at /workspace in the container: the *contents* of the
@@ -207,6 +232,13 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
         if (solution) {
           form.set('solution', new Blob([solution.tgz]), 'solution.tgz');
           console.error(`solution/: ${solution.files.length} file${solution.files.length === 1 ? '' : 's'} packed for the reveal`);
+        }
+
+        // learn/ is compiled to one JSON document and stored at learn.json;
+        // the Worker re-validates it. No learn/ folder, nothing sent.
+        if (learn) {
+          form.set('learn', new Blob([learn.json], { type: 'application/json' }), 'learn.json');
+          console.error(`learn/: ${learn.lessons} lesson${learn.lessons === 1 ? '' : 's'}, ${learn.questions} question${learn.questions === 1 ? '' : 's'}, ${learn.fields} field${learn.fields === 1 ? '' : 's'} compiled`);
         }
 
         if (opts.force) form.set('force', 'true');

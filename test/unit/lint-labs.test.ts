@@ -306,3 +306,36 @@ describe('real labs', () => {
     }
   });
 });
+
+describe('lesson-leaks-answer', () => {
+  const answers = JSON.stringify({ support_deployment: 'a', unknown_alias_status: 400, deployment_name: 'gpt-mini-eu', reads_cache: true });
+  const lesson = (body: string) => `---\nid: gateway.routing-aliases\ntitle: Aliases\nminutes: 2\nrecap: An alias maps a name.\n---\n${body}\n`;
+  const warnings = (files: Record<string, string>) => lintLab(lab(files)).warnings.filter((w) => w.rule === 'lesson-leaks-answer');
+
+  it('warns when a lesson contains a string value from solution/answers.json, with its line', () => {
+    const w = warnings({
+      'solution/answers.json': answers,
+      'learn/concepts/gateway.routing-aliases.md': lesson('An alias is a name.\n\nSo the support alias points at GPT-MINI-EU today.'),
+    });
+    expect(w).toHaveLength(1);
+    expect(w[0]!.message).toContain('gpt-mini-eu');
+    expect(w[0]!.file).toMatch(/gateway\.routing-aliases\.md$/);
+    expect(w[0]!.line).toBe(9);
+    expect(lintLab(lab({ 'solution/answers.json': answers, 'learn/concepts/gateway.routing-aliases.md': lesson('gpt-mini-eu') })).errors).toEqual([]);
+  });
+
+  it('stays quiet about short strings, numbers, booleans, partial words and lessons that do not spell the answer', () => {
+    expect(
+      warnings({
+        'solution/answers.json': answers,
+        'learn/concepts/gateway.routing-aliases.md': lesson('Option a is common. A 400 status means bad request, and true is true. The gpt-mini-eu-west name is different.'),
+      })
+    ).toEqual([]);
+  });
+
+  it('is skipped when the lab has no solution/answers.json, no lessons, or an unreadable answers file', () => {
+    expect(warnings({ 'learn/concepts/gateway.routing-aliases.md': lesson('gpt-mini-eu') })).toEqual([]);
+    expect(warnings({ 'solution/answers.json': answers })).toEqual([]);
+    expect(warnings({ 'solution/answers.json': '{nope', 'learn/concepts/gateway.routing-aliases.md': lesson('gpt-mini-eu') })).toEqual([]);
+  });
+});

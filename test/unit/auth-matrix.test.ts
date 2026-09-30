@@ -32,7 +32,10 @@ const SERVICE_KEY_ONLY: Array<[string, string]> = [
   ['get', '/sessions'],
   ['get', '/labs'],
   ['get', '/labs/:slug'],
+  ['get', '/labs/:slug/learn'],
   ['post', '/labs/publish'],
+  ['get', '/learn/onboarding'],
+  ['post', '/learn/answers'],
   ['get', '/pools'],
   ['get', '/pools/:family'],
   ['post', '/pools/:family/prime'],
@@ -51,6 +54,7 @@ const ADMIN_SERVICE_KEY_ONLY: Array<[string, string]> = [
   ['get', '/admin/users'],
   ['get', '/admin/waitlist'],
   ['get', '/admin/feedback'],
+  ['get', '/admin/learning'],
   ['get', '/labs/:slug/versions'],
   ['post', '/labs/:slug/promote'],
 ];
@@ -121,6 +125,26 @@ describe('route auth matrix', () => {
     expect(router.split('solutionKey(').length - 1, 'solutionKey( appears once in the router').toBe(1);
     expect(body).toContain('solutionKey(');
     expect(router).not.toMatch(/solution\.tgz/);
+  });
+
+  it('the learn routes take the service key only, like GET /labs/:slug, and never read checks or the solution', () => {
+    // The console Worker reads a lab's learning content through the service
+    // key; no session token is involved, and the bundle is only what
+    // `labs publish` compiled from learn/.
+    for (const [method, path] of [
+      ['get', '/labs/:slug/learn'],
+      ['get', '/learn/onboarding'],
+      ['post', '/learn/answers'],
+    ] as const) {
+      const body = handlerFor(method, path);
+      expect(body, `${method} ${path}`).toContain('requireServiceAuth(');
+      expect(body, `${method} ${path}`).not.toContain('requireBrowserAuth(');
+      expect(body, `${method} ${path}`).not.toMatch(/solutionKey\(|privateKey\(|workspaceKey\(/);
+    }
+    expect(handlerFor('get', '/labs/:slug/learn').indexOf('requireServiceAuth(')).toBeLessThan(handlerFor('get', '/labs/:slug/learn').indexOf('loadCurrentLearn('));
+    // The answers table is anonymous: the route must not hand it an identity.
+    const answers = handlerFor('post', '/learn/answers');
+    expect(answers).not.toMatch(/user_id|uid|CF-Connecting-IP|x-forwarded-for|c\.req\.header\(/i);
   });
 
   it('has no unauthenticated session-start route', () => {

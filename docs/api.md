@@ -10,7 +10,7 @@ Two credential kinds:
   backend and the CLI. Required on `POST /sessions`, `GET /sessions`,
   `POST /labs/publish`, `POST /pools/:family/prime`, `POST /pools/:family/drain`,
   `/users/*`, and `POST /sessions/{id}/events`. The read-only catalogue and
-  pool routes (`GET /labs`, `GET /labs/:slug`, `GET /pools`,
+  pool routes (`GET /labs`, `GET /labs/:slug`, `GET /labs/:slug/learn`, `GET /pools`,
   `GET /pools/:family`), `GET /usage` and `GET /health?deep=1` require it
   too. Only plain `GET /health` is open (it returns nothing but `{ ok: true }`).
   **No other route is open.** There was once
@@ -55,9 +55,12 @@ minutes are usable now.
 | GET | `/health` | none | liveness → `{ ok: true }` |
 | GET | `/health?deep=1` | service | probes D1, R2 (`labs/index.json`) and both pools → `200 { ok: true, checks: { d1, r2, pools: { agent: { degraded, warm }, gateway } } }`, or `503 { ok: false, failing: [...], checks }` naming what failed; a degraded pool counts as failing³ |
 | GET | `/usage?from=&to=` | service | estimated container spend per family from D1 sessions (epoch ms; default last 30 days) → `{ from, to, by_family: { agent: { hours, usd, sessions }, gateway }, total_usd }`; see `docs/runbooks/cost.md` |
-| GET | `/labs` | service¹ | catalogue, ordered by `(path, module, order, slug)` → `[{ slug, version, title, type, family, summary?, objectives, difficulty?, timeout_minutes, path?, module?, order?, prerequisites?, tier, estimated_minutes? }]`. `summary`, `difficulty`, `path`, `module`, `order`, `prerequisites` and `estimated_minutes` are omitted when the manifest does not set them; `tier` is `free` or `pro` (default `pro`); `objectives` is `[]` when unset. `bundle.ts` `listCatalogue({ path?, module?, tier?, limit?, cursor? })` implements the filtered, paged form (cursor = last slug of the previous page; default limit 50, max 200) for the route to expose |
+| GET | `/labs` | service¹ | catalogue, ordered by `(path, module, order, slug)` → `[{ slug, version, title, type, family, summary?, objectives, difficulty?, timeout_minutes, path?, module?, order?, prerequisites?, tier, estimated_minutes?, has_learn }]`. `has_learn` is always present: true when the current version ships a [learn bundle](#learn-bundle). `summary`, `difficulty`, `path`, `module`, `order`, `prerequisites` and `estimated_minutes` are omitted when the manifest does not set them; `tier` is `free` or `pro` (default `pro`); `objectives` is `[]` when unset. `bundle.ts` `listCatalogue({ path?, module?, tier?, limit?, cursor? })` implements the filtered, paged form (cursor = last slug of the previous page; default limit 50, max 200) for the route to expose |
 | GET | `/labs/:slug` | service¹ | current version + manifest → `{ version, manifest }` |
-| POST | `/labs/publish` | service | multipart: `manifest`, `workspace`, `private` files, an optional `solution` file (the lab's `solution/` as a gzip tarball; `labs publish` sends it when the directory has anything to upload) and optional `force=true` → `201 { slug, version, warnings: string[] }`; `warnings` lists prerequisites that are not published labs. Re-publishing an existing version is `409 version_exists` unless `force`. The solution is stored privately at `labs/{slug}/{version}/solution.tgz`, never inside `workspace.tgz` or `private.tgz` and never served by a catalogue route; a forced re-publish without a `solution` part removes the one the version had |
+| GET | `/labs/:slug/learn` | service¹ | the lab's [learn bundle](#learn-bundle), current version → `{ version, learn }`; `404 no_learn` when the lab is published without one, `404 lab_not_found` when it is not published. Read by the console Worker with the service key, like `GET /labs/:slug` |
+| GET | `/learn/onboarding` | service | the platform onboarding quiz, `packages/catalogue/onboarding.json` parsed with `parseOnboarding` → `{ version: 1, intro, questions }`; `404 no_onboarding` when that file is not in the deployed bundle |
+| POST | `/learn/answers` | service | anonymous quiz-answer analytics, called by the console Worker → `201 { ok: true, recorded }`. See [Learning analytics](#learning-analytics) |
+| POST | `/labs/publish` | service | multipart: `manifest`, `workspace`, `private` files, an optional `solution` file (the lab's `solution/` as a gzip tarball; `labs publish` sends it when the directory has anything to upload), an optional `learn` file (the compiled `learn/` folder as JSON, see [Learn bundle](#learn-bundle)) and optional `force=true` → `201 { slug, version, warnings: string[] }`; `warnings` lists prerequisites that are not published labs. Re-publishing an existing version is `409 version_exists` unless `force`. The solution is stored privately at `labs/{slug}/{version}/solution.tgz`, never inside `workspace.tgz` or `private.tgz` and never served by a catalogue route; a forced re-publish without a `solution` part removes the one the version had. The `learn` part is validated with `parseLearnBundle` (the Worker does not trust the CLI): a bundle that does not parse or does not cross-check is `400 invalid_learn_bundle` listing every problem, and nothing of the publish is stored; a forced re-publish without a `learn` part removes the one the version had |
 | GET | `/pools`, `/pools/:family` | service¹ | warm pool stats → `{ warm, claimed, max_instances, available, config, stats }`; `max_instances` is the container class's ceiling (`MAX_INSTANCES_<FAMILY>` var, default 10) and `available` is `max_instances - claimed`, the sessions that could still start⁴; `stats` includes `consecutive_start_failures`, `degraded`, and `last_start_error` / `last_start_error_at` when a start has failed |
 | POST | `/pools/:family/prime` | service | `{ target? }` → `{ ok: true }`; only ever grows the pool |
 | POST | `/pools/:family/drain` | service | destroys every warm container; claimed ones are untouched → `{ ok: true }` |
@@ -218,6 +221,77 @@ the RPC boundary.
 | 503 | `sdk_transient` | SDK `OperationInterruptedError` / `RPCTransportError` |
 | 500 | `internal_error` | anything unrecognised; `details.error_name` carries the original class name |
 
+## Learn bundle
+
+The learning layer of a lab (`labs/<slug>/learn/`, authored as described in
+`docs/learning-content.md`). `labs publish` compiles the folder with
+`compileLearnDir` (`cli/src/learn-compile.ts`) and refuses to publish while
+there are problems, listing all of them; the compiled JSON goes up as the
+`learn` part of `POST /labs/publish`. The Worker parses it again with
+`parseLearnBundle` (`src/labs/learn.ts`) and stores the parsed form, defaults
+filled in, at `labs/{slug}/{version}/learn.json` in R2, next to `manifest.json`
+(same key layout as `solution.tgz`, but this one is served to learners).
+`GET /labs/:slug/learn` returns it for the current version as
+`{ version, learn }`. The catalogue entry's `has_learn` says whether the file
+exists, so the console can skip the request.
+
+`learn` holds only what the author wrote under `learn/`; nothing from
+`checks/`, `solution/` or `workspace/` is ever part of it. (The quiz's
+`answer` arrays are in it, because the console grades the quiz in the
+browser. They are answers to the concept questions, not to the lab's graded
+checks.)
+
+```json
+{
+  "version": 1,
+  "story":     { "title": "…", "minutes": 2, "body": "markdown, no HTML" },
+  "concepts":  [{ "id": "gateway.routing-aliases", "title": "…", "minutes": 3, "recap": "one line", "body": "markdown" }],
+  "questions": [{ "id": "q-alias-purpose", "concept": "gateway.routing-aliases", "type": "single",
+                  "prompt": "…", "options": [{ "id": "a", "text": "…" }], "answer": ["a"],
+                  "explanation": "…", "diagnostic": true }],
+  "answers_file": "answers.json",
+  "fields":    [{ "key": "support_deployment", "prompt": "…", "kind": "choice", "choices": ["a", "b"], "help": "…" }]
+}
+```
+
+`story` is absent when the lab has no `story.md`. `concepts` (at most 8),
+`questions` (at most 40) and `fields` (at most 12) may be empty arrays. Every
+concept id must be in `packages/catalogue/concepts.json`, every question's
+concept must have a lesson in the same bundle, and every lesson needs a
+diagnostic question; the schema and the cross-checks live in
+`src/labs/learn.ts` and are shared by the CLI and the Worker.
+
+Old versions keep the bundle they were published with. Rolling `current` back
+(`POST /labs/:slug/promote`) changes what `GET /labs/:slug/learn` serves, and
+`has_learn` follows after the index rebuild the promote already performs.
+
+## Learning analytics
+
+`POST /learn/answers` (service key) records which quiz questions learners get
+right. The console Worker calls it once per finished quiz.
+
+```json
+{
+  "lab_slug": "see-what-a-gateway-does",
+  "lab_version": "1.0.0",
+  "answers": [
+    { "question_id": "q-alias-purpose", "concept": "gateway.routing-aliases", "correct": true, "phase": "diagnostic" }
+  ]
+}
+```
+
+- `lab_slug` and `lab_version` are optional (the onboarding quiz belongs to no
+  lab); `phase` is `onboarding` or `diagnostic`. `answers` has 1 to 60 items.
+- The body is validated strictly: an unknown key anywhere, such as
+  `user_id`, is `400 bad_answers`. **The table has no user id, no session id
+  and no IP address** (`learn_answers`, `migrations/0008_learn_answers.sql`),
+  so a row cannot be tied to a learner.
+- All rows of one request are inserted in a single D1 batch (all or none).
+  The Worker does not check that a `question_id` exists in the lab's bundle.
+
+`GET /admin/learning` reads the table back; see
+[Admin routes](#admin-routes-service-key-only).
+
 ## Session status
 
 `GET /sessions/:id` returns the Session DO's `status()`. A console that
@@ -371,6 +445,7 @@ the service key; a session token is refused. They are registered by
 | `GET /admin/users?limit=&before=` | Each distinct `user_id` with session count, last session, total cost, completed count and plan when a `users` row exists. |
 | `GET /admin/waitlist?limit=&before=` | Waitlist rows, newest first; `{ available: false, rows: [] }` if the table does not exist. |
 | `GET /admin/feedback?limit=&before=` | Lab feedback and site feedback merged newest first, each with a `source`; `missing` names a table that does not exist. |
+| `GET /admin/learning?lab=&from=&to=` | Quiz-answer analytics from the anonymous `learn_answers` table: `{ available, questions: [{ lab_slug, question_id, concept, attempts, correct, percent_correct }], concepts: [{ concept, attempts, correct, percent_correct }] }`. Questions are grouped per `(lab_slug, question_id)` (`lab_slug` is `null` for the onboarding quiz), weakest first, at most 500; concepts are totals per concept id, at most 200. `percent_correct` is 0 to 100 with one decimal. `lab` narrows to one lab; `from` / `to` (epoch ms or an ISO date) bound `created_at` and default to all time. `{ available: false, questions: [], concepts: [] }` if the table does not exist. |
 | `GET /labs/:slug/versions` | Every published version of a lab with its manifest title, version and estimated minutes, and which is `current` and `previous`. |
 | `POST /labs/:slug/promote` body `{ "version": "1.2.0" }` | Points `current` at that version (the old one becomes `previous`) and rebuilds the catalogue index. `404 unknown_version` if it was never published; promoting the current version is a no-op apart from the index rebuild. |
 

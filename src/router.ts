@@ -1,7 +1,9 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { Env } from './env';
 import { isFamily } from './families/registry';
-import { loadCurrentManifest, listCatalogue, publishLab, solutionKey, INDEX_KEY } from './labs/bundle';
+import { loadCurrentManifest, loadCurrentLearn, listCatalogue, publishLab, solutionKey, INDEX_KEY } from './labs/bundle';
+import { parseAnswersBody, recordAnswers } from './labs/learn-answers';
+import { loadOnboarding } from './labs/onboarding';
 import { parseManifest } from './labs/manifest';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
@@ -71,6 +73,18 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     return c.json({ version, manifest });
   });
 
+  // The lab's learning layer (story, lessons, quiz, graded fields). Service
+  // key like GET /labs/:slug: the console Worker reads it for a learner. It
+  // is only what `labs publish` compiled from learn/, never anything from
+  // checks/ or solution/. 404 `no_learn` when the lab ships none.
+  app.get('/labs/:slug/learn', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const slug = c.req.param('slug');
+    const found = await loadCurrentLearn(c.env, slug);
+    if (!found) throw ApiError.notFound('no_learn', `Lab "${slug}" has no learning content`);
+    return c.json(found);
+  });
+
   app.post('/labs/publish', async (c) => {
     requireServiceAuth(c.req.raw, c.env);
     const form = await c.req.raw.formData();
@@ -84,14 +98,43 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     // Optional: a lab with no solution/ sends no part (an empty one counts as none).
     const solutionFile = form.get('solution');
     const solutionTgz = solutionFile instanceof File && solutionFile.size > 0 ? await solutionFile.arrayBuffer() : undefined;
+    // Optional: the compiled learn/ folder as JSON. publishLab validates it
+    // (the CLI is not trusted); an empty part counts as none.
+    const learnFile = form.get('learn');
+    let learnJson: unknown;
+    if (learnFile instanceof File && learnFile.size > 0) {
+      try {
+        learnJson = JSON.parse(await learnFile.text());
+      } catch {
+        throw ApiError.badRequest('invalid_learn_bundle', 'the learn part is not valid JSON');
+      }
+    }
     const result = await publishLab(c.env, {
       manifestJson,
       workspaceTgz: await workspaceFile.arrayBuffer(),
       privateTgz: await privateFile.arrayBuffer(),
       ...(solutionTgz ? { solutionTgz } : {}),
+      ...(learnJson !== undefined ? { learnJson } : {}),
       force: form.get('force') === 'true',
     });
     return c.json(result, 201);
+  });
+
+  // --- Learning layer (service auth; the console Worker calls these for learners) ---
+
+  // The one-time platform onboarding quiz (packages/catalogue/onboarding.json).
+  app.get('/learn/onboarding', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const onboarding = await loadOnboarding();
+    if (!onboarding) throw ApiError.notFound('no_onboarding', 'No onboarding quiz is published');
+    return c.json(onboarding);
+  });
+
+  // Anonymous quiz-answer analytics: no user id, no session id, no IP.
+  app.post('/learn/answers', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const body = parseAnswersBody(await c.req.json().catch(() => undefined));
+    return c.json({ ok: true, recorded: await recordAnswers(c.env, body) }, 201);
   });
 
   // --- Pool ops (service auth) ---
