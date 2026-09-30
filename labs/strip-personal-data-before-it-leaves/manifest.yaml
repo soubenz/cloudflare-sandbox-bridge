@@ -1,0 +1,215 @@
+# Build lab: nothing is broken by omission the way a break-fix lab would be
+# -- gateway/hooks/pii_guard.py runs, is wired up, and does real work. It
+# just has one realistic gap: it was built and tested against English
+# customer messages, and it shows. See that file's own top-of-file comment
+# for the shape of the gap, and solution/gateway/hooks/pii_guard.py's for
+# exactly what closes it.
+#
+# Feasibility, verified live before writing this manifest (throwaway venv,
+# this session):
+#
+#  1. Presidio (presidio-analyzer + presidio-anonymizer) needs an explicit
+#     NlpEngineProvider config naming SMALL spaCy models
+#     (en_core_web_sm ~15MB, es_core_news_sm ~16MB) -- a bare
+#     `AnalyzerEngine()` silently tries to download the 400MB
+#     `en_core_web_lg` over the network on first use, which this
+#     container's egress fence blocks outright.
+#  2. With both small models loaded, real detection of PERSON,
+#     EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD and US_SSN was confirmed in
+#     both English and Spanish text -- and, separately, confirmed to keep
+#     working with zero network access once the models are pre-downloaded
+#     (tested inside a real network namespace with no route out at all).
+#  3. LOAD-BEARING GOTCHA: Presidio's own `UsSsnRecognizer` deliberately
+#     REJECTS several canonical placeholder SSNs as known sample data --
+#     `123-45-6789`, `987-65-4320` and `078-05-1120` will NEVER be flagged,
+#     on purpose, no matter what. This lab's own seed/test data uses
+#     `234-56-7890`, `512-33-4471` and similar instead -- confirmed live to
+#     be detected correctly. hints.md calls this out, since it's exactly
+#     the kind of real "recall" surprise this lab means to teach, and a
+#     learner who reaches for a placeholder SSN while testing their own fix
+#     will otherwise conclude their fix doesn't work when it does.
+#  4. Presidio + spaCy get their own isolated Python install
+#     (/opt/opalix/venvs/presidio), not the image's shared environment --
+#     see IMAGE_CHANGE_NEEDED.md alongside this file for exactly what that
+#     needs and why (a real, confirmed dependency-pin collision, not just a
+#     theoretical one).
+#
+# Postgres is mandatory here for the same reason as every other lab in this
+# family (LiteLLM's virtual-key/spend layer is backed by a Prisma schema
+# hard-coded to `provider = "postgresql"`) even though this lab uses no
+# teams or virtual keys at all -- confirmed against this same image's own
+# smoke fixture (test/fixtures/labs/gateway-litellm-hello), which needs it
+# for the identical reason. `litellm`'s own admin UI always requires a
+# login and nothing turns that off, so per the no-login rule it stays
+# `ui: false`; `view` is this lab's own small read-only substitute --
+# services/fake_provider.py's own request log, which is this lab's ground
+# truth for whether personal data actually reached "the model".
+#
+# checks/_harness.py never reads the learner's code. It starts its own
+# LiteLLM against a fresh `grading` database, pointed at the learner's
+# *current* gateway/config.yaml and hooks/pii_guard.py, and drives three
+# real calls at it -- an English message, a Spanish-language message, and a
+# message with no real personal data in it at all -- then reads
+# services/fake_provider.py's own request log to see what actually arrived.
+
+slug: strip-personal-data-before-it-leaves
+version: 1.0.0
+title: "Strip personal data before it reaches a model or a log"
+type: build
+family: gateway
+difficulty: core
+summary: >-
+  Customer messages pass through this gateway on their way to a model.
+  Names, emails, phone numbers and SSNs are in there often enough that a
+  redaction hook already runs on every call -- it just wasn't built or
+  tested against anything but English.
+objectives:
+  - "Detect and redact real personal data (names, emails, phone numbers, SSNs) in a request before it leaves the gateway"
+  - "Make that redaction actually work across more than one language, not just the one it was demoed with"
+  - "Avoid over-redacting: ordinary content that only looks like personal data has to survive intact"
+timeout_minutes: 90
+idle_minutes: 10
+
+env:
+  LITELLM_URL: "http://127.0.0.1:4000"
+  PROVIDER_URL: "http://127.0.0.1:8961"
+  PROVIDER_BASE_URL: "http://127.0.0.1:8961/v1"
+  PROVIDER_PORT: "8961"
+  LITELLM_MASTER_KEY: "sk-opalix-pii-master"
+  VIEW_PORT: "8962"
+
+services:
+  # Copied from test/fixtures/labs/gateway-litellm-hello/ -- see that
+  # fixture's manifest for why each line of this argv exists (data dir
+  # under /tmp because /workspace is chowned to `learner`, postgres run as
+  # its own OS user via runuser even though this service is launched as
+  # root like every other one here).
+  - name: postgres
+    argv:
+      [
+        "sh", "-c",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
+      ]
+    cwd: /workspace
+    port: 5432
+    healthcheck:
+      type: tcp
+      timeout_s: 60
+    ui: false
+    depends_on: []
+  - name: provider
+    argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
+    cwd: /workspace
+    port: 8961
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: false
+    depends_on: []
+  - name: litellm
+    # ui: false -- the admin UI always requires a login (docs/lab-authoring.md's
+    # no-login rule); `view` is the tab instead.
+    argv: ["litellm", "--config", "/workspace/gateway/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    cwd: /workspace
+    env:
+      DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
+      LITELLM_MASTER_KEY: "sk-opalix-pii-master"
+      SERVER_ROOT_PATH: "{{service.prefix}}"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # The schema is already migrated: postgres starts from the image's
+      # pre-migrated template (images/gateway/build-pg-template.sh).
+      DISABLE_SCHEMA_UPDATE: "True"
+      PROVIDER_BASE_URL: "http://127.0.0.1:8961/v1"
+      # LiteLLM imports hooks/pii_guard.py by file path on every boot --
+      # without this, the normal Python bytecode-cache-next-to-source
+      # default leaves a __pycache__/ sitting in the learner's own
+      # workspace next to a file they are actively editing.
+      PYTHONDONTWRITEBYTECODE: "1"
+    port: 4000
+    healthcheck:
+      type: http
+      path: /health/readiness
+      # Loading two spaCy pipelines at hook-import time adds real time on
+      # top of LiteLLM's own ~25-33s pre-migrated-database boot (confirmed
+      # live while building this lab: consistently ready well inside 60s;
+      # 90s leaves room for a slower container without hiding a real
+      # failure).
+      timeout_s: 90
+    ui: false
+    depends_on: [postgres, provider]
+  - name: view
+    argv: ["python3", "-B", "/workspace/gateway/view.py"]
+    cwd: /workspace
+    env:
+      PROVIDER_URL: "http://127.0.0.1:8961"
+      VIEW_PORT: "8962"
+      # The session proxy forwards a ui:true service's full path unchanged
+      # (GET /sessions/{id}/services/view/, not GET /) -- view.py strips
+      # this before routing.
+      VIEW_PREFIX: "{{service.prefix}}"
+    port: 8962
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 20
+    ui: true
+    depends_on: [provider]
+
+pressure: []
+
+checks:
+  # Each check shares one grader-run's worth of setup (its own LiteLLM
+  # against a fresh `grading` database, loaded with the learner's current
+  # gateway/config.yaml and hooks/pii_guard.py, then three calls against
+  # it) -- see checks/_harness.py. Sequential on purpose: whichever check
+  # runs first pays the setup cost and the other two just read its result.
+  - name: english-pii-never-reaches-the-model
+    script: english-pii-never-reaches-the-model.sh
+    timeout_s: 300
+    weight: 2
+    parallel: false
+  - name: spanish-pii-never-reaches-the-model
+    script: spanish-pii-never-reaches-the-model.sh
+    timeout_s: 300
+    weight: 2
+    parallel: false
+  # The anti-cheat: stops the first two being satisfied by a hook that
+  # just redacts everything indiscriminately (every digit sequence, every
+  # capitalized word). A learner (or a grading tool) has to leave ordinary
+  # content alone.
+  - name: ordinary-content-is-not-mangled
+    script: ordinary-content-is-not-mangled.sh
+    timeout_s: 300
+    weight: 1
+    parallel: false
+
+hints:
+  - after_minutes: 14
+    text: >-
+      Run `python3 -B send_calls.py english` and then `python3 -B
+      send_calls.py spanish`, and open the view tab after each. The
+      English call's name, email, phone number and SSN all get replaced.
+      The Spanish call's name does not -- look at what gateway/hooks/pii_guard.py
+      actually configures Presidio with.
+  - after_minutes: 27
+    text: >-
+      Presidio doesn't know Spanish out of the box -- it delegates entity
+      recognition to a spaCy model, and pii_guard.py only ever loads
+      `en_core_web_sm`. Loading a second small model
+      (`es_core_news_sm`) for Spanish, and asking Presidio to analyze each
+      message under both languages instead of just English, is the whole
+      fix. Neither model needs downloading at runtime -- they're already
+      on disk (see the isolated venv under /opt/opalix/venvs/presidio).
+  - after_minutes: 41
+    text: >-
+      Two gotchas, both easy to lose an hour to: (1) if you test with a
+      "placeholder" SSN like 123-45-6789, Presidio will never flag it --
+      its SSN recognizer deliberately rejects several well-known sample
+      values on purpose. Use a different-looking fake SSN when you test
+      by hand. (2) after editing pii_guard.py, restart the `litellm`
+      service from the Services panel -- it's imported once at boot, so
+      the running gateway keeps using the old code until you do.
+
+egress:
+  allow: []

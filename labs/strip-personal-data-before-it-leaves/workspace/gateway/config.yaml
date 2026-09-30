@@ -1,0 +1,21 @@
+# One model alias, backed by the scripted provider in
+# services/fake_provider.py -- see that file for why its request log is
+# this lab's ground truth for whether personal data actually reached "the
+# model".
+model_list:
+  - model_name: assistant
+    litellm_params:
+      model: openai/fake-model
+      api_base: os.environ/PROVIDER_BASE_URL
+      api_key: unused
+
+litellm_settings:
+  # A relative dotted path is resolved against this file's own directory:
+  # hooks.pii_guard -> <this dir>/hooks/pii_guard.py, then the named
+  # instance is imported from it. Nothing here needs installing into
+  # LiteLLM's own environment -- see hooks/pii_guard.py's own top-of-file
+  # comment for how it reaches the Presidio install without that.
+  callbacks: ["hooks.pii_guard.pii_guard_instance"]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
