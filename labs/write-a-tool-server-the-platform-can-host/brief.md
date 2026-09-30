@@ -15,13 +15,9 @@ their names, everything.
 | `register.py` | Registers your running tool server with ContextForge. Run it once your server is up and correct. |
 | **view** tab | Read-only: every gateway ContextForge has registered (yours, once you run register.py), the tools it discovered on each and their real input schemas, and any virtual server exposing them. |
 
-ContextForge's own admin UI isn't a tab here -- it always redirects a
-real browser to a login form, even with anonymous access turned on for
-everything else, so `view` stands in for it. You can still talk to
-ContextForge's own REST API directly from a terminal with `curl` any
-time (`curl http://127.0.0.1:4744/gateways`, `curl .../tools`, and so
-on) -- it's specifically a *browser tab* that gets redirected, not a
-plain command-line call.
+ContextForge's own admin UI isn't a tab here -- it redirects a browser to a
+login form -- so `view` stands in for it. Its REST API works from a terminal
+with `curl` any time (`curl http://127.0.0.1:4744/gateways`, `.../tools`).
 
 ## Your task
 
@@ -80,9 +76,7 @@ real caller would use.
 | `pagination-is-correct` | Walking `list_orders` forward with the `nextCursor` it hands back visits every one of the 55 orders exactly once -- no repeats, nothing skipped -- and correctly reports no further cursor once the dataset is exhausted. |
 | `registers-cleanly` | ContextForge's own registration reports your tool server as reachable, with both `get_order` and `list_orders` discovered and their real (typed) input schemas intact. |
 
-The middle two are the ones worth reading closely if something fails:
-`errors-are-clean-not-leaky` is not satisfied by `isError: true` alone --
-a message like `list index out of range` or `invalid literal for int()`
-is a real Python exception that leaked through unhandled, not something
-you wrote on purpose, and it fails this check even though the call did
-technically come back as an error.
+`errors-are-clean-not-leaky` is not satisfied by `isError: true` alone: a
+message like `list index out of range` is a real Python exception that leaked
+through unhandled, and it fails this check even though the call did come back
+as an error.

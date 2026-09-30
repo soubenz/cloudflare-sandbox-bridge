@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Shared grader for this lab's four checks.
 
-Never reads the learner's code. Instead it starts the learner's OWN
-`workspace/tool_server.py` as a fresh subprocess (on its own port, so it
+Never reads or imports the learner's code. Instead it starts the learner's
+OWN `workspace/tool_server.py` as a fresh subprocess (as the `learner` user
+when the grader itself is root -- see `_as_learner`) (on its own port, so it
 never touches the copy the learner's terminal/Services panel is already
 running), starts its OWN throwaway ContextForge instance (fresh secrets,
 fresh sqlite, its own port), registers the tool server against it exactly
@@ -24,9 +25,15 @@ to start at the same instant from both doing the setup.
 Every probe result is a plain fact recorded once (isError, a message, a
 schema) -- the four check scripts each apply their own pass/fail reading
 of the same facts, and never re-hit the network.
+
+The skeleton already registers both tools with correct type hints, so on its
+own a "typed input" or "registers" check would be free points. Neither is
+free here: typed-inputs-are-enforced also needs get_order to return the order
+whose id was asked for, and registers-cleanly also needs pagination and the
+missing-id error to work through the registered gateway. Only a tool server
+whose two bugs are actually fixed gets either.
 """
 import contextlib
-import importlib.util
 import json
 import os
 import re
@@ -72,6 +79,10 @@ MCPGATEWAY_BIN = os.environ.get("MCPGATEWAY_BIN", "mcpgateway")
 # `mcp` SDK) is installed into; overridable for local development.
 PYTHON_BIN = os.environ.get("PYTHON_BIN", sys.executable)
 
+# A results.lock older than the longest check timeout in manifest.yaml (120s)
+# belongs to a run that died; it is removed rather than failing every later run.
+LOCK_STALE_S = 120
+
 READY_TIMEOUT_S = 60
 TOOL_SERVER_READY_TIMEOUT_S = 20
 REGISTER_POLL_TIMEOUT_S = 15
@@ -99,6 +110,23 @@ LEAKY_MARKERS = [
 
 
 # ---------------------------------------------------------------- helpers
+
+RUNUSER = "/usr/sbin/runuser"
+LEARNER_USER = "learner"
+# Orders the grader asks get_order for by id. Both are ids whose position in
+# the dataset list differs from the id, so a lookup by position returns the
+# wrong order for each.
+PROBE_ORDER_IDS = (1, 40)
+
+
+def _as_learner(argv):
+    """The learner's code never runs as the grader's own user. As root (the
+    real container) it goes through `runuser -u learner --`; as anyone else
+    (a local dry run) it runs directly."""
+    if hasattr(os, "geteuid") and os.geteuid() == 0 and os.path.exists(RUNUSER):
+        return [RUNUSER, "-u", LEARNER_USER, "--"] + list(argv)
+    return list(argv)
+
 
 def _finish(passed, message):
     print(json.dumps({"pass": bool(passed), "message": message}))
@@ -164,11 +192,20 @@ def _looks_leaky(text):
     return any(m in low for m in LEAKY_MARKERS)
 
 
-def _load_dataset_ids():
-    spec = importlib.util.spec_from_file_location("grader_dataset", DATASET_PY)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return {o["id"] for o in mod.ORDERS}
+def _load_dataset():
+    """The dataset's rows, read by a child process run as the learner -- never
+    imported into this (root) process. Returns (orders, error)."""
+    try:
+        proc = subprocess.run(
+            _as_learner([PYTHON_BIN, "-B", "-c", "import json, dataset; print(json.dumps(dataset.ORDERS))"]),
+            cwd=WORKSPACE_DIR, capture_output=True, text=True, timeout=20,
+        )
+        orders = json.loads(proc.stdout.strip().splitlines()[-1])
+        if proc.returncode != 0 or not isinstance(orders, list) or not orders:
+            raise ValueError(proc.stderr.strip()[-200:] or "no orders")
+        return [o for o in orders if isinstance(o, dict) and "id" in o], None
+    except Exception as e:  # noqa: BLE001
+        return None, "could not read workspace/dataset.py's orders in a child process: %r" % (e,)
 
 
 # ------------------------------------------------------------- processes
@@ -223,7 +260,7 @@ def _wait_http_ok(path, deadline, base=GRADER_CONTEXTFORGE_URL):
 def _start_grader_tool_server(log_path):
     env = dict(os.environ)
     env["TOOL_SERVER_PORT"] = GRADER_TOOL_SERVER_PORT
-    return _start_proc([PYTHON_BIN, "-B", TOOL_SERVER_PY], env, log_path)
+    return _start_proc(_as_learner([PYTHON_BIN, "-B", TOOL_SERVER_PY]), env, log_path)
 
 
 def _start_grader_contextforge(db_path, log_path):
@@ -305,6 +342,12 @@ def _create_virtual_server(tool_ids):
 
 def _build_results():
     results = {"setup_error": None}
+    orders, err = _load_dataset()
+    if err:
+        results["setup_error"] = err
+        return results
+    results["dataset_ids"] = [o["id"] for o in orders]
+    results["expected_orders"] = {str(o["id"]): o for o in orders if o["id"] in PROBE_ORDER_IDS}
     cf_proc = ts_proc = cf_log = ts_log = None
     tmp_dir = tempfile.mkdtemp(prefix="tool-server-lab-grader-")
     try:
@@ -350,6 +393,11 @@ def _build_results():
         results["typed_get_order"] = {"ok": ok, "is_error": is_error, "message": msg}
         ok, is_error, msg, _ = _mcp_call(server_mcp_url, list_orders_name, {"page_size": "ten"}, 11)
         results["typed_list_orders"] = {"ok": ok, "is_error": is_error, "message": msg}
+
+        # --- get_order returns the order that was asked for ---
+        for order_id in PROBE_ORDER_IDS:
+            ok, is_error, msg, _ = _mcp_call(server_mcp_url, get_order_name, {"order_id": order_id}, 30 + order_id)
+            results["get_order_%d" % order_id] = {"ok": ok, "is_error": is_error, "message": msg}
 
         # --- errors-are-clean-not-leaky probes ---
         ok, is_error, msg, _ = _mcp_call(server_mcp_url, get_order_name, {"order_id": 9999}, 20)
@@ -422,6 +470,12 @@ def get_results():
         with open(RESULTS_PATH) as f:
             return json.load(f)
 
+    try:
+        if time.time() - os.path.getmtime(LOCK_PATH) > LOCK_STALE_S:
+            os.remove(LOCK_PATH)
+    except OSError:
+        pass
+
     got_lock = False
     try:
         fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -454,10 +508,73 @@ def get_results():
 
 # ------------------------------------------------------------- the checks
 
+def _get_order_problem(r):
+    """None if get_order returned the order whose id was asked for, for each
+    probed id; else what was observed instead."""
+    for order_id in PROBE_ORDER_IDS:
+        probe = r.get("get_order_%d" % order_id) or {}
+        human = "get_order(order_id=%d)" % order_id
+        if not probe.get("ok"):
+            return "%s got no valid MCP response at all -- the tool server likely crashed" % human
+        message = probe.get("message") or ""
+        if probe.get("is_error"):
+            return "%s came back isError:true for an order that exists: %r" % (human, message[:160])
+        try:
+            got = json.loads(message)
+        except ValueError:
+            return "%s did not return an order as JSON: %r" % (human, message[:160])
+        want = (r.get("expected_orders") or {}).get(str(order_id)) or {}
+        if not isinstance(got, dict) or got.get("id") != order_id or any(got.get(k) != v for k, v in want.items()):
+            return "%s returned order id %r, not order %d -- the lookup is by position in the list, not by the order's own id" % (
+                human, got.get("id") if isinstance(got, dict) else got, order_id)
+    return None
+
+
+def _pagination_problem(r):
+    """None if walking list_orders visited every order exactly once and then
+    stopped; else what was observed."""
+    pagination = r.get("pagination") or {}
+    if not pagination.get("ok"):
+        return pagination.get("error") or "pagination probe failed for an unknown reason"
+    ids = pagination.get("ids") or []
+    expected = set(r.get("dataset_ids") or [])
+    got = set(ids)
+    if len(ids) != len(got):
+        return "walking list_orders by cursor visited %d orders but only %d were unique -- some order was returned on more than one page" % (len(ids), len(got))
+    missing = expected - got
+    if missing:
+        return "walking list_orders by cursor never reached %d order(s) (e.g. id %s) -- pagination stops or loses ground before the end of the dataset" % (len(missing), sorted(missing)[0])
+    extra = got - expected
+    if extra:
+        return "walking list_orders by cursor returned order id(s) not in the dataset at all: %s" % sorted(extra)[:5]
+    if pagination.get("final_cursor") is not None:
+        return "list_orders never stopped signalling more data (still returned a cursor after the whole dataset had been visited)"
+    return None
+
+
+def _error_probe_problem(r, key, human):
+    """None if this bad call came back as a clean, explanatory isError:true."""
+    probe = r.get(key) or {}
+    if not probe.get("ok"):
+        return "%s got no valid MCP response at all -- the tool server likely crashed" % human
+    message = probe.get("message") or ""
+    if not probe.get("is_error"):
+        return "%s came back isError:false (a silently wrong answer instead of a real error): %r" % (human, message)
+    if _looks_leaky(message):
+        return "%s's error message leaks a raw Python/pydantic exception instead of a clean domain message: %r" % (human, message)
+    if not _mentions_any(message, DOMAIN_WORDS[key]):
+        return "%s's error message doesn't explain what was actually wrong (expected it to mention %s): %r" % (human, " or ".join(DOMAIN_WORDS[key]), message)
+    return None
+
+
 def check_typed_inputs_are_enforced():
     r = get_results()
     if r.get("setup_error"):
         _finish(False, r["setup_error"])
+
+    problem = _get_order_problem(r)
+    if problem:
+        _finish(False, "%s. A schema that says order_id is an integer proves nothing if the tool then returns the wrong order for it." % problem)
 
     for label, key in (("get_order(order_id='not-a-number')", "typed_get_order"), ("list_orders(page_size='ten')", "typed_list_orders")):
         probe = r.get(key) or {}
@@ -465,7 +582,7 @@ def check_typed_inputs_are_enforced():
             _finish(False, "%s got no valid MCP response at all -- the tool server likely crashed" % label)
         if not probe.get("is_error"):
             _finish(False, "%s was accepted (isError:false) instead of rejected -- typed inputs are not being enforced" % label)
-    _finish(True, "a wrong-typed argument to get_order and to list_orders both come back isError:true, not a crash and not a silently-accepted call")
+    _finish(True, "get_order returns the order whose id was asked for (ids %s), and a wrong-typed argument to get_order and to list_orders both come back isError:true, not a crash and not a silently-accepted call" % ", ".join(str(i) for i in PROBE_ORDER_IDS))
 
 
 def check_errors_are_clean_not_leaky():
@@ -473,21 +590,14 @@ def check_errors_are_clean_not_leaky():
     if r.get("setup_error"):
         _finish(False, r["setup_error"])
 
-    for probe_key, domain_key, human in (
-        ("missing_id", "missing_id", "get_order(order_id=9999)"),
-        ("bad_page_size", "bad_page_size", "list_orders(page_size=-3)"),
-        ("bad_cursor", "bad_cursor", "list_orders(cursor='not-an-offset')"),
+    for key, human in (
+        ("missing_id", "get_order(order_id=9999)"),
+        ("bad_page_size", "list_orders(page_size=-3)"),
+        ("bad_cursor", "list_orders(cursor='not-an-offset')"),
     ):
-        probe = r.get(probe_key) or {}
-        if not probe.get("ok"):
-            _finish(False, "%s got no valid MCP response at all -- the tool server likely crashed" % human)
-        message = probe.get("message") or ""
-        if not probe.get("is_error"):
-            _finish(False, "%s came back isError:false (a silently wrong answer instead of a real error): %r" % (human, message))
-        if _looks_leaky(message):
-            _finish(False, "%s's error message leaks a raw Python/pydantic exception instead of a clean domain message: %r" % (human, message))
-        if not _mentions_any(message, DOMAIN_WORDS[domain_key]):
-            _finish(False, "%s's error message doesn't explain what was actually wrong (expected it to mention %s): %r" % (human, " or ".join(DOMAIN_WORDS[domain_key]), message))
+        problem = _error_probe_problem(r, key, human)
+        if problem:
+            _finish(False, problem)
     _finish(True, "a missing order id, a nonsensical page_size, and an invalid cursor all come back isError:true with a clean, specific message -- never a leaked Python exception and never a silent wrong answer")
 
 
@@ -496,24 +606,11 @@ def check_pagination_is_correct():
     if r.get("setup_error"):
         _finish(False, r["setup_error"])
 
+    problem = _pagination_problem(r)
+    if problem:
+        _finish(False, problem)
     pagination = r.get("pagination") or {}
-    if not pagination.get("ok"):
-        _finish(False, pagination.get("error") or "pagination probe failed for an unknown reason")
-
-    ids = pagination.get("ids") or []
-    expected = set(_load_dataset_ids())
-    got = set(ids)
-
-    if len(ids) != len(got):
-        _finish(False, "walking list_orders by cursor visited %d orders but only %d were unique -- some order was returned on more than one page" % (len(ids), len(got)))
-    missing = expected - got
-    if missing:
-        _finish(False, "walking list_orders by cursor never reached %d order(s) (e.g. id %s) -- pagination stops or loses ground before the end of the dataset" % (len(missing), sorted(missing)[0]))
-    extra = got - expected
-    if extra:
-        _finish(False, "walking list_orders by cursor returned order id(s) not in the dataset at all: %s" % sorted(extra)[:5])
-    if pagination.get("final_cursor") is not None:
-        _finish(False, "list_orders never stopped signalling more data (still returned a cursor after the whole dataset had been visited)")
+    expected = set(r.get("dataset_ids") or [])
     _finish(True, "walking list_orders by cursor across %d page(s) visits all %d orders exactly once, with no gaps, and correctly reports no further cursor at the end" % (pagination.get("pages", 0), len(expected)))
 
 
@@ -549,7 +646,13 @@ def check_registers_cleanly():
         if prop not in lo_props:
             _finish(False, "list_orders's discovered input schema has no %s property" % prop)
 
-    _finish(True, "ContextForge reports this tool server as reachable, with both get_order and list_orders discovered and their real input schemas intact")
+    # Registered is not the same as working: what ContextForge discovered has
+    # to behave through the gateway, not just look right in its listing.
+    problem = _pagination_problem(r) or _error_probe_problem(r, "missing_id", "get_order(order_id=9999)")
+    if problem:
+        _finish(False, "the tools were discovered with the right schemas, but through the registered gateway: %s" % problem)
+
+    _finish(True, "ContextForge reports this tool server as reachable, with both get_order and list_orders discovered and their real input schemas intact, and through the gateway list_orders pages through all %d orders and a missing order id is a clean error" % len(r.get("dataset_ids") or []))
 
 
 COMMANDS = {
@@ -564,7 +667,12 @@ def main():
     if len(sys.argv) != 2 or sys.argv[1] not in COMMANDS:
         print(json.dumps({"pass": False, "message": "usage: _harness.py {%s}" % "|".join(COMMANDS)}))
         sys.exit(2)
-    COMMANDS[sys.argv[1]]()
+    try:
+        COMMANDS[sys.argv[1]]()
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001 - a grader crash is a verdict, not a traceback
+        _finish(False, "grader error: %s" % (e,))
 
 
 if __name__ == "__main__":
