@@ -47,7 +47,7 @@ function lab(over: Partial<Lab> & Pick<Lab, 'slug' | 'path'>): Lab {
 
 /** The titles of the cards, in page order. */
 function titles(html: string): string[] {
-  return [...html.matchAll(/<h4>(.*?)<\/h4>/g)].map((m) => m[1]);
+  return [...html.matchAll(/<h4>(.*?)<\/h4>/g)].map((m) => m[1] ?? '');
 }
 
 describe('renderLabsPage on fixture data', () => {
@@ -71,7 +71,7 @@ describe('renderLabsPage on fixture data', () => {
       'B second in module 1',
       'Z last platform',
     ]);
-    const ids = [...html.matchAll(/<section class="labs-path" id="([a-z-]+)"/g)].map((m) => m[1]);
+    const ids = [...html.matchAll(/<section class="labs-path" id="([a-z-]+)"/g)].map((m) => m[1] ?? '');
     expect(ids).toEqual(['production-agents', 'securing-agents', 'ai-platform']);
   });
 
