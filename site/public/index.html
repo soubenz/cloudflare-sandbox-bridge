@@ -34,7 +34,7 @@
       <span class="beta-tag">BETA</span>
     </a>
     <nav class="nav-links" aria-label="Main">
-      <a href="#tracks">Tracks</a>
+      <a href="#tracks">Paths</a>
       <a href="#inside">How it works</a>
       <a href="#pricing">Pricing</a>
       <a href="#teams">Teams</a>
@@ -45,7 +45,7 @@
       <details class="menu">
         <summary aria-label="Open menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 9h14M5 15h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></summary>
         <div class="menu-panel">
-          <a href="#tracks">Tracks</a>
+          <a href="#tracks">Paths</a>
           <a href="#inside">How it works</a>
           <a href="#pricing">Pricing</a>
           <a href="#teams">Teams</a>
@@ -161,28 +161,45 @@
   <section class="section" id="tracks">
     <div class="wrap">
       <div class="section-head">
-        <h2 class="h2">Two tracks.<br>Concepts first.</h2>
-        <p class="section-note">Frameworks show up only as context. What you learn here should still be true in five years.</p>
+        <h2 class="h2">Four paths.<br>Concepts first.</h2>
+        <p class="section-note">Frameworks show up only as context. What you learn here should still be true in five years. Labs are grouped by path and module, each group shows how many you have finished, and a lab that builds on another waits until you pass it.</p>
       </div>
-      <div class="tracks">
+      <p class="mono small muted paths-count">39 labs live in the beta &middot; 4 paths &middot; 7 platform modules</p>
+      <div class="tracks tracks-four">
         <article class="track track-dark">
-          <div class="track-top"><span class="track-num">01</span><span class="badge badge-accent">Mostly break-fix</span></div>
+          <div class="track-top"><span class="track-num">01</span><span class="badge badge-accent">6 labs &middot; break-fix</span></div>
           <h3>Production agents</h3>
-          <p>How agents fail at scale and how to prevent it: cost, retries, state, injection, observability, evals, failover.</p>
+          <p>How agents fail at scale and how to prevent it: cost, retries, state, tool output you cannot trust.</p>
           <div class="track-tags">
-            <span>Customers are getting duplicate emails</span>
-            <span>Wrong answers with status 200</span>
-            <span>Conversations leak between users</span>
+            <span>The $4,000 weekend</span>
+            <span>Customers are getting the same reply twice</span>
+            <span>It answers, but it is wrong</span>
           </div>
         </article>
         <article class="track track-light">
-          <div class="track-top"><span class="track-num">02</span><span class="badge badge-navy">Mostly build</span></div>
-          <h3>AI platform building</h3>
-          <p>How to build the platform agents and models run on: gateways, sandboxes, tracing, eval pipelines, multi-tenant controls.</p>
+          <div class="track-top"><span class="track-num">02</span><span class="badge badge-navy">1 lab so far</span></div>
+          <h3>Securing agents</h3>
+          <p>Keep an agent from leaking what it can reach or doing what it should not. More labs are on the way.</p>
           <div class="track-tags">
-            <span>Route requests with budgets and fallback</span>
-            <span>Stop one tenant using everyone's budget</span>
-            <span>Run agent code safely</span>
+            <span>The code tool read the secrets file</span>
+          </div>
+        </article>
+        <article class="track track-light">
+          <div class="track-top"><span class="track-num">03</span><span class="badge badge-navy">31 labs &middot; mostly build</span></div>
+          <h3>Building an AI platform</h3>
+          <p>The platform agents and models run on, in seven modules: gateways and access, tools and MCP, retrieval, observability and cost, runtime, self-service, compliance.</p>
+          <div class="track-tags">
+            <span>Put a hard budget on every team</span>
+            <span>See one request across every service</span>
+            <span>Strip personal data before it reaches a model or a log</span>
+          </div>
+        </article>
+        <article class="track track-dark">
+          <div class="track-top"><span class="track-num">04</span><span class="badge badge-accent">1 lab so far</span></div>
+          <h3>Evals and safe releases</h3>
+          <p>Catch a bad change before your customers do. More labs are on the way.</p>
+          <div class="track-tags">
+            <span>A worse prompt shipped and nothing caught it</span>
           </div>
         </article>
       </div>
@@ -230,6 +247,30 @@
           </div>
           <h3 class="cell-title">Three hints, then the solution</h3>
           <p class="ink-2">The solution unlocks after a real attempt, as a diff against your code.</p>
+        </div>
+        <div class="cell">
+          <div class="pressure-chips mono">
+            <span>&#9201; ends in 4:59</span>
+            <span>I'm still here</span>
+          </div>
+          <h3 class="cell-title">Warned before time runs out</h3>
+          <p class="ink-2">A banner before an idle or time-limit end, and one click to say you are still working.</p>
+        </div>
+        <div class="cell">
+          <div class="pressure-chips mono">
+            <span>&#10003; 4/4 checks</span>
+            <span>38 min &middot; 1 hint</span>
+          </div>
+          <h3 class="cell-title">A result card, not a certificate</h3>
+          <p class="ink-2">Your score, the time it took and the hints you used, the moment every check passes, in a summary you can copy.</p>
+        </div>
+        <div class="cell">
+          <div class="pressure-chips mono">
+            <span>&#9679; litellm healthy</span>
+            <span>&#9679; jaeger not answering</span>
+          </div>
+          <h3 class="cell-title">Services that say when they are down</h3>
+          <p class="ink-2">Every service tab shows its health. If one stops answering you get a restart button and the end of its log, not a blank frame.</p>
         </div>
         <div class="cell cell-full cell-tutor">
           <div class="stack-v tutor-copy">
@@ -287,7 +328,7 @@
           <li><span class="hl" aria-hidden="true">✓</span>Concepts that stay true across frameworks</li>
           <li><span class="hl" aria-hidden="true">✓</span>Hosted. Opens in the browser</li>
           <li><span class="hl" aria-hidden="true">✓</span>Also gateways, sandboxing, rate limits, multi-tenancy</li>
-          <li><span class="hl" aria-hidden="true">✓</span>A result card you can share (coming soon)</li>
+          <li><span class="hl" aria-hidden="true">✓</span>A result card with your score, time and hints used</li>
         </ul>
       </div>
     </div>
@@ -321,7 +362,7 @@
         <article class="plan plan-accent">
           <div class="plan-head"><h3>Free</h3><span class="badge badge-white">NOW</span></div>
           <span class="plan-price">€0</span>
-          <p>One lab, in 60-minute sessions. Hints, the solution and a result card (coming soon).</p>
+          <p>One lab, in 60-minute sessions. Hints, the solution and a result card.</p>
           <a class="btn btn-white" href="/try">Try the free lab</a>
         </article>
         <article class="plan">
@@ -350,6 +391,10 @@
         <details open>
           <summary>What's free during the beta?</summary>
           <p>One lab, in 60-minute sessions, with no card needed. The other labs and the paid plans are on the waitlist.</p>
+        </details>
+        <details>
+          <summary>How many labs are there?</summary>
+          <p>39 so far, in four paths: production agents (6), securing agents (1), building an AI platform (31, in seven modules) and evals and safe releases (1). Each path has more planned. Labs open to the waitlist as they pass testing.</p>
         </details>
         <details>
           <summary>Which framework does it teach?</summary>
@@ -382,7 +427,7 @@
     <span class="badge badge-accent mono">BETA</span>
     <span>Hands-on labs for production AI engineering</span>
     <nav class="footer-links" aria-label="Footer">
-      <a href="#tracks">Tracks</a>
+      <a href="#tracks">Paths</a>
       <a href="#pricing">Pricing</a>
       <a href="/feedback">Feedback</a>
       <a href="/privacy">Privacy</a>
