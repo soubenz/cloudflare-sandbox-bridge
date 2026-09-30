@@ -27,6 +27,35 @@
   --warn: #d4a25a;
   --bad: #e5848a;
 
+  /* Accent families of the learning paths and modules. A mirror of the values in
+     packages/design/tokens.css (this page does not load that file);
+     scripts/contrast-check.mjs fails if the two differ, and checks the pairs used
+     here on this palette's own surfaces. Dark values here, light values below. */
+  --accent-blue: #8ea2ff;
+  --accent-blue-soft: #182456;
+  --accent-blue-ink: #b4c1ff;
+  --accent-teal: #3cc6b3;
+  --accent-teal-soft: #0c2f2c;
+  --accent-teal-ink: #7fe0d2;
+  --accent-green: #4fc47e;
+  --accent-green-soft: #0f2e1c;
+  --accent-green-ink: #8fdcae;
+  --accent-amber: #f0a548;
+  --accent-amber-soft: #33230a;
+  --accent-amber-ink: #ffcb85;
+  --accent-rose: #ff7a9a;
+  --accent-rose-soft: #3a1220;
+  --accent-rose-ink: #ffabc0;
+  --accent-violet: #b28dff;
+  --accent-violet-soft: #261648;
+  --accent-violet-ink: #cfb8ff;
+  --accent-indigo: #8f93ff;
+  --accent-indigo-soft: #1c1c50;
+  --accent-indigo-ink: #b9bcff;
+  --accent-slate: #9aa9c0;
+  --accent-slate-soft: #202836;
+  --accent-slate-ink: #c3cede;
+
   --radius: 8px;
   --radius-sm: 6px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -76,6 +105,30 @@
   --good: #16744f;
   --warn: #8a5a0b;
   --bad: #b3363f;
+  --accent-blue: #3552f2;
+  --accent-blue-soft: #e6ebff;
+  --accent-blue-ink: #2438b5;
+  --accent-teal: #0e8577;
+  --accent-teal-soft: #dcf4f0;
+  --accent-teal-ink: #0a6157;
+  --accent-green: #1a8a48;
+  --accent-green-soft: #e0f4e6;
+  --accent-green-ink: #146c37;
+  --accent-amber: #b8620a;
+  --accent-amber-soft: #fbeed3;
+  --accent-amber-ink: #8a4a06;
+  --accent-rose: #d02650;
+  --accent-rose-soft: #fde4ea;
+  --accent-rose-ink: #a5153c;
+  --accent-violet: #7c3aed;
+  --accent-violet-soft: #eee6fe;
+  --accent-violet-ink: #5b21b6;
+  --accent-indigo: #4f46e5;
+  --accent-indigo-soft: #e5e7fd;
+  --accent-indigo-ink: #3730a3;
+  --accent-slate: #5b6b83;
+  --accent-slate-soft: #e8ecf2;
+  --accent-slate-ink: #3f4d63;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
@@ -97,6 +150,30 @@
     --good: #16744f;
     --warn: #8a5a0b;
     --bad: #b3363f;
+    --accent-blue: #3552f2;
+    --accent-blue-soft: #e6ebff;
+    --accent-blue-ink: #2438b5;
+    --accent-teal: #0e8577;
+    --accent-teal-soft: #dcf4f0;
+    --accent-teal-ink: #0a6157;
+    --accent-green: #1a8a48;
+    --accent-green-soft: #e0f4e6;
+    --accent-green-ink: #146c37;
+    --accent-amber: #b8620a;
+    --accent-amber-soft: #fbeed3;
+    --accent-amber-ink: #8a4a06;
+    --accent-rose: #d02650;
+    --accent-rose-soft: #fde4ea;
+    --accent-rose-ink: #a5153c;
+    --accent-violet: #7c3aed;
+    --accent-violet-soft: #eee6fe;
+    --accent-violet-ink: #5b21b6;
+    --accent-indigo: #4f46e5;
+    --accent-indigo-soft: #e5e7fd;
+    --accent-indigo-ink: #3730a3;
+    --accent-slate: #5b6b83;
+    --accent-slate-soft: #e8ecf2;
+    --accent-slate-ink: #3f4d63;
   }
 }
 
@@ -322,7 +399,7 @@ kbd {
   overflow-y: auto;
   padding: var(--s6) var(--s5) 56px;
 }
-.launcher > * { max-width: 880px; margin-inline: auto; }
+.launcher > * { max-width: 1120px; margin-inline: auto; }
 .launcher-head { margin-bottom: var(--s5); }
 .launcher h1 { font-size: var(--fs-xl); margin: 0 0 var(--s2); display: flex; align-items: baseline; gap: var(--s3); }
 .launcher h1 .count { font-size: var(--fs-md); font-weight: 400; color: var(--ink-muted); }
@@ -344,8 +421,9 @@ kbd {
 .resume-card > .notice { flex-basis: 100%; margin: 0; }
 
 .lab-filters { display: grid; gap: var(--s3); margin-bottom: var(--s5); }
-.filter-search { display: flex; align-items: center; gap: var(--s2); }
-.filter-search input { flex: 1; max-width: 360px; }
+.filter-search { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+/* min-width: 0 lets the box shrink below its default width, so "Clear filters" wraps instead of leaving the page. */
+.filter-search input { flex: 1 1 200px; min-width: 0; max-width: 360px; }
 .filter-chips { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
 .chip-group { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--s1); }
 .chip-group-label { margin-right: var(--s1); }
@@ -363,50 +441,218 @@ kbd {
 }
 #labNoMatch { margin: 0 auto var(--s5); }
 
-/* One block per path and module: a heading with its tally, a 4px bar, then the cards. */
-.lab-group { display: grid; gap: var(--s2); }
-.group-head {
-  display: flex; align-items: baseline; gap: var(--s3);
-  margin: 0; font-size: var(--fs-lg); font-weight: 600;
-}
-.group-done { margin-left: auto; font: 500 var(--fs-sm)/1 var(--mono); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-.progress { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-bottom: var(--s2); }
-.progress > span { display: block; height: 100%; background: var(--good); }
-.lab-cards { display: grid; gap: var(--s3); }
+/* ---------- launcher: paths, modules and lab rows ---------- */
 
+/* The accent family of a path, a module or a pill. --a fills and stripes and
+   colours the icon glyph, --a-soft tints a surface, --a-ink is the accent as
+   small text. The values are the design tokens (mirrored at the top of this
+   file); scripts/contrast-check.mjs holds every pair used here to 3:1 for
+   non-text and 4.5:1 for text, in both themes. Body text stays var(--ink). */
+[data-accent] {
+  --a: var(--accent-slate);
+  --a-soft: var(--accent-slate-soft);
+  --a-ink: var(--accent-slate-ink);
+}
+[data-accent="blue"]   { --a: var(--accent-blue);   --a-soft: var(--accent-blue-soft);   --a-ink: var(--accent-blue-ink); }
+[data-accent="teal"]   { --a: var(--accent-teal);   --a-soft: var(--accent-teal-soft);   --a-ink: var(--accent-teal-ink); }
+[data-accent="green"]  { --a: var(--accent-green);  --a-soft: var(--accent-green-soft);  --a-ink: var(--accent-green-ink); }
+[data-accent="amber"]  { --a: var(--accent-amber);  --a-soft: var(--accent-amber-soft);  --a-ink: var(--accent-amber-ink); }
+[data-accent="rose"]   { --a: var(--accent-rose);   --a-soft: var(--accent-rose-soft);   --a-ink: var(--accent-rose-ink); }
+[data-accent="violet"] { --a: var(--accent-violet); --a-soft: var(--accent-violet-soft); --a-ink: var(--accent-violet-ink); }
+[data-accent="indigo"] { --a: var(--accent-indigo); --a-soft: var(--accent-indigo-soft); --a-ink: var(--accent-indigo-ink); }
+
+.lab-list { display: grid; gap: 48px; }
+
+/* The path navigator: one pill per path, sticky under the page top. */
+.path-nav {
+  --nav-h: 60px;
+  /* The launcher scrolls itself on a desktop and has 32px of padding above its
+     content, which a sticky element would otherwise stop below. */
+  position: sticky; top: calc(-1 * var(--s6)); z-index: 6;
+  margin-bottom: var(--s4); padding: var(--s2) 0;
+  background: var(--bg);
+}
+.path-nav-list {
+  display: flex; gap: var(--s2);
+  margin: 0; padding: 2px; list-style: none;
+  overflow-x: auto; scrollbar-width: thin;
+}
+.path-nav-list > li { flex: none; }
+.path-pill {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  height: 36px; padding: 0 var(--s3) 0 10px;
+  border: 1px solid var(--border-strong); border-radius: 999px;
+  background: var(--surface); color: var(--ink-2);
+  font: 500 var(--fs-md)/1 var(--sans);
+  text-decoration: none; white-space: nowrap;
+}
+.path-pill:hover { background: var(--surface-2); color: var(--ink); }
+.pill-icon { display: inline-flex; color: var(--a); }
+.pill-count {
+  padding: 3px 7px; border-radius: 999px;
+  background: var(--surface-2); color: var(--ink-2);
+  font: 600 var(--fs-xs)/1 var(--mono); font-variant-numeric: tabular-nums;
+}
+.path-pill[aria-current="true"] { background: var(--a-soft); border-color: var(--a); color: var(--ink); }
+.path-pill[aria-current="true"] .pill-count { background: var(--surface); }
+
+/* A path: a tinted band (its own element, behind the parts) with the icon, the
+   title, the intro and the totals, then the modules. Every part is a grid item
+   of the section, so the h2 stays the section's direct child. */
+.path {
+  --pad: 22px;
+  display: grid;
+  grid-template-columns: var(--pad) 62px minmax(0, 1fr) minmax(230px, 310px) var(--pad);
+  grid-template-rows: var(--pad) auto auto auto var(--pad) auto;
+  align-content: start;
+  /* The positioned box that contains the visually hidden h3 (position: absolute). */
+  position: relative;
+  scroll-margin-top: calc(var(--nav-h, 60px) + 4px);
+}
+.path-bg {
+  grid-column: 1 / -1; grid-row: 1 / 6;
+  background: var(--a-soft);
+  border: 1px solid color-mix(in oklab, var(--a) 32%, var(--border));
+  border-top: 4px solid var(--a);
+  border-radius: var(--radius-lg, 12px);
+}
+.tile {
+  display: inline-grid; place-items: center; flex: none;
+  width: 48px; height: 48px;
+  background: var(--surface); color: var(--a);
+  border: 1px solid color-mix(in oklab, var(--a) 35%, var(--border));
+  border-radius: 12px;
+}
+.path-tile { grid-column: 2; grid-row: 2 / 4; align-self: start; justify-self: start; }
+.path-eyebrow, .group-head, .path-intro { grid-column: 3; min-width: 0; }
+.path-eyebrow {
+  grid-row: 2; margin: 2px 0 0;
+  font-size: var(--fs-xs); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--a-ink);
+}
+.group-head { grid-row: 3; margin: 2px 0 0; font-size: 22px; font-weight: 650; line-height: 1.25; }
+.path-intro { grid-row: 4; margin: var(--s2) 0 0; max-width: 64ch; color: var(--ink-2); font-size: var(--fs-base); line-height: 1.6; }
+.path-stats {
+  grid-column: 4; grid-row: 2 / 5; align-self: center;
+  display: grid; gap: var(--s2); margin-left: var(--s5);
+}
+.path-summary { margin: 0; color: var(--ink-2); font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+.path-stats .progress { height: 6px; border-radius: 3px; margin: 0; }
+.path-body { grid-column: 1 / -1; grid-row: 6; margin-top: var(--s4); }
+.modules { display: grid; gap: var(--s4); }
+
+.progress { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-bottom: var(--s2); }
+.progress > span { display: block; height: 100%; background: var(--a, var(--good)); }
+
+/* A module: an accent stripe, an info panel on the tint, and its labs. */
+.module {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  background: var(--surface);
+  border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden;
+  scroll-margin-top: calc(var(--nav-h, 60px) + 4px);
+}
+.module::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: 4px;
+  background: var(--a);
+}
+.module-info {
+  display: flex; flex-direction: column; gap: var(--s3);
+  padding: 20px 22px 20px 26px;
+  background: var(--a-soft);
+  border-right: 1px solid color-mix(in oklab, var(--a) 25%, var(--border));
+}
+.module-eyebrow { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin: 0; }
+.module-num {
+  font-size: var(--fs-xs); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--a-ink);
+}
+.badge {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 var(--s2);
+  border: 1px solid var(--a-ink); border-radius: 999px;
+  background: var(--surface); color: var(--a-ink);
+  font-size: var(--fs-xs); font-weight: 600; white-space: nowrap;
+}
+.module-head { display: flex; align-items: center; gap: var(--s3); }
+.module-tile { width: 42px; height: 42px; border-radius: 10px; }
+.module-title { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.3; }
+.module-intro { margin: 0; color: var(--ink-2); font-size: var(--fs-base); line-height: 1.6; }
+.skills-label {
+  margin: 0 0 var(--s2);
+  font-size: var(--fs-xs); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--a-ink);
+}
+.skill-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.skill-list li { position: relative; padding-left: 22px; color: var(--ink); font-size: var(--fs-md); line-height: 1.45; }
+.skill-list li::before {
+  content: ''; position: absolute; left: 4px; top: 0.3em;
+  width: 5px; height: 9px;
+  border: solid var(--a); border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.module-meta {
+  margin: auto 0 0; padding-top: var(--s2);
+  color: var(--ink-2); font: 500 var(--fs-sm)/1.3 var(--mono);
+}
+.module-info .progress { height: 6px; border-radius: 3px; margin: 0; }
+.module-progress { margin: calc(-1 * var(--s1)) 0 0; color: var(--ink-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+
+/* Lab rows: compact, one per lab, divided by hairlines. */
+.lab-rows { min-width: 0; align-self: start; width: 100%; }
+.lab-rows-flat {
+  background: var(--surface);
+  border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden;
+}
 .lab {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--s2) var(--s5);
-  padding: var(--s4) 20px 18px;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 6px var(--s4);
+  padding: 14px 20px 14px 22px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  transition: border-color 0.12s;
+  border-bottom: 1px solid var(--border);
 }
-.lab:hover { border-color: var(--border-strong); }
-.lab-meta { min-width: 0; }
-.lab-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
+.lab-rows > .lab:last-child { border-bottom: 0; }
+.lab:hover { background: color-mix(in oklab, var(--surface-2) 55%, var(--surface)); }
+.lab-num {
+  grid-column: 1; grid-row: 1;
+  display: inline-grid; place-items: center;
+  width: 26px; height: 26px; margin-top: 1px;
+  border: 1px solid var(--border-strong); border-radius: 50%;
+  color: var(--ink-2); font: 600 var(--fs-xs)/1 var(--mono);
+}
+.lab-done .lab-num {
+  color: var(--good);
+  border-color: color-mix(in oklab, var(--good) 55%, var(--border));
+  background: color-mix(in oklab, var(--good) 12%, var(--surface));
+}
+.lab-meta { grid-column: 2; grid-row: 1; min-width: 0; }
 .lab-title { font-size: var(--fs-lg); font-weight: 600; line-height: 1.35; margin: 0; }
+.lab-locked .lab-title { color: var(--ink-2); }
+.lab-status { grid-column: 3; grid-row: 1; align-self: center; max-width: 200px; font-size: var(--fs-sm); line-height: 1.35; }
+.lab-state { color: var(--ink-muted); white-space: nowrap; }
+.lab-lock { display: inline-flex; align-items: flex-start; gap: 6px; color: var(--ink-2); }
+.lab-lock svg { flex: none; margin-top: 1px; color: var(--ink-muted); }
 .chip-done {
   color: var(--good);
   border-color: color-mix(in oklab, var(--good) 45%, var(--border));
   background: color-mix(in oklab, var(--good) 10%, var(--surface));
 }
-.lab-done { border-color: color-mix(in oklab, var(--good) 35%, var(--border)); }
-/* Locked, not hidden: the card says what to pass first. */
-.lab-locked { border-style: dashed; }
-.lab-lock {
-  margin: var(--s2) 0 0; padding-left: var(--s2);
-  border-left: 2px solid var(--warn);
-  color: var(--ink-2); font-size: var(--fs-sm);
-}
-.lab-start { min-width: 88px; align-self: start; }
+.lab-start { grid-column: 4; grid-row: 1; min-width: 84px; align-self: center; }
 .lab > .notice { grid-column: 1 / -1; margin-top: 0; }
 
 /* Slug, family, type, difficulty and length as chips; the text stays the
-   single "slug@version · family · …" line (see labCard in app.js). */
-.lab-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: var(--s2); }
+   single "slug@version · family · …" line (see labCard in app.js). CSS `order`
+   shows the ones that help choose first, and the identifiers last. */
+/* position: relative contains the visually hidden separators (position: absolute);
+   without it they were placed against the page and made the whole document scroll. */
+.lab-sub { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 .chip {
   display: inline-flex; align-items: center;
   height: 20px; padding: 0 var(--s2);
@@ -417,8 +663,21 @@ kbd {
   font-size: var(--fs-xs);
   white-space: nowrap;
 }
+.lab-sub .chip-type { order: 1; text-transform: capitalize; }
+.lab-sub .chip-difficulty { order: 2; text-transform: capitalize; }
+.lab-sub .chip-time { order: 3; }
+.lab-sub .chip-tier { order: 4; }
+.lab-sub .chip-family { order: 5; }
+.lab-sub .chip-id { order: 6; }
 .chip-id { font-family: var(--mono); background: transparent; color: var(--ink-muted); padding-left: 0; border-color: transparent; }
 .chip-time { font-family: var(--mono); }
+.chip-limit { margin-left: 4px; color: var(--ink-muted); }
+/* The hard limit and the identifier are still in the text (support and the
+   browser suite read them) but only show when a row is opened. */
+.lab-sub .chip-limit { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.lab-sub .chip-id { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.lab:has(.lab-more[open]) .lab-sub .chip-limit { position: static; width: auto; height: auto; margin: 0 0 0 4px; overflow: visible; clip: auto; }
+.lab:has(.lab-more[open]) .lab-sub .chip-id { position: static; width: auto; height: 20px; margin: 0; overflow: visible; clip: auto; padding-left: 0; }
 .chip-tier { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 45%, var(--border)); }
 /* Difficulty as one, two or three bars — never a status colour. */
 .chip-difficulty { --pip2: var(--border-strong); --pip3: var(--border-strong); }
@@ -432,7 +691,22 @@ kbd {
 .chip-difficulty[data-level="2"] { --pip2: var(--ink-2); }
 .chip-difficulty[data-level="3"] { --pip2: var(--ink-2); --pip3: var(--ink-2); }
 
-.lab-summary { margin: var(--s3) 0 0; color: var(--ink-2); font-size: var(--fs-md); line-height: 1.6; max-width: 72ch; }
+/* Summary and objectives, one click away. */
+.lab-more { grid-column: 2 / -1; grid-row: 2; margin-top: -2px; }
+.lab-more > summary {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 0 0; cursor: pointer; list-style: none;
+  color: var(--ink-2); font-size: var(--fs-sm);
+}
+.lab-more > summary::-webkit-details-marker { display: none; }
+.lab-more > summary::before {
+  content: ''; width: 5px; height: 5px;
+  border: solid currentColor; border-width: 0 1.5px 1.5px 0;
+  transform: rotate(-45deg);
+}
+.lab-more[open] > summary::before { transform: rotate(45deg); }
+.lab-more > summary:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.lab-summary { margin: var(--s2) 0 0; color: var(--ink-2); font-size: var(--fs-md); line-height: 1.6; max-width: 72ch; }
 .lab-objectives-wrap { margin-top: var(--s3); }
 .lab-objectives-label { margin: 0 0 var(--s1); }
 .lab-objectives { margin: 0; padding-left: 18px; max-width: 76ch; }
@@ -1027,6 +1301,64 @@ input:focus-visible { outline-offset: 0; border-color: var(--accent); }
 .toast[data-tone="bad"] { border-left-color: var(--bad); }
 .toast #toastText { flex: 1; padding-top: 4px; }
 
+/* ---------- launcher: narrower screens ---------- */
+
+/* Below about 1080px a module cannot give its labs a comfortable row next to
+   its info panel, so the panel goes on top, in two columns while there is room. */
+@media (max-width: 1079px) {
+  .module { grid-template-columns: minmax(0, 1fr); }
+  .module-info { border-right: 0; border-bottom: 1px solid color-mix(in oklab, var(--a) 25%, var(--border)); }
+  .module-meta { margin-top: 0; }
+  .module-intro { max-width: 68ch; }
+}
+@media (min-width: 720px) and (max-width: 1079px) {
+  .module-info { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--s3) var(--s6); align-content: start; }
+  .module-info > * { grid-column: 1; }
+  .module-info > .module-skills { grid-column: 2; grid-row: 1 / span 3; align-self: start; }
+  .module-info > .module-meta, .module-info > .progress, .module-info > .module-progress { grid-column: 1 / -1; }
+}
+
+/* The band stacks: icon and title, then the intro, then the totals. */
+@media (max-width: 959px) {
+  .path {
+    --pad: 16px;
+    grid-template-columns: var(--pad) 58px minmax(0, 1fr) var(--pad);
+    grid-template-rows: var(--pad) auto auto auto auto var(--pad) auto;
+  }
+  .path-bg { grid-row: 1 / 7; }
+  .path-tile { width: 44px; height: 44px; }
+  .path-intro { grid-column: 2 / 4; grid-row: 4; margin-top: var(--s3); }
+  .path-stats { grid-column: 2 / 4; grid-row: 5; margin: var(--s3) 0 0; }
+  .path-body { grid-row: 7; }
+  .group-head { font-size: 20px; }
+}
+
+@media (max-width: 760px) {
+  .path-nav { top: 0; }
+  .path-pill { height: 44px; }
+  .lab { grid-template-columns: 26px minmax(0, 1fr) auto; padding: 14px var(--s4); gap: 6px var(--s3); }
+  .lab-status { grid-column: 2 / -1; grid-row: 2; max-width: none; }
+  .lab-start { grid-column: 3; grid-row: 1; align-self: start; min-height: 44px; }
+  .lab-more { grid-row: 3; margin-top: 0; }
+  .lab-more > summary { min-height: 44px; padding: 0; }
+  .filter-chip, .filter-search input, #btnClearFilters, .resume-card .btn { min-height: 44px; }
+  .filter-chip { padding: 0 14px; }
+  /* Touch targets in the header, too. */
+  .bar .btn { min-height: 44px; }
+  .bar .btn-icon { width: 44px; }
+  .module-info { padding: 18px var(--s4) 18px 20px; }
+}
+/* The footer's API address gives way to the two links, which get a touch-sized target. */
+@media (max-width: 760px) {
+  .footer { height: 44px; }
+  .footer > .small { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .footer-link { display: inline-flex; align-items: center; flex: none; min-height: 44px; padding: 0 var(--s2); }
+}
+/* A phone has no room for the signed-in name; the sign-out button stays. */
+@media (max-width: 520px) {
+  .identity { display: none; }
+}
+
 /* ---------- narrower screens ---------- */
 
 /* Small laptops: a narrower file pane, and the operator's activity pane
@@ -1068,8 +1400,6 @@ input:focus-visible { outline-offset: 0; border-color: var(--accent); }
   .launcher { padding: var(--s5) var(--s4) var(--s6); overflow: visible; }
   .bar-stats { gap: var(--s3); }
   .filter-search input { max-width: none; }
-  .lab { grid-template-columns: 1fr; }
-  .lab-start { justify-self: start; }
   .modal-card { padding: var(--s5); }
   .dialog-solution { width: calc(100vw - 16px); max-width: none; height: calc(100dvh - 16px); max-height: none; }
   .sol-card { padding: var(--s3); }

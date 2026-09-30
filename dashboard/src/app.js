@@ -1,6 +1,10 @@
 import { api, apiBase, configureAuth, eventsUrl, serviceUrl, serviceBaseUrl } from './api.js';
 import { attachTerminal } from './terminal.js';
 import { diffLines, collapseContext } from './diff.js';
+import { ICONS, buildLauncherModel, labStatus, moduleMetaLine, passedSlugs, summaryLine } from './launcher-model.js';
+// The presentation copy of every path and module: title, intro, skills, icon
+// and accent. The public /labs page reads the same file.
+import pathMeta from '../../packages/catalogue/paths.json';
 
 const $ = (id) => document.getElementById(id);
 
@@ -170,6 +174,7 @@ async function loadLabs() {
   parkLaunchError();
   $('labCount').textContent = '';
   $('labFilters').hidden = true;
+  $('pathNav').hidden = true;
   if (!list.querySelector('.lab-skeleton')) showLabSkeleton();
   try {
     const labs = await api.labs();
@@ -182,8 +187,7 @@ async function loadLabs() {
     // Every lab is known before any card is drawn: a card names its
     // prerequisite by title, and that lab may sit in a later group.
     for (const lab of labs) labsBySlug.set(lab.slug, lab);
-    const passed = passedSlugs(labs);
-    groupLabs(labs).forEach((group, i) => list.append(groupSection(group, i, passed)));
+    renderLauncher(buildLauncherModel(labs, pathMeta, { passed: passedSlugs(labs) }));
     renderFilters(labs);
     applyFilters();
   } catch (err) {
@@ -214,104 +218,168 @@ async function loadLabs() {
   }
 }
 
-// -------------------------------------------------------- grouping and locks
+// ------------------------------------------------ paths, modules and lab rows
 
-/** Finite numbers sort by value; anything else (a manifest that has not set it) sorts last. */
-const rank = (v) => (Number.isFinite(v) ? v : Infinity);
-const cmp = (a, b) => (a === b ? 0 : a < b ? -1 : 1);
-
-/**
- * The API already answers in (path, module, order, slug) order; this is the
- * same order, applied again so the console does not depend on it — and so a
- * catalogue with no path or module at all falls back to slug order. Labs
- * with no path sort last, together.
+/*
+ * What is drawn comes from buildLauncherModel (launcher-model.js): the labs
+ * grouped by path and module, with every total. Text from the catalogue and
+ * from packages/catalogue/paths.json always goes in through textContent.
  */
-function compareLabs(a, b) {
-  return (
-    cmp(Boolean(a.path) ? 0 : 1, Boolean(b.path) ? 0 : 1) ||
-    cmp(String(a.path ?? ''), String(b.path ?? '')) ||
-    cmp(rank(a.module), rank(b.module)) ||
-    cmp(rank(a.order), rank(b.order)) ||
-    cmp(a.slug, b.slug)
-  );
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function node(tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text !== undefined) el.textContent = text;
+  return el;
 }
 
-/**
- * Consecutive labs sharing a path and module form one group. Labs with no
- * path (a module without a path is not a place) share the one group
- * `path: ''`, which is shown as "All labs" with no module heading.
- */
-function groupLabs(labs) {
-  const groups = [];
-  for (const lab of [...labs].sort(compareLabs)) {
-    const path = lab.path ? String(lab.path) : '';
-    const module = path && Number.isFinite(lab.module) ? lab.module : null;
-    const key = `${path}\u0000${module}`;
-    let group = groups[groups.length - 1];
-    if (!group || group.key !== key) groups.push((group = { key, path, module, labs: [] }));
-    group.labs.push(lab);
-  }
-  return groups;
+/** A stroke glyph from the trusted table in launcher-model.js (never from the catalogue). */
+function icon(name, size = 24) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.75');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  svg.innerHTML = ICONS[name] ?? ICONS.grid;
+  return svg;
 }
 
-/** "agent-foundations" → "Agent foundations". */
-function humanize(path) {
-  const words = path.replace(/[-_]+/g, ' ').trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
-function groupTitle(group) {
-  if (!group.path) return 'All labs';
-  return group.module != null ? `${humanize(group.path)} · Module ${group.module}` : humanize(group.path);
-}
-
-/** Slugs this person has passed every check of. */
-function passedSlugs(labs) {
-  return new Set(labs.filter((lab) => lab.progress?.passed_all).map((lab) => lab.slug));
-}
-
-/**
- * The first prerequisite this person has not passed, or null when the lab is
- * open. A prerequisite the catalogue does not list counts as unmet: it cannot
- * have been passed through this console.
- */
-function unmetPrerequisite(lab, passed) {
-  return (lab.prerequisites ?? []).find((slug) => !passed.has(slug)) ?? null;
-}
-
-function groupSection(group, index, passed) {
-  const total = group.labs.length;
-  const done = group.labs.filter((lab) => passed.has(lab.slug)).length;
-  const section = document.createElement('section');
-  section.className = 'lab-group';
-  section.dataset.path = group.path;
-  if (group.module != null) section.dataset.module = String(group.module);
-  section.setAttribute('aria-labelledby', `group-head-${index}`);
-  section.innerHTML = `
-    <h2 class="group-head" id="group-head-${index}">
-      <span class="group-title"></span>
-      <span class="group-done"></span>
-    </h2>
-    <div class="progress" role="progressbar" aria-valuemin="0" aria-label="Labs done in this group"><span></span></div>
-    <div class="lab-cards"></div>`;
-  section.querySelector('.group-title').textContent = groupTitle(group);
-  section.querySelector('.group-done').textContent = `${done}/${total} done`;
-  const bar = section.querySelector('.progress');
+function progressBar(done, total, label) {
+  const bar = node('div', 'progress');
+  bar.setAttribute('role', 'progressbar');
+  bar.setAttribute('aria-label', label);
+  bar.setAttribute('aria-valuemin', '0');
   bar.setAttribute('aria-valuemax', String(total));
   bar.setAttribute('aria-valuenow', String(done));
-  bar.firstElementChild.style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
-  const cards = section.querySelector('.lab-cards');
-  for (const lab of group.labs) cards.append(labCard(lab, unmetPrerequisite(lab, passed)));
+  const fill = document.createElement('span');
+  fill.style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
+  bar.append(fill);
+  return bar;
+}
+
+/** An id-safe form of a slug from the catalogue. */
+const safeId = (slug) => String(slug).replace(/[^a-z0-9_-]+/gi, '-');
+
+function renderLauncher(model) {
+  const list = $('labList');
+  list.innerHTML = '';
+  for (const path of model.paths) list.append(pathSection(path));
+  renderPathNav(model);
+}
+
+/**
+ * One path: a band with its icon, title, intro and totals, then its modules
+ * as cards, or (a single-module path) its labs straight underneath. The
+ * heading is a direct child of the section, and every part of the band is a
+ * grid item of it, so the tinted band is one element behind them.
+ */
+function pathSection(path) {
+  const id = path.other ? 'path-other' : `path-${safeId(path.slug)}`;
+  const section = node('section', 'lab-group path');
+  section.id = id;
+  section.dataset.path = path.slug;
+  section.dataset.accent = path.accent;
+  section.setAttribute('aria-labelledby', `${id}-title`);
+
+  const bg = node('div', 'path-bg');
+  bg.setAttribute('aria-hidden', 'true');
+
+  const tile = node('span', 'tile path-tile');
+  tile.setAttribute('aria-hidden', 'true');
+  tile.append(icon(path.icon || 'grid'));
+
+  const eyebrow = node('p', 'path-eyebrow', path.other ? 'Not in a path' : `Path ${path.number}`);
+
+  const head = node('h2', 'group-head');
+  head.id = `${id}-title`;
+  head.tabIndex = -1;
+  head.append(node('span', 'group-title', path.title));
+
+  const stats = node('div', 'path-stats');
+  const summary = node('p', 'path-summary', summaryLine(path.totals));
+  stats.append(summary, progressBar(path.totals.done, path.totals.labs, `Labs done in ${path.title}`));
+
+  section.append(bg, tile, eyebrow, head);
+  if (path.intro) section.append(node('p', 'path-intro', path.intro));
+  section.append(stats);
+
+  const body = node('div', 'path-body');
+  if (path.cards) {
+    const modules = node('div', 'modules');
+    for (const module of path.modules) modules.append(moduleCard(path, module, id));
+    body.append(modules);
+  } else {
+    // No module card, so no h3 of its own: an invisible one keeps h2 -> h3 -> h4 unbroken.
+    body.append(node('h3', 'sr-only', path.other ? 'Labs' : `Labs in ${path.title}`));
+    body.append(labRows(path.modules[0].labs, 'lab-rows lab-rows-flat'));
+  }
+  section.append(body);
   return section;
+}
+
+function moduleCard(path, module, pathId) {
+  const id = `${pathId}-module-${module.number}`;
+  const card = node('section', 'module');
+  card.id = id;
+  card.dataset.module = String(module.number);
+  card.dataset.accent = module.accent;
+  if (module.optional) card.dataset.optional = '1';
+  card.setAttribute('aria-labelledby', `${id}-title`);
+
+  const info = node('div', 'module-info');
+  const eyebrow = node('p', 'module-eyebrow');
+  if (module.known) eyebrow.append(node('span', 'module-num', module.eyebrow));
+  if (module.optional) eyebrow.append(node('span', 'badge badge-optional', 'Optional'));
+  if (eyebrow.childElementCount) info.append(eyebrow);
+
+  const top = node('div', 'module-head');
+  const tile = node('span', 'tile module-tile');
+  tile.setAttribute('aria-hidden', 'true');
+  tile.append(icon(module.icon || 'grid', 22));
+  const title = node('h3', 'module-title', module.title);
+  title.id = `${id}-title`;
+  top.append(tile, title);
+  info.append(top);
+
+  if (module.intro) info.append(node('p', 'module-intro', module.intro));
+  if (module.skills.length) {
+    const skills = node('div', 'module-skills');
+    const label = node('p', 'skills-label', 'You will learn to');
+    const items = node('ul', 'skill-list');
+    for (const skill of module.skills) items.append(node('li', '', skill));
+    skills.append(label, items);
+    info.append(skills);
+  }
+
+  const { totals } = module;
+  info.append(node('p', 'module-meta', moduleMetaLine(totals)));
+  info.append(progressBar(totals.done, totals.labs, `Labs done in ${module.title}`));
+  info.append(node('p', 'module-progress', `${totals.done} of ${totals.labs} done`));
+
+  card.append(info, labRows(module.labs, 'lab-rows'));
+  return card;
+}
+
+function labRows(entries, className) {
+  const rows = node('div', className);
+  for (const entry of entries) rows.append(labCard(entry));
+  return rows;
 }
 
 /** best_score is a 0-1 fraction of the weighted points. */
 const percent = (score) => Math.round((Number(score) <= 1 ? Number(score) * 100 : Number(score)) || 0);
 
-function labCard(lab, lockedBy = null) {
+function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
   const row = document.createElement('article');
-  const done = Boolean(lab.progress?.passed_all);
-  row.className = `lab${done ? ' lab-done' : ''}${lockedBy ? ' lab-locked' : ''}`;
+  row.className = `lab${done ? ' lab-done' : ''}${locked ? ' lab-locked' : ''}`;
   // The slug is the lab's identity. It is rendered inside .lab-sub as
   // prose, where "hello" is also a substring of "gateway-hello", so
   // carry it as an attribute too: that is what lets anything selecting
@@ -321,33 +389,29 @@ function labCard(lab, lockedBy = null) {
   const titleId = `lab-title-${lab.slug}`;
   row.setAttribute('aria-labelledby', titleId);
   row.innerHTML = `
+    <span class="lab-num" aria-hidden="true"></span>
     <div class="lab-meta">
-      <div class="lab-title-row">
-        <h3 class="lab-title"></h3>
-        <span class="chip chip-done" hidden></span>
-      </div>
+      <h4 class="lab-title"></h4>
       <div class="lab-sub"></div>
-      <p class="lab-lock" hidden></p>
+    </div>
+    <div class="lab-status"></div>
+    <button class="btn btn-primary lab-start">Start</button>
+    <details class="lab-more">
+      <summary>About this lab</summary>
       <p class="lab-summary"></p>
       <div class="lab-objectives-wrap">
         <p class="lab-objectives-label">You will practise</p>
         <ul class="lab-objectives"></ul>
       </div>
-    </div>
-    <button class="btn btn-primary lab-start">Start</button>`;
+    </details>`;
+  row.querySelector('.lab-num').textContent = String(index);
   const title = row.querySelector('.lab-title');
   title.id = titleId;
   title.textContent = lab.title;
 
-  if (done) {
-    const chip = row.querySelector('.chip-done');
-    chip.textContent = `Done · best ${percent(lab.progress.best_score)}%`;
-    chip.hidden = false;
-  }
-
   // Enough to choose a lab without spending a container to find out what
-  // it is. The title alone never carried that — "Hello, sandbox" says
-  // nothing about what you would actually do.
+  // it is — "Hello, sandbox" says nothing about what you would actually do —
+  // one click away so the row itself stays a single line of facts.
   const summary = row.querySelector('.lab-summary');
   summary.textContent = lab.summary ?? '';
   summary.hidden = !lab.summary;
@@ -359,11 +423,13 @@ function labCard(lab, lockedBy = null) {
     objectives.append(li);
   }
   row.querySelector('.lab-objectives-wrap').hidden = !(lab.objectives ?? []).length;
+  row.querySelector('.lab-more').hidden = !lab.summary && !(lab.objectives ?? []).length;
 
   // One fact per chip, but the row's text stays the plain
   // "slug@version · family · type · difficulty · N min" line that support
   // and the browser suite read: the separators are real text, only hidden
-  // visually, so nothing that reads .lab-sub sees a different string.
+  // visually, so nothing that reads .lab-sub sees a different string. The
+  // chips are shown in a different order (type first) by CSS `order`.
   const facts = [
     ['id', `${lab.slug}@${lab.version}`],
     ['family', lab.family],
@@ -373,13 +439,13 @@ function labCard(lab, lockedBy = null) {
   // The expected time and the kill timer are different promises: say both
   // when the manifest gives both.
   if (lab.estimated_minutes) {
-    facts.push(['time', `~${lab.estimated_minutes} min${lab.timeout_minutes ? ` · ${lab.timeout_minutes} min limit` : ''}`]);
+    facts.push(['time', `~${lab.estimated_minutes} min`, lab.timeout_minutes ? ` · ${lab.timeout_minutes} min limit` : '']);
   } else if (lab.timeout_minutes) {
     facts.push(['time', `${lab.timeout_minutes} min`]);
   }
   if (lab.tier === 'free') facts.push(['tier', 'Free']);
   const sub = row.querySelector('.lab-sub');
-  facts.forEach(([kind, text], i) => {
+  facts.forEach(([kind, text, limit], i) => {
     if (i) {
       const sep = document.createElement('span');
       sep.className = 'sep';
@@ -392,23 +458,34 @@ function labCard(lab, lockedBy = null) {
     if (kind === 'difficulty') chip.dataset.level = String(DIFFICULTY_LEVEL[text] ?? 0);
     if (kind === 'time') {
       chip.title = lab.estimated_minutes
-        ? 'Expected time to finish, and the hard time limit for the session'
+        ? `Expected about ${lab.estimated_minutes} min to finish${lab.timeout_minutes ? `; the session ends after ${lab.timeout_minutes} min` : ''}`
         : 'Hard time limit for the session';
     }
     chip.textContent = text;
+    if (limit) chip.append(node('span', 'chip-limit', limit));
     sub.append(chip);
   });
 
+  // Where this person stands: done with the best score, locked until a
+  // named lab passes, in progress, or not started.
+  const status = row.querySelector('.lab-status');
   const button = row.querySelector('.lab-start');
-  if (lockedBy) {
-    const need = labsBySlug.get(lockedBy)?.title ?? lockedBy;
-    const lock = row.querySelector('.lab-lock');
-    lock.textContent = `Locked until ${need} passes`;
-    lock.hidden = false;
+  if (done) {
+    status.append(node('span', 'chip chip-done', `Done · best ${percent(lab.progress.best_score)}%`));
+  } else if (locked) {
+    const need = lockedByTitle ?? lockedBy;
+    const lock = node('span', 'lab-lock');
+    lock.append(icon('lock', 14), document.createTextNode(`Locked until ${need} passes`));
+    status.append(lock);
     // aria-disabled rather than disabled: it stays focusable, so its title
     // (the reason) is reachable, and a click is simply ignored.
     button.setAttribute('aria-disabled', 'true');
     button.title = `Locked until ${need} passes. Pass every check of that lab to unlock this one.`;
+  } else if (lab.progress?.attempts > 0) {
+    const best = Number.isFinite(Number(lab.progress.best_score)) && lab.progress.best_score !== null;
+    status.append(node('span', 'lab-state', best ? `In progress · best ${percent(lab.progress.best_score)}%` : 'In progress'));
+  } else {
+    status.append(node('span', 'lab-state', 'Not started'));
   }
   button.addEventListener('click', () => {
     if (button.getAttribute('aria-disabled') === 'true') return;
@@ -416,6 +493,139 @@ function labCard(lab, lockedBy = null) {
   });
   return row;
 }
+
+// ------------------------------------------------------------ path navigator
+
+/**
+ * The strip of pills above the filters: one per path, with its lab count.
+ * A pill scrolls to its path and moves focus to the heading; the pill of the
+ * path in view is marked aria-current. They are real links (#path-…), so
+ * they work by keyboard and without this code.
+ */
+function renderPathNav(model) {
+  const nav = $('pathNav');
+  const items = $('pathNavList');
+  items.innerHTML = '';
+  pathPin = null;
+  // One group needs no signpost.
+  nav.hidden = model.paths.length < 2;
+  for (const path of model.paths) {
+    const id = path.other ? 'path-other' : `path-${safeId(path.slug)}`;
+    const li = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = `#${id}`;
+    link.className = 'path-pill';
+    link.dataset.path = path.slug;
+    link.dataset.accent = path.accent;
+    const glyph = node('span', 'pill-icon');
+    glyph.append(icon(path.icon || 'grid', 16));
+    link.append(glyph, node('span', 'pill-title', path.title), node('span', 'pill-count', String(path.totals.labs)));
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      goToPath(id);
+    });
+    li.append(link);
+    items.append(li);
+  }
+  updatePathNav();
+}
+
+/** After a click the clicked pill stays marked until the page has settled and then moves again. */
+let pathPin = null;
+
+function goToPath(id) {
+  const section = document.getElementById(id);
+  if (!section || section.hidden) return;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  pathPin = { id, settled: false, timer: setTimeout(() => pathPin && (pathPin.settled = true), 300) };
+  section.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  section.querySelector('.group-head').focus({ preventScroll: true });
+  markActivePath();
+}
+
+/** Filters change which paths and how many labs are shown; the pills follow. */
+function updatePathNav() {
+  const pills = [...$('pathNavList').querySelectorAll('.path-pill')];
+  let visible = 0;
+  for (const link of pills) {
+    const section = document.getElementById(link.getAttribute('href').slice(1));
+    const shown = section ? section.querySelectorAll('.lab:not([hidden])').length : 0;
+    link.parentElement.hidden = !section || section.hidden;
+    if (!link.parentElement.hidden) visible++;
+    link.querySelector('.pill-count').textContent = String(shown);
+  }
+  // One group needs no signpost, and neither does a list with nothing in it.
+  $('pathNav').hidden = pills.length < 2 || visible === 0;
+  markActivePath();
+}
+
+function markActivePath() {
+  const nav = $('pathNav');
+  if (nav.hidden) return;
+  const sections = [...$('labList').querySelectorAll('.lab-group')].filter((s) => !s.hidden);
+  if (!sections.length) return;
+  let active = sections[0];
+  if (pathPin && sections.some((s) => s.id === pathPin.id)) {
+    active = sections.find((s) => s.id === pathPin.id);
+  } else {
+    // The last path whose top has passed just under the navigator.
+    const line = nav.getBoundingClientRect().bottom + 24;
+    for (const section of sections) if (section.getBoundingClientRect().top <= line) active = section;
+    // A short last path can never reach the line; the end of the page is it.
+    const launcher = $('launcher');
+    const scroller = launcher.scrollHeight > launcher.clientHeight + 1 ? launcher : document.scrollingElement;
+    const scrolled = scroller.scrollTop > 0;
+    if (scrolled && Math.ceil(scroller.scrollTop + scroller.clientHeight) >= scroller.scrollHeight - 2) {
+      active = sections[sections.length - 1];
+    }
+  }
+  const list = $('pathNavList');
+  for (const link of list.querySelectorAll('.path-pill')) {
+    if (link.getAttribute('href') !== `#${active.id}`) {
+      link.removeAttribute('aria-current');
+      continue;
+    }
+    if (link.getAttribute('aria-current') === 'true') continue;
+    link.setAttribute('aria-current', 'true');
+    // The strip scrolls sideways on a narrow screen: keep the current pill in it.
+    const strip = list.getBoundingClientRect();
+    const pill = link.getBoundingClientRect();
+    if (pill.left < strip.left) list.scrollLeft += pill.left - strip.left - 8;
+    else if (pill.right > strip.right) list.scrollLeft += pill.right - strip.right + 8;
+  }
+}
+
+let activeFrame = 0;
+function onLauncherScroll() {
+  // Any scroll after the page has settled on a clicked pill is the reader's own.
+  if (pathPin) {
+    if (pathPin.settled) pathPin = null;
+    else {
+      clearTimeout(pathPin.timer);
+      pathPin.timer = setTimeout(() => pathPin && (pathPin.settled = true), 150);
+    }
+  }
+  if (activeFrame) return;
+  activeFrame = requestAnimationFrame(() => {
+    activeFrame = 0;
+    markActivePath();
+  });
+}
+// The reader's own input ends a clicked pill's hold at once, wherever it scrolls.
+const releasePathPin = () => {
+  pathPin = null;
+};
+for (const target of [$('launcher'), window]) {
+  target.addEventListener('wheel', releasePathPin, { passive: true });
+  target.addEventListener('touchmove', releasePathPin, { passive: true });
+}
+window.addEventListener('keydown', (event) => {
+  if (['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', ' '].includes(event.key)) releasePathPin();
+});
+// The launcher scrolls itself on a desktop and the page scrolls on a phone.
+$('launcher').addEventListener('scroll', onLauncherScroll, { passive: true });
+window.addEventListener('scroll', onLauncherScroll, { passive: true });
+window.addEventListener('resize', onLauncherScroll);
 
 // ------------------------------------------------------------ filters
 
@@ -496,12 +706,6 @@ function renderFilters(labs) {
   $('labFilters').hidden = false;
 }
 
-/** not started / started / done, from the progress the Worker merged in. */
-function labStatus(lab) {
-  if (lab.progress?.passed_all) return 'done';
-  return lab.progress?.attempts > 0 ? 'started' : 'todo';
-}
-
 function labMatches(lab) {
   const q = filters.q.trim().toLowerCase();
   if (q && !`${lab.title} ${lab.summary ?? ''} ${lab.slug}`.toLowerCase().includes(q)) return false;
@@ -522,7 +726,10 @@ function applyFilters() {
     card.hidden = !match;
     if (match) shown++;
   }
+  // A module or a path with nothing left to show goes too, and the navigator follows.
+  for (const module of list.querySelectorAll('.module')) module.hidden = !module.querySelector('.lab:not([hidden])');
   for (const group of list.querySelectorAll('.lab-group')) group.hidden = !group.querySelector('.lab:not([hidden])');
+  updatePathNav();
   $('labCount').textContent = `${shown} of ${cards.length} labs`;
   $('labNoMatch').hidden = shown > 0 || !cards.length;
   $('btnClearFilters').hidden = !filtersActive();

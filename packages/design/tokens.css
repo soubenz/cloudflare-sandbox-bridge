@@ -35,6 +35,39 @@
   --color-code-text: #e8ebf7;
   --color-focus-ring: #3552f2;
 
+  /* Accent families for the learning paths and modules (packages/catalogue/paths.json
+     names one per path and module). Three tokens each:
+       --accent-<name>       stripe, icon glyph, progress fill: 3:1 on the surfaces
+       --accent-<name>-soft  tinted background behind an icon or a header
+       --accent-<name>-ink   small text on a tint or on a plain surface: 4.5:1
+     scripts/contrast-check.mjs enforces both ratios in every theme. The console
+     (dashboard/public/styles.css) carries a mirror of these values, because it
+     does not load this file; the same script fails if the two differ. */
+  --accent-blue: #3552f2;
+  --accent-blue-soft: #e6ebff;
+  --accent-blue-ink: #2438b5;
+  --accent-teal: #0e8577;
+  --accent-teal-soft: #dcf4f0;
+  --accent-teal-ink: #0a6157;
+  --accent-green: #1a8a48;
+  --accent-green-soft: #e0f4e6;
+  --accent-green-ink: #146c37;
+  --accent-amber: #b8620a;
+  --accent-amber-soft: #fbeed3;
+  --accent-amber-ink: #8a4a06;
+  --accent-rose: #d02650;
+  --accent-rose-soft: #fde4ea;
+  --accent-rose-ink: #a5153c;
+  --accent-violet: #7c3aed;
+  --accent-violet-soft: #eee6fe;
+  --accent-violet-ink: #5b21b6;
+  --accent-indigo: #4f46e5;
+  --accent-indigo-soft: #e5e7fd;
+  --accent-indigo-ink: #3730a3;
+  --accent-slate: #5b6b83;
+  --accent-slate-soft: #e8ecf2;
+  --accent-slate-ink: #3f4d63;
+
   --shadow-1: 0 1px 2px rgba(10, 15, 44, 0.06), 0 1px 1px rgba(10, 15, 44, 0.04);
   --shadow-2: 0 8px 24px rgba(10, 15, 44, 0.1), 0 2px 6px rgba(10, 15, 44, 0.06);
   color-scheme: light;
@@ -99,6 +132,30 @@
     --color-border: #263066;
     --color-border-input: #5d6795;
     --color-focus-ring: #9aabff;
+    --accent-blue: #8ea2ff;
+    --accent-blue-soft: #182456;
+    --accent-blue-ink: #b4c1ff;
+    --accent-teal: #3cc6b3;
+    --accent-teal-soft: #0c2f2c;
+    --accent-teal-ink: #7fe0d2;
+    --accent-green: #4fc47e;
+    --accent-green-soft: #0f2e1c;
+    --accent-green-ink: #8fdcae;
+    --accent-amber: #f0a548;
+    --accent-amber-soft: #33230a;
+    --accent-amber-ink: #ffcb85;
+    --accent-rose: #ff7a9a;
+    --accent-rose-soft: #3a1220;
+    --accent-rose-ink: #ffabc0;
+    --accent-violet: #b28dff;
+    --accent-violet-soft: #261648;
+    --accent-violet-ink: #cfb8ff;
+    --accent-indigo: #8f93ff;
+    --accent-indigo-soft: #1c1c50;
+    --accent-indigo-ink: #b9bcff;
+    --accent-slate: #9aa9c0;
+    --accent-slate-soft: #202836;
+    --accent-slate-ink: #c3cede;
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 1px 1px rgba(0, 0, 0, 0.3);
     --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
     color-scheme: dark;
@@ -120,6 +177,30 @@
   --color-border: #263066;
   --color-border-input: #5d6795;
   --color-focus-ring: #9aabff;
+  --accent-blue: #8ea2ff;
+  --accent-blue-soft: #182456;
+  --accent-blue-ink: #b4c1ff;
+  --accent-teal: #3cc6b3;
+  --accent-teal-soft: #0c2f2c;
+  --accent-teal-ink: #7fe0d2;
+  --accent-green: #4fc47e;
+  --accent-green-soft: #0f2e1c;
+  --accent-green-ink: #8fdcae;
+  --accent-amber: #f0a548;
+  --accent-amber-soft: #33230a;
+  --accent-amber-ink: #ffcb85;
+  --accent-rose: #ff7a9a;
+  --accent-rose-soft: #3a1220;
+  --accent-rose-ink: #ffabc0;
+  --accent-violet: #b28dff;
+  --accent-violet-soft: #261648;
+  --accent-violet-ink: #cfb8ff;
+  --accent-indigo: #8f93ff;
+  --accent-indigo-soft: #1c1c50;
+  --accent-indigo-ink: #b9bcff;
+  --accent-slate: #9aa9c0;
+  --accent-slate-soft: #202836;
+  --accent-slate-ink: #c3cede;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.5), 0 1px 1px rgba(0, 0, 0, 0.3);
   --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
   color-scheme: dark;

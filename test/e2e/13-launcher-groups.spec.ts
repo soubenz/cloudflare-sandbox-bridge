@@ -1,8 +1,8 @@
 import { test, expect, signIn } from './fixtures';
 
 /**
- * The launcher's structure: groups, prerequisites, filters, the first-run
- * dialog, the header's theme toggle and the footer. Nothing here starts a
+ * The launcher's structure: path sections and module cards, prerequisites,
+ * filters, the first-run dialog, the header's theme toggle and the footer. Nothing here starts a
  * lab, so the catalogue is stubbed where a spec needs particular labs; the
  * console's own Worker still serves the page, and signs it in.
  */
@@ -39,14 +39,23 @@ test.describe('launcher groups', () => {
       lab({ slug: 'c', title: 'C lab' }),
     ]);
     await openLauncher(page);
+    // A section per path, the labs with no path last. `foundations` is not in
+    // packages/catalogue/paths.json, so it shows the humanised slug and no intro.
     const groups = page.locator('.lab-group');
-    await expect(groups).toHaveCount(3);
-    // Modules in order, then the labs that have no path under "All labs".
-    await expect(groups.nth(0)).toHaveAttribute('data-module', '1');
-    await expect(groups.nth(1)).toHaveAttribute('data-module', '2');
-    await expect(groups.nth(2).locator('h2.group-head')).toContainText('All labs');
-    await expect(groups.nth(0).locator('h2.group-head')).toContainText('0/1 done');
-    await expect(groups.nth(0).locator('.progress')).toBeVisible();
+    await expect(groups).toHaveCount(2);
+    await expect(groups.nth(0).locator('h2.group-head')).toContainText('Foundations');
+    await expect(groups.nth(1).locator('h2.group-head')).toContainText('Other labs');
+    // A path with two modules shows a card each, in module order.
+    const modules = groups.nth(0).locator('.module');
+    await expect(modules).toHaveCount(2);
+    await expect(modules.nth(0)).toHaveAttribute('data-module', '1');
+    await expect(modules.nth(1)).toHaveAttribute('data-module', '2');
+    await expect(modules.nth(0).locator('.module-progress')).toHaveText('0 of 1 done');
+    await expect(groups.nth(0).locator('.path-summary')).toContainText('0 done');
+    await expect(groups.nth(0).locator('.progress').first()).toBeVisible();
+    // The labs that belong to no path are one plain group, with no module cards.
+    await expect(groups.nth(1).locator('.module')).toHaveCount(0);
+    await expect(groups.nth(1).locator('.lab')).toHaveCount(1);
   });
 
   test('locks a lab whose prerequisite has not been passed', async ({ page }) => {
@@ -71,7 +80,12 @@ test.describe('launcher groups', () => {
     await expect(page.locator('.lab[data-slug="b"] button.lab-start')).not.toHaveAttribute('aria-disabled', 'true');
     await expect(page.locator('.lab[data-slug="a"]')).toHaveClass(/lab-done/);
     await expect(page.locator('.lab[data-slug="a"] .chip-done')).toHaveText('Done · best 100%');
-    await expect(page.locator('.lab-group h2.group-head')).toContainText('1/2 done');
+    // One module in a path the catalogue metadata does not describe: no module card, the totals on the path.
+    await expect(page.locator('.module')).toHaveCount(0);
+    await expect(page.locator('.lab-group .path-summary')).toContainText('1 done');
+    const bar = page.locator('.lab-group .progress').first();
+    await expect(bar).toHaveAttribute('aria-valuenow', '1');
+    await expect(bar).toHaveAttribute('aria-valuemax', '2');
   });
 
   test('the search box hides labs that do not match and updates the count', async ({ page }) => {

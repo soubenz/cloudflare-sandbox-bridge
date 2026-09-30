@@ -426,13 +426,64 @@ mark.todo { padding: 1px 6px; border-radius: 6px; background: #fff3b0; color: #1
 .labs-intro { display: flex; flex-direction: column; gap: 16px; max-width: 760px; }
 .labs-intro .lede { margin: 0; }
 .labs-path { margin-top: 72px; }
-.labs-path-head { display: flex; flex-direction: column; gap: 10px; max-width: 760px; margin-bottom: 28px; }
-.labs-path-head .mono { font-size: 12px; letter-spacing: 0.06em; }
-.labs-path-head h2 { font-size: clamp(30px, 3.4vw, 48px); line-height: 1; letter-spacing: -0.04em; }
-.labs-path-head p { font-size: 17px; color: var(--ink-2); }
-.labs-module + .labs-module { margin-top: 32px; }
-.labs-module h3 { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; font-family: var(--sans); font-size: 19px; }
-.labs-module h3 .mono { font-size: 13px; color: var(--accent); }
+
+/* The accent family of a path or a module (the --accent-* tokens of
+   /design/tokens.css, which labs.html loads with data-theme="light" because this
+   site has no dark theme). --a stripes and colours icons, --a-soft tints a
+   surface, --a-ink is the accent as small text. scripts/contrast-check.mjs holds
+   the pairs used here to 3:1 (non-text) and 4.5:1 (text). Body text stays --ink. */
+.labs-page [data-accent] { --a: var(--accent-slate); --a-soft: var(--accent-slate-soft); --a-ink: var(--accent-slate-ink); }
+.labs-page [data-accent="blue"] { --a: var(--accent-blue); --a-soft: var(--accent-blue-soft); --a-ink: var(--accent-blue-ink); }
+.labs-page [data-accent="teal"] { --a: var(--accent-teal); --a-soft: var(--accent-teal-soft); --a-ink: var(--accent-teal-ink); }
+.labs-page [data-accent="green"] { --a: var(--accent-green); --a-soft: var(--accent-green-soft); --a-ink: var(--accent-green-ink); }
+.labs-page [data-accent="amber"] { --a: var(--accent-amber); --a-soft: var(--accent-amber-soft); --a-ink: var(--accent-amber-ink); }
+.labs-page [data-accent="rose"] { --a: var(--accent-rose); --a-soft: var(--accent-rose-soft); --a-ink: var(--accent-rose-ink); }
+.labs-page [data-accent="violet"] { --a: var(--accent-violet); --a-soft: var(--accent-violet-soft); --a-ink: var(--accent-violet-ink); }
+.labs-page [data-accent="indigo"] { --a: var(--accent-indigo); --a-soft: var(--accent-indigo-soft); --a-ink: var(--accent-indigo-ink); }
+
+.labs-path-head {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: start;
+  margin-bottom: 24px; padding: 36px;
+  background: var(--a-soft);
+  border: 1.5px solid color-mix(in srgb, var(--a) 30%, var(--border));
+  border-top: 6px solid var(--a);
+  border-radius: 28px;
+}
+.labs-tile {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 72px; height: 72px;
+  background: var(--surface); color: var(--a);
+  border: 1.5px solid color-mix(in srgb, var(--a) 35%, var(--border));
+  border-radius: 22px;
+}
+.labs-tile-sm { width: 56px; height: 56px; border-radius: 18px; }
+.labs-path-text { display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
+.labs-eyebrow { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 0; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--a-ink); }
+.labs-path-text h2 { font-size: clamp(30px, 3.4vw, 48px); line-height: 1; letter-spacing: -0.04em; }
+.labs-path-intro { margin: 0; font-size: 17px; color: var(--ink-2); }
+.labs-stats { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 0; padding: 0; list-style: none; }
+.labs-stats li { padding: 4px 12px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); font-size: 12.5px; color: var(--ink-2); }
+.labs-modules { display: grid; gap: 24px; }
+
+.labs-module {
+  position: relative; overflow: hidden;
+  padding: 32px 32px 32px 40px;
+  background: var(--a-soft);
+  border: 1px solid color-mix(in srgb, var(--a) 25%, var(--border));
+  border-radius: 28px;
+}
+.labs-module::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 8px; background: var(--a); }
+.labs-module-head { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(240px, 340px); gap: 24px; align-items: start; margin-bottom: 24px; }
+.labs-module-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.labs-module h3 { font-family: var(--display); font-size: clamp(24px, 2.4vw, 32px); line-height: 1.05; letter-spacing: -0.03em; }
+.labs-module-intro { margin: 0; font-size: 16px; color: var(--ink-2); max-width: 62ch; }
+.labs-module-meta { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.labs-badge { padding: 2px 10px; border: 1px solid var(--a-ink); border-radius: 999px; background: var(--surface); font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: none; color: var(--a-ink); }
+.labs-skills { padding: 18px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; }
+.labs-skills-label { margin: 0 0 10px; font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--a-ink); }
+.labs-skills ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.labs-skills li { position: relative; padding-left: 24px; font-size: 15px; line-height: 1.4; color: var(--ink); }
+.labs-skills li::before { content: ''; position: absolute; left: 5px; top: 0.28em; width: 6px; height: 11px; border: solid var(--a); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
 .lab-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .lab-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--navy); border-radius: 0 0 22px 22px; font-size: 15px; }
 .lab-card-free { border-top-color: var(--accent); }
@@ -443,7 +494,6 @@ mark.todo { padding: 1px 6px; border-radius: 6px; background: #fff3b0; color: #1
 .lab-chip-free { border-color: var(--accent); background: var(--accent); color: #fff; font-weight: 700; }
 .lab-chip-pro { border-color: var(--navy); background: var(--navy); color: #fff; font-weight: 700; }
 .lab-card .btn { margin-top: auto; width: fit-content; }
-.labs-more { margin-top: 20px; padding: 16px 20px; border: 1.5px dashed var(--navy); border-radius: 18px; font-size: 15px; color: var(--ink-2); }
 
 /* ---------- feedback and status ---------- */
 .rating { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
@@ -481,6 +531,8 @@ textarea.input { min-height: 140px; resize: vertical; font: inherit; }
   .stats { grid-template-columns: 1fr; gap: 28px; padding: 32px; }
   .tracks, .types, .compare, .plans { grid-template-columns: 1fr; }
   .lab-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .labs-module-head { grid-template-columns: auto minmax(0, 1fr); }
+  .labs-skills { grid-column: 1 / -1; }
   .plan { min-height: 0; }
   .track { min-height: 0; }
   .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -533,6 +585,11 @@ textarea.input { min-height: 140px; resize: vertical; font: inherit; }
   .form-page, .labs-page { padding: 112px 0 72px; }
   .lab-grid { grid-template-columns: 1fr; }
   .labs-path { margin-top: 56px; }
+  .labs-path-head { grid-template-columns: 1fr; gap: 16px; padding: 24px 20px; border-radius: 22px; }
+  .labs-tile { width: 56px; height: 56px; border-radius: 18px; }
+  .labs-module { padding: 24px 18px 24px 26px; border-radius: 22px; }
+  .labs-module-head { grid-template-columns: 1fr; gap: 14px; }
+  .labs-skills { padding: 16px; }
   .lab-card { padding: 20px; }
   .legal-page { padding: 112px 0 72px; }
   .legal h2 { margin-top: 28px; font-size: 23px; }

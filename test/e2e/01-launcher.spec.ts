@@ -60,6 +60,7 @@ test.describe('lab launcher', () => {
     await openConsole(page);
     const lab = page.locator(`.lab[data-slug="${LAB}"]`);
     await expect(lab.locator('.lab-summary')).not.toBeEmpty();
+    await lab.locator('.lab-more > summary').click();
     await expect(lab.locator('.lab-objectives li').first()).toBeVisible();
   });
 

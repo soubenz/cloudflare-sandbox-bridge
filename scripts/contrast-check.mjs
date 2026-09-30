@@ -8,6 +8,11 @@
 // [data-theme="dark"]), checks the pairs that are used as text or as a
 // control boundary, and asserts the two dark blocks are identical. Exits 1
 // on any failure. Also checks the copies under site/public/design/ match.
+//
+// The accent families (--accent-<name>, -soft, -ink) are checked twice: on the
+// design tokens' own surfaces, and on the console's surfaces, because the
+// console (dashboard/public/styles.css) has its own palette and carries a
+// mirror of the accent values. The mirror must equal packages/design.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -109,6 +114,146 @@ if (norm(bodies["dark-media"]) !== norm(bodies["dark-attr"])) {
   failed++;
 } else {
   console.log("\ndark @media block and [data-theme=\"dark\"] block are identical: ok");
+}
+
+// ---------------------------------------------------------------------------
+// Accent families.
+//
+// Text (the -ink token, and the normal text tokens on a tint) needs 4.5:1.
+// Anything that is not text but must be seen (the stripe, the icon glyph on
+// its tile, the progress fill against its track) needs 3:1.
+const ACCENTS = Object.keys(light)
+  .map((k) => k.match(/^accent-([a-z]+)$/)?.[1])
+  .filter(Boolean);
+if (ACCENTS.length !== 8) {
+  console.error(`FAIL: expected 8 accent families in tokens.css, found ${ACCENTS.length}`);
+  failed++;
+}
+
+/**
+ * One surface set = the names of the tokens a theme calls its plain page,
+ * card, track and text colours. `tokens` is the resolved theme.
+ */
+const reported = new Set();
+function accentPairs(label, tokens, names) {
+  const t = (n) => tokens[n];
+  const groups = new Map(); // "theme  pair" -> { min, who, need }
+  const add = (pair, fg, bg, need, who) => {
+    const a = t(fg);
+    const b = t(bg);
+    let r = 0;
+    if (a && b) r = ratio(a, b);
+    else {
+      for (const missing of [a ? null : fg, b ? null : bg]) {
+        if (missing && !reported.has(`${label}/${missing}`)) {
+          reported.add(`${label}/${missing}`);
+          console.error(`FAIL: ${label}: no colour token "${missing}"`);
+        }
+      }
+    }
+    const g = groups.get(pair) ?? { min: Infinity, who: "", need };
+    if (!(a && b)) g.min = 0;
+    if (r < g.min) { g.min = r; g.who = who; }
+    groups.set(pair, g);
+  };
+  for (const n of ACCENTS) {
+    const acc = `accent-${n}`;
+    const soft = `accent-${n}-soft`;
+    const ink = `accent-${n}-ink`;
+    // Non-text, 3:1
+    add("accent (stripe, icon) on surface", acc, names.surface, 3.0, n);
+    add("accent (stripe, icon) on page", acc, names.bg, 3.0, n);
+    add("accent (icon glyph) on its tint", acc, soft, 3.0, n);
+    add("accent (progress fill) on track", acc, names.track, 3.0, n);
+    // Text, 4.5:1
+    add("accent-ink on surface", ink, names.surface, 4.5, n);
+    add("accent-ink on its tint", ink, soft, 4.5, n);
+    for (const txt of names.text) {
+      add(`${txt} on an accent tint`, txt, soft, 4.5, n);
+    }
+  }
+  for (const [pair, g] of groups) {
+    const ok = g.min >= g.need;
+    if (!ok) failed++;
+    rows2.push([label, pair, g.min.toFixed(2), String(g.need), g.who, ok ? "ok" : "FAIL"]);
+  }
+}
+
+const rows2 = [["surfaces", "pair (worst of 8 accents)", "ratio", "min", "worst", "ok"]];
+const designNames = { surface: "color-surface", bg: "color-bg", track: "color-border", text: ["color-text", "color-text-muted"] };
+for (const [theme, tokens] of Object.entries(themes)) accentPairs(`design ${theme}`, tokens, designNames);
+
+// The console has its own palette (dark by default, two light blocks), so the
+// accents are checked on its surfaces, and its mirror of them is compared
+// with the design tokens.
+const consoleCss = readFileSync(join(root, "dashboard/public/styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const consoleBody = (re, label) => {
+  const m = consoleCss.match(re);
+  if (!m) {
+    console.error(`FAIL: could not find the ${label} block in dashboard/public/styles.css`);
+    process.exit(1);
+  }
+  return m[1];
+};
+const cDark = hexTokens(consoleBody(/^:root\s*\{([^}]*)\}/m, "console :root (dark)"));
+const cLightAttr = hexTokens(consoleBody(/:root\[data-theme="light"\]\s*\{([^}]*)\}/, 'console [data-theme="light"]'));
+const cLightMedia = hexTokens(
+  consoleBody(
+    /@media\s*\(prefers-color-scheme:\s*light\)\s*\{\s*:root:not\(\[data-theme\]\)\s*\{([^}]*)\}/,
+    "console light @media",
+  ),
+);
+const sameTokens = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
+if (!sameTokens(cLightAttr, cLightMedia)) {
+  console.error('\nFAIL: the console\'s light @media block and [data-theme="light"] block differ');
+  failed++;
+}
+const consoleThemes = { dark: cDark, "light (attr)": { ...cDark, ...cLightAttr }, "light (media)": { ...cDark, ...cLightMedia } };
+const consoleNames = { surface: "surface", bg: "bg", track: "border", text: ["ink", "ink-2", "ink-muted"] };
+for (const [theme, tokens] of Object.entries(consoleThemes)) {
+  accentPairs(`console ${theme}`, tokens, consoleNames);
+  // What the launcher also puts on the plain page and card.
+  for (const [fg, bg] of [["ink", "bg"], ["ink", "surface"], ["ink-2", "surface"], ["ink-muted", "bg"], ["ink-muted", "surface"]]) {
+    const r = ratio(tokens[fg], tokens[bg]);
+    const ok = r >= 4.5;
+    if (!ok) failed++;
+    rows2.push([`console ${theme}`, `${fg} on ${bg}`, r.toFixed(2), "4.5", "-", ok ? "ok" : "FAIL"]);
+  }
+}
+// The public /labs page sits on the marketing site's own light palette
+// (site/public/styles.css :root) and loads the design tokens' light accents,
+// pinned with data-theme="light" because the site has no dark theme.
+{
+  const siteCss = readFileSync(join(root, "site/public/styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const siteRoot = hexTokens(siteCss.match(/:root\s*\{([^}]*)\}/)?.[1] ?? "");
+  const accents = Object.fromEntries(Object.entries(themes.light).filter(([k]) => k.startsWith("accent-")));
+  const siteTokens = { ...siteRoot, ...accents };
+  accentPairs("site /labs", siteTokens, { surface: "surface", bg: "bg", track: "border", text: ["ink", "ink-2", "muted"] });
+  // The page pins the light theme; without that attribute a system dark preference would swap the accents.
+  const labsHtml = readFileSync(join(root, "site/public/labs.html"), "utf8");
+  const pinned = /<html[^>]*data-theme="light"/.test(labsHtml) && labsHtml.includes('href="/design/tokens.css"');
+  console.log(`\nsite/public/labs.html loads /design/tokens.css with data-theme="light": ${pinned ? "ok" : "FAIL"}`);
+  if (!pinned) failed++;
+}
+{
+  const w2 = rows2[0].map((_, i) => Math.max(...rows2.map((r) => r[i].length)));
+  console.log("");
+  for (const r of rows2) console.log(r.map((c, i) => c.padEnd(w2[i])).join("  ").trimEnd());
+}
+
+// The console's copy of the accent values is the design's, theme for theme.
+{
+  const mirrorOf = (design, mirror, label) => {
+    const wanted = Object.entries(design).filter(([k]) => k.startsWith("accent-"));
+    const differs = wanted.filter(([k, v]) => mirror[k] !== v).map(([k]) => k);
+    console.log(`\nconsole ${label} accent tokens mirror packages/design: ${differs.length ? "FAIL" : "ok"}`);
+    if (differs.length) {
+      console.error(`  differs or missing: ${differs.join(", ")}`);
+      failed++;
+    }
+  };
+  mirrorOf(themes.light, consoleThemes["light (attr)"], "light");
+  mirrorOf(themes["dark-attr"], consoleThemes.dark, "dark");
 }
 
 // The site serves these straight from site/public (no build step), so the
