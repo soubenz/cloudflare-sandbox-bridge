@@ -17,12 +17,16 @@ Four things worth knowing before you read the rest of this file:
    session's OpenAI-compatible endpoint and the Worker in front of it
    injects the token; the model name is $LLM_MODEL. See docs/spike.md.
 
-2. MODEL_MODE=auto (the default) calls the real gateway and falls back to a
-   fixed local reply table if it cannot be reached -- a lab must not fail a
-   learner because a provider had a bad minute. Requests carry an explicit
-   cf-aig-cache-key, so a repeated run is served from the gateway's cache;
-   the explicit-key path needs two sequential repeats before it HITs, so an
-   early MISS is normal.
+2. MODEL_MODE=replay (the default, and what the lab manifest sets) answers
+   every call from the fixed local reply table below: deterministic, no
+   network, no real model calls -- this is what the graders run against.
+   MODEL_MODE=auto is the Real path for exploring by hand: it calls the real
+   gateway and falls back to the table if it cannot be reached (a lab must
+   not fail a learner because a provider had a bad minute), and
+   MODEL_MODE=live makes an unreachable gateway an error. Live requests
+   carry an explicit cf-aig-cache-key, so a repeated run is served from the
+   gateway's cache; the explicit-key path needs two sequential repeats
+   before it HITs, so an early MISS is normal.
 
 3. The local reply table is not a random stand-in for a model. It is built
    so that each candidate's PROMPT_ID has a fixed, known reliability -- some
@@ -62,7 +66,7 @@ POLICY_FILE = os.environ.get("POLICY_FILE", "/workspace/policy/index.json")
 
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "").rstrip("/")
 LLM_MODEL = os.environ.get("LLM_MODEL", "")
-MODEL_MODE = os.environ.get("MODEL_MODE", "auto").strip().lower()
+MODEL_MODE = os.environ.get("MODEL_MODE", "replay").strip().lower()
 UPSTREAM_ATTEMPTS = int(os.environ.get("UPSTREAM_ATTEMPTS", "2"))
 UPSTREAM_TIMEOUT_S = float(os.environ.get("UPSTREAM_TIMEOUT_S", "45"))
 CACHE_TTL_S = int(os.environ.get("MODEL_CACHE_TTL_S", "86400"))

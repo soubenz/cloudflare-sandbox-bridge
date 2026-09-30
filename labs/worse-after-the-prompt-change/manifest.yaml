@@ -1,6 +1,11 @@
 # P4-01 in the lab catalogue: Path 4 (Evals and Safe Releases), an eval gate
 # in CI. Build, agent family, Real mode, advanced.
 #
+# real_calls_per_check_run: 0
+# Grading is scripted: MODEL_MODE=replay below, so a check run makes no real
+# model calls and gives the same verdict every time. The Real path (auto /
+# live) is still in the workspace for exploring by hand.
+#
 # Advanced rather than core: this is not "find the planted bug in one file."
 # The learner has to build a scorer, a comparison against a pinned baseline
 # with a margin wide enough to absorb real model noise but narrow enough to
@@ -50,8 +55,8 @@ objectives:
   - "Keep an eval's own bookkeeping -- ids, answer keys, anything that says 'this is a test' -- out of what a candidate is handed"
   - "Write a refusal that a pipeline and a human can both act on, from a record your own services kept"
 # Advanced, and every run scores two candidates (the one under test and the
-# pinned baseline) over the whole case set, one real model call each -- more
-# iterations than a single-bug break-fix, and each one is real work.
+# pinned baseline) over the whole case set -- more iterations than a
+# single-bug break-fix, and each one is real work.
 timeout_minutes: 90
 idle_minutes: 10
 
@@ -62,14 +67,13 @@ env:
   RELEASE_PORT: "8902"
   POLICY_FILE: "/workspace/policy/index.json"
   CASE_FILE: "/workspace/gate/cases.json"
-  # Real mode. auto = call the gateway, and fall back to a fixed local
-  # reply table if it cannot be reached at all -- a lab must not fail a
-  # learner because a provider had a bad minute. Because grading never
-  # reads a reply as prose (the judge reduces every reply to three
-  # booleans before anything else sees it), the fallback cannot move a
-  # verdict either. Set MODEL_MODE=live to make an unreachable gateway an
-  # error instead.
-  MODEL_MODE: "auto"
+  # Grading runs in replay: the judge answers from its fixed reliability
+  # table (see workspace/services/judge_service.py), so a check run is
+  # deterministic and makes no real model calls. The Real path is still
+  # there to explore with: restart the judge with MODEL_MODE=auto (call the
+  # gateway, fall back to the table if it cannot be reached) or
+  # MODEL_MODE=live (an unreachable gateway is an error).
+  MODEL_MODE: "replay"
   UPSTREAM_ATTEMPTS: "2"
   UPSTREAM_TIMEOUT_S: "45"
   MAX_COMPLETION_TOKENS: "220"
@@ -83,8 +87,7 @@ env:
   # nested inside each check's timeout_s below, so a gate that hangs is
   # reported with a diagnosis rather than by the platform as a bare
   # timeout. A run scores two candidates (the one under test and the
-  # pinned baseline) over the whole case set -- up to two real model calls
-  # per case.
+  # pinned baseline) over the whole case set -- two judge calls per case.
   OPALIX_GATE_RUN_TIMEOUT_S: "120"
   # The reliability table's own definition of "a long, detailed message" --
   # declared here so the graders and the judge service can never drift
@@ -136,7 +139,8 @@ pressure:
       The token-cost savings from challenger_trim have made it to a slide.
       Nobody asked whether it answers as completely as what's live now --
       that question has your name on it, and it needs an answer a pipeline
-      can act on, not a vibe.
+      can act on, not a vibe. Two new cases have also been added to
+      gate/cases.json -- re-run your gate against the bigger set.
 
 checks:
   # The strongest single signal, and the one most gate designs miss: does
@@ -168,13 +172,8 @@ checks:
     weight: 2
 
 hints:
-  - after_minutes: 10
-    text: >-
-      Run `python3 run_gate.py challenger_trim` and then `python3 run_gate.py
-      challenger_priority_fix`, and open the release tab after each. Both are
-      real prompts a real teammate proposed this week. One of them is worse.
-      The gate as it stands cannot tell you which.
-  - after_minutes: 22
+  # Three hints at roughly 15 / 30 / 45% of timeout_minutes (90).
+  - after_minutes: 14
     text: >-
       gate/decision.py ships anything that clears a flat number. That number
       was never compared against what production actually scores -- and
@@ -182,7 +181,7 @@ hints:
       is real. Compare against candidates/production_current.py's own score,
       scored fresh, every time, with room in the comparison for the fact
       that neither number is exact.
-  - after_minutes: 34
+  - after_minutes: 27
     text: >-
       gate/request.py hands a candidate the whole case record from
       cases.json -- including expected_policy_id and expected_escalate_to,
@@ -192,7 +191,7 @@ hints:
       classification it needs to draft with, and the disclosure line. Then
       look at what candidates/challenger_gamed.py does with a view that
       does and does not have those fields in it.
-  - after_minutes: 46
+  - after_minutes: 41
     text: >-
       gate/scoring.py calls the judge once per case. That is fine for a
       case set big enough and varied enough that one unlucky call does not

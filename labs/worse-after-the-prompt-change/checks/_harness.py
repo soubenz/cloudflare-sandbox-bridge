@@ -11,8 +11,9 @@ record of that call explains it.
 
 Where the evidence comes from:
 
-* **The judge service** fronts the model. In this lab's own testing it runs
-  in MODEL_MODE=replay against a fixed, candidate-specific reliability
+* **The judge service** fronts the model. Under grading it runs in
+  MODEL_MODE=replay (the manifest sets it; no real model calls are made)
+  against a fixed, candidate-specific reliability
   table (see workspace/services/judge_service.py) -- deterministic by
   design, so the same run gives the same numbers every time, and two
   different fixed "variants" (set via POST /api/reset) stand in for two
@@ -38,6 +39,7 @@ Run as:  python3 _harness.py <check-name>
 
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.request
@@ -95,7 +97,7 @@ def run_gate(candidate, variant="a"):
     _post(RELEASE_URL + "/api/reset")
     try:
         proc = subprocess.run(
-            [sys.executable, ENTRY, candidate],
+            [sys.executable, "-B", ENTRY, candidate],
             cwd=WORKSPACE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -112,13 +114,25 @@ def run_gate(candidate, variant="a"):
     return proc, decisions, judge_log
 
 
+# The gate's own verdict protocol: run_gate.py prints one
+# `decision:  SHIP -- ...` or `decision:  REFUSE -- ...` line on stdout
+# (`VERDICT: SHIP|REFUSE` is accepted too). A gate written the way a CI
+# step usually is -- exit 1 on REFUSE so the pipeline goes red -- is doing
+# its job, not crashing.
+VERDICT_LINE = re.compile(r"^\s*(?:decision|verdict)\s*:\s*(?:SHIP|REFUSE)\b", re.IGNORECASE | re.MULTILINE)
+
+
 def crashed(proc, candidate):
-    tail = [line for line in proc.stderr.decode("utf-8", "replace").splitlines() if line.strip()]
-    if proc.returncode not in (0,):
-        return "the gate did not run cleanly for %s: `python3 run_gate.py %s` exited %d -- %s" % (
-            candidate, candidate, proc.returncode, (tail[-1][:200] if tail else "(no output)"),
-        )
-    return None
+    stdout = proc.stdout.decode("utf-8", "replace")
+    stderr = proc.stderr.decode("utf-8", "replace")
+    tail = [line for line in stderr.splitlines() if line.strip()]
+    if proc.returncode == 0:
+        return None
+    if proc.returncode == 1 and VERDICT_LINE.search(stdout) and "Traceback (most recent call last)" not in stderr:
+        return None
+    return "the gate did not run cleanly for %s: `python3 run_gate.py %s` exited %d without a decision line -- %s" % (
+        candidate, candidate, proc.returncode, (tail[-1][:200] if tail else "(no output)"),
+    )
 
 
 def only_decision(decisions, candidate):
