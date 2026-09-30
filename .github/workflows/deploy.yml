@@ -92,7 +92,10 @@ jobs:
       - name: Deploy (Worker, Durable Objects, and both container images)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx wrangler deploy --containers-rollout=immediate --env=""
+        run: |
+          # The rollout wait below only trusts container apps modified after this.
+          echo "ROLLOUT_SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          npx wrangler deploy --containers-rollout=immediate --env=""
 
       # The dashboard is its own Worker (assets only, no server side). It
       # deploys after the API so a new UI never talks to an older API.
