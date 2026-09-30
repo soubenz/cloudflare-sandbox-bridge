@@ -294,8 +294,17 @@ describe('GET /learn/onboarding', () => {
     onboardingMode.value = { raw: real };
     const ok = await call(env, 'GET', '/learn/onboarding', { headers: SERVICE });
     expect(ok.status).toBe(200);
-    expect((await j(ok)).questions.length).toBe(real.questions.length);
+    const body = await j(ok);
+    expect(body.questions.length).toBe(real.questions.length);
+    // The branching shape: a one-line blurb per area, and a basic or advanced level on every question.
+    expect(Object.keys(body).sort()).toEqual(['areas', 'intro', 'questions', 'version']);
+    expect(body.areas.map((a: { area: string }) => a.area).sort()).toEqual(['gateway', 'mcp', 'otel', 'platform', 'rag', 'sovereignty']);
+    for (const a of body.areas) expect(a.blurb.length).toBeLessThanOrEqual(90);
+    for (const q of body.questions) expect(['basic', 'advanced']).toContain(q.level);
     onboardingMode.value = { raw: { ...real, questions: real.questions.slice(0, 2) } };
+    expect((await call(env, 'GET', '/learn/onboarding', { headers: SERVICE })).status).toBe(500);
+    // An old-shaped quiz (no levels) is not served either.
+    onboardingMode.value = { raw: { ...real, questions: real.questions.map(({ level: _l, ...rest }: { level: string }) => rest) } };
     expect((await call(env, 'GET', '/learn/onboarding', { headers: SERVICE })).status).toBe(500);
   });
 });

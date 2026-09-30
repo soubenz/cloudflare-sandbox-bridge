@@ -11,7 +11,9 @@ import onboardingJson from '../../packages/catalogue/onboarding.json';
  * grading, the mastery record in localStorage, the lesson plan and the
  * analytics body. Pure module, imported directly.
  */
-type Q = { id: string; concept: string; type: 'single' | 'multi'; prompt: string; options: Array<{ id: string; text: string }>; answer: string[]; explanation: string; diagnostic?: boolean };
+type Q = { id: string; concept: string; type: 'single' | 'multi'; prompt: string; options: Array<{ id: string; text: string }>; answer: string[]; explanation: string; diagnostic?: boolean; level?: string };
+type Result = { question_id: string; concept: string; correct: boolean };
+type Step = { ask: Q } | { level: string };
 type Concept = { id: string; title: string; minutes: number; recap: string; body: string };
 type Learn = { story?: { title: string; minutes: number; body: string }; concepts: Concept[]; questions: Q[]; answers_file: string; fields: unknown[] };
 type Mastery = {
@@ -30,9 +32,13 @@ const m = (await import('../../dashboard/src/learn-model.js' as string)) as {
   emptyMastery: () => Mastery;
   normalizeMastery: (raw: unknown) => Mastery;
   createMasteryStore: (o?: { storage?: unknown; key?: string }) => Store;
-  levelFor: (correct: number, total: number) => string | null;
-  levelsFromOnboarding: (qs: Q[], results: Array<{ question_id: string; concept: string; correct: boolean }>) => Record<string, string>;
-  recordOnboarding: (m: Mastery, qs: Q[], results: unknown[], now?: number) => Mastery;
+  MAX_PROBE: number;
+  probeQuestion: (area: string, qs: Q[], tier: string, skip?: string[]) => Q | null;
+  firstQuestionFor: (area: string, qs: Q[], asked?: string[]) => Q | null;
+  nextStep: (area: string, qs: Q[], answers?: Array<boolean | { correct: boolean }>) => Step;
+  orderSelected: (choice: unknown, areas?: Array<{ area: string }>) => string[];
+  levelsFromProbe: (o: { areas?: Array<{ area: string }>; selected: string[]; questions: Q[]; results: Result[] }) => Record<string, string>;
+  recordOnboarding: (m: Mastery, levels: Record<string, string>, now?: number) => Mastery;
   skipOnboarding: (m: Mastery, now?: number) => Mastery;
   onboardingState: (m: Mastery) => string | null;
   onboardingFinished: (m: Mastery) => boolean;
@@ -46,7 +52,7 @@ const m = (await import('../../dashboard/src/learn-model.js' as string)) as {
   answersBody: (results: unknown[], o?: Record<string, unknown>) => Record<string, unknown> & { answers: Array<Record<string, unknown>> };
   readingTime: (n: number) => string;
   normalizeLearn: (e: unknown) => { version: string; learn: Learn } | null;
-  normalizeOnboarding: (raw: unknown) => { intro: string; questions: Q[] } | null;
+  normalizeOnboarding: (raw: unknown) => { intro: string; questions: Q[]; blurbs: Record<string, string> } | null;
 };
 
 const q = (id: string, concept: string, o: Partial<Q> = {}): Q => ({
@@ -231,54 +237,183 @@ describe('the mastery record', () => {
 
 // ---------------------------------------------------------------- onboarding
 
-describe('onboarding levels', () => {
-  it('maps a share of answers right to strong, ok or new', () => {
-    expect(m.levelFor(3, 3)).toBe('strong');
-    expect(m.levelFor(6, 7)).toBe('strong');
-    expect(m.levelFor(5, 6)).toBe('ok');
-    expect(m.levelFor(2, 3)).toBe('ok');
-    expect(m.levelFor(1, 2)).toBe('ok');
-    expect(m.levelFor(1, 3)).toBe('new');
-    expect(m.levelFor(0, 2)).toBe('new');
-    expect(m.levelFor(0, 0)).toBeNull();
-  });
-
+describe('onboarding: the branching probe', () => {
   const ob = m.normalizeOnboarding(onboardingJson)!;
+  const areas = m.platformAreas().map((a) => a.area);
+  const qs = ob.questions;
+  const basic = (area: string) => m.firstQuestionFor(area, qs)!;
+  const advanced = (area: string) => m.probeQuestion(area, qs, 'advanced')!;
+  const step = (area: string, ...answers: boolean[]) => m.nextStep(area, qs, answers);
 
-  it('reads the shipped onboarding quiz whole', () => {
+  it('reads the shipped onboarding quiz whole, with a level on every question and a blurb per area', () => {
     expect(ob.questions).toHaveLength(onboardingJson.questions.length);
     expect(ob.intro).toBe(onboardingJson.intro);
+    expect(ob.questions.every((x) => x.level === 'basic' || x.level === 'advanced')).toBe(true);
+    for (const a of areas) {
+      expect(ob.blurbs[a], a).toBeTruthy();
+      expect(ob.blurbs[a]!.length).toBeLessThanOrEqual(90);
+    }
   });
 
-  it('sets a level per area from the real quiz: all right is strong, all wrong is new', () => {
-    const right = ob.questions.map((x) => res(x.concept, true, x.id));
-    const wrong = ob.questions.map((x) => res(x.concept, false, x.id));
-    const areas = Object.keys(registry.areas);
-    expect(m.levelsFromOnboarding(ob.questions, right)).toEqual(Object.fromEntries(areas.map((a) => [a, 'strong'])));
-    expect(m.levelsFromOnboarding(ob.questions, wrong)).toEqual(Object.fromEntries(areas.map((a) => [a, 'new'])));
+  it('every area has a basic and an advanced question to probe with, and they are different questions', () => {
+    for (const a of areas) {
+      expect(basic(a).concept.startsWith(`${a}.`)).toBe(true);
+      expect(basic(a).level).toBe('basic');
+      expect(advanced(a).level).toBe('advanced');
+      expect(basic(a).id).not.toBe(advanced(a).id);
+    }
   });
 
-  it('mixes levels by area, and ignores results for questions that were not asked', () => {
-    const gw = ob.questions.filter((x) => x.concept.startsWith('gateway.'));
-    const mcp = ob.questions.filter((x) => x.concept.startsWith('mcp.'));
-    const results = [
-      ...gw.map((x) => res(x.concept, true, x.id)),
-      ...mcp.map((x, i) => res(x.concept, i === 0, x.id)),
-      res('gateway.routing-aliases', false, 'ghost-question'),
-    ];
-    const levels = m.levelsFromOnboarding([...gw, ...mcp], results);
-    expect(levels.gateway).toBe('strong');
-    expect(levels.mcp).toBe(m.levelFor(1, mcp.length));
-    expect(Object.keys(levels).sort()).toEqual(['gateway', 'mcp']);
+  it('uses the FIRST question of each level in file order, and can skip ones already asked', () => {
+    const list = [q('b1', 'gateway.routing-aliases', { level: 'basic' }), q('a1', 'gateway.error-semantics', { level: 'advanced' }), q('b2', 'gateway.usage-and-spend', { level: 'basic' }), q('m1', 'mcp.what-is-mcp', { level: 'basic' })];
+    expect(m.firstQuestionFor('gateway', list)!.id).toBe('b1');
+    expect(m.firstQuestionFor('gateway', list, ['b1'])!.id).toBe('b2');
+    expect(m.firstQuestionFor('mcp', list)!.id).toBe('m1');
+    expect(m.firstQuestionFor('rag', list)).toBeNull();
+    expect(m.probeQuestion('gateway', list, 'advanced')!.id).toBe('a1');
+  });
+
+  it('asks the basic question first', () => {
+    expect(step('gateway')).toEqual({ ask: basic('gateway') });
+  });
+
+  it('a wrong basic answer settles the area as new, with no second question', () => {
+    expect(step('gateway', false)).toEqual({ level: 'new' });
+  });
+
+  it('a right basic answer leads to the advanced question', () => {
+    expect(step('gateway', true)).toEqual({ ask: advanced('gateway') });
+  });
+
+  it('basic right and advanced wrong is ok; both right is strong', () => {
+    expect(step('gateway', true, false)).toEqual({ level: 'ok' });
+    expect(step('gateway', true, true)).toEqual({ level: 'strong' });
+  });
+
+  it('"Not sure" is just an answer that is not correct: new at the basic question, ok at the advanced one', () => {
+    expect(m.nextStep('gateway', qs, [{ correct: false }])).toEqual({ level: 'new' });
+    expect(m.nextStep('gateway', qs, [{ correct: true }, { correct: false }])).toEqual({ level: 'ok' });
+  });
+
+  it('never asks a third question, whatever the answers', () => {
+    expect(step('gateway', true, true, true)).toEqual({ level: 'strong' });
+    expect(step('gateway', false, true, true)).toEqual({ level: 'new' });
+  });
+
+  it('an area with no basic question cannot be judged and stays new; with no advanced one a right answer is ok', () => {
+    expect(m.nextStep('gateway', [], [])).toEqual({ level: 'new' });
+    const onlyBasic = [q('b1', 'gateway.routing-aliases', { level: 'basic' })];
+    expect(m.nextStep('gateway', onlyBasic, [true])).toEqual({ level: 'ok' });
+  });
+
+  it('orders the ticked areas by module and drops what is not an area', () => {
+    expect(m.orderSelected(['sovereignty', 'gateway', 'rag', 'rag', 'nonsense'])).toEqual(['gateway', 'rag', 'sovereignty']);
+    expect(m.orderSelected(new Set(['otel', 'mcp']))).toEqual(['mcp', 'otel']);
+    expect(m.orderSelected([])).toEqual([]);
+    expect(m.orderSelected(null)).toEqual([]);
+  });
+
+  // The walk the screen does: ask, answer, feed back, until every ticked area is settled.
+  function walk(selected: string[], policy: (q: Q) => boolean) {
+    const results: Result[] = [];
+    const asked: Q[] = [];
+    for (const area of m.orderSelected(selected)) {
+      const answers: boolean[] = [];
+      for (;;) {
+        const s = m.nextStep(area, qs, answers);
+        if ('level' in s) break;
+        const correct = policy(s.ask);
+        asked.push(s.ask);
+        answers.push(correct);
+        results.push({ question_id: s.ask.id, concept: s.ask.concept, correct });
+      }
+    }
+    return { asked, results, levels: m.levelsFromProbe({ selected: m.orderSelected(selected), questions: qs, results }) };
+  }
+  const allLevels = (over: Record<string, string>) => ({ ...Object.fromEntries(areas.map((a) => [a, 'new'])), ...over });
+
+  it('all wrong: one question per ticked area, every area new', () => {
+    const { asked, levels } = walk(['gateway', 'mcp'], () => false);
+    expect(asked.map((x) => x.level)).toEqual(['basic', 'basic']);
+    expect(levels).toEqual(allLevels({}));
+  });
+
+  it('basic right, advanced wrong: two questions and ok', () => {
+    const { asked, levels } = walk(['rag'], (x) => x.level === 'basic');
+    expect(asked.map((x) => x.level)).toEqual(['basic', 'advanced']);
+    expect(levels).toEqual(allLevels({ rag: 'ok' }));
+  });
+
+  it('both right: two questions and strong', () => {
+    const { asked, levels } = walk(['otel'], () => true);
+    expect(asked).toHaveLength(2);
+    expect(levels).toEqual(allLevels({ otel: 'strong' }));
+  });
+
+  it('unticked areas get no questions and are new', () => {
+    const { asked, levels } = walk(['gateway'], () => true);
+    expect(new Set(asked.map((x) => m.areaOf(x.concept)))).toEqual(new Set(['gateway']));
+    expect(levels).toEqual(allLevels({ gateway: 'strong' }));
+  });
+
+  it('"None of these yet" asks nothing and marks all six areas new', () => {
+    const { asked, levels } = walk([], () => true);
+    expect(asked).toEqual([]);
+    expect(levels).toEqual(allLevels({}));
+    expect(Object.keys(levels)).toHaveLength(6);
+  });
+
+  it('several areas are asked in module order, one area fully before the next', () => {
+    const { asked } = walk(['sovereignty', 'mcp', 'gateway'], () => true);
+    expect(asked.map((x) => m.areaOf(x.concept))).toEqual(['gateway', 'gateway', 'mcp', 'mcp', 'sovereignty', 'sovereignty']);
+    expect(asked.map((x) => x.level)).toEqual(['basic', 'advanced', 'basic', 'advanced', 'basic', 'advanced']);
+  });
+
+  it('mixed outcomes by area', () => {
+    const outcome: Record<string, [boolean, boolean]> = { gateway: [true, true], mcp: [true, false], rag: [false, true] };
+    const { asked, levels } = walk(['gateway', 'mcp', 'rag'], (x) => outcome[m.areaOf(x.concept)]![x.level === 'basic' ? 0 : 1]);
+    expect(levels).toEqual(allLevels({ gateway: 'strong', mcp: 'ok', rag: 'new' }));
+    expect(asked).toHaveLength(5);
+  });
+
+  it('never asks more than 2 per area nor more than 2 x the ticked areas, for every tick set and every set of outcomes', () => {
+    const outcomes: Array<[boolean, boolean]> = [[false, false], [true, false], [true, true]];
+    let cases = 0;
+    for (let mask = 0; mask < 1 << areas.length; mask++) {
+      const selected = areas.filter((_, i) => mask & (1 << i));
+      for (let pick = 0; pick < 3 ** areas.length; pick += 29) {
+        const outcomeOf = (area: string) => outcomes[Math.floor(pick / 3 ** areas.indexOf(area)) % 3]!;
+        const { asked, levels } = walk(selected, (x) => outcomeOf(m.areaOf(x.concept))[x.level === 'basic' ? 0 : 1]);
+        expect(asked.length).toBeLessThanOrEqual(2 * selected.length);
+        for (const a of areas) expect(asked.filter((x) => m.areaOf(x.concept) === a).length).toBeLessThanOrEqual(m.MAX_PROBE);
+        for (const a of areas.filter((x) => !selected.includes(x))) expect(levels[a]).toBe('new');
+        expect(Object.keys(levels).sort()).toEqual([...areas].sort());
+        cases++;
+      }
+    }
+    expect(cases).toBeGreaterThan(500);
+  });
+
+  it('levelsFromProbe ignores a result for a question the probe would not have asked, and answers after the level is settled', () => {
+    const b = basic('gateway');
+    const a = advanced('gateway');
+    const stray = res('gateway.routing-aliases', true, 'ghost-question');
+    // wrong at basic: the advanced answer that follows is never read.
+    expect(m.levelsFromProbe({ selected: ['gateway'], questions: qs, results: [stray, res(b.concept, false, b.id), res(a.concept, true, a.id)] }).gateway).toBe('new');
+    // an unfinished probe has no level for that area.
+    expect(m.levelsFromProbe({ selected: ['gateway'], questions: qs, results: [res(b.concept, true, b.id)] }).gateway).toBeUndefined();
   });
 
   it('records a finished quiz and remembers it', () => {
-    const next = m.recordOnboarding(m.emptyMastery(), ob.questions, ob.questions.map((x) => res(x.concept, true, x.id)), 123);
+    const levels = allLevels({ gateway: 'strong' });
+    const next = m.recordOnboarding(m.emptyMastery(), levels, 123);
     expect(next.onboarding.status).toBe('done');
     expect(next.onboarding.at).toBe(123);
+    expect(next.onboarding.levels).toEqual(levels);
     expect(m.onboardingState(next)).toBe('done');
     expect(m.onboardingFinished(next)).toBe(true);
     expect(m.areaLevel(next, 'gateway')).toBe('strong');
+    expect(m.areaLevel(next, 'mcp')).toBe('new');
     expect(m.areaLevel(next, 'unknown')).toBeNull();
   });
 
@@ -287,17 +422,18 @@ describe('onboarding levels', () => {
     expect(m.onboardingState(next)).toBe('skipped');
     expect(m.onboardingFinished(next)).toBe(true);
     expect(m.onboardingFinished(m.emptyMastery())).toBe(false);
+    expect(next.onboarding.levels).toEqual({});
   });
 
   it('skipping a retake keeps the levels already earned', () => {
-    const done = m.recordOnboarding(m.emptyMastery(), ob.questions, ob.questions.map((x) => res(x.concept, true, x.id)));
+    const done = m.recordOnboarding(m.emptyMastery(), allLevels({ gateway: 'strong' }));
     const again = m.skipOnboarding(done);
     expect(again.onboarding).toEqual(done.onboarding);
   });
 
   it('a retake replaces the levels', () => {
-    const first = m.recordOnboarding(m.emptyMastery(), ob.questions, ob.questions.map((x) => res(x.concept, true, x.id)));
-    const second = m.recordOnboarding(first, ob.questions, ob.questions.map((x) => res(x.concept, false, x.id)));
+    const first = m.recordOnboarding(m.emptyMastery(), allLevels({ gateway: 'strong' }));
+    const second = m.recordOnboarding(first, allLevels({}));
     expect(m.areaLevel(second, 'gateway')).toBe('new');
   });
 
@@ -544,10 +680,23 @@ describe('normalizing what the API sent', () => {
     expect(out.learn.fields).toHaveLength(1);
   });
 
-  it('reads the onboarding quiz, and nothing when it has no question', () => {
+  it('reads the onboarding quiz, and nothing when it has no question to ask', () => {
     expect(m.normalizeOnboarding(null)).toBeNull();
     expect(m.normalizeOnboarding({ intro: 'x', questions: [] })).toBeNull();
-    expect(m.normalizeOnboarding({ intro: 'x', questions: [q('q', 'gateway.routing-aliases')] })!.questions).toHaveLength(1);
+    expect(m.normalizeOnboarding({ intro: 'x', questions: [q('q', 'gateway.routing-aliases', { level: 'basic' })] })!.questions).toHaveLength(1);
+  });
+
+  it('drops an onboarding question with no valid level, so an old-shaped quiz is not offered', () => {
+    expect(m.normalizeOnboarding({ intro: 'x', questions: [q('q', 'gateway.routing-aliases')] })).toBeNull();
+    expect(m.normalizeOnboarding({ intro: 'x', questions: [q('q', 'gateway.routing-aliases', { level: 'expert' })] })).toBeNull();
+    const mixed = m.normalizeOnboarding({ intro: 'x', questions: [q('q1', 'gateway.routing-aliases'), q('q2', 'gateway.routing-aliases', { level: 'advanced' }), q('q3', 'mcp.what-is-mcp', { level: 'basic' })] })!;
+    expect(mixed.questions.map((x) => x.id)).toEqual(['q2', 'q3']);
+  });
+
+  it('keeps an area blurb only when it is text for a real area id', () => {
+    const raw = { intro: 'x', questions: [q('q', 'gateway.routing-aliases', { level: 'basic' })], areas: [{ area: 'gateway', blurb: 'One place.' }, { area: 'Bad Id', blurb: 'x' }, { area: 'mcp', blurb: '' }, { area: 'rag' }, null] };
+    expect(m.normalizeOnboarding(raw)!.blurbs).toEqual({ gateway: 'One place.' });
+    expect(m.normalizeOnboarding({ ...raw, areas: undefined })!.blurbs).toEqual({});
   });
 
   it('the shipped lab files stay readable by the tests above', () => {

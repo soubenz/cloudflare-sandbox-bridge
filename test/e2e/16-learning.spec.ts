@@ -43,6 +43,8 @@ interface Question {
   answer: string[];
   explanation: string;
   diagnostic?: boolean;
+  /** Onboarding questions only: how deep the branching quiz probes with it. */
+  level?: 'basic' | 'advanced';
 }
 interface Concept {
   id: string;
@@ -103,8 +105,16 @@ function compileLearn(slug: string): Bundle {
 }
 
 const bundle = compileLearn(GATEWAY);
-const onboarding = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/onboarding.json'), 'utf8')) as { intro: string; questions: Question[] };
+const onboarding = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/onboarding.json'), 'utf8')) as { intro: string; areas: Array<{ area: string; blurb: string }>; questions: Question[] };
 const concepts = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/concepts.json'), 'utf8')) as { areas: Record<string, { title: string; module: number }> };
+
+/** The platform's areas in module order, and the two questions the branching quiz probes each with. */
+const AREAS = Object.entries(concepts.areas)
+  .map(([area, a]) => ({ area, title: a.title, module: a.module }))
+  .sort((a, b) => a.module - b.module);
+const probe = (area: string, level: 'basic' | 'advanced') => onboarding.questions.find((q) => q.concept.startsWith(`${area}.`) && q.level === level)!;
+const titleOf = (area: string) => concepts.areas[area]!.title;
+const stepText = (area: string, n: number) => `${titleOf(area)} \u00b7 question ${n} of up to 2`;
 
 /** The lesson of a concept, and the diagnostic questions about it. */
 const lessonOf = (id: string) => bundle.concepts.find((c) => c.id === id)!;
@@ -153,7 +163,7 @@ interface Stub {
   errors: string[];
 }
 interface StubOptions {
-  onboarding?: 'ok' | 'none' | 'error';
+  onboarding?: 'ok' | 'none' | 'error' | 'legacy';
   files?: Record<string, string>;
   /** Delay before each file write answers, to hold a save in flight. */
   putDelayMs?: number;
@@ -192,6 +202,8 @@ async function stub(page: Page, opts: StubOptions = {}): Promise<Stub> {
       s.onboardingFetches++;
       if (opts.onboarding === 'none') return json(route, { error: { code: 'no_onboarding', message: 'No onboarding quiz is published' } }, 404);
       if (opts.onboarding === 'error') return json(route, { error: 'boom' }, 500);
+      // A quiz as the API served it before questions had a level: the console must not offer it.
+      if (opts.onboarding === 'legacy') return json(route, { version: 1, intro: onboarding.intro, questions: onboarding.questions.map(({ level: _l, ...q }) => q) });
       return json(route, { version: 1, ...onboarding });
     }
     if (path === '/api/learn/answers' && method === 'POST') {
@@ -413,116 +425,336 @@ async function enterSession(page: Page) {
 }
 
 // =========================================================================
-// the platform quiz
+// the platform quiz: a short, branching probe
 // =========================================================================
 
+/** Ticks areas (by id) on the first screen, then presses Start. */
+async function startQuiz(page: Page, ...areas: string[]) {
+  for (const a of areas) await page.locator(`.ob-choice input[value="${a}"]`).check();
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+}
+
+/** The button that moves past an answered question: "Next", or "See where to start" on the last. */
+const nextQuestion = (page: Page) => page.getByRole('button', { name: /^(Next|See where to start)$/ }).click();
+
+/** Answers the question on screen (right or deliberately wrong), then moves on; returns it. */
+async function step(page: Page, right: boolean): Promise<Question> {
+  const { question } = await answer(page, onboarding.questions, right);
+  await nextQuestion(page);
+  return question;
+}
+
+/** Answers every question that follows with `right(question)`; returns what was asked, in order. */
+async function probeAll(page: Page, right: (q: Question) => boolean): Promise<Question[]> {
+  const asked: Question[] = [];
+  while (await page.locator('.quiz-prompt').count()) {
+    const q = await currentQuestion(page, onboarding.questions);
+    asked.push(await step(page, right(q)));
+  }
+  return asked;
+}
+
+const levelOf = (page: Page, area: string) => page.locator(`.level-row[data-area="${area}"] .level-chip`);
+
 test.describe('the platform quiz', () => {
-  test('appears once after sign-in, walks through every question, and summarises per module', async ({ page }) => {
+  test('opens on "What have you worked with?": a checklist of the six areas, and nothing about a number of questions', async ({ page }) => {
     const s = await stub(page);
     await open(page);
 
     await expect(screen(page)).toBeVisible();
     await expect(page.locator('#launcher')).toBeHidden();
-    await expect(heading(page)).toHaveText('Find your starting point');
+    await expect(heading(page)).toHaveText('What have you worked with?');
     await expect(heading(page)).toBeFocused();
     await expect(screen(page)).toContainText('no score');
+    const text = await screen(page).innerText();
+    expect(text).not.toMatch(/\b18\b|\b\d+\s+questions\b|\b4 minutes\b|\bminutes\b/i);
+    expect(text).not.toMatch(/Question \d+ of \d+/);
+
+    // A real fieldset with a legend, holding one real checkbox per area in module order, then "None of these yet".
+    const set = screen(page).locator('fieldset.ob-set');
+    await expect(set).toHaveCount(1);
+    await expect(set.locator('legend')).toHaveText('Pick the areas you have worked with');
+    const boxes = set.locator('input[type="checkbox"]');
+    await expect(boxes).toHaveCount(AREAS.length + 1);
+    for (const [i, a] of AREAS.entries()) {
+      await expect(boxes.nth(i)).toHaveAttribute('value', a.area);
+      const choice = set.locator('.ob-choice').nth(i);
+      await expect(choice.locator('.ob-choice-title')).toHaveText(a.title);
+      await expect(choice.locator('.ob-choice-blurb')).toHaveText(onboarding.areas.find((x) => x.area === a.area)!.blurb);
+      expect(onboarding.areas.find((x) => x.area === a.area)!.blurb.length).toBeLessThanOrEqual(90);
+      // Each checkbox is named by its title (and blurb).
+      await expect(page.getByRole('checkbox', { name: new RegExp(a.title) })).toHaveCount(1);
+    }
+    await expect(page.getByRole('checkbox', { name: /None of these yet/ })).toHaveCount(1);
+    await expect(boxes.last()).toHaveAttribute('value', 'none');
+    await expect(boxes.locator('xpath=self::*[@checked]')).toHaveCount(0);
+
+    // "Skip for now" is always there; "Start" needs a choice and says so when pressed without one.
+    await expect(page.getByRole('button', { name: 'Skip for now' })).toBeEnabled();
+    const start = page.getByRole('button', { name: 'Start', exact: true });
+    await expect(start).toHaveAttribute('aria-disabled', 'true');
+    // aria-disabled, not disabled: it can still be pressed, and then says what is missing (force skips Playwright's enabled wait).
+    await start.click({ force: true });
+    await expect(screen(page).locator('.ob-message')).toContainText(/Choose at least one/);
+    await expect(heading(page)).toHaveText('What have you worked with?');
+    await page.locator('.ob-choice input[value="rag"]').check();
+    await expect(start).toHaveAttribute('aria-disabled', 'false');
+    await expect(screen(page).locator('.ob-message')).toBeHidden();
     await screenshotLayoutCheck(page);
+    expect(s.posted).toEqual([]);
+  });
 
-    await page.getByRole('button', { name: 'Start the quiz' }).click();
-    await expect(heading(page)).toHaveText(`Question 1 of ${onboarding.questions.length}`);
+  test('"None of these yet" is exclusive with the areas', async ({ page }) => {
+    await stub(page);
+    await open(page);
+    const box = (v: string) => page.locator(`.ob-choice input[value="${v}"]`);
+    await box('gateway').check();
+    await box('rag').check();
+    await box('none').check();
+    await expect(box('gateway')).not.toBeChecked();
+    await expect(box('rag')).not.toBeChecked();
+    await expect(box('none')).toBeChecked();
+    await box('otel').check();
+    await expect(box('none')).not.toBeChecked();
+    await expect(box('otel')).toBeChecked();
+  });
+
+  test('wrong at the basic question stops that area after ONE question and moves to the next ticked area', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await startQuiz(page, 'mcp', 'gateway'); // ticked out of order: asked in module order
+
+    // Progress names the area and the step, never "Question 3 of 18".
+    await expect(heading(page)).toHaveText(stepText('gateway', 1));
     await expect(heading(page)).toBeFocused();
-
-    // "Skip for now" is there on every question.
+    await expect(screen(page).locator('.learn-eyebrow')).toHaveText('Area 1 of 2');
+    expect(await screen(page).innerText()).not.toMatch(/Question \d+ of \d+(?! of up)|of 18/);
     await expect(page.getByRole('button', { name: 'Skip for now' })).toBeVisible();
+    expect((await currentQuestion(page, onboarding.questions)).id).toBe(probe('gateway', 'basic').id);
 
     // Checking with nothing chosen says so and does not move on.
     await page.getByRole('button', { name: 'Check', exact: true }).click();
     await expect(page.locator('.quiz-feedback')).toContainText(/Choose/);
-    await expect(heading(page)).toHaveText(`Question 1 of ${onboarding.questions.length}`);
+    await expect(heading(page)).toHaveText(stepText('gateway', 1));
 
-    // Single choice is radios, multiple choice is checkboxes.
-    const first = onboarding.questions[0]!;
-    const kinds = new Set<string>();
-    for (const q of onboarding.questions) kinds.add(q.type);
-    expect(kinds.has('single') && kinds.has('multi')).toBe(true);
-    await expect(page.locator('.quiz-option input').first()).toHaveAttribute('type', first.type === 'multi' ? 'checkbox' : 'radio');
+    await answer(page, onboarding.questions, false);
+    await expect(page.locator('.quiz-feedback')).toHaveAttribute('aria-live', 'polite');
+    await expect(page.locator('.quiz-feedback')).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeVisible();
+    await nextQuestion(page);
 
-    // Gateway right, everything else wrong.
-    let index = 0;
-    let sawMulti = false;
-    for (;;) {
-      if (!(await page.locator('.quiz-prompt').count())) break;
-      index++;
-      await expect(heading(page)).toHaveText(`Question ${index} of ${onboarding.questions.length}`);
-      const q = await currentQuestion(page, onboarding.questions);
-      if (q.type === 'multi') {
-        sawMulti = true;
-        await expect(page.locator('.quiz-option input').first()).toHaveAttribute('type', 'checkbox');
-      }
-      await answer(page, onboarding.questions, q.concept.startsWith('gateway.'));
-      // The verdict is announced from a live region that took focus.
-      await expect(page.locator('.quiz-feedback')).toHaveAttribute('aria-live', 'polite');
-      await expect(page.locator('.quiz-feedback')).toBeFocused();
-      await next(page);
-    }
-    expect(index).toBe(onboarding.questions.length);
-    expect(sawMulti).toBe(true);
+    // Not the gateway's advanced question: the next area's first one.
+    await expect(heading(page)).toHaveText(stepText('mcp', 1));
+    await expect(screen(page).locator('.learn-eyebrow')).toHaveText('Area 2 of 2');
+    expect((await currentQuestion(page, onboarding.questions)).id).toBe(probe('mcp', 'basic').id);
+    await answer(page, onboarding.questions, false);
+    // The last answer of the last area offers the summary.
+    await expect(page.getByRole('button', { name: 'See where to start' })).toBeVisible();
+    await nextQuestion(page);
 
-    // The summary: one row per module from the concept registry, a level chip and a line each.
     await expect(heading(page)).toHaveText('Where to start');
     await expect(heading(page)).toBeFocused();
-    const areas = Object.entries(concepts.areas).sort((a, b) => a[1].module - b[1].module);
-    const rows = page.locator('.level-row');
-    await expect(rows).toHaveCount(areas.length);
-    for (const [area, info] of areas) {
-      const row = page.locator(`.level-row[data-area="${area}"]`);
-      await expect(row).toContainText(`Module ${info.module}`);
-      await expect(row).toContainText(info.title);
-      await expect(row.locator('.level-chip')).toHaveText(area === 'gateway' ? 'Strong' : 'New');
-      await expect(row.locator('.level-line')).toContainText(area === 'gateway' ? 'short recaps' : `Start with module ${info.module}`);
-    }
-    await expect(screen(page).locator('.learn-lede')).toHaveText('Start with module 2, Tools and MCP.');
-    // No marks, no scores, nothing graded.
-    expect(await screen(page).innerText()).not.toMatch(/\b(score|scored|grade|graded|points|percent)\b|\d+\s*%/i);
+    for (const a of AREAS) await expect(levelOf(page, a.area)).toHaveText('New');
+    await expect(screen(page).locator('.learn-lede')).toHaveText('Start with module 1, LLM gateway.');
 
-    // The answers went out once, anonymously, as onboarding.
+    // Only the two questions that were asked went out, once, anonymously.
     await expect.poll(() => s.posted.length).toBe(1);
     const body = s.posted[0]!;
     expect(Object.keys(body)).toEqual(['answers']);
-    expect(body.answers).toHaveLength(onboarding.questions.length);
+    expect(body.answers.map((a: any) => a.question_id)).toEqual([probe('gateway', 'basic').id, probe('mcp', 'basic').id]);
     for (const a of body.answers) {
       expect(Object.keys(a).sort()).toEqual(['concept', 'correct', 'phase', 'question_id']);
       expect(a.phase).toBe('onboarding');
-      expect(a.correct).toBe(a.concept.startsWith('gateway.'));
+      expect(a.correct).toBe(false);
     }
     expect(JSON.stringify(body)).not.toMatch(/user|session|console|subject/i);
+    expect(s.errors).toEqual([]);
+  });
+
+  test('right at basic then right at advanced is strong; the rest are new, with their own summary lines', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await startQuiz(page, 'mcp');
+    await expect(heading(page)).toHaveText(stepText('mcp', 1));
+    const asked: string[] = [];
+    asked.push((await step(page, true)).id);
+    await expect(heading(page)).toHaveText(stepText('mcp', 2));
+    await expect(page.getByRole('button', { name: 'Skip for now' })).toBeVisible();
+    await answer(page, onboarding.questions, true);
+    asked.push((await currentQuestion(page, onboarding.questions)).id);
+    await expect(page.getByRole('button', { name: 'See where to start' })).toBeVisible();
+    await nextQuestion(page);
+    expect(asked).toEqual([probe('mcp', 'basic').id, probe('mcp', 'advanced').id]);
+
+    // The summary: one row per module from the registry, a chip and a line each, no marks.
+    await expect(heading(page)).toHaveText('Where to start');
+    await expect(page.locator('.level-row')).toHaveCount(AREAS.length);
+    for (const a of AREAS) {
+      const row = page.locator(`.level-row[data-area="${a.area}"]`);
+      await expect(row).toContainText(`Module ${a.module}`);
+      await expect(row).toContainText(a.title);
+      await expect(levelOf(page, a.area)).toHaveText(a.area === 'mcp' ? 'Strong' : 'New');
+      await expect(row.locator('.level-line')).toContainText(a.area === 'mcp' ? 'short recaps' : `Start with module ${a.module}`);
+    }
+    await expect(screen(page).locator('.learn-lede')).toHaveText('Start with module 1, LLM gateway.');
+    await expect(screen(page)).toContainText('You can retake this any time from the ? menu.');
+    expect(await screen(page).innerText()).not.toMatch(/\b(score|scored|grade|graded|points|percent)\b|\d+\s*%/i);
+
+    await expect.poll(() => s.posted.length).toBe(1);
+    expect(s.posted[0]!.answers.map((a: any) => [a.question_id, a.correct])).toEqual([[probe('mcp', 'basic').id, true], [probe('mcp', 'advanced').id, true]]);
 
     await page.getByRole('button', { name: 'Go to the labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
     await expect(screen(page)).toBeHidden();
-
-    // "Suggested start" lands on the first module that is new: module 2, nowhere else.
+    // The first module that is new gets the chip: module 1, not the strong module 2.
     await expect(page.locator('.badge-suggested')).toHaveCount(1);
-    await expect(page.locator('.module[data-module="2"] .badge-suggested')).toHaveText('Suggested start');
-    await expect(page.locator('.module[data-module="1"] .badge-suggested')).toHaveCount(0);
+    await expect(page.locator('.module[data-module="1"] .badge-suggested')).toHaveText('Suggested start');
 
     // Stored in this browser, and never shown again by itself.
     const m = await stored(page);
     expect(m.onboarding.status).toBe('done');
-    expect(m.onboarding.levels.gateway).toBe('strong');
-    expect(m.onboarding.levels.mcp).toBe('new');
+    expect(m.onboarding.levels).toEqual({ gateway: 'new', mcp: 'strong', rag: 'new', otel: 'new', platform: 'new', sovereignty: 'new' });
     await page.reload();
     await page.waitForSelector('body[data-booted="1"]');
     await expect(page.locator('.lab').first()).toBeVisible();
     await expect(screen(page)).toBeHidden();
-    await expect(page.locator('.module[data-module="2"] .badge-suggested')).toHaveCount(1);
     expect(s.errors).toEqual([]);
+  });
+
+  test('right at basic, wrong at advanced is familiar (ok); several areas, each settled before the next', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await startQuiz(page, 'rag', 'gateway');
+    const asked: Question[] = [];
+    // gateway: basic right, advanced wrong; rag: basic wrong.
+    asked.push(await step(page, true));
+    await expect(heading(page)).toHaveText(stepText('gateway', 2));
+    asked.push(await step(page, false));
+    await expect(heading(page)).toHaveText(stepText('rag', 1));
+    asked.push(await step(page, false));
+    expect(asked.map((q) => q.id)).toEqual([probe('gateway', 'basic').id, probe('gateway', 'advanced').id, probe('rag', 'basic').id]);
+
+    await expect(heading(page)).toHaveText('Where to start');
+    await expect(levelOf(page, 'gateway')).toHaveText('Familiar');
+    await expect(page.locator('.level-row[data-area="gateway"] .level-line')).toContainText('Some of module 1 is familiar');
+    await expect(levelOf(page, 'rag')).toHaveText('New');
+    await expect(screen(page).locator('.learn-lede')).toHaveText('Start with module 2, Tools and MCP.');
+    await expect.poll(() => s.posted.length).toBe(1);
+    expect(s.posted[0]!.answers).toHaveLength(3);
+    expect((await stored(page)).onboarding.levels.gateway).toBe('ok');
+  });
+
+  test('an area you did not tick gets no question at all and starts as new', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await startQuiz(page, 'otel');
+    const asked = await probeAll(page, () => true);
+    expect(asked).toHaveLength(2);
+    for (const q of asked) expect(q.concept.startsWith('otel.')).toBe(true);
+    await expect(heading(page)).toHaveText('Where to start');
+    for (const a of AREAS) await expect(levelOf(page, a.area)).toHaveText(a.area === 'otel' ? 'Strong' : 'New');
+    await expect.poll(() => s.posted.length).toBe(1);
+    for (const a of s.posted[0]!.answers) expect(a.concept.startsWith('otel.')).toBe(true);
+    expect(s.posted[0]!.answers).toHaveLength(2);
+  });
+
+  test('the most it ever asks is two per ticked area: all six wrong is 6 questions, all six right is 12', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await startQuiz(page, ...AREAS.map((a) => a.area));
+    expect(await probeAll(page, () => false)).toHaveLength(AREAS.length);
+    await expect(heading(page)).toHaveText('Where to start');
+    await expect.poll(() => s.posted.length).toBe(1);
+    expect(s.posted[0]!.answers).toHaveLength(AREAS.length);
+    await page.getByRole('button', { name: 'Go to the labs' }).click();
+
+    await page.locator('#btnRetakeQuiz').click();
+    await startQuiz(page, ...AREAS.map((a) => a.area));
+    const asked = await probeAll(page, () => true);
+    expect(asked).toHaveLength(AREAS.length * 2);
+    expect(asked.map((q) => q.level)).toEqual(AREAS.flatMap(() => ['basic', 'advanced']));
+    await expect(page.locator('.level-row[data-level="strong"]')).toHaveCount(AREAS.length);
+    await expect(screen(page).locator('.learn-lede')).toHaveText('You can start with any module.');
+    expect(asked.some((q) => q.type === 'multi')).toBe(true);
+  });
+
+  test('"None of these yet" goes straight to the summary with every area new, asking nothing', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await startQuiz(page, 'none');
+    await expect(heading(page)).toHaveText('Where to start');
+    await expect(page.locator('.quiz-prompt')).toHaveCount(0);
+    await expect(page.locator('.level-row')).toHaveCount(AREAS.length);
+    await expect(page.locator('.level-row[data-level="new"]')).toHaveCount(AREAS.length);
+    await expect(screen(page).locator('.learn-lede')).toHaveText('Start with module 1, LLM gateway.');
+    // Nothing was asked, so nothing is sent; the result is stored as done.
+    await page.waitForTimeout(200);
+    expect(s.posted).toEqual([]);
+    const m = await stored(page);
+    expect(m.onboarding.status).toBe('done');
+    expect(Object.values(m.onboarding.levels)).toEqual(AREAS.map(() => 'new'));
+    await page.getByRole('button', { name: 'Go to the labs' }).click();
+    await expect(page.locator('.module[data-module="1"] .badge-suggested')).toHaveCount(1);
+    await page.reload();
+    await page.waitForSelector('body[data-booted="1"]');
+    await expect(screen(page)).toBeHidden();
+  });
+
+  test('"Not sure" reveals the answer kindly and counts as not knowing it yet, at basic (new) and at advanced (familiar)', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await startQuiz(page, 'gateway', 'mcp');
+    const q = await currentQuestion(page, onboarding.questions);
+    await page.getByRole('button', { name: 'Not sure' }).click();
+    const feedback = page.locator('.quiz-feedback');
+    await expect(feedback).toHaveAttribute('data-result', 'unsure');
+    await expect(feedback).toHaveAttribute('aria-live', 'polite');
+    await expect(feedback).toBeFocused();
+    await expect(feedback).toContainText('No problem.');
+    await expect(feedback).toContainText(q.explanation);
+    expect((await feedback.innerText()).toLowerCase()).not.toMatch(/wrong|incorrect|fail|not quite/);
+    await expect(page.locator(`.quiz-option[data-option="${q.answer[0]}"] .quiz-option-flag`)).toContainText('Correct answer');
+    await expect(page.getByRole('button', { name: 'Not sure' })).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Check', exact: true })).toBeHidden();
+    await nextQuestion(page);
+
+    // Gateway stopped at one question; mcp: right at basic, then "Not sure" at advanced.
+    await expect(heading(page)).toHaveText(stepText('mcp', 1));
+    await step(page, true);
+    await expect(heading(page)).toHaveText(stepText('mcp', 2));
+    await page.getByRole('button', { name: 'Not sure' }).click();
+    await expect(page.getByRole('button', { name: 'See where to start' })).toBeVisible();
+    await nextQuestion(page);
+
+    await expect(levelOf(page, 'gateway')).toHaveText('New');
+    await expect(levelOf(page, 'mcp')).toHaveText('Familiar');
+    await expect.poll(() => s.posted.length).toBe(1);
+    expect(s.posted[0]!.answers.map((a: any) => a.correct)).toEqual([false, true, false]);
+  });
+
+  test('a multiple-choice question in the probe is checkboxes; a single-choice one is radios', async ({ page }) => {
+    await stub(page);
+    await open(page);
+    // Platform opens with a single-choice or multiple-choice basic question, as the file says; sovereignty's advanced is multiple.
+    await startQuiz(page, 'platform', 'sovereignty');
+    const kind = (q: Question) => (q.type === 'multi' ? 'checkbox' : 'radio');
+    const b1 = probe('platform', 'basic');
+    await expect(page.locator('.quiz-option input').first()).toHaveAttribute('type', kind(b1));
+    await step(page, false);
+    const b2 = probe('sovereignty', 'basic');
+    await expect(page.locator('.quiz-option input').first()).toHaveAttribute('type', kind(b2));
+    await step(page, true);
+    const a2 = probe('sovereignty', 'advanced');
+    await expect(page.locator('.quiz-option input').first()).toHaveAttribute('type', kind(a2));
+    const kinds = new Set([b1.type, b2.type, a2.type]);
+    expect(kinds.has('multi')).toBe(true);
+    await expect(page.locator('.quiz-hint')).toHaveText(a2.type === 'multi' ? 'Choose all that apply.' : 'Choose one answer.');
   });
 
   test('"Skip for now" from the first screen is remembered and the quiz never comes back by itself', async ({ page }) => {
     const s = await stub(page);
     await open(page);
-    await expect(heading(page)).toHaveText('Find your starting point');
+    await expect(heading(page)).toHaveText('What have you worked with?');
     await page.getByRole('button', { name: 'Skip for now' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
     await expect(screen(page)).toBeHidden();
@@ -544,16 +776,19 @@ test.describe('the platform quiz', () => {
   test('"Skip for now" in the middle of the quiz leaves, and records nothing but the skip', async ({ page }) => {
     const s = await stub(page);
     await open(page);
-    await page.getByRole('button', { name: 'Start the quiz' }).click();
-    await answer(page, onboarding.questions, true);
-    await next(page);
-    await expect(heading(page)).toHaveText(`Question 2 of ${onboarding.questions.length}`);
+    await startQuiz(page, 'gateway', 'mcp');
+    await step(page, true);
+    await expect(heading(page)).toHaveText(stepText('gateway', 2));
     await page.getByRole('button', { name: 'Skip for now' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
     const m = await stored(page);
     expect(m.onboarding.status).toBe('skipped');
     expect(m.onboarding.levels).toEqual({});
     expect(s.posted).toEqual([]);
+    await page.reload();
+    await page.waitForSelector('body[data-booted="1"]');
+    await page.waitForTimeout(300);
+    await expect(screen(page)).toBeHidden();
   });
 
   test('can be retaken from the header; skipping a retake keeps the levels already earned', async ({ page }) => {
@@ -571,18 +806,29 @@ test.describe('the platform quiz', () => {
     expect(Math.abs(at!.y - help!.y)).toBeLessThan(20);
 
     await retake.click();
-    await expect(heading(page)).toHaveText('Find your starting point');
+    await expect(heading(page)).toHaveText('What have you worked with?');
     await page.getByRole('button', { name: 'Skip for now' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
     expect((await stored(page)).onboarding).toEqual({ status: 'done', at: 5, levels });
     expect(s.posted).toEqual([]);
+  });
 
-    // The help dialog carries the same control.
+  test('can be retaken from the ? menu, and the summary says so', async ({ page }) => {
+    await stub(page);
+    await open(page);
+    await startQuiz(page, 'none');
+    await expect(screen(page)).toContainText('You can retake this any time from the ? menu.');
+    await page.getByRole('button', { name: 'Go to the labs' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+
     await page.locator('#btnHelp').click();
+    await expect(page.locator('#onboarding')).toHaveAttribute('open', '');
     await expect(page.locator('#btnOnboardingRetake')).toBeVisible();
     await page.locator('#btnOnboardingRetake').click();
-    await expect(heading(page)).toHaveText('Find your starting point');
+    await expect(heading(page)).toHaveText('What have you worked with?');
     await expect(page.locator('#onboarding')).not.toHaveAttribute('open', '');
+    // A fresh checklist each time: nothing pre-ticked.
+    await expect(page.locator('.ob-choice input:checked')).toHaveCount(0);
   });
 
   test('a finished retake replaces the levels and moves the suggestion', async ({ page }) => {
@@ -590,19 +836,23 @@ test.describe('the platform quiz', () => {
     await open(page, { mastery: { onboarding: { status: 'done', at: 5, levels: { gateway: 'new', mcp: 'strong' } } } });
     await expect(page.locator('.module[data-module="1"] .badge-suggested')).toHaveCount(1);
     await page.locator('#btnRetakeQuiz').click();
-    await page.getByRole('button', { name: 'Start the quiz' }).click();
-    await runQuiz(page, onboarding.questions, () => true);
+    await startQuiz(page, 'gateway');
+    await probeAll(page, () => true);
     await expect(heading(page)).toHaveText('Where to start');
-    await expect(page.locator('.level-row[data-level="new"]')).toHaveCount(0);
-    await expect(screen(page).locator('.learn-lede')).toHaveText('You can start with any module.');
+    // Unticked areas are new on a retake too: the suggestion moves to module 2.
+    await expect(levelOf(page, 'gateway')).toHaveText('Strong');
+    await expect(levelOf(page, 'mcp')).toHaveText('New');
     await page.getByRole('button', { name: 'Go to the labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
-    await expect(page.locator('.badge-suggested')).toHaveCount(0);
-    expect((await stored(page)).onboarding.levels.gateway).toBe('strong');
+    await expect(page.locator('.badge-suggested')).toHaveCount(1);
+    await expect(page.locator('.module[data-module="2"] .badge-suggested')).toHaveCount(1);
+    const m = await stored(page);
+    expect(m.onboarding.levels.gateway).toBe('strong');
+    expect(m.onboarding.levels.mcp).toBe('new');
   });
 
-  test('does not appear, and offers no retake, when there is no quiz or it cannot be read', async ({ page }) => {
-    for (const mode of ['none', 'error'] as const) {
+  test('does not appear, and offers no retake, when there is no quiz, it cannot be read, or it has the old shape', async ({ page }) => {
+    for (const mode of ['none', 'error', 'legacy'] as const) {
       const p = await page.context().newPage();
       const s = await stub(p, { onboarding: mode });
       await open(p);
@@ -623,28 +873,57 @@ test.describe('the platform quiz', () => {
     await expect(page.locator('#onboarding')).toHaveAttribute('open', '');
     await expect(screen(page)).toBeHidden();
     await page.getByRole('button', { name: 'Got it' }).click();
-    await expect(heading(page)).toHaveText('Find your starting point');
+    await expect(heading(page)).toHaveText('What have you worked with?');
   });
 
   test('is keyboard operable and keeps the answer in words, not colour alone', async ({ page }) => {
     await stub(page);
     await open(page);
+    // Focus starts on the heading; Tab reaches the first checkbox, Space ticks it.
     await page.keyboard.press('Tab');
-    await expect(page.getByRole('button', { name: 'Start the quiz' })).toBeFocused();
+    await expect(page.locator('.ob-choice input[value="gateway"]')).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(page.locator('.ob-choice input[value="gateway"]')).toBeChecked();
+    // Through the other five areas and "None of these yet" to Start.
+    for (let i = 0; i < AREAS.length + 1; i++) await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(heading(page)).toHaveText(`Question 1 of ${onboarding.questions.length}`);
-    const q = onboarding.questions[0]!;
+    await expect(heading(page)).toHaveText(stepText('gateway', 1));
+    await expect(heading(page)).toBeFocused();
+
+    const q = probe('gateway', 'basic');
     // Tab into the options, choose with the keyboard, check with Enter.
     await page.locator('.quiz-option input').first().focus();
     await page.keyboard.press('Space');
-    await page.keyboard.press('Tab');
-    const right = q.answer.length === 1 && q.answer[0] === q.options[0]!.id;
     await page.getByRole('button', { name: 'Check', exact: true }).focus();
     await page.keyboard.press('Enter');
     await expect(page.locator('.quiz-feedback')).toBeFocused();
+    const right = q.answer.length === 1 && q.answer[0] === q.options[0]!.id;
     await expect(page.locator('.quiz-feedback')).toContainText(right ? 'Correct.' : 'Not quite.');
     // The correct option says so in text.
     await expect(page.locator(`.quiz-option[data-option="${q.answer[0]}"] .quiz-option-flag`)).toContainText('Correct answer');
+  });
+
+  test('keeps the 390px layout: no sideways scroll on any step, and the checklist is one column of 44px targets', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await stub(page);
+    await open(page);
+    await noHorizontalScroll(page);
+    const boxes = await page.locator('.ob-choice').evaluateAll((els) => els.map((e) => ({ left: Math.round(e.getBoundingClientRect().left), h: e.getBoundingClientRect().height })));
+    expect(new Set(boxes.map((b) => b.left)).size).toBe(1);
+    for (const b of boxes) expect(b.h).toBeGreaterThanOrEqual(44);
+    await startQuiz(page, 'gateway', 'sovereignty');
+    await noHorizontalScroll(page);
+    await step(page, true);
+    await noHorizontalScroll(page);
+    await step(page, true);
+    await noHorizontalScroll(page);
+    await expect(heading(page)).toHaveText(stepText('sovereignty', 1));
+    await page.getByRole('button', { name: 'Not sure' }).click();
+    await noHorizontalScroll(page);
+    await nextQuestion(page);
+    await expect(heading(page)).toHaveText('Where to start');
+    await noHorizontalScroll(page);
   });
 });
 
@@ -1235,21 +1514,24 @@ test.describe('screenshots', () => {
         await page.screenshot({ path: join(SHOTS, `${name}-${v.name}.png`), fullPage: false });
       };
 
-      // The platform quiz: intro, a checked question, the summary.
+      // The platform quiz: the checklist, a question mid-probe, the summary.
       await open(page, { theme: v.theme });
-      await expect(heading(page)).toHaveText('Find your starting point');
-      await shot('onboarding-intro');
-      await page.getByRole('button', { name: 'Start the quiz' }).click();
-      const q = await (async () => {
-        const first = onboarding.questions[0]!;
-        await page.locator(`.quiz-option[data-option="${first.options.find((o) => !first.answer.includes(o.id))!.id}"] input`).check();
-        await page.getByRole('button', { name: 'Check', exact: true }).click();
-        return first;
-      })();
-      expect(q).toBeTruthy();
+      await expect(heading(page)).toHaveText('What have you worked with?');
+      await shot('onboarding-select');
+      await page.locator('.ob-choice input[value="gateway"]').check();
+      await page.locator('.ob-choice input[value="mcp"]').check();
+      await shot('onboarding-select-ticked');
+      await page.getByRole('button', { name: 'Start', exact: true }).click();
+      await expect(heading(page)).toHaveText(stepText('gateway', 1));
+      await step(page, true);
+      await expect(heading(page)).toHaveText(stepText('gateway', 2));
+      const adv = probe('gateway', 'advanced');
+      await shot('onboarding-question-open');
+      await page.locator(`.quiz-option[data-option="${adv.options.find((o) => !adv.answer.includes(o.id))!.id}"] input`).check();
+      await page.getByRole('button', { name: 'Check', exact: true }).click();
       await shot('onboarding-question');
-      await next(page);
-      await runQuiz(page, onboarding.questions, (x) => x.concept.startsWith('gateway.') || x.concept.startsWith('mcp.'));
+      await nextQuestion(page);
+      await probeAll(page, () => false);
       await expect(heading(page)).toHaveText('Where to start');
       await shot('onboarding-summary');
       await page.getByRole('button', { name: 'Go to the labs' }).click();

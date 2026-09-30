@@ -162,42 +162,96 @@ export function createMasteryStore({ storage, key = STORAGE_KEY } = {}) {
 export const onboardingState = (m) => m?.onboarding?.status ?? null;
 export const onboardingFinished = (m) => onboardingState(m) !== null;
 
-/** A share of answers right to a level: most of them 'strong', half 'ok', fewer 'new'. */
-export function levelFor(correct, total) {
-  if (!(total > 0)) return null;
-  const share = correct / total;
-  if (share >= 0.85) return 'strong';
-  if (share >= 0.5) return 'ok';
-  return 'new';
+// --- the adaptive probe -----------------------------------------------------
+
+/**
+ * The onboarding quiz is a branching probe, not a list. The learner ticks the
+ * areas they have worked with; each ticked area gets at most two questions and
+ * an unticked one gets none (it starts as 'new'):
+ *
+ *   basic wrong (or "Not sure")  -> 'new', stop
+ *   basic right, advanced wrong  -> 'ok'
+ *   basic right, advanced right  -> 'strong'
+ *
+ * The probe of an area is its FIRST 'basic' and its FIRST 'advanced' question
+ * in the order the quiz file lists them. All of this is pure: the screen only
+ * asks for the next step and feeds the answers back.
+ */
+export const PROBE_TIERS = ['basic', 'advanced'];
+/** The most questions any one area asks. */
+export const MAX_PROBE = PROBE_TIERS.length;
+
+/** The first question of `area` at `tier`, in quiz order, leaving out the ids in `skip`; or null. */
+export function probeQuestion(area, questions, tier, skip = []) {
+  const skipped = new Set(skip);
+  return (questions || []).find((q) => q && areaOf(q.concept) === area && q.level === tier && !skipped.has(q.id)) ?? null;
+}
+
+/** The question an area's probe opens with: its first 'basic' one not already in `asked` (ids). */
+export const firstQuestionFor = (area, questions, asked = []) => probeQuestion(area, questions, 'basic', asked);
+
+/**
+ * What to do next for one area, given the answers so far (in the order asked;
+ * each a boolean or { correct }; "Not sure" is simply not correct):
+ *   { ask: question }  ask this one
+ *   { level }          the area is settled: 'strong' | 'ok' | 'new'
+ * An area with no basic question to ask cannot be judged, so it stays 'new'.
+ */
+export function nextStep(area, questions, answers = []) {
+  const right = (a) => (a && typeof a === 'object' ? a.correct === true : a === true);
+  const basic = firstQuestionFor(area, questions);
+  if (!basic) return { level: 'new' };
+  if (answers.length === 0) return { ask: basic };
+  if (!right(answers[0])) return { level: 'new' };
+  const advanced = probeQuestion(area, questions, 'advanced');
+  if (!advanced) return { level: 'ok' };
+  if (answers.length === 1) return { ask: advanced };
+  return { level: right(answers[1]) ? 'strong' : 'ok' };
 }
 
 /**
- * Levels per area from onboarding results ([{ question_id, concept, correct }]).
- * `questions` fixes which results count: one for a question the quiz asked.
+ * The ticked areas as a list, in module order: `choice` is area ids (or
+ * anything); ids that are not areas of `areas` are dropped, repeats counted once.
  */
-export function levelsFromOnboarding(questions, results) {
-  const asked = new Map((questions || []).map((q) => [q.id, q]));
-  const tally = {};
-  for (const r of results || []) {
-    const q = asked.get(r.question_id);
-    if (!q) continue;
-    const area = areaOf(q.concept);
-    if (!area) continue;
-    const t = (tally[area] ??= { correct: 0, total: 0 });
-    t.total++;
-    if (r.correct) t.correct++;
-  }
+export function orderSelected(choice, areas = platformAreas()) {
+  const chosen = new Set(Array.isArray(choice) ? choice : choice instanceof Set ? [...choice] : []);
+  return areas.filter((a) => chosen.has(a.area)).map((a) => a.area);
+}
+
+/**
+ * Levels for EVERY area from a finished probe. `selected` is the ticked areas;
+ * `results` ([{ question_id, concept, correct }]) are the answers given. An
+ * unticked area is 'new' with no answers; a ticked one is replayed through
+ * nextStep, so a result for a question the probe would not have asked is
+ * ignored. An area whose probe was not finished gets no level.
+ */
+export function levelsFromProbe({ areas = platformAreas(), selected, questions, results }) {
+  const ticked = new Set(selected || []);
   const levels = {};
-  for (const [area, t] of Object.entries(tally)) {
-    const level = levelFor(t.correct, t.total);
-    if (level) levels[area] = level;
+  for (const { area } of areas) {
+    if (!ticked.has(area)) {
+      levels[area] = 'new';
+      continue;
+    }
+    const answers = [];
+    for (;;) {
+      const step = nextStep(area, questions, answers);
+      if (step.level) {
+        levels[area] = step.level;
+        break;
+      }
+      const r = (results || []).find((x) => x.question_id === step.ask.id);
+      if (!r) break;
+      answers.push(r);
+    }
   }
   return levels;
 }
 
-export function recordOnboarding(m, questions, results, now = Date.now()) {
+/** Stores a finished quiz: `levels` is the whole { area: level } map from levelsFromProbe. */
+export function recordOnboarding(m, levels, now = Date.now()) {
   const next = normalizeMastery(m);
-  next.onboarding = { status: 'done', at: now, levels: levelsFromOnboarding(questions, results) };
+  next.onboarding = { status: 'done', at: now, levels: { ...levels } };
   return next;
 }
 
@@ -368,12 +422,28 @@ export function normalizeLearn(entry) {
   };
 }
 
-/** GET /api/onboarding's body as { intro, questions }, or null when there is nothing to ask. */
-export function normalizeOnboarding(raw) {
+/** An onboarding question: a valid question with a 'basic' or 'advanced' level, or null. */
+function cleanOnboardingQuestion(q) {
+  const clean = cleanQuestion(q);
+  if (!clean || !PROBE_TIERS.includes(q.level)) return null;
+  return { ...clean, level: q.level };
+}
+
+/**
+ * GET /api/onboarding's body as { intro, questions, blurbs }, or null when
+ * there is nothing to ask. `blurbs` maps an area id to its one-line
+ * description. A question without a level is dropped, and a quiz with no
+ * 'basic' question for any area has nothing to ask, so it is null.
+ */
+export function normalizeOnboarding(raw, areas = platformAreas()) {
   if (!raw || typeof raw !== 'object') return null;
-  const questions = (Array.isArray(raw.questions) ? raw.questions : []).map(cleanQuestion).filter(Boolean);
-  if (questions.length === 0) return null;
-  return { intro: typeof raw.intro === 'string' ? raw.intro : '', questions };
+  const questions = (Array.isArray(raw.questions) ? raw.questions : []).map(cleanOnboardingQuestion).filter(Boolean);
+  if (!areas.some((a) => firstQuestionFor(a.area, questions))) return null;
+  const blurbs = {};
+  for (const a of Array.isArray(raw.areas) ? raw.areas : []) {
+    if (a && isStr(a.area) && AREA_ID.test(a.area) && isStr(a.blurb)) blurbs[a.area] = a.blurb;
+  }
+  return { intro: typeof raw.intro === 'string' ? raw.intro : '', questions, blurbs };
 }
 
 // ---------------------------------------------------------------------------

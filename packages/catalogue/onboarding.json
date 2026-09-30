@@ -1,9 +1,18 @@
 {
   "version": 1,
-  "intro": "Welcome to Larkfield's AI platform. This quiz takes about **4 minutes** and you only take it once. There is **no score** and nothing is graded. Your answers only decide **where each module starts**: topics you already know open as short recaps, and topics that are new open as full lessons. Answer from what you know today, and pick your best guess when unsure. Every lab also asks a few questions of its own, and you can always open any lesson, or skip it.",
+  "intro": "Welcome to Larkfield's AI platform. Tell us which areas you have already worked with, and we will ask just one or two short questions about each of those, and nothing about the rest. There is **no score** and nothing is graded. Your answers only decide **where each module starts**: topics you know open as short recaps, and topics that are new open as full lessons. You can skip this for now and retake it whenever you like. Every lab also asks a few questions of its own, and you can always open any lesson, or skip it.",
+  "areas": [
+    { "area": "gateway", "blurb": "One place your apps call models through, with stable names and a spend log." },
+    { "area": "mcp", "blurb": "A standard way for agents to find and call tools and data sources." },
+    { "area": "rag", "blurb": "Finding the right passages in your documents so a model can answer from them." },
+    { "area": "otel", "blurb": "Following a request across services and seeing what each model call cost." },
+    { "area": "platform", "blurb": "Giving a new team its own scoped key and proving it works end to end." },
+    { "area": "sovereignty", "blurb": "Keeping data in the right region and proving where each request actually went." }
+  ],
   "questions": [
     {
       "id": "ob-gw-alias",
+      "level": "basic",
       "concept": "gateway.routing-aliases",
       "type": "single",
       "prompt": "A product team calls the LLM gateway with the model name 'support'. What is 'support'?",
@@ -19,6 +28,7 @@
     },
     {
       "id": "ob-gw-cost",
+      "level": "basic",
       "concept": "gateway.usage-and-spend",
       "type": "multi",
       "prompt": "Which of these determine what a single model call costs? Select all that apply.",
@@ -35,6 +45,7 @@
     },
     {
       "id": "ob-gw-errors",
+      "level": "advanced",
       "concept": "gateway.error-semantics",
       "type": "single",
       "prompt": "A caller sends a request with a model alias the gateway does not know. What should a well-behaved gateway do?",
@@ -50,6 +61,7 @@
     },
     {
       "id": "ob-mcp-what",
+      "level": "basic",
       "concept": "mcp.what-is-mcp",
       "type": "single",
       "prompt": "What is MCP, the Model Context Protocol?",
@@ -65,6 +77,7 @@
     },
     {
       "id": "ob-mcp-virtual",
+      "level": "basic",
       "concept": "mcp.virtual-servers",
       "type": "single",
       "prompt": "Why would a platform put one virtual MCP server in front of several real tool servers?",
@@ -80,6 +93,7 @@
     },
     {
       "id": "ob-mcp-errors",
+      "level": "advanced",
       "concept": "mcp.tool-errors",
       "type": "single",
       "prompt": "An agent calls a tool and the service behind it times out. What should the agent receive?",
@@ -95,6 +109,7 @@
     },
     {
       "id": "ob-rag-embed",
+      "level": "basic",
       "concept": "rag.embeddings-similarity",
       "type": "single",
       "prompt": "Why does a retrieval system compare embeddings instead of only searching for keywords?",
@@ -110,6 +125,7 @@
     },
     {
       "id": "ob-rag-close",
+      "level": "advanced",
       "concept": "rag.close-matches",
       "type": "single",
       "prompt": "You ask retrieval for the top 3 chunks and get 3 results, even for a strange question. Why does it always return something?",
@@ -125,6 +141,7 @@
     },
     {
       "id": "ob-rag-outside",
+      "level": "advanced",
       "concept": "rag.out-of-corpus",
       "type": "multi",
       "prompt": "A user asks something Larkfield's documents do not cover. Which safeguards help stop the system from inventing an answer? Select all that apply.",
@@ -140,6 +157,7 @@
     },
     {
       "id": "ob-otel-span",
+      "level": "basic",
       "concept": "otel.traces-and-spans",
       "type": "single",
       "prompt": "In distributed tracing, what is a span?",
@@ -155,6 +173,7 @@
     },
     {
       "id": "ob-otel-parent",
+      "level": "advanced",
       "concept": "otel.parent-child",
       "type": "single",
       "prompt": "A request goes from an app to the gateway and on to a provider. What lets the gateway's span join the app's trace?",
@@ -170,6 +189,7 @@
     },
     {
       "id": "ob-otel-llm",
+      "level": "advanced",
       "concept": "otel.llm-attributes",
       "type": "multi",
       "prompt": "You want cost per team from your traces. Which attributes must a model-call span carry? Select all that apply.",
@@ -186,6 +206,7 @@
     },
     {
       "id": "ob-plat-steps",
+      "level": "basic",
       "concept": "platform.onboarding-steps",
       "type": "multi",
       "prompt": "Which of these belong in onboarding a new product team to the platform? Select all that apply.",
@@ -202,6 +223,7 @@
     },
     {
       "id": "ob-plat-scope",
+      "level": "basic",
       "concept": "platform.key-scopes",
       "type": "single",
       "prompt": "What is a scoped API key?",
@@ -217,6 +239,7 @@
     },
     {
       "id": "ob-plat-e2e",
+      "level": "advanced",
       "concept": "platform.end-to-end-check",
       "type": "single",
       "prompt": "A new team's key returns HTTP 200 on a test call. Have you proved onboarding works?",
@@ -232,6 +255,7 @@
     },
     {
       "id": "ob-sov-routes",
+      "level": "basic",
       "concept": "sovereignty.regions-routes",
       "type": "single",
       "prompt": "Some Larkfield data must stay in the EU. What does a region route decide?",
@@ -247,6 +271,7 @@
     },
     {
       "id": "ob-sov-hops",
+      "level": "advanced",
       "concept": "sovereignty.hops-audit",
       "type": "multi",
       "prompt": "To prove where a request's data went, what should an audit trail record? Select all that apply.",
@@ -263,6 +288,7 @@
     },
     {
       "id": "ob-sov-actual",
+      "level": "advanced",
       "concept": "sovereignty.declared-vs-actual",
       "type": "single",
       "prompt": "A route is declared as region EU, but a trace shows one hop served from a US host. How can declared and actual regions differ?",

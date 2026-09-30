@@ -101,7 +101,7 @@ Once the lesson teaches a concept, the brief stops explaining it. The brief keep
 
 ## What the learner sees
 
-1. The platform onboarding quiz (once) sets a starting level per module.
+1. The platform onboarding quiz (once, branching, a few questions at most) sets a starting level per module.
 2. Before a lab starts, "Before you begin" shows the story, then the diagnostic questions for the lab's concepts.
 3. Concepts answered correctly collapse to their recap. The others expand as lessons. The learner can press "I know this, skip" on any lesson, or "Show me the lesson anyway" on a collapsed one. The quiz decides the default; the learner decides the outcome.
 4. Mastery is stored in the learner's browser. Nothing is graded on it.
@@ -119,11 +119,40 @@ The learner console (`dashboard/`) renders all of the above in the browser. The 
 
 All three need the console cookie like the other `/api` routes. The launcher's `has_learn` flag comes through `GET /api/labs` unchanged; a lab without it never asks for a bundle.
 
-- **Platform quiz** (`onboarding.js`). Shown once after the first sign-in when the quiz exists; "Skip for now" is remembered; "Retake the quiz" sits next to the help control in the header. Its answers set a level per module (strong, ok or new, from the areas in `concepts.json`), and the launcher puts a "Suggested start" chip on the first module that is new.
+- **Platform quiz** (`onboarding.js`). Shown once after the first sign-in when the quiz exists; "Skip for now" is on every screen and is remembered; "Retake the quiz" sits next to the help control in the header and in the "?" dialog. It branches (see [The platform onboarding quiz](#the-platform-onboarding-quiz)): a checklist of the areas the learner has worked with, then at most two questions per ticked area. Its outcome is a level per module (strong, familiar or new, from the areas in `concepts.json`), and the launcher puts a "Suggested start" chip on the first module that is new.
 - **Before you begin** (`before-you-begin.js`). Between Start and the boot: the story, the diagnostic questions for concepts not already known, then the plan. A lesson for a known or skipped concept folds to its `recap` with "Show me the lesson anyway"; the others show in full with "I know this, skip". The session starts only when "Start the lab" is pressed; "Skip all, just start the lab" is on every step. Any failure to fetch the bundle goes straight to the boot.
 - **In the session** (`learn-tab.js`, `questions-form.js`). A Learn tab with the story and every lesson (toggleable), and for a lab with `fields` a Questions tab: a form that writes `workspace/<answers_file>` as JSON after 600 ms of quiet and on Save. A write re-reads the file first and merges by key: a key the learner changed in the form wins, a key they did not touch keeps what the file holds now, and keys the form does not know are kept. Number fields store a JSON number (or `null` when empty), text a string (or `null`), choice the chosen choice string.
 - **Mastery** (`learn-model.js`) lives in the browser under `localStorage['opalixLearn']`: onboarding levels, per-concept `known` (true only when every diagnostic question about the concept was answered correctly), and the learner's own `skipped` / `forced` overrides, which always win. Nothing is sent and nothing is graded; the anonymous outcomes that do go to `POST /learn/answers` carry no identity.
 - **Lesson and story text** (`markdown.js`) is drawn straight into DOM nodes (no HTML is ever parsed): paragraphs, `##` and `###` headings, bold, italic, code, fenced code, lists, `http(s)` links and `::diagram[id]` lines. A diagram id that is not in the library becomes a short notice.
+
+## The platform onboarding quiz
+
+The one-time quiz every learner sees first is not a lab's `quiz.yaml`: it is `packages/catalogue/onboarding.json`, shared by all labs, validated by `parseOnboarding` (`src/labs/learn.ts`) when the API serves it and again by `npm test`. It is short and adaptive, driven by what the learner says they know.
+
+```json
+{
+  "version": 1,
+  "intro": "Welcome … **no score** … where each module starts …",
+  "areas": [
+    { "area": "gateway", "blurb": "One place your apps call models through, with stable names and a spend log." }
+  ],
+  "questions": [
+    { "id": "ob-gw-alias", "level": "basic", "concept": "gateway.routing-aliases", "type": "single", "prompt": "…", "options": [], "answer": ["b"], "explanation": "…" }
+  ]
+}
+```
+
+- **`areas`** has one entry per area of `concepts.json` (no more, no fewer). The `blurb` is the plain one-line description (up to 90 characters, single line, no markup) shown under the area's title on the first screen. The title and module order come from `concepts.json`.
+- **`level`** is required on every onboarding question, `basic` or `advanced`, and on no lab question. A `basic` question recognises what the thing is or why it exists; an `advanced` one tests a subtle behaviour. Every area needs at least one of each. Between 12 (two per area) and 24 questions in all; the rest of a question is exactly a lab quiz question (same option, answer and explanation rules).
+- **The intro** is markdown, up to 600 characters. Do not promise a number of questions or a length: how many it asks depends on the learner.
+
+How the console uses it (`dashboard/src/learn-model.js` holds the pure logic, `onboarding.js` the screens):
+
+1. **What have you worked with?** The intro and a checklist (a fieldset with one checkbox per area, plus an exclusive "None of these yet"). "Start" needs at least one choice; "Skip for now" is always available and is remembered. An area left unticked gets no question and starts as **new**. "None of these yet" marks all areas new and goes straight to the summary.
+2. **One probe per ticked area, in module order, at most two questions.** The area's first `basic` question in file order is asked. Wrong (or "Not sure"): the area is **new** and probing stops. Right: the area's first `advanced` question is asked; right is **strong**, wrong (or "Not sure") is **ok**. So put the question you want asked first, in its level, at the top of its area in the file; later questions of the same level are not used until they lead. A ticked set of areas never costs more than two questions each.
+3. **Summary.** Each module with its level (Strong, Familiar, New) and a "Start with module N" suggestion, and a line saying the quiz can be retaken from the "?" menu. Only the questions actually asked are posted to `POST /api/learn/answers` with phase `onboarding`; nothing is posted when none were asked. The levels are stored in this browser (`opalixLearn`).
+
+An old console that cannot read `level` drops every question and offers no quiz, rather than showing one it cannot branch.
 
 ## Checklist before publishing
 

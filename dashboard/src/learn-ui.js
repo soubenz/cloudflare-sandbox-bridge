@@ -79,17 +79,23 @@ let uid = 0;
  *   onNext     called with { question_id, concept, correct, selected } when the
  *              learner presses Next (or Finish) after checking
  *   lastLabel  what Next says on the last question (default "Finish")
+ *   title      the heading, instead of "Question N of M" (an adaptive quiz does not
+ *              know M); eyebrow is an optional line above it
+ *   allowUnsure  adds a "Not sure" button beside Check: it reveals the answer and
+ *              the explanation without a verdict and reports { correct: false,
+ *              unsure: true }; nothing about it says the learner failed
+ *   nextLabelFor  (result) => what Next says once this one is answered
  *
  * Single choice is radios, multiple is checkboxes. "Check" reveals whether the
  * answer was right with the explanation, in a live region; nothing is
  * revealed before. Returns { root } (the heading inside it takes focus).
  */
-export function questionScreen({ question, index, total, onNext, lastLabel = 'Finish' }) {
+export function questionScreen({ question, index, total, onNext, lastLabel = 'Finish', title, eyebrow, allowUnsure = false, nextLabelFor }) {
   const id = `q${++uid}`;
   const multi = question.type === 'multi';
   const root = make('div', 'quiz');
 
-  const head = screenHead({ title: `Question ${index + 1} of ${total}` });
+  const head = screenHead({ eyebrow, title: title ?? `Question ${index + 1} of ${total}` });
   head.classList.add('quiz-head');
   head.append(progressBar(index, total));
   root.append(head);
@@ -127,7 +133,8 @@ export function questionScreen({ question, index, total, onNext, lastLabel = 'Fi
   const check = button('Check', { kind: 'primary', type: 'submit' });
   const next = button(index + 1 >= total ? lastLabel : 'Next', { kind: 'primary', type: 'button' });
   next.hidden = true;
-  const actions = actionBar([check, next]);
+  const unsure = allowUnsure ? button('Not sure', { kind: 'ghost', type: 'button', id: 'btnNotSure' }) : null;
+  const actions = actionBar([check, ...(unsure ? [unsure] : []), next]);
   form.append(feedback, actions);
   root.append(form);
 
@@ -144,8 +151,16 @@ export function questionScreen({ question, index, total, onNext, lastLabel = 'Fi
       feedback.focus();
       return;
     }
-    const correct = gradeQuestion(question, chosen);
-    result = { question_id: question.id, concept: question.concept, correct, selected: chosen };
+    reveal(chosen, gradeQuestion(question, chosen), false);
+  });
+
+  unsure?.addEventListener('click', () => {
+    if (!result) reveal([], false, true);
+  });
+
+  /** Marks the right options, explains, and swaps Check for Next. */
+  function reveal(chosen, correct, notSure) {
+    result = { question_id: question.id, concept: question.concept, correct, selected: chosen, ...(notSure ? { unsure: true } : {}) };
     for (const label of options.children) {
       const optId = label.dataset.option;
       const right = question.answer.includes(optId);
@@ -160,13 +175,16 @@ export function questionScreen({ question, index, total, onNext, lastLabel = 'Fi
       }
       label.querySelector('input').disabled = true;
     }
-    feedback.dataset.result = correct ? 'correct' : 'incorrect';
+    feedback.dataset.result = notSure ? 'unsure' : correct ? 'correct' : 'incorrect';
     feedback.textContent = '';
-    feedback.append(make('strong', 'quiz-verdict', correct ? 'Correct.' : 'Not quite.'), document.createTextNode(` ${question.explanation}`));
+    const verdict = notSure ? 'No problem.' : correct ? 'Correct.' : 'Not quite.';
+    feedback.append(make('strong', 'quiz-verdict', verdict), document.createTextNode(` ${question.explanation}`));
     check.hidden = true;
+    if (unsure) unsure.hidden = true;
+    if (nextLabelFor) next.textContent = nextLabelFor(result);
     next.hidden = false;
     feedback.focus();
-  });
+  }
 
   next.addEventListener('click', () => {
     if (result) onNext(result);
