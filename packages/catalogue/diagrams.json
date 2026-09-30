@@ -1,0 +1,473 @@
+{
+  "version": 1,
+  "diagrams": [
+    {
+      "id": "gateway-alias-routing",
+      "title": "One name, many models",
+      "summary": "A team calls the alias support. The gateway looks it up, forwards the call to the model behind it and returns the answer.",
+      "nodes": [
+        { "id": "app", "label": "Support app", "kind": "client", "x": 10, "y": 50 },
+        { "id": "gw", "label": "Gateway", "sub": "alias table", "kind": "gateway", "x": 45, "y": 50 },
+        { "id": "a", "label": "Deployment a", "kind": "model", "x": 88, "y": 25 },
+        { "id": "b", "label": "Deployment b", "kind": "model", "x": 88, "y": 75 }
+      ],
+      "edges": [
+        { "id": "app-gw", "from": "app", "to": "gw" },
+        { "id": "gw-a", "from": "gw", "to": "a" },
+        { "id": "gw-b", "from": "gw", "to": "b" }
+      ],
+      "steps": [
+        { "caption": "The app asks for the alias support. It never names a provider or a model.", "active": ["app"], "packets": [{ "edge": "app-gw", "label": "model: support", "tone": "default" }] },
+        { "caption": "The gateway looks the alias up. Two deployments exist, and support points at a.", "active": ["gw", "a", "b"], "packets": [], "notes": [{ "node": "gw", "text": "support = deployment a", "tone": "ok" }] },
+        { "caption": "The call goes to deployment a. Deployment b is not involved.", "active": ["gw", "a"], "packets": [{ "edge": "gw-a", "label": "chat request", "tone": "default" }] },
+        { "caption": "The answer comes back the same way. Change the alias table and the app never notices.", "active": ["a", "gw", "app"], "packets": [{ "edge": "gw-a", "reverse": true, "label": "answer", "tone": "ok" }, { "edge": "app-gw", "reverse": true, "label": "answer", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "gateway-usage-and-spend",
+      "title": "Every call leaves a receipt",
+      "summary": "A team app calls the gateway. The model answers with a usage count, the gateway prices it and writes one row to the spend log, and finance reads that log by team.",
+      "nodes": [
+        { "id": "app", "label": "Research app", "kind": "client", "x": 8, "y": 50 },
+        { "id": "gw", "label": "Gateway", "sub": "prices every call", "kind": "gateway", "x": 34, "y": 50 },
+        { "id": "model", "label": "Model", "kind": "model", "x": 64, "y": 22 },
+        { "id": "log", "label": "Spend log", "kind": "log", "x": 64, "y": 78 },
+        { "id": "fin", "label": "Finance", "kind": "person", "x": 92, "y": 78 }
+      ],
+      "edges": [
+        { "id": "app-gw", "from": "app", "to": "gw" },
+        { "id": "gw-model", "from": "gw", "to": "model" },
+        { "id": "gw-log", "from": "gw", "to": "log" },
+        { "id": "fin-log", "from": "log", "to": "fin" }
+      ],
+      "steps": [
+        { "caption": "The app sends a chat request with its team key. The key tells the gateway who is asking, even though the request body does not.", "active": ["app"], "packets": [{ "edge": "app-gw", "label": "chat request", "tone": "default" }] },
+        { "caption": "The gateway forwards the call to the model behind the alias.", "active": ["gw", "model"], "packets": [{ "edge": "gw-model", "label": "chat request", "tone": "default" }] },
+        { "caption": "The model answers and reports how many tokens it read and wrote. Tokens are what providers charge for.", "active": ["model", "gw"], "packets": [{ "edge": "gw-model", "reverse": true, "label": "answer + usage", "tone": "ok" }], "notes": [{ "node": "model", "text": "in 1200, out 200", "tone": "ok" }] },
+        { "caption": "The gateway multiplies tokens by the price for that model and writes one row: who called, which alias, which model, tokens and cost.", "active": ["gw", "log"], "packets": [{ "edge": "gw-log", "label": "one usage row", "tone": "default" }], "notes": [{ "node": "gw", "text": "cost = tokens x price", "tone": "default" }, { "node": "log", "text": "team: research, 0.011", "tone": "ok" }] },
+        { "caption": "The answer goes back to the app. The caller never sees the price, but the record now exists.", "active": ["gw", "app"], "packets": [{ "edge": "app-gw", "reverse": true, "label": "answer", "tone": "ok" }] },
+        { "caption": "Finance reads the log and adds rows up by team. A call that leaves no row is spend nobody can explain.", "active": ["log", "fin"], "packets": [{ "edge": "fin-log", "label": "spend by team", "tone": "ok" }], "notes": [{ "node": "fin", "text": "who spent this?", "tone": "default" }] }
+      ]
+    },
+    {
+      "id": "gateway-error-semantics",
+      "title": "When the provider says no",
+      "summary": "A provider returns a 503 to the gateway. The gateway records the failure and returns a clean error that tells the caller the request was fine but the upstream failed.",
+      "nodes": [
+        { "id": "app", "label": "Support app", "kind": "client", "x": 8, "y": 50 },
+        { "id": "gw", "label": "Gateway", "kind": "gateway", "x": 36, "y": 50 },
+        { "id": "prov", "label": "Provider", "kind": "model", "x": 70, "y": 26 },
+        { "id": "log", "label": "Spend log", "kind": "log", "x": 70, "y": 74 }
+      ],
+      "edges": [
+        { "id": "app-gw", "from": "app", "to": "gw" },
+        { "id": "gw-prov", "from": "gw", "to": "prov" },
+        { "id": "gw-log", "from": "gw", "to": "log" }
+      ],
+      "steps": [
+        { "caption": "A perfectly good request arrives at the gateway.", "active": ["app"], "packets": [{ "edge": "app-gw", "label": "chat request", "tone": "default" }] },
+        { "caption": "The gateway forwards it to the provider behind the alias.", "active": ["gw", "prov"], "packets": [{ "edge": "gw-prov", "label": "chat request", "tone": "default" }] },
+        { "caption": "The provider is overloaded and answers 503. Nothing was wrong with the request. The provider simply cannot serve it right now.", "active": ["prov", "gw"], "packets": [{ "edge": "gw-prov", "reverse": true, "label": "503", "tone": "bad" }], "notes": [{ "node": "prov", "text": "overloaded", "tone": "bad" }] },
+        { "caption": "The gateway knows this is a failure on the far side, not a mistake by the caller, and it records the failed attempt.", "active": ["gw", "log"], "packets": [{ "edge": "gw-log", "label": "failed call row", "tone": "warn" }], "notes": [{ "node": "gw", "text": "upstream failed, not caller", "tone": "warn" }] },
+        { "caption": "The caller gets an error in the same shape as any other API error. It is a server-side status, not a made-up success and not a hang.", "active": ["gw", "app"], "packets": [{ "edge": "app-gw", "reverse": true, "label": "error: upstream", "tone": "bad" }] },
+        { "caption": "Because the status says whose fault it was, the app can retry later or switch alias instead of rewriting a request that was fine.", "active": ["app"], "packets": [], "notes": [{ "node": "app", "text": "retry later, request ok", "tone": "warn" }] }
+      ]
+    },
+    {
+      "id": "gateway-config-reload",
+      "title": "Saving is not the same as loading",
+      "summary": "An engineer adds a model alias to the config file. The running gateway keeps its old table until it reloads, so the first call fails and a call after the reload works.",
+      "nodes": [
+        { "id": "eng", "label": "Platform engineer", "kind": "person", "x": 8, "y": 50 },
+        { "id": "cfg", "label": "Config file", "kind": "store", "x": 36, "y": 50 },
+        { "id": "gw", "label": "Gateway", "sub": "holds a copy in memory", "kind": "gateway", "x": 64, "y": 50 },
+        { "id": "app", "label": "Team app", "kind": "client", "x": 92, "y": 50 }
+      ],
+      "edges": [
+        { "id": "eng-cfg", "from": "eng", "to": "cfg", "label": "edit" },
+        { "id": "cfg-gw", "from": "cfg", "to": "gw", "label": "read" },
+        { "id": "gw-app", "from": "gw", "to": "app" }
+      ],
+      "steps": [
+        { "caption": "An engineer adds the alias translate to the config file and saves it. The file on disk now knows about it.", "active": ["eng", "cfg"], "packets": [{ "edge": "eng-cfg", "label": "add alias", "tone": "default" }], "notes": [{ "node": "cfg", "text": "translate added", "tone": "ok" }] },
+        { "caption": "The gateway read the file when it started and keeps that table in memory. Saving the file did not touch the running process.", "active": ["gw"], "packets": [], "notes": [{ "node": "gw", "text": "table: no translate yet", "tone": "warn" }] },
+        { "caption": "A team calls translate right away. The gateway checks its table, finds nothing and rejects the call.", "active": ["app", "gw"], "packets": [{ "edge": "gw-app", "reverse": true, "label": "call translate", "tone": "default" }, { "edge": "gw-app", "label": "unknown alias", "tone": "bad" }] },
+        { "caption": "The engineer reloads the gateway, so it reads the file again. Only now does the new line take effect.", "active": ["cfg", "gw"], "packets": [{ "edge": "cfg-gw", "label": "read file again", "tone": "ok" }], "notes": [{ "node": "gw", "text": "reloading", "tone": "warn" }] },
+        { "caption": "The table in memory now has translate. The same call that failed a minute ago succeeds, and the app changed nothing.", "active": ["gw", "app"], "packets": [{ "edge": "gw-app", "reverse": true, "label": "call translate", "tone": "default" }, { "edge": "gw-app", "label": "answer", "tone": "ok" }], "notes": [{ "node": "gw", "text": "table has translate", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "mcp-what-is-mcp",
+      "title": "A menu of tools, in one language",
+      "summary": "An agent asks a tool server what it offers, gets a menu with names and input shapes, lets the model choose, calls the tool with matching inputs and gets a result back.",
+      "nodes": [
+        { "id": "agent", "label": "Agent", "kind": "client", "x": 8, "y": 60 },
+        { "id": "model", "label": "Model", "kind": "model", "x": 44, "y": 18 },
+        { "id": "srv", "label": "Tool server", "sub": "speaks MCP", "kind": "tool", "x": 44, "y": 60 },
+        { "id": "sys", "label": "Orders system", "kind": "store", "x": 86, "y": 60 }
+      ],
+      "edges": [
+        { "id": "agent-srv", "from": "agent", "to": "srv", "label": "MCP" },
+        { "id": "agent-model", "from": "agent", "to": "model" },
+        { "id": "srv-sys", "from": "srv", "to": "sys" }
+      ],
+      "steps": [
+        { "caption": "The agent connects to a tool server and asks what tools it has. Every MCP server answers this same question the same way.", "active": ["agent", "srv"], "packets": [{ "edge": "agent-srv", "label": "list tools", "tone": "default" }] },
+        { "caption": "The server replies with a menu: each tool has a name, a plain description and the inputs it expects.", "active": ["srv", "agent"], "packets": [{ "edge": "agent-srv", "reverse": true, "label": "tool menu", "tone": "ok" }], "notes": [{ "node": "srv", "text": "find_order(order_id)", "tone": "ok" }] },
+        { "caption": "The agent shows the model the user question and the menu. The model decides a tool would help and picks one.", "active": ["agent", "model"], "packets": [{ "edge": "agent-model", "label": "question + menu", "tone": "default" }], "notes": [{ "node": "model", "text": "pick: find_order", "tone": "ok" }] },
+        { "caption": "The agent sends the call in the shape the menu promised, with the order id filled in.", "active": ["agent", "srv"], "packets": [{ "edge": "agent-srv", "label": "find_order 5521", "tone": "default" }] },
+        { "caption": "The tool server does the real work against the system behind it. The agent never needs to know how that system is reached.", "active": ["srv", "sys"], "packets": [{ "edge": "srv-sys", "label": "look up order", "tone": "default" }] },
+        { "caption": "The result travels back in the standard shape, and the model turns it into an answer for the user.", "active": ["sys", "srv", "agent"], "packets": [{ "edge": "srv-sys", "reverse": true, "label": "order row", "tone": "ok" }, { "edge": "agent-srv", "reverse": true, "label": "result", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "mcp-virtual-servers",
+      "title": "One door, many tool servers",
+      "summary": "An agent talks to one virtual server. It bundles chosen tools from three tool servers, hides the ones that should not be exposed and routes each call to the server that owns the tool.",
+      "nodes": [
+        { "id": "agent", "label": "Agent", "kind": "client", "x": 8, "y": 50 },
+        { "id": "hub", "label": "Tool hub", "sub": "virtual server", "kind": "gateway", "x": 38, "y": 50 },
+        { "id": "s1", "label": "Orders server", "kind": "tool", "x": 72, "y": 18 },
+        { "id": "s2", "label": "Admin server", "kind": "tool", "x": 72, "y": 50 },
+        { "id": "s3", "label": "Docs server", "kind": "tool", "x": 72, "y": 82 }
+      ],
+      "edges": [
+        { "id": "agent-hub", "from": "agent", "to": "hub" },
+        { "id": "hub-s1", "from": "hub", "to": "s1" },
+        { "id": "hub-s2", "from": "hub", "to": "s2" },
+        { "id": "hub-s3", "from": "hub", "to": "s3" }
+      ],
+      "steps": [
+        { "caption": "The agent has one address and one key. It asks the hub what tools it can use.", "active": ["agent"], "packets": [{ "edge": "agent-hub", "label": "list tools", "tone": "default" }] },
+        { "caption": "Behind the hub sit three tool servers. The virtual server is a list that picks tools from each of them.", "active": ["hub", "s1", "s2", "s3"], "packets": [], "notes": [{ "node": "hub", "text": "bundle: 4 tools", "tone": "ok" }] },
+        { "caption": "One tool on the admin server is risky, so the bundle leaves it out. The agent cannot see it, let alone call it.", "active": ["hub", "s2"], "packets": [{ "edge": "agent-hub", "reverse": true, "label": "4 tools", "tone": "ok" }], "notes": [{ "node": "s2", "text": "risky tool left out", "tone": "warn" }] },
+        { "caption": "The agent calls a docs tool. It uses the same address as before and does not know which server owns the tool.", "active": ["agent", "hub"], "packets": [{ "edge": "agent-hub", "label": "search_docs", "tone": "default" }] },
+        { "caption": "The hub routes the call to the docs server and passes the result back.", "active": ["hub", "s3", "agent"], "packets": [{ "edge": "hub-s3", "label": "search_docs", "tone": "default" }, { "edge": "agent-hub", "reverse": true, "label": "result", "tone": "ok" }] },
+        { "caption": "Add or move a server later and only the bundle changes. The agent keeps the same address and never needs new wiring.", "active": ["hub"], "packets": [], "notes": [{ "node": "hub", "text": "agent config unchanged", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "mcp-tool-errors",
+      "title": "A tool that fails still answers",
+      "summary": "A tool call reaches the tool server, but the API behind it times out. The server wraps the failure in a normal reply flagged as an error, so the agent can read it and decide what to do.",
+      "nodes": [
+        { "id": "agent", "label": "Agent", "kind": "client", "x": 8, "y": 50 },
+        { "id": "hub", "label": "Tool hub", "kind": "gateway", "x": 35, "y": 50 },
+        { "id": "srv", "label": "Tool server", "kind": "tool", "x": 62, "y": 50 },
+        { "id": "api", "label": "Invoice API", "kind": "service", "x": 90, "y": 24 }
+      ],
+      "edges": [
+        { "id": "agent-hub", "from": "agent", "to": "hub" },
+        { "id": "hub-srv", "from": "hub", "to": "srv" },
+        { "id": "srv-api", "from": "srv", "to": "api" }
+      ],
+      "steps": [
+        { "caption": "The agent calls get_invoice through the hub, with a valid invoice number.", "active": ["agent"], "packets": [{ "edge": "agent-hub", "label": "get_invoice 88", "tone": "default" }] },
+        { "caption": "The hub finds the tool server that owns the tool and passes the call on.", "active": ["hub", "srv"], "packets": [{ "edge": "hub-srv", "label": "get_invoice 88", "tone": "default" }] },
+        { "caption": "The tool server asks the invoice API for the record.", "active": ["srv", "api"], "packets": [{ "edge": "srv-api", "label": "fetch invoice", "tone": "default" }] },
+        { "caption": "The API takes too long and the server gives up. The call was delivered fine. The work behind it failed.", "active": ["api", "srv"], "packets": [{ "edge": "srv-api", "reverse": true, "label": "timeout", "tone": "bad" }], "notes": [{ "node": "api", "text": "timed out", "tone": "bad" }] },
+        { "caption": "The tool server does not crash the connection. It returns a normal reply with an error flag set and a short message.", "active": ["srv", "hub"], "packets": [{ "edge": "hub-srv", "reverse": true, "label": "result: isError", "tone": "bad" }], "notes": [{ "node": "srv", "text": "flag: error + message", "tone": "warn" }] },
+        { "caption": "The agent reads the flag and the message. It can retry, try another tool or tell the user honestly what went wrong.", "active": ["hub", "agent"], "packets": [{ "edge": "agent-hub", "reverse": true, "label": "error text", "tone": "bad" }], "notes": [{ "node": "agent", "text": "retry or tell user", "tone": "warn" }] }
+      ]
+    },
+    {
+      "id": "rag-embeddings-similarity",
+      "title": "Meaning as numbers",
+      "summary": "Documents and a question pass through the same embedding model. Each becomes a list of numbers, and the vector index returns the chunks whose numbers point in the most similar direction.",
+      "nodes": [
+        { "id": "docs", "label": "Documents", "kind": "store", "x": 8, "y": 20 },
+        { "id": "q", "label": "Question", "kind": "client", "x": 8, "y": 80 },
+        { "id": "emb", "label": "Embedding model", "kind": "model", "x": 38, "y": 50 },
+        { "id": "idx", "label": "Vector index", "kind": "store", "x": 66, "y": 50 },
+        { "id": "out", "label": "Ranked chunks", "kind": "service", "x": 92, "y": 50 }
+      ],
+      "edges": [
+        { "id": "docs-emb", "from": "docs", "to": "emb" },
+        { "id": "q-emb", "from": "q", "to": "emb" },
+        { "id": "emb-idx", "from": "emb", "to": "idx" },
+        { "id": "idx-out", "from": "idx", "to": "out" }
+      ],
+      "steps": [
+        { "caption": "Ahead of time, every document is cut into chunks and each chunk goes through an embedding model.", "active": ["docs", "emb"], "packets": [{ "edge": "docs-emb", "label": "chunk text", "tone": "default" }], "notes": [{ "node": "emb", "text": "text becomes numbers", "tone": "default" }] },
+        { "caption": "Each chunk is stored as a vector, a list of numbers. Chunks that mean similar things get vectors that point in similar directions.", "active": ["emb", "idx"], "packets": [{ "edge": "emb-idx", "label": "chunk vectors", "tone": "default" }], "notes": [{ "node": "idx", "text": "one vector per chunk", "tone": "ok" }] },
+        { "caption": "Later a question arrives as plain text.", "active": ["q"], "packets": [{ "edge": "q-emb", "label": "question", "tone": "default" }] },
+        { "caption": "The same model turns the question into a vector. Using the same model matters, or the numbers would not be comparable.", "active": ["emb"], "packets": [], "notes": [{ "node": "emb", "text": "question vector", "tone": "ok" }] },
+        { "caption": "The index compares the question vector with the stored ones and picks the closest. Similar meaning is close, even when no words match.", "active": ["emb", "idx"], "packets": [{ "edge": "emb-idx", "label": "query vector", "tone": "default" }], "notes": [{ "node": "idx", "text": "closest = most similar", "tone": "ok" }] },
+        { "caption": "The best chunks come back ranked, each with a similarity score.", "active": ["idx", "out"], "packets": [{ "edge": "idx-out", "label": "top chunks", "tone": "ok" }], "notes": [{ "node": "out", "text": "0.86, 0.81, 0.77", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "rag-close-matches",
+      "title": "How close is close enough",
+      "summary": "The index returns its five nearest chunks with scores. A cutoff keeps the ones that are similar enough, drops the rest and passes only the kept passages to the answering model.",
+      "nodes": [
+        { "id": "q", "label": "Question", "kind": "client", "x": 8, "y": 50 },
+        { "id": "idx", "label": "Vector index", "kind": "store", "x": 36, "y": 50 },
+        { "id": "cut", "label": "Score cutoff", "sub": "keep 0.55 or more", "kind": "service", "x": 64, "y": 50 },
+        { "id": "model", "label": "Answer model", "kind": "model", "x": 92, "y": 50 }
+      ],
+      "edges": [
+        { "id": "q-idx", "from": "q", "to": "idx" },
+        { "id": "idx-cut", "from": "idx", "to": "cut" },
+        { "id": "cut-model", "from": "cut", "to": "model" }
+      ],
+      "steps": [
+        { "caption": "A question goes to the vector index.", "active": ["q", "idx"], "packets": [{ "edge": "q-idx", "label": "question", "tone": "default" }] },
+        { "caption": "The index always returns its nearest chunks, however weak. Here it finds five, each with a score from 0 to 1.", "active": ["idx"], "packets": [{ "edge": "idx-cut", "label": "5 hits", "tone": "default" }], "notes": [{ "node": "idx", "text": "0.83 0.74 0.58 0.41 0.33", "tone": "default" }] },
+        { "caption": "The cutoff compares each score with a threshold the team chose. Scores at or above it stay.", "active": ["cut"], "packets": [], "notes": [{ "node": "cut", "text": "keep 0.55 or more", "tone": "default" }] },
+        { "caption": "Two hits fall below the line and are dropped. Close matches survive, weak ones do not.", "active": ["cut"], "packets": [], "notes": [{ "node": "cut", "text": "kept 3, dropped 2", "tone": "warn" }] },
+        { "caption": "Only the kept passages go to the answering model, so it works from evidence that is on topic.", "active": ["cut", "model"], "packets": [{ "edge": "cut-model", "label": "3 passages", "tone": "ok" }], "notes": [{ "node": "model", "text": "answers from 3 passages", "tone": "ok" }] },
+        { "caption": "Set the cutoff too high and good passages vanish. Set it too low and noise gets in. It is a dial to tune against real questions.", "active": ["cut"], "packets": [], "notes": [{ "node": "cut", "text": "a dial, not a fact", "tone": "default" }] }
+      ]
+    },
+    {
+      "id": "rag-out-of-corpus",
+      "title": "When the answer is not in the documents",
+      "summary": "A question the documents do not cover still gets a nearest hit from the index, but the hit scores low on an unrelated topic. The cutoff rejects it and the model says it does not know.",
+      "nodes": [
+        { "id": "q", "label": "Customer", "kind": "client", "x": 8, "y": 50 },
+        { "id": "idx", "label": "Vector index", "kind": "store", "x": 36, "y": 50 },
+        { "id": "gate", "label": "Score cutoff", "sub": "keep 0.55 or more", "kind": "service", "x": 64, "y": 50 },
+        { "id": "model", "label": "Answer model", "kind": "model", "x": 92, "y": 50 }
+      ],
+      "edges": [
+        { "id": "q-idx", "from": "q", "to": "idx" },
+        { "id": "idx-gate", "from": "idx", "to": "gate" },
+        { "id": "gate-model", "from": "gate", "to": "model" }
+      ],
+      "steps": [
+        { "caption": "A customer asks about something the company never wrote down.", "active": ["q", "idx"], "packets": [{ "edge": "q-idx", "label": "off-topic question", "tone": "default" }] },
+        { "caption": "The index cannot say nothing. It returns whatever is nearest, and that chunk is about a different subject.", "active": ["idx"], "packets": [], "notes": [{ "node": "idx", "text": "nearest: returns policy", "tone": "warn" }] },
+        { "caption": "The nearest hit is on its way with a low score of 0.34. Nearest does not mean relevant.", "active": ["idx", "gate"], "packets": [{ "edge": "idx-gate", "label": "best hit 0.34", "tone": "bad" }], "notes": [{ "node": "gate", "text": "below the 0.55 line", "tone": "bad" }] },
+        { "caption": "Without a cutoff this chunk would reach the model, which would build a confident answer on the wrong document. With one, nothing passes.", "active": ["gate"], "packets": [], "notes": [{ "node": "gate", "text": "0 passages kept", "tone": "warn" }] },
+        { "caption": "The model is told there is no supporting text, and it can answer honestly that this is not in the documents.", "active": ["gate", "model"], "packets": [{ "edge": "gate-model", "label": "no passages", "tone": "warn" }], "notes": [{ "node": "model", "text": "say: not in the docs", "tone": "ok" }] },
+        { "caption": "An honest I do not know costs the customer a moment. A confident wrong answer with a citation costs their trust.", "active": ["model", "q"], "packets": [], "notes": [{ "node": "q", "text": "told the truth", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "otel-traces-and-spans",
+      "title": "A request, drawn as spans",
+      "summary": "One request passes through a service that calls a database and a model. Each step is timed as a span, and the tracing backend joins the spans into one trace with a shared id.",
+      "nodes": [
+        { "id": "app", "label": "Caller", "kind": "client", "x": 8, "y": 50 },
+        { "id": "svc", "label": "Order service", "kind": "service", "x": 34, "y": 50 },
+        { "id": "db", "label": "Database", "kind": "store", "x": 64, "y": 24 },
+        { "id": "model", "label": "Model", "kind": "model", "x": 64, "y": 76 },
+        { "id": "obs", "label": "Trace backend", "kind": "log", "x": 92, "y": 50 }
+      ],
+      "edges": [
+        { "id": "app-svc", "from": "app", "to": "svc" },
+        { "id": "svc-db", "from": "svc", "to": "db" },
+        { "id": "svc-model", "from": "svc", "to": "model" },
+        { "id": "svc-obs", "from": "svc", "to": "obs" }
+      ],
+      "steps": [
+        { "caption": "A request arrives at the service. It opens a span, a timed record of one piece of work, and gives the whole request a trace id.", "active": ["app", "svc"], "packets": [{ "edge": "app-svc", "label": "request", "tone": "default" }], "notes": [{ "node": "svc", "text": "root span: place order", "tone": "ok" }] },
+        { "caption": "The service reads from the database. That is a smaller span inside the first, with its own start and duration.", "active": ["svc", "db"], "packets": [{ "edge": "svc-db", "label": "load cart", "tone": "default" }], "notes": [{ "node": "db", "text": "span: 40 ms", "tone": "ok" }] },
+        { "caption": "Then it calls the model. This span is much wider than the others, which is exactly what a trace is for: it shows where the time went.", "active": ["svc", "model"], "packets": [{ "edge": "svc-model", "label": "draft email", "tone": "default" }], "notes": [{ "node": "model", "text": "span: 900 ms", "tone": "warn" }] },
+        { "caption": "Every span ends and carries the same trace id. The service sends the finished spans to the tracing backend.", "active": ["svc", "obs"], "packets": [{ "edge": "svc-obs", "label": "finished spans", "tone": "default" }] },
+        { "caption": "The backend groups spans by trace id and shows one request as a timeline you can read from top to bottom.", "active": ["obs"], "packets": [], "notes": [{ "node": "obs", "text": "1 trace, 3 spans", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "otel-parent-child",
+      "title": "Passing the thread along",
+      "summary": "A trace continues across services only when each call carries the trace context. A hop that drops it starts a separate trace, so the parent and child link is lost.",
+      "nodes": [
+        { "id": "gw", "label": "Gateway", "kind": "gateway", "x": 10, "y": 50 },
+        { "id": "wk", "label": "Worker", "kind": "service", "x": 50, "y": 50 },
+        { "id": "st", "label": "Storage", "kind": "store", "x": 90, "y": 50 }
+      ],
+      "edges": [
+        { "id": "gw-wk", "from": "gw", "to": "wk" },
+        { "id": "wk-st", "from": "wk", "to": "st" }
+      ],
+      "steps": [
+        { "caption": "The gateway starts a span for the request. It has no parent, so it is the root of the trace.", "active": ["gw"], "packets": [], "notes": [{ "node": "gw", "text": "span A, no parent", "tone": "ok" }] },
+        { "caption": "The gateway calls the worker and adds a header with the trace id and the id of span A. This header is the thread that ties services together.", "active": ["gw", "wk"], "packets": [{ "edge": "gw-wk", "label": "call + trace header", "tone": "default" }] },
+        { "caption": "The worker reads the header and opens its span as a child of A, in the same trace.", "active": ["wk"], "packets": [], "notes": [{ "node": "wk", "text": "span B, parent A", "tone": "ok" }] },
+        { "caption": "The worker calls storage and passes the header on again, this time naming B as the parent.", "active": ["wk", "st"], "packets": [{ "edge": "wk-st", "label": "call + trace header", "tone": "default" }], "notes": [{ "node": "st", "text": "span C, parent B", "tone": "ok" }] },
+        { "caption": "Now suppose a hop forgets the header. Storage has no context, so it starts a brand new trace.", "active": ["wk", "st"], "packets": [{ "edge": "wk-st", "label": "call, no header", "tone": "bad" }], "notes": [{ "node": "st", "text": "orphan: new trace", "tone": "bad" }] },
+        { "caption": "Every hop has to read the context it receives and send it on. Then one request reads as one tree: A above B above C.", "active": ["gw", "wk", "st"], "packets": [], "notes": [{ "node": "gw", "text": "A", "tone": "ok" }, { "node": "wk", "text": "B", "tone": "ok" }, { "node": "st", "text": "C", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "otel-llm-attributes",
+      "title": "Putting a price on a span",
+      "summary": "A model call is a span. The gateway copies the token counts, model and cost onto it as attributes, so finance can total spend by team straight from the traces.",
+      "nodes": [
+        { "id": "app", "label": "Search app", "kind": "client", "x": 8, "y": 50 },
+        { "id": "gw", "label": "Gateway", "kind": "gateway", "x": 34, "y": 50 },
+        { "id": "model", "label": "Model", "kind": "model", "x": 64, "y": 22 },
+        { "id": "obs", "label": "Trace backend", "kind": "log", "x": 64, "y": 78 },
+        { "id": "fin", "label": "Finance", "kind": "person", "x": 92, "y": 78 }
+      ],
+      "edges": [
+        { "id": "app-gw", "from": "app", "to": "gw" },
+        { "id": "gw-model", "from": "gw", "to": "model" },
+        { "id": "gw-obs", "from": "gw", "to": "obs" },
+        { "id": "obs-fin", "from": "obs", "to": "fin" }
+      ],
+      "steps": [
+        { "caption": "The app calls the gateway, and the gateway opens a span around the model call.", "active": ["app", "gw"], "packets": [{ "edge": "app-gw", "label": "chat request", "tone": "default" }], "notes": [{ "node": "gw", "text": "span open: model call", "tone": "default" }] },
+        { "caption": "The model answers and reports its usage: tokens read and tokens written.", "active": ["gw", "model"], "packets": [{ "edge": "gw-model", "reverse": true, "label": "answer + usage", "tone": "ok" }], "notes": [{ "node": "model", "text": "in 640, out 90", "tone": "ok" }] },
+        { "caption": "The gateway writes the facts onto the span as attributes: the model name, the token counts, the cost and the calling team.", "active": ["gw"], "packets": [], "notes": [{ "node": "gw", "text": "model, tokens, cost, team", "tone": "ok" }] },
+        { "caption": "The finished span, attributes included, is exported to the trace backend with the rest of the request.", "active": ["gw", "obs"], "packets": [{ "edge": "gw-obs", "label": "span + attributes", "tone": "default" }], "notes": [{ "node": "obs", "text": "cost 0.006 on the span", "tone": "ok" }] },
+        { "caption": "Finance can now filter and add up attributes across many traces. Answering who spent what needs no new code in the app.", "active": ["obs", "fin"], "packets": [{ "edge": "obs-fin", "label": "spend by team", "tone": "ok" }], "notes": [{ "node": "fin", "text": "sum cost, group by team", "tone": "default" }] }
+      ]
+    },
+    {
+      "id": "platform-onboarding-steps",
+      "title": "Onboarding a team, step by step",
+      "summary": "A new team files one request. The portal records the team and its budget, then gives the gateway a scoped key and the tool hub a tool bundle, and hands the team a key and starter docs.",
+      "nodes": [
+        { "id": "team", "label": "New team", "kind": "person", "x": 8, "y": 50 },
+        { "id": "portal", "label": "Onboarding portal", "kind": "service", "x": 36, "y": 50 },
+        { "id": "gw", "label": "Gateway", "kind": "gateway", "x": 68, "y": 22 },
+        { "id": "hub", "label": "Tool hub", "kind": "gateway", "x": 68, "y": 78 }
+      ],
+      "edges": [
+        { "id": "team-portal", "from": "team", "to": "portal" },
+        { "id": "portal-gw", "from": "portal", "to": "gw" },
+        { "id": "portal-hub", "from": "portal", "to": "hub" }
+      ],
+      "steps": [
+        { "caption": "A team files one request: who they are, what they will build and which region their data may use.", "active": ["team", "portal"], "packets": [{ "edge": "team-portal", "label": "team, need, region", "tone": "default" }] },
+        { "caption": "The portal creates the team record with an owner, a monthly budget and a region. Everything after this hangs off that record.", "active": ["portal"], "packets": [], "notes": [{ "node": "portal", "text": "budget + region set", "tone": "ok" }] },
+        { "caption": "It asks the gateway for a key limited to the aliases the team needs. The team does not get keys to everything.", "active": ["portal", "gw"], "packets": [{ "edge": "portal-gw", "label": "create scoped key", "tone": "default" }], "notes": [{ "node": "gw", "text": "key: 2 aliases only", "tone": "ok" }] },
+        { "caption": "It also gives the tool hub a bundle of the tools this team may call, and nothing more.", "active": ["portal", "hub"], "packets": [{ "edge": "portal-hub", "label": "tool bundle", "tone": "default" }], "notes": [{ "node": "hub", "text": "bundle: 3 tools", "tone": "ok" }] },
+        { "caption": "The team receives its key and starter docs. Each step was done by the platform, so no one works from a checklist on a wiki page.", "active": ["portal", "team"], "packets": [{ "edge": "team-portal", "reverse": true, "label": "key + starter docs", "tone": "ok" }], "notes": [{ "node": "team", "text": "ready to start", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "platform-key-scopes",
+      "title": "A key is a list of names",
+      "summary": "A key lists the aliases it may call. A call inside the list goes through, a call outside it is refused, and a legacy alias only works once the platform adds it to the key.",
+      "nodes": [
+        { "id": "app", "label": "Team app", "kind": "client", "x": 8, "y": 50 },
+        { "id": "gw", "label": "Gateway", "sub": "checks key scope", "kind": "gateway", "x": 38, "y": 50 },
+        { "id": "new", "label": "Alias chat", "kind": "model", "x": 72, "y": 20 },
+        { "id": "old", "label": "Alias chat-v1", "sub": "legacy name", "kind": "model", "x": 72, "y": 80 }
+      ],
+      "edges": [
+        { "id": "app-gw", "from": "app", "to": "gw" },
+        { "id": "gw-new", "from": "gw", "to": "new" },
+        { "id": "gw-old", "from": "gw", "to": "old" }
+      ],
+      "steps": [
+        { "caption": "The team app calls the alias chat with its key. The gateway reads the key and the list of aliases it is scoped to.", "active": ["app", "gw"], "packets": [{ "edge": "app-gw", "label": "key + chat", "tone": "default" }], "notes": [{ "node": "gw", "text": "scope: chat", "tone": "default" }] },
+        { "caption": "Chat is on the list, so the call goes through to the model behind it.", "active": ["gw", "new"], "packets": [{ "edge": "gw-new", "label": "chat request", "tone": "ok" }] },
+        { "caption": "An older service of the same team still calls chat-v1, the name from before a rename.", "active": ["app", "gw"], "packets": [{ "edge": "app-gw", "label": "key + chat-v1", "tone": "default" }] },
+        { "caption": "Chat-v1 is not on the key list, so the gateway refuses before any model is called. The key was valid, but its scope did not cover that name.", "active": ["gw", "app"], "packets": [{ "edge": "app-gw", "reverse": true, "label": "denied", "tone": "bad" }], "notes": [{ "node": "gw", "text": "chat-v1 not in scope", "tone": "bad" }] },
+        { "caption": "The platform keeps chat-v1 as a legacy alias pointing at the same model and adds it to the scope. Now the old name works.", "active": ["gw", "old"], "packets": [{ "edge": "gw-old", "label": "chat request", "tone": "ok" }], "notes": [{ "node": "gw", "text": "scope: chat, chat-v1", "tone": "ok" }] },
+        { "caption": "Scopes list names, not models. Keep legacy names alive, with an owner, until every caller has moved to the new one.", "active": ["gw"], "packets": [], "notes": [{ "node": "old", "text": "retire when unused", "tone": "warn" }] }
+      ]
+    },
+    {
+      "id": "platform-end-to-end-check",
+      "title": "Prove it works from the team side",
+      "summary": "A smoke test acts as the new team with its real key. It makes one model call, one tool call and one retrieval call, then confirms the usage row for the team exists.",
+      "nodes": [
+        { "id": "chk", "label": "Smoke test", "sub": "uses the team key", "kind": "client", "x": 8, "y": 50 },
+        { "id": "gw", "label": "Gateway", "kind": "gateway", "x": 44, "y": 50 },
+        { "id": "hub", "label": "Tool hub", "kind": "gateway", "x": 62, "y": 20 },
+        { "id": "kb", "label": "Knowledge service", "kind": "service", "x": 62, "y": 80 },
+        { "id": "log", "label": "Spend log", "kind": "log", "x": 92, "y": 50 }
+      ],
+      "edges": [
+        { "id": "chk-gw", "from": "chk", "to": "gw" },
+        { "id": "chk-hub", "from": "chk", "to": "hub" },
+        { "id": "chk-kb", "from": "chk", "to": "kb" },
+        { "id": "gw-log", "from": "gw", "to": "log" }
+      ],
+      "steps": [
+        { "caption": "Checking settings is not enough. The test uses the new team key, the same way the team will, and tries each thing they were promised.", "active": ["chk"], "packets": [] },
+        { "caption": "First a model call through the gateway with a real alias. A reply proves the key, the alias and the route line up.", "active": ["chk", "gw"], "packets": [{ "edge": "chk-gw", "label": "chat request", "tone": "default" }, { "edge": "chk-gw", "reverse": true, "label": "answer", "tone": "ok" }] },
+        { "caption": "Next a tool call through the hub. A reply proves the tool bundle was attached and the key is allowed to use it.", "active": ["chk", "hub"], "packets": [{ "edge": "chk-hub", "label": "call a tool", "tone": "default" }, { "edge": "chk-hub", "reverse": true, "label": "result", "tone": "ok" }] },
+        { "caption": "Then a retrieval call. A passage from the team documents proves the index exists and the key can reach it.", "active": ["chk", "kb"], "packets": [{ "edge": "chk-kb", "label": "ask a question", "tone": "default" }, { "edge": "chk-kb", "reverse": true, "label": "passage", "tone": "ok" }] },
+        { "caption": "Last, the spend log. A row for this team proves the call was recorded against the right budget.", "active": ["gw", "log"], "packets": [{ "edge": "gw-log", "label": "usage row", "tone": "ok" }], "notes": [{ "node": "log", "text": "row for new team", "tone": "ok" }] },
+        { "caption": "One failed leg says exactly what to fix. When all four pass, the team is ready and you can prove it.", "active": ["chk", "gw", "hub", "kb", "log"], "packets": [], "notes": [{ "node": "chk", "text": "4 of 4 passed", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "sovereignty-regions-routes",
+      "title": "Routes decide where data may go",
+      "summary": "Each deployment sits in one region. A route ties an alias to the regions it may use, so personal data stays on an EU route while a public question may use either region.",
+      "nodes": [
+        { "id": "app", "label": "Support app", "kind": "client", "x": 8, "y": 50 },
+        { "id": "gw", "label": "Gateway", "sub": "route table", "kind": "gateway", "x": 36, "y": 50 },
+        { "id": "eu", "label": "EU deployment", "sub": "region: EU", "kind": "model", "x": 72, "y": 22 },
+        { "id": "us", "label": "US deployment", "sub": "region: US", "kind": "model", "x": 72, "y": 78 }
+      ],
+      "edges": [
+        { "id": "app-gw", "from": "app", "to": "gw" },
+        { "id": "gw-eu", "from": "gw", "to": "eu" },
+        { "id": "gw-us", "from": "gw", "to": "us" }
+      ],
+      "steps": [
+        { "caption": "The app sends a request that contains customer details, using the alias for personal data.", "active": ["app"], "packets": [{ "edge": "app-gw", "label": "customer question", "tone": "default" }] },
+        { "caption": "The gateway looks up the route for that alias. The rule says EU only.", "active": ["gw"], "packets": [], "notes": [{ "node": "gw", "text": "route: EU only", "tone": "ok" }] },
+        { "caption": "The request goes to the EU deployment. The US one is never contacted, however busy or cheap it is.", "active": ["gw", "eu"], "packets": [{ "edge": "gw-eu", "label": "chat request", "tone": "ok" }], "notes": [{ "node": "eu", "text": "served in EU", "tone": "ok" }] },
+        { "caption": "Now a request about a public product page, sent through a different alias. Its route allows both regions.", "active": ["app", "gw"], "packets": [{ "edge": "app-gw", "label": "public question", "tone": "default" }], "notes": [{ "node": "gw", "text": "route: EU or US", "tone": "default" }] },
+        { "caption": "For this route the gateway may pick either deployment, so it uses the US one.", "active": ["gw", "us"], "packets": [{ "edge": "gw-us", "label": "chat request", "tone": "ok" }], "notes": [{ "node": "us", "text": "served in US", "tone": "ok" }] },
+        { "caption": "A region belongs to a deployment. A route is the rule that says which regions a kind of data may use.", "active": ["gw"], "packets": [] }
+      ]
+    },
+    {
+      "id": "sovereignty-hops-audit",
+      "title": "The log sees one hop, the trace sees all",
+      "summary": "A request passes through a regional proxy before it reaches the provider. The spend log records only the first hop, while a trace records every hop, so an audit needs the trace.",
+      "nodes": [
+        { "id": "app", "label": "Support app", "kind": "client", "x": 8, "y": 30 },
+        { "id": "gw", "label": "Gateway", "kind": "gateway", "x": 30, "y": 50 },
+        { "id": "px", "label": "Regional proxy", "kind": "service", "x": 54, "y": 30 },
+        { "id": "prov", "label": "Provider", "kind": "model", "x": 80, "y": 50 },
+        { "id": "log", "label": "Spend log", "kind": "log", "x": 30, "y": 84 },
+        { "id": "tr", "label": "Trace store", "kind": "log", "x": 66, "y": 84 }
+      ],
+      "edges": [
+        { "id": "app-gw", "from": "app", "to": "gw" },
+        { "id": "gw-px", "from": "gw", "to": "px" },
+        { "id": "px-prov", "from": "px", "to": "prov" },
+        { "id": "gw-log", "from": "gw", "to": "log" },
+        { "id": "gw-tr", "from": "gw", "to": "tr" },
+        { "id": "px-tr", "from": "px", "to": "tr" },
+        { "id": "prov-tr", "from": "prov", "to": "tr" }
+      ],
+      "steps": [
+        { "caption": "A request enters the gateway. An auditor may ask later where this exact request went.", "active": ["app", "gw"], "packets": [{ "edge": "app-gw", "label": "customer question", "tone": "default" }] },
+        { "caption": "The gateway does not call the provider directly. Its route sends the call to a regional proxy first.", "active": ["gw", "px"], "packets": [{ "edge": "gw-px", "label": "hop 1", "tone": "default" }] },
+        { "caption": "The proxy forwards the call to the provider. The gateway is not involved in this second hop.", "active": ["px", "prov"], "packets": [{ "edge": "px-prov", "label": "hop 2", "tone": "default" }] },
+        { "caption": "The spend log records what the gateway saw: one destination, the proxy. It says nothing about what happened after that.", "active": ["gw", "log"], "packets": [{ "edge": "gw-log", "label": "row: dest = proxy", "tone": "warn" }], "notes": [{ "node": "log", "text": "sees hop 1 only", "tone": "warn" }] },
+        { "caption": "Each hop also reports a span to the trace store with the same trace id, so together they form one chain of custody.", "active": ["gw", "px", "prov", "tr"], "packets": [{ "edge": "gw-tr", "label": "span", "tone": "default" }, { "edge": "px-tr", "label": "span", "tone": "default" }, { "edge": "prov-tr", "label": "span", "tone": "default" }], "notes": [{ "node": "tr", "text": "3 hops, one chain", "tone": "ok" }] },
+        { "caption": "To prove where data went, read the trace, which covers every hop. The log is good for money but blind past the first hop.", "active": ["tr"], "packets": [] }
+      ]
+    },
+    {
+      "id": "sovereignty-declared-vs-actual",
+      "title": "What the label says, what happened",
+      "summary": "A route declares EU, but when the EU provider is busy the regional proxy overflows the call to a US provider. The answer looks normal, and only the actual region on the trace shows the difference.",
+      "nodes": [
+        { "id": "app", "label": "Support app", "kind": "client", "x": 8, "y": 50 },
+        { "id": "gw", "label": "Gateway", "sub": "declared: EU", "kind": "gateway", "x": 32, "y": 50 },
+        { "id": "px", "label": "Regional proxy", "sub": "labelled: EU", "kind": "service", "x": 58, "y": 50 },
+        { "id": "eu", "label": "EU provider", "kind": "model", "x": 88, "y": 22 },
+        { "id": "us", "label": "US provider", "kind": "model", "x": 88, "y": 78 }
+      ],
+      "edges": [
+        { "id": "app-gw", "from": "app", "to": "gw" },
+        { "id": "gw-px", "from": "gw", "to": "px" },
+        { "id": "px-eu", "from": "px", "to": "eu" },
+        { "id": "px-us", "from": "px", "to": "us" }
+      ],
+      "steps": [
+        { "caption": "The app sends a customer request on a route that is declared EU.", "active": ["app", "gw"], "packets": [{ "edge": "app-gw", "label": "customer question", "tone": "default" }], "notes": [{ "node": "gw", "text": "declared: EU", "tone": "ok" }] },
+        { "caption": "The gateway follows the declaration and sends the call to the proxy that is labelled EU.", "active": ["gw", "px"], "packets": [{ "edge": "gw-px", "label": "chat request", "tone": "default" }] },
+        { "caption": "The proxy tries the EU provider, but it is at capacity and refuses.", "active": ["px", "eu"], "packets": [{ "edge": "px-eu", "label": "try EU", "tone": "warn" }, { "edge": "px-eu", "reverse": true, "label": "busy", "tone": "bad" }], "notes": [{ "node": "eu", "text": "at capacity", "tone": "warn" }] },
+        { "caption": "To keep the service up, the proxy quietly overflows to a US provider. The call has left the declared region.", "active": ["px", "us"], "packets": [{ "edge": "px-us", "label": "overflow call", "tone": "bad" }], "notes": [{ "node": "us", "text": "actual region: US", "tone": "bad" }] },
+        { "caption": "The answer returns as usual. Nothing in the reply or the label shows that anything changed.", "active": ["us", "px", "gw", "app"], "packets": [{ "edge": "px-us", "reverse": true, "label": "answer", "tone": "ok" }, { "edge": "app-gw", "reverse": true, "label": "answer", "tone": "ok" }], "notes": [{ "node": "gw", "text": "still says: EU", "tone": "warn" }] },
+        { "caption": "Declared is what the config promises. Actual is where the call really went. Compare the region on each span of the trace, not the label on the route.", "active": ["px", "us"], "packets": [], "notes": [{ "node": "px", "text": "declared EU, actual US", "tone": "bad" }] }
+      ]
+    }
+  ]
+}

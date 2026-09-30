@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import registry from '../../packages/catalogue/concepts.json';
+import { KNOWN_DIAGRAMS, diagramRefs } from './diagram';
 
 /**
  * The learning layer of a lab: a short story, one lesson per concept, quiz
@@ -148,8 +149,21 @@ export const KNOWN_CONCEPTS: ReadonlySet<string> = new Set(registry.concepts.map
  * lesson must be testable. Returns human-readable problems, empty when fine.
  * `known` defaults to the registry; tests pass their own.
  */
-export function checkLearnBundle(bundle: LearnBundle, known: ReadonlySet<string> = KNOWN_CONCEPTS): string[] {
+export function checkLearnBundle(
+  bundle: LearnBundle,
+  known: ReadonlySet<string> = KNOWN_CONCEPTS,
+  diagrams: ReadonlySet<string> = KNOWN_DIAGRAMS
+): string[] {
   const problems: string[] = [];
+
+  // `::diagram[id]` lines must name a diagram in packages/catalogue/diagrams.json.
+  const bodies: [string, string][] = bundle.concepts.map((c) => [`lesson "${c.id}"`, c.body]);
+  if (bundle.story) bodies.push(['the story', bundle.story.body]);
+  for (const [where, body] of bodies) {
+    for (const ref of diagramRefs(body)) {
+      if (!diagrams.has(ref)) problems.push(`${where} embeds diagram "${ref}", which is not in packages/catalogue/diagrams.json`);
+    }
+  }
 
   const conceptIds = bundle.concepts.map((c) => c.id);
   if (new Set(conceptIds).size !== conceptIds.length) problems.push('two lessons have the same concept id');
@@ -178,14 +192,18 @@ export function checkLearnBundle(bundle: LearnBundle, known: ReadonlySet<string>
 }
 
 /** Parses and cross-checks unknown JSON; throws an Error listing every problem. */
-export function parseLearnBundle(raw: unknown, known: ReadonlySet<string> = KNOWN_CONCEPTS): LearnBundle {
+export function parseLearnBundle(
+  raw: unknown,
+  known: ReadonlySet<string> = KNOWN_CONCEPTS,
+  diagrams: ReadonlySet<string> = KNOWN_DIAGRAMS
+): LearnBundle {
   const parsed = LearnBundleSchema.safeParse(raw);
   if (!parsed.success) {
     throw new Error(
       'Invalid learn bundle: ' + parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')
     );
   }
-  const problems = checkLearnBundle(parsed.data, known);
+  const problems = checkLearnBundle(parsed.data, known, diagrams);
   if (problems.length > 0) throw new Error('Invalid learn bundle: ' + problems.join('; '));
   return parsed.data;
 }
