@@ -122,6 +122,24 @@ export const labManifestSchema = z.object({
   /** Rough level, for sorting and for setting expectations on the card. */
   difficulty: z.enum(['intro', 'core', 'advanced']).optional(),
   timeout_minutes: z.number().int().min(60).max(120),
+  /**
+   * Catalogue placement. All optional so a lab without them still parses;
+   * the index sorts by (path, module, order, slug) and the console groups by
+   * `path`. The manifest is the single source of truth — there is no
+   * separate paths file.
+   */
+  /** Learning path this lab belongs to, as a slug (e.g. `ai-platform`). */
+  path: z.string().regex(/^[a-z0-9-]+$/, 'path must be a lowercase hyphenated slug').optional(),
+  /** 1-based module number within the path. */
+  module: z.number().int().min(1).optional(),
+  /** 1-based position within the module. */
+  order: z.number().int().min(1).optional(),
+  /** Slugs of labs to do first. Unknown slugs warn at publish, they do not fail it. */
+  prerequisites: z.array(z.string().regex(/^[a-z0-9-]+$/, 'prerequisite must be a lab slug')).optional(),
+  /** Whether the free plan may start this lab. */
+  tier: z.enum(['free', 'pro']).default('pro'),
+  /** Honest time to finish, for the card; distinct from the session cap `timeout_minutes`. */
+  estimated_minutes: z.number().int().min(5).max(240).optional(),
   idle_minutes: z.number().int().min(1).max(60).default(10),
   // Shell identifiers only: the session env is written to a file that
   // every login shell sources, so `MY-KEY` would break shell startup and a

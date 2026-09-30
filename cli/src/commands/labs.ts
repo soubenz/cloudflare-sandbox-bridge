@@ -53,7 +53,8 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
   labs
     .command('publish <dir>')
     .description('Publish a lab directory (manifest.yaml, workspace/, checks/, pressure/ — solution/ is never uploaded)')
-    .action(async (dir: string) => {
+    .option('--force', 'overwrite a version that is already published (default: the server answers 409 version_exists)')
+    .action(async (dir: string, opts: { force?: boolean }) => {
       const manifestPath = join(dir, 'manifest.yaml');
       if (!existsSync(manifestPath)) throw new Error(`No manifest.yaml in ${dir}`);
       const manifestJson = parseYaml(readFileSync(manifestPath, 'utf8'));
@@ -79,7 +80,11 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
         form.set('workspace', new Blob([workspaceTgz]), 'workspace.tgz');
         form.set('private', new Blob([privateTgz.length > 0 ? privateTgz : Buffer.alloc(0)]), 'private.tgz');
 
-        console.log(await getClient().publishLab(form));
+        if (opts.force) form.set('force', 'true');
+
+        const result: { slug: string; version: string; warnings?: string[] } = await getClient().publishLab(form);
+        console.log(result);
+        for (const w of result.warnings ?? []) console.warn(`WARNING: ${w}`);
       } finally {
         rmSync(workspaceStaging, { recursive: true, force: true });
       }

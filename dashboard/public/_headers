@@ -1,0 +1,10 @@
+# Belt and braces for the static-assets route: worker.js sets the same headers
+# on every response it returns (and wins if both are present). _headers cannot
+# read Worker vars, so the API origin is written out here; keep it equal to
+# API_PUBLIC_ORIGIN in wrangler.jsonc.
+/*
+  Content-Security-Policy: default-src 'self'; connect-src 'self' https://opalix-sandbox.soubenz94.workers.dev wss://opalix-sandbox.soubenz94.workers.dev; frame-src https://opalix-sandbox.soubenz94.workers.dev; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

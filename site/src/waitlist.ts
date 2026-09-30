@@ -67,7 +67,7 @@ function toRole(raw: string): Role | null {
   return (ROLES as readonly string[]).includes(raw) ? (raw as Role) : null;
 }
 
-function toSource(raw: string): string | null {
+export function toSource(raw: string): string | null {
   const s = raw.toLowerCase();
   return SOURCE_SHAPE.test(s) ? s : null;
 }

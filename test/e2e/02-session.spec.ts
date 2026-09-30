@@ -23,7 +23,9 @@ test.describe('a running session', () => {
 
   test('shows the learner lab activity rather than raw telemetry', async ({ session }) => {
     // What a learner sees of the same stream: prose, no event types, no
-    // payloads. A service coming up healthy is the first thing to land.
+    // payloads. The pane is theirs — no operator key is involved — and a
+    // service coming up healthy is the first thing to land.
+    await expect(session.locator('#activityPane')).toBeVisible();
     const notices = session.locator('#noticeList li');
     await expect(notices.first()).toBeVisible({ timeout: 60_000 });
     const text = await notices.first().innerText();

@@ -32,6 +32,13 @@ title: "Customers are getting duplicate emails"
 type: break-fix                # build | break-fix | scale
 family: agent                  # agent | gateway — which container image/pool this lab uses
 timeout_minutes: 90            # 60-120, required
+# Catalogue placement — all optional (see the table below)
+path: ai-platform              # learning path slug
+module: 1                      # 1-based module within the path
+order: 2                       # 1-based position within the module
+prerequisites: [gateway-hello] # lab slugs to do first
+tier: free                     # free | pro, default pro
+estimated_minutes: 45          # 5-240; the card's "about N min"
 idle_minutes: 10               # 1-60, default 10
 env:
   SOME_VAR: "value, may use {{session.id}} etc."
@@ -80,9 +87,16 @@ Defaults and limits worth knowing, since the schema fills them in silently:
 | Field | Rule |
 |---|---|
 | `slug` | `^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$` |
-| `version` | `N.N.N`. Publishing does **not** bump it — re-publishing the same version overwrites that version's objects in place |
+| `version` | `N.N.N`. You bump it by hand; publishing a version that already exists is refused with `409 version_exists` unless you pass `labs publish --force`, which overwrites that version's objects in place. Each publish records the old `current` as `labs/<slug>/previous` |
 | `title` | 1-200 chars |
 | `idle_minutes` | 1-60, default 10 |
+| `path` | optional; the learning path this lab belongs to, a slug (`^[a-z0-9-]+$`) |
+| `module` | optional; integer ≥ 1, the module within the path |
+| `order` | optional; integer ≥ 1, the lab's position within the module |
+| `prerequisites` | optional; lab slugs to do first. A slug that is not published logs a warning in the publish response (`warnings`), it does not fail the publish |
+| `tier` | `free` or `pro`, default `pro`; whether the free plan may start the lab |
+| `estimated_minutes` | optional; integer 5-240, how long the lab honestly takes (distinct from `timeout_minutes`, the session cap) |
+| catalogue sort | `labs/index.json` is ordered by `(path, module, order, slug)`; a missing `path` sorts as `zz` (last), a missing `module`/`order` as 999. The manifest is the only source of placement — there is no separate paths file |
 | `env` keys (both levels) | must be shell identifiers: `^[A-Za-z_][A-Za-z0-9_]*$` |
 | `services[].name` | 1-40 chars |
 | `services[].cwd` | default `/workspace` |

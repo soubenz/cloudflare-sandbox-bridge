@@ -1,4 +1,4 @@
-import { api, apiBase, eventsUrl, serviceUrl } from './api.js';
+import { api, apiBase, configureAuth, eventsUrl, serviceUrl } from './api.js';
 import { attachTerminal } from './terminal.js';
 
 const $ = (id) => document.getElementById(id);
@@ -55,6 +55,17 @@ const state = {
   service: null,
   checksRunning: false,
   timer: 0,
+  /** Highest event seq handled, so a stream reopened by hand does not replay what was already shown. */
+  lastSeq: 0,
+  /** Consecutive EventSource errors since it last opened. */
+  streamErrors: 0,
+  /** setTimeout id of the status poll used while the stream is down. */
+  streamPoll: 0,
+  /** First service reported unhealthy during boot, to name it if the boot fails. */
+  bootUnhealthy: null,
+  /** Wall-clock end of the idle countdown, and its interval. */
+  idleDeadline: 0,
+  idleTimer: 0,
   /** Operator mode: a service key the API accepted, in this tab. */
   admin: false,
   serviceKey: sessionStorage.getItem('opalix.serviceKey') || '',
@@ -69,13 +80,13 @@ const state = {
  * here, only the result of a click.
  */
 let toastTimer = 0;
-function toast(message, tone = 'info') {
+function toast(message, tone = 'info', ms) {
   const el = $('toast');
   $('toastText').textContent = message;
   el.dataset.tone = tone;
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.hidden = true), tone === 'bad' ? 10_000 : 5000);
+  toastTimer = setTimeout(() => (el.hidden = true), ms ?? (tone === 'bad' ? 10_000 : 5000));
 }
 
 // ---------------------------------------------------------------- launcher
@@ -120,6 +131,17 @@ async function loadLabs() {
     $('labCount').textContent = `${labs.length} available`;
     for (const lab of labs) list.append(labCard(lab));
   } catch (err) {
+    if (/^401:/.test(err.message)) {
+      // The console cookie is gone (expired, or signed out in another tab).
+      list.innerHTML = `
+        <div class="empty-state" id="signedOut">
+          <p>You are signed out.</p>
+          <p class="muted small">Sign in again to see the labs. A lab you left running is still there — sign in and you will be taken back to it.</p>
+          <button class="btn btn-primary" id="btnSignIn">Sign in</button>
+        </div>`;
+      list.querySelector('#btnSignIn').addEventListener('click', () => location.reload());
+      return;
+    }
     list.innerHTML = `
       <div class="empty-state">
         <p class="error"></p>
@@ -212,6 +234,7 @@ function labCard(lab) {
 async function startSession(slug, card) {
   const error = $('launchError');
   error.hidden = true;
+  error.className = 'notice notice-bad';
   const buttons = document.querySelectorAll('.lab button');
   buttons.forEach((b) => (b.disabled = true));
   const button = card?.querySelector('button');
@@ -220,7 +243,20 @@ async function startSession(slug, card) {
     button.setAttribute('aria-busy', 'true');
   }
   try {
-    const started = await api.startSession(slug);
+    // 503/409 mean no slot right now: say so and try again, instead of
+    // reporting a failure the learner can do nothing about.
+    const started = await api.startSession(slug, {
+      retries: 5,
+      onBusy: (attempt, retries, seconds) => {
+        const text = `All lab slots are busy — retrying in ${seconds}s (attempt ${attempt} of ${retries})`;
+        if ($('launcher').hidden) return toast(text, 'info', seconds * 1000);
+        error.textContent = text;
+        error.className = 'notice notice-warn';
+        (card ?? $('launcher')).append(error);
+        error.hidden = false;
+      },
+    });
+    error.hidden = true;
     state.lab = labsBySlug.get(slug) ?? null;
     state.session = { id: started.id, token: started.token, lab: slug, urls: started.urls };
     rememberSession(state.session);
@@ -232,6 +268,8 @@ async function startSession(slug, card) {
   } catch (err) {
     // Next to the card that was clicked, not at the foot of a long list
     // where it scrolled out of sight and the click looked like it did nothing.
+    error.className = 'notice notice-bad';
+    if ($('launcher').hidden) return toast(`Could not start this lab — ${err.message}`, 'bad');
     error.textContent = `Could not start this lab — ${err.message}`;
     (card ?? $('launcher')).append(error);
     error.hidden = false;
@@ -254,6 +292,13 @@ function enterSession() {
   runningHandled = false;
   state.expiresAt = null;
   stopExpiryTimer();
+  stopStreamFallback();
+  hideIdleBanner();
+  hideExpiryBanner();
+  state.lastSeq = 0;
+  state.bootUnhealthy = null;
+  bootServices.clear();
+  $('bootServices').innerHTML = '';
   state.openFile = null;
   state.dirty = false;
   state.expanded.clear();
@@ -281,6 +326,7 @@ function enterSession() {
   $('btnReconnectTerm').hidden = false;
   $('btnNewFile').disabled = false;
   $('expiryTimer').textContent = '';
+  delete $('expiryTimer').dataset.urgent;
   $('briefBody').innerHTML = '<p class="muted">Loading the brief…</p>';
   // The task, not an empty terminal: a learner arriving at a lab should be
   // looking at what they have been asked to do.
@@ -329,7 +375,13 @@ function openEventStream() {
     ['alert', 'bad'],
   ];
   for (const [type, tone] of types) {
-    es.addEventListener(type, (ev) => handleEvent(type, tone, parse(ev.data)));
+    es.addEventListener(type, (ev) => {
+      // A stream reopened by hand starts from the last 50 events again.
+      const seq = Number(ev.lastEventId) || 0;
+      if (seq && seq <= state.lastSeq) return;
+      if (seq) state.lastSeq = seq;
+      handleEvent(type, tone, parse(ev.data));
+    });
   }
   // `metrics` fires every 30s; it updates the header rather than the log,
   // which would otherwise drown everything else.
@@ -339,7 +391,75 @@ function openEventStream() {
     const usd = data?.cost_usd ?? data?.cost?.usd;
     if (usd != null) $('sessionId').title = `Session ${state.session?.id ?? ''} · ≈ $${Number(usd).toFixed(4)} so far`;
   });
-  es.onerror = () => addEvent('warn', 'stream', 'Event stream dropped; the browser will retry.');
+  // The browser reconnects by itself and sends Last-Event-ID, so nothing
+  // is lost across a blip. What the learner needs is to know the page is
+  // not live meanwhile, and — if it stays down — for the console to keep
+  // itself up to date some other way.
+  es.onopen = () => {
+    state.streamErrors = 0;
+    setStreamPill(false);
+    stopStreamFallback();
+  };
+  es.onerror = () => {
+    state.streamErrors++;
+    setStreamPill(true);
+    addEvent('warn', 'stream', 'Event stream dropped; the browser will retry.');
+    // CLOSED means the browser has given up (a refused token, a bad
+    // response) and will not retry on its own.
+    if (state.streamErrors >= STREAM_ERRORS_BEFORE_POLLING || es.readyState === EventSource.CLOSED) startStreamFallback();
+  };
+}
+
+const STREAM_ERRORS_BEFORE_POLLING = 3;
+const STREAM_POLL_MS = 10_000;
+
+function setStreamPill(on) {
+  $('streamPill').hidden = !on;
+}
+
+/**
+ * While the stream is down, ask for the status every 10s and feed it to the
+ * same renderers the stream would have: state pill, checks, services. It
+ * also reopens a stream the browser has abandoned. Stops on `onopen`.
+ */
+function startStreamFallback() {
+  if (state.streamPoll || !state.session) return;
+  const session = state.session;
+  const tick = async () => {
+    if (state.session !== session) return;
+    try {
+      if (state.events?.readyState === EventSource.CLOSED) openEventStream();
+      const status = await api.status(session.id, session.token);
+      if (state.session !== session) return;
+      applyStatus(status);
+    } catch {
+      /* still down; the next tick asks again */
+    }
+    if (state.session === session && state.streamPoll) state.streamPoll = setTimeout(tick, STREAM_POLL_MS);
+  };
+  state.streamPoll = setTimeout(tick, 0);
+}
+
+function stopStreamFallback() {
+  clearTimeout(state.streamPoll);
+  state.streamPoll = 0;
+  state.streamErrors = 0;
+  setStreamPill(false);
+}
+
+/** What one status response says, applied the way the stream's events would have. */
+function applyStatus(status) {
+  const meta = status.meta ?? {};
+  if (meta.state) setStatePill(meta.state);
+  if (meta.state === 'ended') return onEnded(meta.end_reason);
+  if (meta.state === 'running' && !runningHandled) return onRunning(status);
+  if (meta.expires_at && meta.expires_at !== state.expiresAt) {
+    state.expiresAt = meta.expires_at;
+    startExpiryTimer();
+  }
+  if (status.checks && !state.checksRunning) renderChecks(status.checks);
+  // Rebuilding the list would cancel a restart that is in flight.
+  if (status.services && !$('serviceList').querySelector('[aria-busy="true"]')) renderServiceList(status.services);
 }
 
 function handleEvent(type, tone, data) {
@@ -347,18 +467,40 @@ function handleEvent(type, tone, data) {
   noticeFor(type, tone, data);
   bootProgress(type, data);
 
-  if (type === 'session.state') {
+  if (type === 'session.idle_warning') showIdleBanner();
+  if (type === 'session.state' && data?.state === 'ended') {
+    confirmEnded(data.reason);
+  } else if (type === 'session.state') {
     setStatePill(data.state);
-    if (data.state === 'running') {
-      onRunning();
-    } else if (data.state === 'ended') {
-      onEnded(data.reason);
-    }
+    if (data.state === 'running') onRunning();
   }
   if (type === 'hint') renderHint(data);
   if (type === 'check.finished' || type === 'check.result') refreshChecks();
   if (type === 'container.restarted') onContainerRestarted();
   if (type === 'service.health' && data?.service && data?.health) setServiceHealth(data.service, data.health);
+}
+
+/**
+ * `session.state: ended` is only believed once the API agrees. The stream
+ * replays its last 50 events to every new connection, so a session that
+ * ended and was then resumed hands a reloaded console the old `ended`
+ * ahead of the `running` that followed — and acting on it put the
+ * dead-session screen over a lab that was up. If the check itself cannot be
+ * made, the event is taken at its word.
+ */
+async function confirmEnded(reason) {
+  const session = state.session;
+  if (!session) return;
+  try {
+    const status = await api.status(session.id, session.token, { recover: false });
+    if (state.session !== session || status.meta.state !== 'ended') return;
+    reason = status.meta.end_reason ?? reason;
+  } catch {
+    /* cannot check; trust the event */
+  }
+  if (state.session !== session) return;
+  bootFailed(`Session ended: ${reason ?? 'unknown'}`);
+  onEnded(reason);
 }
 
 /**
@@ -417,13 +559,19 @@ function summarize(type, data) {
  * The raw log is operations telemetry — state transitions, check progress,
  * metrics, cost. This is the part of the same stream that is about the lab
  * itself — pressure events, hints, warnings — as prose rather than rows.
- * The pane is operator-only (see setAdmin); a learner gets hints in the
- * Hints panel and nothing from this list.
+ * The pane is shown to every learner: it is how a pressure event, an idle
+ * warning or a service going down reaches someone who is not reading the
+ * Hints panel.
  */
 const LEARNER_NOTICES = {
   pressure: (d) => [d.title, d.message],
   hint: (d) => ['Hint', d.text],
-  'session.expiring': (d) => ['Session ending soon', `About ${Math.round((d?.in_ms ?? 300000) / 60000)} minutes left.`],
+  // The payload is {reason}, not a duration: the time left is what the
+  // header's own timer counts down to.
+  'session.expiring': () => {
+    const minutes = state.expiresAt ? Math.max(1, Math.ceil((state.expiresAt - Date.now()) / 60_000)) : 5;
+    return ['Session ending soon', `About ${minutes} minute${minutes === 1 ? '' : 's'} left. End with a snapshot to keep your work.`];
+  },
   'session.idle_warning': () => ['Still there?', 'This session ends soon if nothing happens.'],
   'container.restarted': () => ['Container replaced', 'Your lab is being rebuilt; the terminal will reconnect.'],
   alert: (d) => ['Something went wrong', d.message ?? d.error ?? d.kind],
@@ -471,12 +619,14 @@ function addEvent(tone, what, detail) {
 
 // A restart can start a second poll while the first is still sleeping, and
 // two loops racing the same session is how a terminal gets attached twice.
-let polling = false;
+let polling = null;
 const BOOT_DEADLINE_MS = 120_000;
 async function pollUntilRunning() {
-  if (polling) return;
-  polling = true;
+  // Keyed by session, so a different session (a resume, a rejoin that
+  // landed on another id) starts its own loop while the old one winds down.
+  if (polling === state.session) return;
   const session = state.session;
+  polling = session;
   let lastError = null;
   let refused = false;
   try {
@@ -487,6 +637,7 @@ async function pollUntilRunning() {
         lastError = null;
         setStatePill(status.meta.state);
         if (status.meta.lab_slug) setSessionLab(status.meta.lab_slug);
+        setBootServices(status.services);
         if (status.meta.state === 'running') return await onRunning(status);
         if (status.meta.state === 'ended') return onEnded(status.meta.end_reason);
       } catch (err) {
@@ -514,7 +665,7 @@ async function pollUntilRunning() {
       );
     }
   } finally {
-    polling = false;
+    if (polling === session) polling = null;
   }
 }
 
@@ -525,13 +676,7 @@ async function onRunning(status) {
 
   bootStep('services', 'Attaching the terminal…');
   if (!state.terminal) {
-    state.terminal = attachTerminal({
-      container: $('term'),
-      sessionId: state.session.id,
-      token: state.session.token,
-      onNotice: (text) => addEvent('warn', 'terminal', text),
-      onStatus: setTerminalStatus,
-    });
+    state.terminal = attachSessionTerminal();
   }
 
   if (!status) {
@@ -735,16 +880,68 @@ export function renderMarkdown(src) {
  */
 function bootProgress(type, data) {
   if (type === 'session.state' && data?.state === 'starting') bootStep('container', 'Unpacking the workspace…');
-  if (type === 'service.health') bootStep('workspace', `Starting ${data?.service ?? 'services'}…`);
+  if (type === 'service.health') {
+    bootStep('workspace', `Starting ${data?.service ?? 'services'}…`);
+    if (data?.service && data?.health) {
+      setBootService(data.service, data.health, data.logs_tail);
+      if (data.health !== 'healthy') state.bootUnhealthy ??= data.service;
+    }
+  }
   if (type === 'session.state' && data?.state === 'running') {
     bootStep('workspace');
     bootStep('services', 'Attaching the terminal…');
   }
   if (type === 'alert' && data?.kind?.startsWith?.('start')) bootFailed(data.message ?? data.kind);
-  if (type === 'session.state' && data?.state === 'ended') bootFailed(`Session ended: ${data.reason ?? 'unknown'}`);
 }
 
 // ------------------------------------------------------------- boot modal
+
+/**
+ * One row per service under the "Services" boot step, so a slow or failing
+ * service is named rather than hiding behind a spinner. Kept as a map and
+ * rendered in place: events and status polls both feed it, in either
+ * order, and rebuilding rows would collapse a log the learner had opened.
+ */
+const bootServices = new Map();
+
+/** Rows from a status response; logs, which only events carry, are kept. */
+function setBootServices(services) {
+  for (const [name, runtime] of Object.entries(services ?? {})) {
+    setBootService(name, runtime?.health ?? 'unknown');
+  }
+}
+
+function setBootService(name, health, logsTail) {
+  const entry = bootServices.get(name) ?? {};
+  entry.health = health;
+  if (logsTail && health !== 'healthy') entry.logs = String(logsTail);
+  bootServices.set(name, entry);
+
+  const host = $('bootServices');
+  let row = [...host.children].find((el) => el.dataset.service === name);
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'boot-svc';
+    row.dataset.service = name;
+    row.innerHTML = '<span class="boot-svc-name"></span><span class="boot-svc-health"></span>';
+    row.querySelector('.boot-svc-name').textContent = name;
+    host.append(row);
+  }
+  row.dataset.health = health;
+  row.querySelector('.boot-svc-health').textContent = health === 'unknown' ? 'starting' : health;
+
+  if (entry.logs && !row.querySelector('pre')) {
+    // Collapsed: it is there for the learner who wants to know why, not
+    // shoved in front of the one who only wants the lab to start.
+    const details = document.createElement('details');
+    details.innerHTML = '<summary>Last log lines</summary><pre class="logs-tail"></pre>';
+    row.append(details);
+  }
+  const pre = row.querySelector('pre');
+  if (pre) pre.textContent = entry.logs ?? '';
+  // A service that recovered no longer needs its log on screen.
+  row.querySelector('details')?.toggleAttribute('hidden', health === 'healthy');
+}
 
 /**
  * A start claims a container, unpacks the workspace, launches every service
@@ -778,6 +975,12 @@ function bootStep(step, detail) {
  */
 function bootFailed(message, { canRetry = false } = {}) {
   if ($('bootModal').hidden) return;
+  // Name the service that was already reporting trouble, so the failure
+  // reads as "api did not become healthy", not a bare "start failed".
+  message = String(message ?? '');
+  if (state.bootUnhealthy && !message.includes(state.bootUnhealthy)) {
+    message = `${state.bootUnhealthy} did not become healthy. ${message}`;
+  }
   // A failed start reports itself twice — the alert that says why, then
   // `session.state: ended` — and the first is the one worth reading.
   if ($('bootModal').classList.contains('modal-failed')) return;
@@ -810,6 +1013,9 @@ const END_REASONS = {
 function onEnded(reason) {
   setStatePill('ended');
   stopExpiryTimer();
+  stopStreamFallback();
+  hideIdleBanner();
+  hideExpiryBanner();
   $('expiryTimer').textContent = reason ? `ended: ${reason}` : 'ended';
   delete $('expiryTimer').dataset.urgent;
   for (const id of ['btnChecks', 'btnSnapshot', 'btnEnd']) $(id).disabled = true;
@@ -820,9 +1026,15 @@ function onEnded(reason) {
   $('sessionActions').hidden = true;
   // Said where the learner is looking, since the header pill alone is easy
   // to miss and the activity feed is not theirs to read.
-  $('endedText').textContent =
-    `This session has ended. ${END_REASONS[reason] ?? ''} Its container is gone, so the terminal and files ` +
-    'are no longer available — go back to the labs to start again.';
+  // Idle and expiry are the two a learner did not choose, and the two the
+  // API can undo: it snapshots the workspace on the way out.
+  const recoverable = reason === 'idle' || reason === 'expired';
+  $('endedText').textContent = recoverable
+    ? `This session has ended. ${END_REASONS[reason]} Its container is gone, but you can resume from the last snapshot or start the lab again.`
+    : `This session has ended. ${END_REASONS[reason] ?? ''} Its container is gone, so the terminal and files ` +
+      'are no longer available — go back to the labs to start again.';
+  $('btnResume').hidden = !recoverable;
+  $('btnRestart').hidden = !recoverable;
   $('endedBanner').hidden = false;
   $('termStatusText').textContent = 'The session has ended, so there is no terminal to reconnect to.';
   $('btnReconnectTerm').hidden = true;
@@ -832,16 +1044,72 @@ function onEnded(reason) {
   for (const b of $('serviceList').querySelectorAll('button')) b.disabled = true;
 }
 
+/**
+ * Brings an idle- or expiry-ended session back from its snapshot. The API
+ * answers straight away with the session `resuming` and a token covering
+ * its new time budget; the console then goes through the same boot as any
+ * start, on the same session id.
+ */
+async function resumeFromSnapshot() {
+  const session = state.session;
+  if (!session) return;
+  const button = $('btnResume');
+  button.disabled = true;
+  button.textContent = 'Resuming…';
+  button.setAttribute('aria-busy', 'true');
+  try {
+    const resumed = await api.resume(session.id, session.token);
+    if (resumed?.token) session.token = resumed.token;
+    rememberSession(session);
+    enterSession();
+  } catch (err) {
+    // A 401 here is not the console's sign-in: the session's own token
+    // outlives it by minutes, not hours, and cannot be renewed once it is over.
+    toast(
+      /^401:/.test(err.message)
+        ? 'This session can no longer be resumed — its sign-in has expired. Restart the lab instead.'
+        : `Could not resume — ${err.message}`,
+      'bad'
+    );
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Resume from snapshot';
+    button.removeAttribute('aria-busy');
+  }
+}
+
+async function restartLab() {
+  const slug = state.lab?.slug ?? state.session?.lab;
+  if (!slug) return backToLabs();
+  const button = $('btnRestart');
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    await startSession(slug);
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+  }
+}
+
+/** Everything a live session holds open, released. */
+function teardownSession() {
+  state.terminal?.dispose();
+  state.terminal = null;
+  state.events?.close();
+  stopExpiryTimer();
+  stopStreamFallback();
+  hideIdleBanner();
+  hideExpiryBanner();
+  hideBoot();
+}
+
 /** An ended session leaves a dead workspace on screen; this is the way out. */
 function backToLabs() {
   forgetSession();
   state.session = null;
   state.dirty = false;
-  state.terminal?.dispose();
-  state.terminal = null;
-  state.events?.close();
-  stopExpiryTimer();
-  hideBoot();
+  teardownSession();
   $('btnBackToLabs').hidden = true;
   $('sessionBar').hidden = true;
   $('sessionActions').hidden = true;
@@ -870,15 +1138,19 @@ function reconnectTerminal() {
   state.terminal?.dispose();
   state.terminal = null;
   $('termStatus').hidden = true;
-  if (state.session) {
-    state.terminal = attachTerminal({
-      container: $('term'),
-      sessionId: state.session.id,
-      token: state.session.token,
-      onNotice: (text) => addEvent('warn', 'terminal', text),
-      onStatus: setTerminalStatus,
-    });
-  }
+  if (state.session) state.terminal = attachSessionTerminal();
+}
+
+function attachSessionTerminal() {
+  return attachTerminal({
+    container: $('term'),
+    sessionId: state.session.id,
+    token: state.session.token,
+    onNotice: (text) => addEvent('warn', 'terminal', text),
+    onStatus: setTerminalStatus,
+    // Any keystroke answers the idle warning.
+    onInput: hideIdleBanner,
+  });
 }
 
 function setStatePill(value) {
@@ -902,12 +1174,13 @@ function startExpiryTimer() {
     if (left <= 0) {
       el.textContent = 'expired';
       el.dataset.urgent = '2';
+      hideExpiryBanner();
       return;
     }
-    const mins = Math.floor(left / 60_000);
-    const secs = Math.floor((left % 60_000) / 1000);
-    el.textContent = `${mins}:${String(secs).padStart(2, '0')} left`;
+    el.textContent = `${formatClock(left)} left`;
     el.dataset.urgent = left < 60_000 ? '2' : left < 5 * 60_000 ? '1' : '0';
+    if (left <= EXPIRY_WARN_MS) showExpiryBanner(left);
+    else hideExpiryBanner();
   };
   tick();
   state.timer = setInterval(tick, 1000);
@@ -916,6 +1189,75 @@ function startExpiryTimer() {
 function stopExpiryTimer() {
   clearInterval(state.timer);
   state.timer = 0;
+}
+
+/** m:ss, floored, so a countdown never claims more time than there is. */
+function formatClock(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+// ---------------------------------------------------------------- banners
+
+/**
+ * The two ways a session dies with the tab still open, each said above the
+ * tabs where it cannot be scrolled past.
+ *
+ * Idle: the API warns this long before it ends an idle session
+ * (IDLE_WARN_BEFORE_MS in src/session/lifecycle.ts). "I'm here", a
+ * keystroke in the terminal or a save in the editor each answer it.
+ */
+const IDLE_WARN_BEFORE_MS = 2 * 60_000;
+/** Mirrors HARD_WARN_BEFORE_MS in lifecycle.ts, the API's own `session.expiring` lead time. */
+const EXPIRY_WARN_MS = 5 * 60_000;
+
+function showIdleBanner() {
+  if ($('statePill').dataset.state === 'ended') return;
+  // A second warning restarts the countdown rather than stacking a timer.
+  clearInterval(state.idleTimer);
+  state.idleDeadline = Date.now() + IDLE_WARN_BEFORE_MS;
+  const tick = () => {
+    $('idleCountdown').textContent = formatClock(state.idleDeadline - Date.now());
+  };
+  tick();
+  $('idleBanner').hidden = false;
+  state.idleTimer = setInterval(tick, 1000);
+}
+
+function hideIdleBanner() {
+  if ($('idleBanner').hidden && !state.idleTimer) return;
+  clearInterval(state.idleTimer);
+  state.idleTimer = 0;
+  $('idleBanner').hidden = true;
+}
+
+/** "I'm here": the API moves the idle clock; the banner goes only once it has. */
+async function imHere() {
+  const session = state.session;
+  if (!session) return;
+  const button = $('btnImHere');
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    await api.touch(session.id, session.token);
+    hideIdleBanner();
+  } catch (err) {
+    toast(`Could not tell the lab you are here — ${err.message}`, 'bad');
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+  }
+}
+
+function showExpiryBanner(left) {
+  $('expiryCountdown').textContent = formatClock(left);
+  $('expiryBanner').hidden = false;
+  if (!endInFlight) $('btnEnd').textContent = 'End & snapshot';
+}
+
+function hideExpiryBanner() {
+  $('expiryBanner').hidden = true;
+  if (!endInFlight) $('btnEnd').textContent = 'End session';
 }
 
 // ---------------------------------------------------------------- checks
@@ -1249,6 +1591,8 @@ async function saveFile() {
       setDirty(false);
       setEditorStatus('saved', 'good');
     }
+    // A write is activity, as far as the API's idle clock is concerned.
+    hideIdleBanner();
     refreshFiles();
   } catch (err) {
     // Still dirty: the edit exists only in this tab.
@@ -1421,26 +1765,16 @@ async function refreshPools() {
 }
 
 /**
- * Operator mode, which is the only thing that shows the lab activity pane.
- *
- * That pane is the learner-facing half of the event stream — pressure
- * events, hints, warnings — and it is not for a learner to watch: it is
- * shown only once a service key the API accepts has been pasted into the
- * Operator panel in this tab. There is no second switch; the key the
- * operator panel already asked for is the switch. Note this hides the
- * pane, it does not withhold the events: they still reach the browser on
- * the session's own stream.
+ * Operator mode: the raw event stream and the pool actions, behind a
+ * service key the API accepts. The lab activity pane is not part of it —
+ * that is for every learner.
  */
 function setAdmin(on) {
   state.admin = on;
-  $('activityPane').hidden = !on;
-  $('workspace').classList.toggle('has-activity', on);
   $('btnOps').classList.toggle('btn-admin', on);
   $('btnOps').title = on ? 'Operator mode is on in this tab' : '';
-  // The raw event stream is everything the curated activity pane is, plus
-  // the telemetry a learner has no use for -- gating one and not the other
-  // would mean clicking Operator (which needs no key at all) shows more
-  // than the key-gated pane does. Same switch, same condition.
+  // The telemetry a learner has no use for — state transitions, check
+  // progress, metrics — stays behind the same key.
   $('eventStreamBlock').hidden = !on;
   $('eventStreamLocked').hidden = on;
 }
@@ -1515,14 +1849,32 @@ $('btnSnapshot').addEventListener('click', async () => {
   }
 });
 
-$('btnEnd').addEventListener('click', async () => {
-  const unsaved = state.dirty && state.openFile ? ` Your unsaved changes to ${state.openFile} will be lost.` : '';
-  if (!confirm(`End this session? The container is destroyed.${unsaved}`)) return;
+/**
+ * Ending used to be a confirm() that always threw the work away. It is now
+ * the learner's choice: keep it (a snapshot, so the lab can be resumed) or
+ * discard it. Neither is the default action of Escape — that only cancels.
+ */
+let endInFlight = false;
+$('btnEnd').addEventListener('click', () => {
+  const dirty = $('endDialogDirty');
+  dirty.hidden = !(state.dirty && state.openFile);
+  dirty.textContent = `Your unsaved changes to ${state.openFile} live only in this tab and will be lost. Save the file first to keep them.`;
+  $('endDialog').showModal();
+});
+$('btnEndCancel').addEventListener('click', () => $('endDialog').close());
+$('btnEndKeep').addEventListener('click', () => endSession(true));
+$('btnEndDiscard').addEventListener('click', () => endSession(false));
+
+async function endSession(snapshot) {
+  $('endDialog').close();
+  const session = state.session;
+  if (!session) return;
   const btn = $('btnEnd');
+  endInFlight = true;
   btn.disabled = true;
   btn.textContent = 'Ending…';
   try {
-    await api.end(state.session.id, state.session.token, false);
+    await api.end(session.id, session.token, snapshot);
   } catch (err) {
     // Say so, but still go home: the container is gone or was never there,
     // and leaving a dead workspace on screen helps nobody.
@@ -1530,6 +1882,7 @@ $('btnEnd').addEventListener('click', async () => {
     addNotice('bad', 'Could not end cleanly', err.message);
     toast(`The session may not have ended cleanly — ${err.message}`, 'bad');
   } finally {
+    endInFlight = false;
     btn.textContent = 'End session';
   }
   // Ending is a deliberate act with an obvious next step, so take it —
@@ -1539,9 +1892,20 @@ $('btnEnd').addEventListener('click', async () => {
   // your work without being told why is worse than an extra click.
   onEnded('user');
   backToLabs();
-});
+}
+
+$('btnResume').addEventListener('click', resumeFromSnapshot);
+$('btnRestart').addEventListener('click', restartLab);
+$('btnEndedBack').addEventListener('click', backToLabs);
+$('btnImHere').addEventListener('click', imHere);
 
 $('btnBackToLabs').addEventListener('click', backToLabs);
+$('btnSignOut')?.addEventListener('click', async () => {
+  // POST-only on the Worker; a GET is refused. The page reload lands on the
+  // login form because the cookie is gone.
+  await fetch('/auth/logout', { method: 'POST' }).catch(() => {});
+  location.reload();
+});
 
 $('btnOps').addEventListener('click', () => {
   const showing = $('ops').hidden;
@@ -1595,6 +1959,82 @@ window.addEventListener('beforeunload', (event) => {
   if (state.dirty && state.session) event.preventDefault();
 });
 
+// ---------------------------------------------------------- 401 recovery
+
+/**
+ * A session token the API refuses is usually one that has aged out under a
+ * tab that stayed open. The start route rejoins the caller's live session
+ * with a fresh token, so ask it for one (api.js does, once per failing
+ * request, and replays the request with it).
+ *
+ * If the rejoin lands on a *different* session the old one is over and the
+ * API has started a new lab for this user; that is adopted rather than
+ * left running unseen. If the console's own sign-in is what expired, the
+ * rejoin 401s too, and the learner is told to sign in.
+ */
+configureAuth({
+  async refresh() {
+    const current = state.session;
+    // Never resurrect a session that has ended: the rejoin would start a
+    // new container the learner did not ask for.
+    if (!current || $('statePill').dataset.state === 'ended') return null;
+    let started;
+    try {
+      started = await api.startSession(current.lab);
+    } catch (err) {
+      if (err.status === 401) showSignedOut();
+      return null;
+    }
+    if (started.id !== current.id) {
+      adoptSession(started, current.lab);
+      return null;
+    }
+    current.token = started.token;
+    if (started.urls) current.urls = started.urls;
+    rememberSession(current);
+    // A stream the browser gave up on carried the old token in its URL.
+    if (state.events?.readyState === EventSource.CLOSED) openEventStream();
+    return started.token;
+  },
+  signedOut() {
+    if ($('statePill').dataset.state !== 'ended') showSignedOut();
+  },
+});
+
+function adoptSession(started, lab) {
+  teardownSession();
+  state.session = { id: started.id, token: started.token, lab, urls: started.urls };
+  state.lab = labsBySlug.get(lab) ?? null;
+  rememberSession(state.session);
+  toast('Your previous lab had ended, so a new one was started.', 'info');
+  enterSession();
+}
+
+/**
+ * The console's own sign-in is gone, so nothing further can be asked of
+ * the API. Leaves the session remembered — signing in and reloading comes
+ * straight back to it — and says so where the learner is looking.
+ */
+function showSignedOut() {
+  if (!state.session) return;
+  teardownSession();
+  state.session = null;
+  $('workspace').hidden = true;
+  $('sessionBar').hidden = true;
+  $('sessionActions').hidden = true;
+  $('btnBackToLabs').hidden = true;
+  $('launcher').hidden = false;
+  parkLaunchError();
+  const error = $('launchError');
+  error.className = 'notice notice-warn';
+  error.textContent = 'Signed out — sign in to return to your running lab. ';
+  const link = document.createElement('a');
+  link.href = '/';
+  link.textContent = 'Sign in';
+  error.append(link);
+  error.hidden = false;
+}
+
 $('saveShortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘S' : 'Ctrl+S';
 $('apiLabel').textContent = apiBase();
 // A key pasted earlier in this tab turns operator mode back on after a
@@ -1612,7 +2052,9 @@ async function resumeOrShowLabs() {
     const saved = rememberedSession();
     if (!saved?.id || !saved?.token) return await loadLabs();
 
-    const status = await api.status(saved.id, saved.token);
+    // No recovery here: a refused token means the remembered session is
+    // gone, and rejoining to find out could start a new container.
+    const status = await api.status(saved.id, saved.token, { recover: false });
     if (status.meta.state === 'ended') {
       forgetSession();
       return await loadLabs();

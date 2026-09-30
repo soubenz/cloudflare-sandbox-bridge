@@ -9,7 +9,7 @@ Cloudflare Worker, separate from the dashboard and the sandbox API.
   "Cobalt and ice", is defined once as custom properties at the top.
 - `public/waitlist.html` and `public/waitlist/thanks.html` are the waitlist
   form and its confirmation page.
-- `src/worker.ts` handles `POST /api/waitlist`. Everything else is served
+- `src/worker.ts` handles `POST /api/waitlist` and `POST /feedback`. Everything else is served
   straight from `public/` without running the Worker.
 - `public/404.html` catches links to pages that don't exist yet.
 - `public/privacy.html` is the privacy policy. It describes exactly what the

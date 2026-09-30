@@ -1,4 +1,4 @@
-import { test as base, expect, type Page } from '@playwright/test';
+import { test as base, expect, type APIRequestContext, type Page, type Route } from '@playwright/test';
 
 export const API = process.env.OPALIX_URL || 'https://opalix-sandbox.soubenz94.workers.dev';
 
@@ -161,6 +161,64 @@ export async function startOrResume(page: Page): Promise<string> {
  * broken terminal — is worse. Set it knowingly, per environment.
  */
 export const WEBSOCKETS_BLOCKED = process.env.OPALIX_E2E_NO_WEBSOCKETS === '1';
+
+/** The service key, for the specs that push events into a session. */
+export const SERVICE_KEY = process.env.OPALIX_KEY;
+
+/**
+ * Pushes an event onto a live session's stream, as the LLM Worker does:
+ * `POST /sessions/:id/events` with the service key. The console then reacts
+ * to it exactly as it would to one the API emitted itself, which is how the
+ * specs reach states (an idle warning, a service going down) that would
+ * otherwise take minutes or a broken lab.
+ *
+ * Note the API validates `type` against an allow-list in `Session.pushEvent`
+ * (src/do/session.ts); a type outside it is a 400 here, which is reported
+ * rather than swallowed.
+ */
+export async function emit(request: APIRequestContext, sessionId: string, type: string, data: unknown = {}): Promise<void> {
+  if (!SERVICE_KEY) throw new Error('OPALIX_KEY is not set; events cannot be pushed into a session');
+  const res = await request.post(`${API}/sessions/${sessionId}/events`, {
+    headers: { Authorization: `Bearer ${SERVICE_KEY}` },
+    data: { type, data },
+  });
+  if (!res.ok()) throw new Error(`emit ${type} failed: ${res.status()} ${await res.text()}`);
+}
+
+/** The id of the session the console on `page` is showing. */
+export async function sessionIdOf(page: Page): Promise<string> {
+  await expect(page.locator('#sessionId')).toHaveText(/^[0-9a-hjkmnp-tv-z]{26}$/i);
+  return (await page.locator('#sessionId').textContent()) ?? '';
+}
+
+/**
+ * Answers a cross-origin fetch the API would normally answer. The console
+ * talks to the API from another origin, so a fulfilled response needs the
+ * CORS headers the real one would carry. Preflights are left to the real API.
+ */
+export async function fulfillCors(route: Route, status: number, body: unknown = {}): Promise<void> {
+  const origin = route.request().headers()['origin'] ?? '*';
+  await route.fulfill({
+    status,
+    contentType: 'application/json',
+    headers: { 'access-control-allow-origin': origin, vary: 'Origin' },
+    body: status === 204 ? '' : JSON.stringify(body),
+  });
+}
+
+/**
+ * Rewrites `GET /sessions/:id` (the status the console polls) on its way
+ * back, leaving everything else about it real. `patch` mutates the body in place.
+ */
+export async function patchStatus(page: Page, patch: (body: any) => void): Promise<void> {
+  await page.route(/\/sessions\/[^/?]+$/, async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const response = await route.fetch();
+    const body = await response.json();
+    patch(body);
+    await route.fulfill({ response, json: body });
+  });
+}
 
 /** Collects browser console errors for the life of a page. */
 export function collectConsoleErrors(page: Page): string[] {

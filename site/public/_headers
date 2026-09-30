@@ -3,6 +3,7 @@
 # the real domain. Delete this rule when opalix.ai goes live.
 /*
   X-Robots-Tag: noindex
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://opalix-sandbox.soubenz94.workers.dev; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'
 
 # Self-hosted fonts rarely change; let browsers keep them for 30 days.
 /fonts/*

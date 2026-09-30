@@ -21,7 +21,9 @@
     <ol class="boot-steps" id="bootSteps">
       <li data-step="container">Container</li>
       <li data-step="workspace">Workspace files</li>
-      <li data-step="services">Services</li>
+      <li data-step="services">Services
+        <div class="boot-svc-list" id="bootServices" aria-live="polite"></div>
+      </li>
       <li data-step="terminal">Terminal</li>
     </ol>
     <p class="small muted" id="bootHint">This usually takes a few seconds. Labs that run a gateway take up to a minute.</p>
@@ -38,6 +40,7 @@
 
   <div class="bar-session" id="sessionBar" hidden>
     <span class="pill" id="statePill">—</span>
+    <span class="pill pill-stream" id="streamPill" role="status" title="Live updates are interrupted; the console keeps checking on its own" hidden>reconnecting…</span>
     <span class="session-lab">
       <span class="session-title" id="sessionTitle"></span>
       <span class="mono muted small" id="sessionLab"></span>
@@ -53,6 +56,7 @@
       <button id="btnEnd" class="btn btn-danger" disabled>End session</button>
     </div>
     <button id="btnBackToLabs" class="btn btn-primary" hidden>← Back to labs</button>
+    <button id="btnSignOut" class="btn btn-tiny btn-ghost" type="button" title="Sign out of the console on this browser">Sign out</button>
   </div>
 </header>
 
@@ -76,7 +80,7 @@
 </section>
 
 <!-- Live session -->
-<main class="workspace" id="workspace" hidden>
+<main class="workspace has-activity" id="workspace" hidden>
   <aside class="pane pane-left" aria-label="Checks, hints and files">
     <section class="block">
       <h2>
@@ -112,8 +116,20 @@
   </aside>
 
   <section class="pane pane-center">
-    <p class="ended-banner" id="endedBanner" role="status" hidden>
+    <div class="ended-banner" id="endedBanner" role="status" hidden>
       <span id="endedText">This session has ended.</span>
+      <span class="banner-actions">
+        <button id="btnResume" class="btn btn-tiny btn-primary" hidden>Resume from snapshot</button>
+        <button id="btnRestart" class="btn btn-tiny" hidden>Restart lab</button>
+        <button id="btnEndedBack" class="btn btn-tiny">Back to labs</button>
+      </span>
+    </div>
+    <p class="banner banner-warn" id="idleBanner" role="alert" hidden>
+      <span class="banner-text">Still there? This lab ends for inactivity in <span class="countdown" id="idleCountdown">2:00</span>.</span>
+      <button id="btnImHere" class="btn btn-tiny btn-primary">I'm here</button>
+    </p>
+    <p class="banner banner-warn" id="expiryBanner" role="alert" hidden>
+      <span class="banner-text">Ends in <span class="countdown" id="expiryCountdown"></span> — end with a snapshot to keep your work.</span>
     </p>
     <nav class="tabs" id="centerTabs" role="tablist" aria-label="Session views">
       <button class="tab tab-active" data-view="brief" role="tab" aria-selected="true" aria-controls="viewBrief">Brief</button>
@@ -172,14 +188,13 @@
   </section>
 
   <!--
-    The curated activity feed is operator-only: it appears once a service
-    key has been accepted in this tab (see setAdmin in app.js), never for a
-    learner.
+    The curated activity feed, for every learner: pressure events, hints and
+    warnings as prose. The raw event log below stays operator-only.
   -->
-  <aside class="pane pane-right" id="activityPane" aria-label="Lab activity" hidden>
+  <aside class="pane pane-right" id="activityPane" aria-label="Lab activity">
     <section class="block block-grow">
-      <h2>Lab activity <span class="block-meta">operator</span></h2>
-      <ol class="events" id="noticeList" aria-live="polite"></ol>
+      <h2>Lab activity</h2>
+      <ol class="events" id="noticeList" role="log" aria-label="Lab activity"></ol>
       <p class="muted small" id="noticeEmpty">Nothing yet. Pressure events, hints and warnings appear here.</p>
     </section>
   </aside>
@@ -225,6 +240,20 @@
   <span class="footer-spacer"></span>
   <button id="btnOps" class="btn btn-tiny btn-ghost" aria-pressed="false">Operator</button>
 </footer>
+
+<!-- End session: keep the work or throw it away, decided by the learner. -->
+<dialog class="dialog" id="endDialog" aria-labelledby="endDialogTitle">
+  <form method="dialog" class="dialog-card" id="endForm">
+    <h2 id="endDialogTitle">End this session?</h2>
+    <p class="muted small" id="endDialogText">The container is destroyed when the session ends. Save a snapshot first if you want to pick this work up again.</p>
+    <p class="notice notice-warn small" id="endDialogDirty" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" id="btnEndKeep" class="btn btn-primary" value="keep">End and keep my work</button>
+      <button type="button" id="btnEndDiscard" class="btn btn-danger" value="discard">Discard</button>
+      <button type="button" id="btnEndCancel" class="btn btn-ghost" value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden>
   <span id="toastText"></span>

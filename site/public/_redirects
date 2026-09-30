@@ -1,0 +1,4 @@
+# Pages the site links to that live in the console. 302, not 301: the target
+# changes when accounts and opalix.ai's console domain arrive.
+/try     https://opalix-dashboard.soubenz94.workers.dev/  302
+/signin  https://opalix-dashboard.soubenz94.workers.dev/  302

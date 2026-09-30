@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Join the waitlist · Opalix</title>
-<meta name="description" content="Join the Opalix waitlist for the full lab catalogue and the paid plans with 1-hour sessions. One lab is free to try now.">
+<meta name="description" content="Join the Opalix waitlist for the full lab catalogue and the paid plans with 60-minute sessions. One lab is free to try now.">
 <meta name="theme-color" content="#0a0f2c">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/styles.css">
@@ -38,9 +38,9 @@
       <p class="lede">One lab is free to try right now. Join the waitlist for the rest of the catalogue and the paid plans. We'll email you when your spot opens.</p>
       <ul class="perks" role="list">
         <li>Every lab across both tracks</li>
-        <li>1-hour sessions instead of 45 minutes</li>
+        <li>60-minute sessions on every lab</li>
         <li>Hints and a solution for every lab</li>
-        <li>For teams: a progress view per person and one invoice</li>
+        <li>For teams: a progress view per person (coming soon) and one invoice</li>
       </ul>
       <a class="text-link" href="/try">Not ready to wait? Try the free lab →</a>
     </div>
@@ -105,34 +105,12 @@
       <a href="/#tracks">Tracks</a>
       <a href="/#pricing">Pricing</a>
       <a href="/privacy">Privacy</a>
+      <a href="/status">Status</a>
     </nav>
   </div>
   <div class="wordmark" aria-hidden="true">opalix</div>
 </footer>
 
-<script>
-  // Progressive enhancement only: the form works without this.
-  (function () {
-    var q = new URLSearchParams(location.search);
-    var form = document.querySelector('.form-card');
-    var plan = q.get('plan');
-    if (plan === 'team' || plan === 'individual') {
-      form.querySelector('input[name="plan"][value="' + plan + '"]').checked = true;
-    }
-    var from = q.get('from');
-    if (from && /^[a-z0-9_-]{1,32}$/i.test(from)) form.elements.source.value = from;
-    var e = q.get('e');
-    var msg = e && form.querySelector('[data-error="' + e.replace(/[^a-z]/g, '') + '"]');
-    if (msg) { msg.hidden = false; form.elements.email.focus(); }
-    form.addEventListener('submit', function (ev) {
-      if (!form.elements.email.checkValidity()) {
-        ev.preventDefault();
-        form.querySelectorAll('.form-error').forEach(function (m) { m.hidden = true; });
-        form.querySelector('[data-error="email"]').hidden = false;
-        form.elements.email.focus();
-      }
-    });
-  })();
-</script>
+<script src="/waitlist.js" defer></script>
 </body>
 </html>

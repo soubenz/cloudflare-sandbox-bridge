@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import { parseManifest, renderTemplate, renderManifest, labManifestSchema } from '../../src/labs/manifest';
 import { topoOrder } from '../../src/session/services';
 
@@ -227,5 +230,58 @@ describe('services: cross-field rules', () => {
     expect(() =>
       parseManifest({ ...base, services: [{ name: 'a', argv: ['a'], ui: true }] })
     ).toThrow(/marked ui: true but declares no port/);
+  });
+});
+
+describe('catalogue metadata (B-13)', () => {
+  it('parses a manifest without any of the new fields; tier defaults to pro', () => {
+    const m = parseManifest(baseManifest());
+    expect(m.tier).toBe('pro');
+    expect(m.path).toBeUndefined();
+    expect(m.module).toBeUndefined();
+    expect(m.order).toBeUndefined();
+    expect(m.prerequisites).toBeUndefined();
+    expect(m.estimated_minutes).toBeUndefined();
+  });
+
+  it('carries every new field through', () => {
+    const m = parseManifest(
+      baseManifest({ path: 'ai-platform', module: 2, order: 3, prerequisites: ['a-lab'], tier: 'free', estimated_minutes: 45 })
+    );
+    expect(m).toMatchObject({ path: 'ai-platform', module: 2, order: 3, prerequisites: ['a-lab'], tier: 'free', estimated_minutes: 45 });
+  });
+
+  it.each([
+    ['a bad path', { path: 'AI Platform' }, /path/],
+    ['a non-integer module', { module: 1.5 }, /module/],
+    ['module 0', { module: 0 }, /module/],
+    ['a non-integer order', { order: 'x' }, /order/],
+    ['estimated_minutes below 5', { estimated_minutes: 4 }, /estimated_minutes/],
+    ['estimated_minutes above 240', { estimated_minutes: 241 }, /estimated_minutes/],
+    ['a non-integer estimated_minutes', { estimated_minutes: 30.5 }, /estimated_minutes/],
+    ["tier: 'gold'", { tier: 'gold' }, /tier/],
+    ['a bad prerequisite slug', { prerequisites: ['Not A Slug'] }, /prerequisites/],
+  ])('rejects %s', (_name, overrides, re) => {
+    expect(() => parseManifest(baseManifest(overrides))).toThrow(re);
+  });
+
+  it('accepts the range edges for estimated_minutes', () => {
+    expect(() => parseManifest(baseManifest({ estimated_minutes: 5 }))).not.toThrow();
+    expect(() => parseManifest(baseManifest({ estimated_minutes: 240 }))).not.toThrow();
+  });
+});
+
+describe('every published lab manifest still parses', () => {
+  const labsDir = join(__dirname, '..', '..', 'labs');
+  const dirs = existsSync(labsDir) ? readdirSync(labsDir).filter((d) => existsSync(join(labsDir, d, 'manifest.yaml'))) : [];
+
+  it('finds the lab directories', () => {
+    expect(dirs.length).toBeGreaterThan(0);
+  });
+
+  it.each(dirs)('labs/%s/manifest.yaml', (dir) => {
+    const raw = parseYaml(readFileSync(join(labsDir, dir, 'manifest.yaml'), 'utf8'));
+    const m = parseManifest(raw);
+    expect(m.slug).toBe(dir);
   });
 });

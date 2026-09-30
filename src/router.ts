@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from './env';
 import { isFamily } from './families/registry';
-import { loadCurrentManifest, loadCatalogue, publishLab, INDEX_KEY } from './labs/bundle';
+import { loadCurrentManifest, listCatalogue, publishLab, INDEX_KEY } from './labs/bundle';
 import { parseManifest } from './labs/manifest';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
@@ -37,7 +37,18 @@ export function createRouter(): Hono<{ Bindings: Env }> {
 
   app.get('/labs', async (c) => {
     requireServiceAuth(c.req.raw, c.env);
-    return c.json(await loadCatalogue(c.env));
+    const q = c.req.query();
+    const num = (v: string | undefined) => (v === undefined || v === '' ? undefined : Number(v));
+    const { labs, next } = await listCatalogue(c.env, {
+      path: q.path || undefined,
+      module: num(q.module),
+      tier: q.tier === 'free' || q.tier === 'pro' ? q.tier : undefined,
+      limit: num(q.limit),
+      cursor: q.cursor || undefined,
+    });
+    // Unpaged callers (the console, the CLI) get the bare array they always
+    // did; `next` is only added when there is another page.
+    return next ? c.json({ labs, next }) : c.json(labs);
   });
 
   app.get('/labs/:slug', async (c) => {
@@ -60,6 +71,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
       manifestJson,
       workspaceTgz: await workspaceFile.arrayBuffer(),
       privateTgz: await privateFile.arrayBuffer(),
+      force: form.get('force') === 'true',
     });
     return c.json(result, 201);
   });
@@ -222,6 +234,16 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     await requireBrowserAuth(c.req.raw, c.env, id);
     const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
     return c.json(await stub.resume());
+  });
+
+  // "I'm here" from the idle banner: moves the idle clock like a file write
+  // does, and nothing else. 204 so there is no body to parse.
+  app.post('/sessions/:id/touch', async (c) => {
+    const id = c.req.param('id');
+    await requireBrowserAuth(c.req.raw, c.env, id);
+    const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
+    await stub.touch();
+    return c.body(null, 204);
   });
 
   app.delete('/sessions/:id', async (c) => {

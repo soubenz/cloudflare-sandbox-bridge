@@ -96,7 +96,7 @@
     // The dashboard is its own Worker, so every browser call to this API is
     // cross-origin. Listed explicitly rather than "*": the list is visible
     // in config and changes without touching code.
-    "DASHBOARD_ORIGIN": "https://opalix-dashboard.soubenz94.workers.dev,http://localhost:8788"
+    "DASHBOARD_ORIGIN": "https://opalix-dashboard.soubenz94.workers.dev,https://opalix-site.soubenz94.workers.dev,http://localhost:8788"
   },
   // Secrets (wrangler secret put): SANDBOX_API_KEY, SESSION_TOKEN_SECRET,
   // R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, AI_GATEWAY_TOKEN, ALERT_WEBHOOK_URL.

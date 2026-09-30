@@ -46,6 +46,7 @@ const SESSION_TOKEN: Array<[string, string]> = [
   ['get', '/sessions/:id'],
   ['post', '/sessions/:id/checks'],
   ['post', '/sessions/:id/snapshot'],
+  ['post', '/sessions/:id/touch'],
   ['delete', '/sessions/:id'],
   ['get', '/sessions/:id/events'],
   ['get', '/sessions/:id/files'],

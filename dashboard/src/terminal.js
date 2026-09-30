@@ -14,7 +14,7 @@ import { terminalUrl } from './api.js';
  */
 const CONTROL_PREFIX = '\x01';
 
-export function attachTerminal({ container, sessionId, token, onNotice, onStatus }) {
+export function attachTerminal({ container, sessionId, token, onNotice, onStatus, onInput }) {
   const term = new Terminal({
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     fontSize: 13,
@@ -79,6 +79,9 @@ export function attachTerminal({ container, sessionId, token, onNotice, onStatus
   };
 
   term.onData((data) => {
+    // Typing is the learner saying they are there, whether or not the
+    // socket is up to carry it (the server refreshes its idle clock itself).
+    onInput?.();
     if (open) ws.send(encoder.encode(data));
   });
 

@@ -15,7 +15,13 @@
  * Putting Access in front later changes this file and nothing else.
  */
 
-const COOKIE = 'opx_console';
+// `__Host-` makes the browser refuse the cookie unless it is Secure, has
+// Path=/ and no Domain -- which is exactly how it is set below -- so a
+// sibling subdomain cannot plant or overwrite it. The bare name is still
+// read (never written) so a session opened before this change survives
+// until it expires.
+const COOKIE = '__Host-opx_console';
+const LEGACY_COOKIE = 'opx_console';
 const SESSION_HOURS = 12;
 
 /* ------------------------------------------------------------------ crypto
@@ -64,11 +70,9 @@ async function mintCookie(env, sub) {
 
 /** The signed-in subject, or null. Never throws — a bad cookie is just absent. */
 async function subjectFrom(request, env) {
-  const raw = (request.headers.get('Cookie') ?? '')
-    .split(';')
-    .map((p) => p.trim())
-    .find((p) => p.startsWith(`${COOKIE}=`))
-    ?.slice(COOKIE.length + 1);
+  const jar = (request.headers.get('Cookie') ?? '').split(';').map((p) => p.trim());
+  const read = (name) => jar.find((p) => p.startsWith(`${name}=`))?.slice(name.length + 1);
+  const raw = read(COOKIE) || read(LEGACY_COOKIE);
   if (!raw) return null;
 
   const [payload, sig] = raw.split('.');
@@ -108,6 +112,12 @@ async function callApi(env, path, init = {}) {
 
 /** Passes the API's own status and body through, so its errors stay readable. */
 function relay(res) {
+  // A 401 from the API means *this Worker's* service key is wrong, not that
+  // the person is signed out -- 401 from the console is reserved for "no
+  // console cookie", and the launcher renders it as the signed-out state.
+  if (res.status === 401) {
+    return json({ error: 'console could not authenticate to the API (service key rejected)' }, 502);
+  }
   return new Response(res.body, {
     status: res.status,
     headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' },
@@ -116,6 +126,48 @@ function relay(res) {
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+/* ---------------------------------------------------------------- headers */
+
+/**
+ * Headers for every response this Worker returns. The API origin comes from
+ * config (`API_PUBLIC_ORIGIN`), never a literal: `API_BASE` is only a
+ * well-formed placeholder for the service binding, not a browsable origin.
+ */
+function securityHeaders(env) {
+  let api = '';
+  try {
+    api = env.API_PUBLIC_ORIGIN ? new URL(env.API_PUBLIC_ORIGIN).origin : '';
+  } catch {
+    // A malformed var just leaves the API origin out; the console then
+    // cannot reach the API, which is louder than allowing everything.
+  }
+  const wss = api.replace(/^http/, 'ws');
+  return {
+    'content-security-policy': [
+      "default-src 'self'",
+      `connect-src 'self'${api ? ` ${api} ${wss}` : ''}`,
+      `frame-src${api ? ` ${api}` : " 'none'"}`,
+      "img-src 'self' data:",
+      "style-src 'self' 'unsafe-inline'",
+      "script-src 'self'",
+      "font-src 'self'",
+      "base-uri 'none'",
+      "form-action 'self'",
+    ].join('; '),
+    'referrer-policy': 'no-referrer',
+    'x-frame-options': 'DENY',
+    'x-content-type-options': 'nosniff',
+    'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+  };
+}
+
+/** Re-wraps a response so its headers are mutable, then stamps the security set on it. */
+function withSecurityHeaders(res, env) {
+  const out = new Response(res.body, res);
+  for (const [k, v] of Object.entries(securityHeaders(env))) out.headers.set(k, v);
+  return out;
+}
 
 /* ------------------------------------------------------------------- page */
 
@@ -145,37 +197,51 @@ const LOGIN_PAGE = `<!doctype html>
   <p>This console starts real containers, so it asks for a password.</p>
   <input id="pw" type="password" placeholder="Password" autocomplete="current-password" autofocus>
   <button type="submit">Sign in</button>
-  <div class="err" id="err"></div>
+  <div class="err" id="err">__ERR__</div>
 </form>
-<script>
-document.getElementById('f').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const err = document.getElementById('err');
-  err.textContent = '';
-  const res = await fetch('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ password: document.getElementById('pw').value }),
-  });
-  if (res.ok) location.reload();
-  else err.textContent = res.status === 401 ? 'Wrong password.' : 'Could not sign in (' + res.status + ').';
-});
-</script>
+<script src="/login.js" defer></script>
 </body></html>`;
 
-const loginPage = (status = 200) =>
-  new Response(LOGIN_PAGE, {
+const loginPage = (status = 200, message = '', extra = {}) =>
+  new Response(LOGIN_PAGE.replace('__ERR__', message), {
     status,
-    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', ...extra },
   });
+
+const TOO_MANY = 'Too many attempts \u2014 try again in a minute';
+
+/**
+ * Five attempts a minute per address, via a Cloudflare rate-limit binding.
+ * The binding is absent in local dev, and a failing limiter must not lock
+ * the owner out of their own console, so both cases allow the request.
+ */
+async function loginAllowed(request, env) {
+  if (!env.LOGIN_LIMIT) return true;
+  try {
+    const { success } = await env.LOGIN_LIMIT.limit({
+      key: request.headers.get('CF-Connecting-IP') ?? 'unknown',
+    });
+    return success;
+  } catch {
+    return true;
+  }
+}
 
 /* ----------------------------------------------------------------- routing */
 
 export default {
   async fetch(request, env) {
+    return withSecurityHeaders(await route(request, env), env);
+  },
+};
+
+async function route(request, env) {
     const url = new URL(request.url);
 
     if (url.pathname === '/auth/login' && request.method === 'POST') {
+      if (!(await loginAllowed(request, env))) {
+        return loginPage(429, TOO_MANY, { 'retry-after': '60' });
+      }
       const body = await request.json().catch(() => ({}));
       const supplied = typeof body.password === 'string' ? body.password : '';
       if (!env.CONSOLE_PASSWORD || !timingSafeEqual(supplied, env.CONSOLE_PASSWORD)) {
@@ -185,20 +251,31 @@ export default {
       // one-active-session-per-user fence mean what we want: a second tab
       // rejoins rather than starting a second container.
       const cookie = await mintCookie(env, 'console');
-      return new Response(null, {
-        status: 204,
-        headers: {
-          'set-cookie': `${COOKIE}=${cookie}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}`,
-        },
-      });
+      const headers = new Headers();
+      headers.append(
+        'set-cookie',
+        `${COOKIE}=${cookie}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}`
+      );
+      // A session from before the rename would otherwise linger beside the new one.
+      headers.append('set-cookie', `${LEGACY_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+      return new Response(null, { status: 204, headers });
     }
 
+    // POST only: a GET must not be able to sign someone out (an <img src>
+    // on any page would do it).
     if (url.pathname === '/auth/logout') {
-      return new Response(null, {
-        status: 204,
-        headers: { 'set-cookie': `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0` },
-      });
+      if (request.method !== 'POST') {
+        return new Response(null, { status: 405, headers: { allow: 'POST' } });
+      }
+      const headers = new Headers();
+      for (const name of [COOKIE, LEGACY_COOKIE]) {
+        headers.append('set-cookie', `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+      }
+      return new Response(null, { status: 204, headers });
     }
+
+    // The login page's script has to load before anyone is signed in.
+    if (url.pathname === '/login.js' && request.method === 'GET') return env.ASSETS.fetch(request);
 
     const subject = await subjectFrom(request, env);
 
@@ -227,5 +304,4 @@ export default {
     if (url.pathname.startsWith('/api/')) return json({ error: 'not found' }, 404);
 
     return env.ASSETS.fetch(request);
-  },
-};
+}

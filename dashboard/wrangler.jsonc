@@ -28,8 +28,20 @@
 
   "vars": {
     // Only the path is used; the origin makes it a well-formed Request.
-    "API_BASE": "https://opalix-sandbox.internal"
-  }
+    "API_BASE": "https://opalix-sandbox.internal",
+
+    // The API's real, browsable origin. The console's CSP allows the browser
+    // to connect (fetch + WebSocket) and frame it, and nothing else. Unlike
+    // API_BASE this one must be correct.
+    "API_PUBLIC_ORIGIN": "https://opalix-sandbox.soubenz94.workers.dev"
+  },
+
+  // Five login attempts a minute per address (429 + Retry-After beyond that).
+  // namespace_id only has to be unique within the Cloudflare account; the
+  // site's waitlist limiter uses 1001.
+  "ratelimits": [
+    { "name": "LOGIN_LIMIT", "namespace_id": "1002", "simple": { "limit": 5, "period": 60 } }
+  ]
   // Secrets (wrangler secret put --config dashboard/wrangler.jsonc):
   //   SANDBOX_API_KEY        the API's service key; never reaches the browser
   //   CONSOLE_PASSWORD       what the login page checks

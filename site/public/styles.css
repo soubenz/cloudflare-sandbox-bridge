@@ -421,6 +421,21 @@ ul { margin: 0; padding: 0; list-style: none; }
 .legal a { color: var(--accent); font-weight: 600; }
 .placeholder { padding: 1px 6px; border-radius: 6px; background: var(--accent-soft); color: var(--ink); font-family: var(--mono); font-size: 0.88em; }
 
+mark.todo { padding: 1px 6px; border-radius: 6px; background: #fff3b0; color: #1a1a1a; font-family: var(--mono); font-size: 0.88em; outline: 2px dashed #b58900; }
+
+/* ---------- feedback and status ---------- */
+.rating { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.rating-option { position: relative; display: flex; align-items: center; justify-content: center; padding: 14px 0; border: 1.5px solid var(--border-strong); border-radius: 14px; font-weight: 700; font-size: 18px; cursor: pointer; }
+.rating-option input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.rating-option:has(input:checked) { border-color: var(--accent); background: #f5f7ff; box-shadow: 0 0 0 3px var(--accent-soft); }
+.rating-option:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 3px; }
+.rating-scale { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+textarea.input { min-height: 140px; resize: vertical; font: inherit; }
+.status-card { display: flex; flex-direction: column; gap: 8px; padding: 24px 28px; border: 1.5px solid var(--border-strong); border-radius: 20px; max-width: 560px; }
+.status-card strong { font-size: 22px; }
+.status-card[data-state="ok"] { border-color: var(--accent); }
+.status-card[data-state="degraded"] { border-color: var(--fail); background: var(--fail-bg); }
+
 /* ================= responsive ================= */
 @media (max-width: 1180px) {
   .nav-links { display: none; }

@@ -118,6 +118,14 @@ code { font-family: var(--mono); font-size: 0.92em; }
   background: color-mix(in oklab, var(--bad) 10%, var(--surface));
   border-color: color-mix(in oklab, var(--bad) 45%, var(--border));
 }
+.notice-warn {
+  background: color-mix(in oklab, var(--warn) 10%, var(--surface));
+  border-color: color-mix(in oklab, var(--warn) 45%, var(--border));
+}
+.notice-good {
+  background: color-mix(in oklab, var(--good) 10%, var(--surface));
+  border-color: color-mix(in oklab, var(--good) 45%, var(--border));
+}
 .notice.small { font-size: var(--fs-sm); }
 
 .empty-state {
@@ -181,6 +189,9 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .pill[data-state="starting"]::before, .pill[data-state="resuming"]::before, .pill[data-state="recovering"]::before { animation: pulse 1.2s ease-in-out infinite; }
 .pill[data-state="ended"] { color: var(--bad); border-color: color-mix(in oklab, var(--bad) 40%, var(--border)); }
 @keyframes pulse { 50% { opacity: 0.25; } }
+/* Live updates interrupted: a warning, not a failure — the console keeps polling. */
+.pill-stream { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 40%, var(--border)); }
+.pill-stream::before { animation: pulse 1.2s ease-in-out infinite; }
 
 .timer {
   font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink-2);
@@ -439,9 +450,31 @@ kbd {
 .ended-banner {
   margin: 0;
   padding: 10px var(--s4);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3);
   background: color-mix(in oklab, var(--bad) 12%, var(--surface));
   border-bottom: 1px solid color-mix(in oklab, var(--bad) 40%, var(--border));
   font-size: var(--fs-md);
+}
+.ended-banner > span:first-child { flex: 1 1 320px; min-width: 0; }
+.banner-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+
+/* Idle and expiry warnings, above the tabs so they cannot be scrolled past. */
+.banner {
+  margin: 0;
+  padding: 10px var(--s4);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3);
+  font-size: var(--fs-md);
+  border-bottom: 1px solid var(--border);
+}
+.banner-warn {
+  background: color-mix(in oklab, var(--warn) 12%, var(--surface));
+  border-bottom-color: color-mix(in oklab, var(--warn) 45%, var(--border));
+}
+.banner-text { flex: 1 1 280px; min-width: 0; }
+.countdown {
+  font-family: var(--mono); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* ---------- terminal ---------- */
@@ -528,6 +561,23 @@ kbd {
 #bootError { text-align: left; }
 #bootHint { margin-top: var(--s2); }
 
+/* One row per service under the "Services" boot step. */
+.boot-svc-list { display: grid; gap: 2px; margin-top: var(--s1); max-width: 300px; }
+.boot-svc { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); font-size: var(--fs-xs); }
+.boot-svc-name { color: var(--ink-2); }
+.boot-svc-health { color: var(--ink-muted); }
+.boot-svc[data-health="healthy"] .boot-svc-health { color: var(--good); }
+.boot-svc[data-health="unhealthy"] .boot-svc-health { color: var(--bad); }
+.boot-svc details { flex-basis: 100%; }
+.boot-svc summary { cursor: pointer; color: var(--ink-muted); }
+pre.logs-tail {
+  margin: var(--s1) 0 0; padding: var(--s2);
+  max-height: 140px; overflow: auto;
+  background: var(--term-bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font: var(--fs-xs)/1.5 var(--mono); color: var(--ink-2);
+  white-space: pre-wrap; word-break: break-word;
+}
+
 .boot-steps { list-style: none; margin: 18px auto var(--s2); padding: 0; text-align: left; width: max-content; }
 .boot-steps li {
   font-size: var(--fs-sm); font-family: var(--mono); color: var(--ink-muted);
@@ -577,7 +627,7 @@ kbd {
 .ev-bad .what { color: var(--bad); }
 .ev-info .what { color: var(--accent); }
 
-/* ---------- lab activity (operator only) ---------- */
+/* ---------- lab activity (every learner) ---------- */
 /*
  * Same list mechanics as the operator event log, but read as prose: the
  * type and payload are dropped and the title carries the weight.
@@ -585,6 +635,7 @@ kbd {
 #noticeList li { align-items: baseline; }
 #noticeList li.ev-bad { box-shadow: inset 2px 0 0 var(--bad); }
 #noticeList li.ev-warn { box-shadow: inset 2px 0 0 var(--warn); }
+#noticeList li.ev-good { box-shadow: inset 2px 0 0 var(--good); }
 .notice-title { color: var(--ink); font-weight: 600; }
 .notice-body { color: var(--ink-2); }
 
@@ -643,6 +694,20 @@ input:focus-visible { outline-offset: 0; border-color: var(--accent); }
   overflow: hidden;
 }
 .footer-spacer { flex: 1; }
+
+/* ---------- dialog ---------- */
+.dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 0;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border-strong); border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+.dialog::backdrop { background: rgba(14, 17, 22, 0.86); backdrop-filter: blur(2px); }
+.dialog-card { padding: var(--s5) var(--s5) var(--s4); }
+.dialog-card h2 { font-size: var(--fs-lg); margin: 0 0 var(--s2); }
+.dialog-card p { margin: 0; }
+.dialog-actions { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: flex-end; margin-top: var(--s5); }
 
 /* ---------- toast ---------- */
 .toast {

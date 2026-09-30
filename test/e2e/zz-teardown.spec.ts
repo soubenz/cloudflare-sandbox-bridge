@@ -10,8 +10,10 @@ test.describe('ending the session', () => {
     await openConsole(page);
     await startOrResume(page);
 
-    page.on('dialog', (d) => d.accept());
+    // End opens a dialog now rather than a confirm(); the run's cleanup has
+    // no work to keep, so it discards.
     await page.locator('#btnEnd').click();
+    await page.locator('#endDialog').getByRole('button', { name: 'Discard' }).click();
 
     // Ending is deliberate and has an obvious next step, so the console
     // takes it: no dead workspace parked behind one more button. (A session

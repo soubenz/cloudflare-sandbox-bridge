@@ -74,6 +74,16 @@ export class Session extends DurableObject<Env> {
     return lifecycle.requestResume(this.rt);
   }
 
+  /**
+   * "I'm here": refreshes the idle clock exactly as a file write or a
+   * terminal keystroke does, without doing any work. Backs the console's
+   * idle-warning banner.
+   */
+  async touch(): Promise<void> {
+    await this.rt.requireRunning();
+    await this.rt.touchInput();
+  }
+
   async end(snapshot = true): Promise<void> {
     return lifecycle.endSession(this.rt, 'user', snapshot);
   }
@@ -104,7 +114,15 @@ export class Session extends DurableObject<Env> {
    * known set rather than trusted blindly.
    */
   async pushEvent(type: string, data: unknown): Promise<void> {
-    const known: EventType[] = ['cost', 'llm.call', 'alert'];
+    // Service-key callers only (the LLM worker, operators, the e2e suite).
+    // Beyond the cost/llm/alert pushes the LLM worker makes, the learner-facing
+    // kinds are allowed so a test or an operator can exercise the console's
+    // banners without waiting for a real timer; the console confirms a pushed
+    // `session.state: ended` against status() before believing it.
+    const known: EventType[] = [
+      'cost', 'llm.call', 'alert',
+      'pressure', 'hint', 'session.idle_warning', 'session.expiring', 'session.state', 'service.health',
+    ];
     if (!known.includes(type as EventType)) throw ApiError.badRequest('unknown_event_type', `Unknown event type "${type}"`);
     if (type === 'llm.call' && typeof (data as { cost_usd?: number })?.cost_usd === 'number') {
       await recordLlmCost(this.rt, (data as { cost_usd: number }).cost_usd);

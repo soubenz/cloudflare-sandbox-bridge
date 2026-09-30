@@ -4,15 +4,16 @@
   "compatibility_date": "2026-09-22",
 
   // The public marketing site for opalix.ai. Almost all of it is static
-  // files; the Worker only runs for /api/* (the waitlist form, see
-  // src/worker.ts), so page views never cost an invocation.
+  // files; the Worker only runs for /api/* (the waitlist form) and
+  // /feedback (the feedback form posts there, see src/worker.ts), so
+  // other page views never cost an invocation.
   "main": "./src/worker.ts",
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"],
-    // Paths the page links to before they exist (/try, /signin, ...) get
-    // the friendly 404 instead of a bare error.
+    "run_worker_first": ["/api/*", "/feedback"],
+    // /try and /signin are redirects in public/_redirects. Anything else
+    // that does not exist gets the friendly 404 instead of a bare error.
     "not_found_handling": "404-page"
   },
 

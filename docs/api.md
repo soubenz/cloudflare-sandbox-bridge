@@ -50,9 +50,9 @@ minutes are usable now.
 | GET | `/health` | none | liveness → `{ ok: true }` |
 | GET | `/health?deep=1` | service | probes D1, R2 (`labs/index.json`) and both pools → `200 { ok: true, checks: { d1, r2, pools: { agent: { degraded, warm }, gateway } } }`, or `503 { ok: false, failing: [...], checks }` naming what failed; a degraded pool counts as failing³ |
 | GET | `/usage?from=&to=` | service | estimated container spend per family from D1 sessions (epoch ms; default last 30 days) → `{ from, to, by_family: { agent: { hours, usd, sessions }, gateway }, total_usd }`; see `docs/runbooks/cost.md` |
-| GET | `/labs` | service¹ | catalogue → `[{ slug, version, title, type, family }]` |
+| GET | `/labs` | service¹ | catalogue, ordered by `(path, module, order, slug)` → `[{ slug, version, title, type, family, summary?, objectives, difficulty?, timeout_minutes, path?, module?, order?, prerequisites?, tier, estimated_minutes? }]`. `summary`, `difficulty`, `path`, `module`, `order`, `prerequisites` and `estimated_minutes` are omitted when the manifest does not set them; `tier` is `free` or `pro` (default `pro`); `objectives` is `[]` when unset. `bundle.ts` `listCatalogue({ path?, module?, tier?, limit?, cursor? })` implements the filtered, paged form (cursor = last slug of the previous page; default limit 50, max 200) for the route to expose |
 | GET | `/labs/:slug` | service¹ | current version + manifest → `{ version, manifest }` |
-| POST | `/labs/publish` | service | multipart: `manifest`, `workspace`, `private` files → `201 { slug, version }` |
+| POST | `/labs/publish` | service | multipart: `manifest`, `workspace`, `private` files plus optional `force=true` → `201 { slug, version, warnings: string[] }`; `warnings` lists prerequisites that are not published labs. Re-publishing an existing version is `409 version_exists` unless `force` |
 | GET | `/pools`, `/pools/:family` | service¹ | warm pool stats → `{ warm, claimed, config, stats }`; `stats` includes `consecutive_start_failures`, `degraded`, and `last_start_error` / `last_start_error_at` when a start has failed |
 | POST | `/pools/:family/prime` | service | `{ target? }` → `{ ok: true }`; only ever grows the pool |
 | POST | `/pools/:family/drain` | service | destroys every warm container; claimed ones are untouched → `{ ok: true }` |
@@ -69,6 +69,7 @@ minutes are usable now.
 | ANY | `/sessions/:id/services/:name/*` | session | path-based UI proxy |
 | WS | `/sessions/:id/terminal` | session | relayed PTY |
 | POST | `/sessions/:id/snapshot` | session | → the new `SnapshotEntry` |
+| POST | `/sessions/:id/touch` | session | refreshes the idle clock ("I'm here") exactly as a file write does, without doing any work; 204, or `409 not_running` |
 | POST | `/sessions/:id/resume` | session | requires a snapshot; `{ meta, token }` with a new token |
 | DELETE | `/sessions/:id?snapshot=0` | session | ends the session; snapshots by default |
 | GET | `/users/:uid/sessions?active=1` | service | D1-backed history/active check; capped at 50 rows without `active=1` |
@@ -140,6 +141,7 @@ the RPC boundary.
 | 404 | `lab_not_found` | no published lab with that slug |
 | 400 | `bad_window` | `GET /usage` with a `from`/`to` that is not a non-negative number, or `from >= to` |
 | 400 | `bad_path` | a `/files` path that is not under `/workspace` — lexically, after `realpath` resolution (symlinks included), or because `learner` cannot access it |
+| 400 | `unknown_event_type` | `POST /sessions/{id}/events` with a type outside the injectable set (`cost`, `llm.call`, `alert`, `pressure`, `hint`, `session.idle_warning`, `session.expiring`, `session.state`, `service.health`) |
 | 404 | `unknown_family` | a `/pools/:family` path that is not `agent` or `gateway` |
 | 404 | `unknown_service` | restart or proxy for a service not in the lab |
 | 409 | `active_session_exists` | the user already has a live session (the D1 unique index) |
@@ -147,6 +149,7 @@ the RPC boundary.
 | 409 | `no_snapshot` | resume with no snapshot to restore from |
 | 409 | `not_running` | the session is not running (still starting, resuming, recovering or ended) |
 | 409 | `session_recovering` | a stale process/terminal handle; the container was replaced |
+| 409 | `version_exists` | `POST /labs/publish` for a `<slug>/<version>` that is already published, without `force` |
 | 409 | `file_exists` | SDK `FileExistsError` |
 | 413 | `payload_too_large` | `PUT .../files/...` over 2 MiB, or the SDK's own file-size limit |
 | 502 | `service_down` | service proxy while that service is `unhealthy` |
