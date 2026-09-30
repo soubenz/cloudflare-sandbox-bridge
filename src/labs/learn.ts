@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import registry from '../../packages/catalogue/concepts.json';
 import { KNOWN_DIAGRAMS, diagramRefs } from './diagram';
+import { ComicSchema, checkComic } from './comic';
 
 /**
  * The learning layer of a lab: a short story, one lesson per concept, quiz
@@ -153,6 +154,8 @@ export const FieldSchema = z
 export const LearnBundleSchema = z.object({
   version: z.literal(1),
   story: StorySchema.optional(),
+  /** Optional motion-comic version of the story (learn/comic.yaml); the text story stays as the fallback. */
+  comic: ComicSchema.optional(),
   concepts: z.array(ConceptSchema).max(8),
   questions: z.array(QuestionSchema).max(40),
   answers_file: z.string().regex(/^[A-Za-z0-9._-]+$/).default('answers.json'),
@@ -206,11 +209,16 @@ export function checkLearnBundle(
     if (asked.length === 0) problems.push(`lesson "${c.id}" has no diagnostic question, so it can never be skipped`);
   }
 
+  if (bundle.comic) {
+    problems.push(...checkComic(bundle.comic));
+    if (!bundle.story) problems.push('a comic needs learn/story.md too: the text story is what screen readers, skipped comics and old consoles show');
+  }
+
   const keys = bundle.fields.map((f) => f.key);
   if (new Set(keys).size !== keys.length) problems.push('two fields have the same answers.json key');
 
   if (bundle.concepts.length === 0 && bundle.questions.length > 0) problems.push('questions without any lesson: write at least one concepts/<id>.md');
-  if (!bundle.story && bundle.concepts.length === 0 && bundle.fields.length === 0) problems.push('the learn/ folder has no story, no lesson and no field');
+  if (!bundle.story && !bundle.comic && bundle.concepts.length === 0 && bundle.fields.length === 0) problems.push('the learn/ folder has no story, no lesson and no field');
   return problems;
 }
 

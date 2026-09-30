@@ -22,6 +22,7 @@ export interface LearnCompileResult {
  * so an author sees them all at once.
  *
  *   learn/story.md               front matter: title, minutes; body: the case file
+ *   learn/comic.yaml             optional motion comic of the story: title, panels (docs/learning-content.md)
  *   learn/concepts/<id>.md       front matter: id (must equal the file name), title, minutes, recap; body: the lesson
  *   learn/quiz.yaml              questions: [ ... ]
  *   learn/questions.yaml         answers_file, fields: [ ... ]   (explore labs)
@@ -65,6 +66,16 @@ export function compileLearnDir(labDir: string): LearnCompileResult | null {
     }
   }
 
+  let comic: unknown;
+  const comicText = read('comic.yaml');
+  if (comicText !== null) {
+    try {
+      comic = parseYaml(comicText);
+    } catch (e) {
+      problems.push(`comic.yaml: not valid YAML (${(e as Error).message})`);
+    }
+  }
+
   let answersFile: string | undefined;
   let fields: unknown[] = [];
   const qText = read('questions.yaml');
@@ -82,6 +93,7 @@ export function compileLearnDir(labDir: string): LearnCompileResult | null {
   const parsed = LearnBundleSchema.safeParse({
     version: 1,
     story,
+    ...(comic !== undefined ? { comic } : {}),
     concepts,
     questions,
     ...(answersFile !== undefined ? { answers_file: answersFile } : {}),

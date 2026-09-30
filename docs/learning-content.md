@@ -95,6 +95,44 @@ fields:
 - The compiler cross-checks in both directions: every key in the template needs a field, and every field needs a key.
 - `choices` is required for `choice` and forbidden otherwise. Up to 12 fields.
 
+## The motion comic (optional): `learn/comic.yaml`
+
+The story can also be told as a motion comic that plays like a video: a camera moves across a comic page and zooms into each panel as it pops in, speech bubbles type out word by word, and the learner sees Replay and Skip. The art is drawn by the console from code, so a comic is a few lines of data per panel, never an image. `learn/story.md` stays required: it is the fallback for screen readers, for a skipped comic and for older consoles.
+
+```yaml
+title: Which provider answered?
+panels:
+  - scene: desk                 # desk, message, portrait, screen, duo or you
+    cast: [jonas]               # who is in it: maren, tomasz, priya, jonas, anneke, you
+    caption: Tuesday, a little after ten.
+    bubbles:
+      - { who: jonas, text: "Which provider answered, and what did that reply cost?" }
+    lines: ["$ $ $", "?"]      # what the screen shows
+  - scene: message
+    cast: [maren]
+    prop: envelope              # none, envelope, laptop, chart, map, key, document
+    sfx: PING!
+    bubbles: [{ who: maren, text: "Nobody can answer this." }]
+```
+
+| Scene | Panel size | Cast | Needs |
+| --- | --- | --- | --- |
+| `desk` | wide (2 of 3 columns) | 1 | optional `lines` for the screen |
+| `message` | square (1 column) | 1 | optional `prop`, `sfx` |
+| `portrait` | square | 1 | optional `prop`, `sfx` |
+| `screen` | wide | none | `lines` (typed out one by one) |
+| `duo` | square | 2 | |
+| `you` | wide | none | `lines`; the last panel shows the call to action |
+
+Rules `labs learn-check` enforces:
+
+- 4 to 9 panels, in reading order. They tile a page of three columns, so every row must fill exactly: wide panels count 2, square ones 1. The checker names the panel that leaves a hole.
+- Speakers must be in the panel's cast. At most two bubbles per panel, 150 characters each, plain text. Under 160 spoken words in total, so it plays in about a minute.
+- Every panel says something (a caption, a bubble or screen lines). `sfx` is for `message`, `portrait` and `desk` panels.
+- The comic follows the story bible: Larkfield, the five recurring people, second person for "you", no answer to a graded question.
+
+Lines on a screen are coloured by how they start: `$` is a command, `200` or `ok` is green, `4xx`, `5xx` or `error` is orange or red. Use `?` where the lab wants the learner to find the value.
+
 ## Trimming the brief
 
 Once the lesson teaches a concept, the brief stops explaining it. The brief keeps: what is running, the tools, what done looks like, the pressure sentence if any. Target 300 words or fewer for an explore lab.
