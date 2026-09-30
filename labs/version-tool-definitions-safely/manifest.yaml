@@ -1,4 +1,4 @@
-# Path 2, Module 2, lab 5 -- REDESIGNED per the ContextForge feasibility
+# Path 3, Module 2, lab 5 -- REDESIGNED per the ContextForge feasibility
 # investigation ($SCRATCH/contextforge-inv/FINDINGS.md): ContextForge has
 # no real canary/percentage-rollout/history mechanism, only a bare edit
 # counter, enabled/deprecated flags, and whole-config export/import. This
@@ -131,6 +131,11 @@ version: 1.0.0
 title: "Version tool definitions and roll changes out safely"
 type: build
 family: agent
+path: ai-platform
+module: 2
+order: 5
+tier: pro
+estimated_minutes: 60
 summary: >-
   A caller depends on price-lookup's v1 shape. v2 is already built and
   running, but ContextForge doesn't know about it yet. Roll it out, and

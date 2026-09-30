@@ -25,6 +25,11 @@ version: 1.0.0
 title: "The agent forgot its rules at message 40"
 type: break-fix
 family: agent
+path: production-agents
+module: 1
+order: 5
+tier: pro
+estimated_minutes: 50
 difficulty: core
 summary: >-
   A support assistant follows its policy perfectly for the first half of a long

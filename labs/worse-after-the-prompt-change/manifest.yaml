@@ -33,6 +33,11 @@ version: 1.0.0
 title: "A worse prompt shipped and nothing caught it"
 type: build
 family: agent
+path: evals-releases
+module: 1
+order: 1
+tier: pro
+estimated_minutes: 75
 difficulty: advanced
 summary: >-
   A shortened prompt shipped last week because nothing measured whether it

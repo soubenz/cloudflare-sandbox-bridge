@@ -1,4 +1,4 @@
-# Path 2, Module 1, lab 1 in docs/catalogue-path-2-ai-platform.md
+# Path 3, Module 1, lab 1 in docs/catalogue-path-2-ai-platform.md
 # (explore, gateway family).
 #
 # type: explore -- nothing is broken and nothing is missing (see
@@ -32,6 +32,11 @@ version: 1.0.0
 title: "See what a gateway actually does"
 type: explore
 family: gateway
+path: ai-platform
+module: 1
+order: 1
+tier: free
+estimated_minutes: 15
 summary: >-
   LiteLLM in front of two model deployments, backed by a real Postgres. A
   guided tour of what a gateway does with one call: which deployment

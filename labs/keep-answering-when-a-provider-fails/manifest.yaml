@@ -30,6 +30,11 @@ version: 1.0.0
 title: "Keep answering when a provider fails"
 type: build
 family: gateway
+path: ai-platform
+module: 1
+order: 5
+tier: pro
+estimated_minutes: 40
 difficulty: core
 summary: >-
   The `support` alias answers every request through one deployment that

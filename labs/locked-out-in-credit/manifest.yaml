@@ -30,6 +30,11 @@ version: 1.0.0
 title: "A tenant got locked out while still in credit"
 type: break-fix
 family: gateway
+path: ai-platform
+module: 1
+order: 6
+tier: pro
+estimated_minutes: 20
 difficulty: advanced
 summary: >-
   One relay serves four tenants' calls to the same model. Three of them, all

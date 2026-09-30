@@ -57,6 +57,12 @@ version: 1.0.0
 title: "Give every team one endpoint and one key"
 type: build
 family: gateway
+path: ai-platform
+module: 1
+order: 2
+prerequisites: [see-what-a-gateway-does]
+tier: pro
+estimated_minutes: 75
 difficulty: core
 summary: >-
   Two teams share one LiteLLM gateway and should reach only the models

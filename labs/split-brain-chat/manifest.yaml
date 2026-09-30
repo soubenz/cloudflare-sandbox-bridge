@@ -1,4 +1,4 @@
-# P3-05 in the lab catalogue: path 3, Building an AI Platform. Scripted, L.
+# P3-05 — Path 3, Building an AI Platform (Module 5). Scripted, L.
 #
 # Break-fix, titled by symptom rather than by the concept being taught
 # (external state, checkpoints, safe resume). Three planted bugs, all of them
@@ -50,6 +50,11 @@ version: 1.0.0
 title: "Two replicas, two different conversations"
 type: break-fix
 family: agent
+path: ai-platform
+module: 5
+order: 5
+tier: pro
+estimated_minutes: 60
 difficulty: advanced
 summary: >-
   The billing desk runs as two replicas behind a router, and which one takes a

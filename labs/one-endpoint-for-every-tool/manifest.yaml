@@ -88,6 +88,12 @@ version: 1.0.0
 title: "Put every tool server behind one endpoint"
 type: build
 family: agent
+path: ai-platform
+module: 2
+order: 2
+prerequisites: [see-how-tools-reach-an-agent]
+tier: pro
+estimated_minutes: 55
 difficulty: core
 summary: >-
   Three teams built three MCP tool servers with no platform involved, and

@@ -65,6 +65,11 @@ version: 1.0.0
 title: "Put a hard budget on every team"
 type: build
 family: gateway
+path: ai-platform
+module: 1
+order: 3
+tier: pro
+estimated_minutes: 55
 difficulty: core
 summary: >-
   Two teams share one LiteLLM gateway. Research has a small budget and

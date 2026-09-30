@@ -27,7 +27,7 @@
 # name) applies identically here and is not re-derived -- see those two
 # labs' own manifest header comments for the live proof. Both gateways
 # were confirmed live, together, in the same container, while writing this
-# lab (docs for Path 2 Module 6's onboarding investigation).
+# lab (docs for Path 3 Module 6's onboarding investigation).
 #
 # Postgres is mandatory for LiteLLM's team/key/budget layer, same as every
 # other LiteLLM-based lab (Prisma schema hard-coded to
@@ -44,6 +44,12 @@ version: 1.0.0
 title: "Onboard a new team in under an hour"
 type: build
 family: gateway
+path: ai-platform
+module: 6
+order: 2
+prerequisites: [onboard-yourself-the-way-a-new-team-sees-it]
+tier: pro
+estimated_minutes: 25
 difficulty: core
 summary: >-
   Onboarding a new team means a model key, a budget and scoped tool access

@@ -60,6 +60,11 @@ version: 1.0.0
 title: "Follow one request through the stack"
 type: explore
 family: gateway
+path: ai-platform
+module: 4
+order: 1
+tier: free
+estimated_minutes: 10
 summary: >-
   A single real distributed trace, already captured in Jaeger: one support
   request through a gateway, an LLM call, a vector-store lookup, and a cache

@@ -30,6 +30,11 @@ version: 1.0.0
 title: "The provider is down, and so are we"
 type: break-fix
 family: agent
+path: production-agents
+module: 1
+order: 4
+tier: pro
+estimated_minutes: 45
 difficulty: core
 summary: >-
   The model provider had an outage this morning. The front desk did not get

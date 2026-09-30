@@ -1,4 +1,4 @@
-# Path 2, Module 6 ("Build the page where teams request access"), stack:
+# Path 3, Module 6 ("Build the page where teams request access"), stack:
 # simple portal + gateway API. Reuses labs/one-endpoint-one-key's proven
 # postgres/litellm shape verbatim (same template-copy/runuser dance, same
 # reason Postgres is mandatory: LiteLLM's virtual-key/team/spend layer is a
@@ -45,6 +45,11 @@ version: 1.0.0
 title: "Build the page where teams request access"
 type: build
 family: gateway
+path: ai-platform
+module: 6
+order: 5
+tier: pro
+estimated_minutes: 55
 difficulty: core
 summary: >-
   A small portal sits in front of one LiteLLM gateway. Teams submit access

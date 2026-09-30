@@ -12,6 +12,11 @@ version: 1.0.0
 title: "Customers are getting the same reply twice"
 type: break-fix
 family: agent
+path: production-agents
+module: 1
+order: 1
+tier: free
+estimated_minutes: 35
 difficulty: core
 summary: >-
   A support agent answers tickets, and some customers get the same reply two

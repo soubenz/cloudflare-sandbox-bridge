@@ -43,6 +43,11 @@ version: 1.0.0
 title: "Control what can leave the platform"
 type: build
 family: gateway
+path: ai-platform
+module: 7
+order: 4
+tier: pro
+estimated_minutes: 30
 difficulty: core
 summary: >-
   A tool-calling agent routes every outbound call through your egress

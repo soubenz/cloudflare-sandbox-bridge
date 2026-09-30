@@ -70,6 +70,11 @@ version: 1.0.0
 title: "See why a document matched"
 type: explore
 family: gateway
+path: ai-platform
+module: 3
+order: 1
+tier: pro
+estimated_minutes: 15
 summary: >-
   A houseplant-care FAQ in Postgres with pgvector, and a query service that
   traces every search to Phoenix as a real OpenInference retriever span. A

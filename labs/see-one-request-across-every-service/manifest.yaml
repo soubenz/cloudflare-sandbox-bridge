@@ -86,6 +86,12 @@ version: 1.0.0
 title: "See one request across every service"
 type: build
 family: gateway
+path: ai-platform
+module: 4
+order: 2
+prerequisites: [follow-one-request-through-the-stack]
+tier: pro
+estimated_minutes: 30
 summary: >-
   One request crosses a gateway, a worker, and a storage service. Wire up
   real context propagation so Jaeger shows all three hops as one trace,

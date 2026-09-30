@@ -85,6 +85,11 @@ version: 1.0.0
 title: "Set retention and deletion that actually run"
 type: build
 family: gateway
+path: ai-platform
+module: 7
+order: 5
+tier: pro
+estimated_minutes: 15
 difficulty: core
 summary: >-
   A customer's data lands in three real places: a trace/span store, an

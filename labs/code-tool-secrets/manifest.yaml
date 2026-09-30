@@ -1,4 +1,4 @@
-# P2-05 in the lab catalogue: Path 2, Securing AI Agents. Scripted, effort L.
+# P2-05 — Path 2, Securing AI Agents. Scripted, effort L.
 #
 # A *build* lab, not break-fix: there is no planted one-liner to find. The
 # starting workspace is a working, unsafe code-execution tool -- it runs the
@@ -27,6 +27,11 @@ version: 1.0.0
 title: "The code tool read the secrets file"
 type: build
 family: agent
+path: securing-agents
+module: 1
+order: 5
+tier: pro
+estimated_minutes: 75
 difficulty: advanced
 summary: >-
   The desk's code tool was asked to read the config and it did, credentials and

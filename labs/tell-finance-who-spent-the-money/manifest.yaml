@@ -68,6 +68,11 @@ version: 1.0.0
 title: "Tell finance who spent the money"
 type: build
 family: gateway
+path: ai-platform
+module: 4
+order: 4
+tier: pro
+estimated_minutes: 40
 difficulty: core
 summary: >-
   Three teams share one LiteLLM gateway across three product features.

@@ -53,6 +53,12 @@ version: 1.0.0
 title: "Keep EU data on EU routes"
 type: build
 family: gateway
+path: ai-platform
+module: 7
+order: 2
+prerequisites: [prove-where-one-requests-data-went]
+tier: pro
+estimated_minutes: 20
 difficulty: core
 summary: >-
   Customer data tagged EU-only must never reach a non-EU model provider --

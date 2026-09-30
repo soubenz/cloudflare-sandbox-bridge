@@ -39,6 +39,11 @@ version: 1.0.0
 title: "It answers, but it is wrong"
 type: break-fix
 family: agent
+path: production-agents
+module: 1
+order: 6
+tier: pro
+estimated_minutes: 70
 difficulty: advanced
 summary: >-
   The policy desk answers confidently and is sometimes wrong. No errors, no

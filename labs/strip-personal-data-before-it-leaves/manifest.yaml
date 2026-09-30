@@ -57,6 +57,11 @@ version: 1.0.0
 title: "Strip personal data before it reaches a model or a log"
 type: build
 family: gateway
+path: ai-platform
+module: 7
+order: 3
+tier: pro
+estimated_minutes: 25
 difficulty: core
 summary: >-
   Customer messages pass through this gateway on their way to a model.

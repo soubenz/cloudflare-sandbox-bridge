@@ -53,6 +53,11 @@ version: 1.0.0
 title: "Build the ingestion pipeline behind it"
 type: build
 family: gateway
+path: ai-platform
+module: 3
+order: 3
+tier: pro
+estimated_minutes: 55
 difficulty: core
 summary: >-
   Turn a folder of source documents into searchable chunks in pgvector --

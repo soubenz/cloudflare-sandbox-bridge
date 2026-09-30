@@ -1,4 +1,5 @@
-# P1-03 in the lab catalogue: the third lab a learner meets, and free tier.
+# P1-03 in the lab catalogue: the third lab a learner meets (pro tier; the
+# free tier is P1-01 and P1-02).
 #
 # Break-fix, titled by symptom rather than by the concept being taught. The
 # slug names the symptom too -- phantom stockouts, items reported sold out
@@ -26,6 +27,11 @@ version: 1.0.0
 title: "We are telling customers we are sold out when we are not"
 type: break-fix
 family: agent
+path: production-agents
+module: 1
+order: 3
+tier: pro
+estimated_minutes: 40
 difficulty: core
 summary: >-
   The shopping assistant tells customers that popular items are out of stock.

@@ -82,6 +82,11 @@ version: 1.0.0
 title: "Publish a paved road for a new AI feature"
 type: build
 family: gateway
+path: ai-platform
+module: 6
+order: 3
+tier: pro
+estimated_minutes: 15
 difficulty: core
 summary: >-
   workspace/template/ is the starter service every AI feature team copies.

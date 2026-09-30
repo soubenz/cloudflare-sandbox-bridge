@@ -67,6 +67,11 @@ version: 1.0.0
 title: "Add hybrid search and reranking"
 type: build
 family: gateway
+path: ai-platform
+module: 3
+order: 4
+tier: pro
+estimated_minutes: 25
 difficulty: core
 summary: >-
   A search endpoint runs a real keyword search and a real vector search

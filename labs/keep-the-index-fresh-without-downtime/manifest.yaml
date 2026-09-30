@@ -69,6 +69,11 @@ version: 1.0.0
 title: "Keep the index fresh without downtime"
 type: build
 family: gateway
+path: ai-platform
+module: 3
+order: 5
+tier: pro
+estimated_minutes: 35
 difficulty: core
 summary: >-
   A live search index needs to pick up new and changed content on a

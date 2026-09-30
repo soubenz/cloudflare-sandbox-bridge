@@ -1,4 +1,4 @@
-# Path 2, Module 6 in docs/catalogue-path-2-ai-platform.md ("Onboard
+# Path 3, Module 6 in docs/catalogue-path-2-ai-platform.md ("Onboard
 # yourself the way a new team sees it", explore).
 #
 # type: explore -- nothing is broken and nothing is missing (see
@@ -58,6 +58,11 @@ version: 1.0.0
 title: "Onboard yourself the way a new team sees it"
 type: explore
 family: gateway
+path: ai-platform
+module: 6
+order: 1
+tier: pro
+estimated_minutes: 20
 summary: >-
   A fictional new team needs a scoped LiteLLM key and a working
   ContextForge tool before it can make one real call. Follow the current

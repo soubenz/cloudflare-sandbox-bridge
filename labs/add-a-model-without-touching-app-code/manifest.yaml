@@ -82,6 +82,11 @@ version: 1.0.0
 title: "Add a model to the catalogue without touching app code"
 type: build
 family: gateway
+path: ai-platform
+module: 1
+order: 4
+tier: pro
+estimated_minutes: 105
 difficulty: core
 summary: >-
   A gateway team promotes and rolls back models by moving an alias in

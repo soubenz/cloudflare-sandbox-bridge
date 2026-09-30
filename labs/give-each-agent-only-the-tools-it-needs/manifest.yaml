@@ -1,4 +1,4 @@
-# Path 2, Module 2, lab 3 (build, agent family). Design proven live against
+# Path 3, Module 2, lab 3 (build, agent family). Design proven live against
 # mcp-contextforge-gateway==1.0.10, Python 3.12, mcp==1.30.0 (own venv312).
 # checks/_harness.py runs its own fresh ContextForge + own copies of the
 # three tool servers against solution/platform/setup.py (never uploaded --
@@ -117,6 +117,11 @@ version: 1.0.0
 title: "Give each agent only the tools it needs"
 type: build
 family: agent
+path: ai-platform
+module: 2
+order: 3
+tier: pro
+estimated_minutes: 55
 summary: >-
   Three toy tool servers are registered on ContextForge as one ungoverned
   bundle: every token, including a brand-new one, can call every tool on

@@ -56,6 +56,11 @@ version: 1.0.0
 title: "Keep the docs and the example true"
 type: build
 family: gateway
+path: ai-platform
+module: 6
+order: 4
+tier: pro
+estimated_minutes: 50
 difficulty: core
 summary: >-
   A quickstart doc for teams joining the shared LiteLLM gateway ships with

@@ -1,4 +1,4 @@
-# Path 2, Module 2, lab 1 in docs/catalogue-path-2-ai-platform.md
+# Path 3, Module 2, lab 1 in docs/catalogue-path-2-ai-platform.md
 # (explore, agent family).
 #
 # type: explore -- nothing is broken and nothing is missing (see
@@ -56,6 +56,11 @@ version: 1.0.0
 title: "See how tools reach an agent"
 type: explore
 family: agent
+path: ai-platform
+module: 2
+order: 1
+tier: pro
+estimated_minutes: 20
 summary: >-
   ContextForge fronting two toy MCP tool servers. A guided tour of how a
   tool call actually gets from a tool server to an agent through a

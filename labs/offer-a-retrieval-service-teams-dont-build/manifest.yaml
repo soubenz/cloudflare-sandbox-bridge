@@ -84,6 +84,12 @@ version: 1.0.0
 title: "Offer teams a retrieval service they do not have to build"
 type: build
 family: gateway
+path: ai-platform
+module: 3
+order: 2
+prerequisites: [see-why-a-document-matched]
+tier: pro
+estimated_minutes: 15
 difficulty: core
 summary: >-
   Three teams share one pgvector-backed document store behind a single

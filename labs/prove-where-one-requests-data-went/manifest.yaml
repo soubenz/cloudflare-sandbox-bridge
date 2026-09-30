@@ -97,6 +97,11 @@ version: 1.0.0
 title: "Prove where one request's data went"
 type: explore
 family: gateway
+path: ai-platform
+module: 7
+order: 1
+tier: pro
+estimated_minutes: 20
 difficulty: intro
 summary: >-
   A real LiteLLM gateway fronts three "regional" fake-model deployments --

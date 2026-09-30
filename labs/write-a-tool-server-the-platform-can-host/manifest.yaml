@@ -1,4 +1,4 @@
-# Path 2, Module 2, lab 4 (build, agent family). Design proven live
+# Path 3, Module 2, lab 4 (build, agent family). Design proven live
 # against a scratchpad reference implementation (own venv,
 # mcp-contextforge-gateway==1.0.10, Python 3.12, mcp==1.30.0 -- see this
 # lab's own report for the transcript) and against the real
@@ -111,6 +111,11 @@ version: 1.0.0
 title: "Write a tool server the platform can host"
 type: build
 family: agent
+path: ai-platform
+module: 2
+order: 4
+tier: pro
+estimated_minutes: 50
 summary: >-
   ContextForge is up and empty. Fix and complete your own MCP tool
   server -- typed inputs, real errors instead of silent wrong answers,
