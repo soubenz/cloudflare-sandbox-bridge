@@ -154,6 +154,13 @@ export const api = {
   resume: (id, token) => request(`/sessions/${id}/resume`, { method: 'POST', token }),
   snapshot: (id, token) => request(`/sessions/${id}/snapshot`, { method: 'POST', token }),
   runChecks: (id, token) => request(`/sessions/${id}/checks`, { method: 'POST', body: {}, token }),
+  /** One rating (1-5) and optional text per session; a second call replaces the first. */
+  feedback: (id, token, { rating, text }) =>
+    request(`/sessions/${id}/feedback`, {
+      method: 'POST',
+      body: text ? { rating, text } : { rating },
+      token,
+    }),
 
   listFiles: (id, token, path = '/workspace') =>
     request(`/sessions/${id}/files?path=${encodeURIComponent(path)}`, { token }),

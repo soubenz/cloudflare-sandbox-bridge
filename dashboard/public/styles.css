@@ -652,6 +652,25 @@ pre.logs-tail {
 .check-name { font-family: var(--mono); font-weight: 600; color: var(--ink); }
 .check-when { margin: var(--s1) 0 0 !important; font-size: var(--fs-xs); }
 #checksPanel .notice { margin-top: var(--s2); }
+/* Checks show their whole message, so the block is not capped like hints are;
+   the pane scrolls instead, and the file list keeps a floor. */
+#checksPanel { max-height: none; overflow-y: visible; }
+.pane-left { overflow-y: auto; }
+.pane-left .block-grow { min-height: 140px; }
+
+.chip-weight { font-family: var(--mono); height: 16px; padding: 0 6px; color: var(--accent); vertical-align: 1px; }
+.chip-warn { height: 16px; padding: 0 6px; color: var(--warn); border-color: color-mix(in oklab, var(--warn) 45%, var(--border)); vertical-align: 1px; }
+.check-detail {
+  margin: 2px 0 0; padding: 0;
+  font: var(--fs-xs)/1.5 var(--mono);
+  color: var(--ink-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.check-history { margin-top: var(--s2); font-size: var(--fs-sm); }
+.check-history summary { cursor: pointer; color: var(--ink-muted); }
+.check-history ul { list-style: none; margin: var(--s1) 0 0; padding: 0; font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-2); }
+.check-history li { padding: 2px 0; }
 
 .hint {
   padding: var(--s2) 10px;
@@ -665,6 +684,53 @@ pre.logs-tail {
 }
 .hint:last-child { margin-bottom: 0; }
 .hint-label { margin-bottom: 2px; font-size: 10px; }
+.hint-locked { border-left-color: var(--border-strong); background: var(--surface); color: var(--ink-muted); }
+.hint-locked .hint-label { margin-bottom: 0; font-size: var(--fs-xs); text-transform: none; letter-spacing: 0; }
+
+/* ---------- result card ---------- */
+.result-card {
+  position: relative;
+  overflow: hidden;
+  padding: var(--s3) var(--s4);
+  background: color-mix(in oklab, var(--good) 10%, var(--surface));
+  border-bottom: 1px solid color-mix(in oklab, var(--good) 45%, var(--border));
+  display: flex; flex-direction: column; gap: var(--s2);
+}
+.result-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
+.result-title { flex: 1 1 240px; min-width: 0; }
+.result-card h2 { margin: 0; font-size: var(--fs-lg); color: var(--good); }
+.result-lab { margin: 0; color: var(--ink-2); font-size: var(--fs-md); }
+.result-stats { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s5); margin: 0; }
+.result-stats dt { font-size: var(--fs-xs); color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.result-stats dd { margin: 0; font: 600 var(--fs-md)/1.4 var(--mono); font-variant-numeric: tabular-nums; }
+.result-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
+.result-feedback fieldset { display: flex; align-items: center; gap: var(--s2); margin: 0; padding: 0; border: 0; min-width: 0; }
+.result-feedback legend { float: left; padding: 0; margin-right: var(--s2); font-size: var(--fs-sm); color: var(--ink-2); }
+.result-feedback .rating { display: inline-flex; gap: var(--s2); font-size: var(--fs-sm); }
+.result-feedback .rating label { display: inline-flex; align-items: center; gap: var(--s1); cursor: pointer; }
+.result-feedback textarea {
+  flex: 1 1 200px; min-width: 0; resize: vertical;
+  background: var(--surface-2); color: var(--ink);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: var(--s1) var(--s2); font: var(--fs-sm)/1.5 var(--sans);
+}
+.result-feedback textarea:focus-visible { outline-offset: 0; border-color: var(--accent); }
+.result-feedback .notice { flex-basis: 100%; margin: 0; }
+.result-thanks { margin: 0; color: var(--ink-2); }
+
+/* One burst of pieces, created only when the learner has not asked for reduced motion. */
+.confetti { position: absolute; inset: 0; pointer-events: none; }
+.confetti i {
+  position: absolute; top: -8px; left: var(--x);
+  width: 6px; height: 10px; border-radius: 1px;
+  background: var(--c);
+  opacity: 0;
+  animation: confetti-fall 1.2s ease-out var(--d) forwards;
+}
+@keyframes confetti-fall {
+  0% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0); }
+  100% { opacity: 0; transform: translate3d(var(--dx), 110px, 0) rotate(var(--r)); }
+}
 
 /* ---------- operator ---------- */
 .ops h1 { font-size: var(--fs-xl); margin-block: 0 6px; }

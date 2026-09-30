@@ -54,6 +54,21 @@ const state = {
   /** The service whose UI is loaded in the iframe, so revisiting it does not reload it. */
   service: null,
   checksRunning: false,
+  /** `status().manifest_summary`, so a run can be judged against every check the lab has. */
+  summary: null,
+  /** `status().checks_history`, oldest first. */
+  history: [],
+  /** `status().hints`, and a signature of it so an unchanged poll does not rebuild the list. */
+  hints: null,
+  hintSig: '',
+  hintTimer: 0,
+  /** `meta.started_at` (server clock), and `server_time - Date.now()` at the last status. */
+  startedAt: null,
+  clockSkew: 0,
+  /** The result card has been shown for this session; a later passing run must not show it again. */
+  resultShown: false,
+  /** What the card says, kept for "Copy summary". */
+  result: null,
   timer: 0,
   /** Highest event seq handled, so a stream reopened by hand does not replay what was already shown. */
   lastSeq: 0,
@@ -309,6 +324,7 @@ function enterSession() {
   $('checksSummary').textContent = '';
   delete $('checksSummary').dataset.tone;
   $('hintsPanel').innerHTML = '<p class="muted small">Hints unlock on a timer as the lab goes on.</p>';
+  resetSessionFeedback();
   $('fileList').innerHTML = '';
   $('serviceTabs').innerHTML = '';
   $('serviceLabel').hidden = true;
@@ -345,7 +361,7 @@ function enterSession() {
   setSessionLab(state.session.lab);
   $('sessionId').textContent = state.session.id;
   $('sessionId').title = `Session ${state.session.id}`;
-  for (const id of ['btnChecks', 'btnSnapshot', 'btnEnd']) $(id).disabled = false;
+  for (const id of ['btnChecks', 'btnChecksInline', 'btnSnapshot', 'btnEnd']) $(id).disabled = false;
 
   openEventStream();
   pollUntilRunning();
@@ -457,7 +473,7 @@ function applyStatus(status) {
     state.expiresAt = meta.expires_at;
     startExpiryTimer();
   }
-  if (status.checks && !state.checksRunning) renderChecks(status.checks);
+  absorbStatus(status);
   // Rebuilding the list would cancel a restart that is in flight.
   if (status.services && !$('serviceList').querySelector('[aria-busy="true"]')) renderServiceList(status.services);
 }
@@ -690,7 +706,7 @@ async function onRunning(status) {
   if (meta.lab_slug) setSessionLab(meta.lab_slug);
   // A resumed session already has results; showing "Not run yet" over
   // them sent learners to re-run a check that takes minutes.
-  if (status.checks && !state.checksRunning) renderChecks(status.checks);
+  absorbStatus(status);
   state.expiresAt = meta.expires_at ?? null;
   startExpiryTimer();
   renderServiceTabs();
@@ -1018,7 +1034,7 @@ function onEnded(reason) {
   hideExpiryBanner();
   $('expiryTimer').textContent = reason ? `ended: ${reason}` : 'ended';
   delete $('expiryTimer').dataset.urgent;
-  for (const id of ['btnChecks', 'btnSnapshot', 'btnEnd']) $(id).disabled = true;
+  for (const id of ['btnChecks', 'btnChecksInline', 'btnSnapshot', 'btnEnd']) $(id).disabled = true;
   state.terminal?.dispose();
   state.terminal = null;
   state.events?.close();
@@ -1099,6 +1115,7 @@ function teardownSession() {
   state.events?.close();
   stopExpiryTimer();
   stopStreamFallback();
+  stopHintTimer();
   hideIdleBanner();
   hideExpiryBanner();
   hideBoot();
@@ -1110,6 +1127,7 @@ function backToLabs() {
   state.session = null;
   state.dirty = false;
   teardownSession();
+  $('resultCard').hidden = true;
   $('btnBackToLabs').hidden = true;
   $('sessionBar').hidden = true;
   $('sessionActions').hidden = true;
@@ -1267,12 +1285,40 @@ async function refreshChecks() {
   // the per-check events arriving meanwhile would otherwise replace the
   // "running" state with the previous run's results.
   if (state.checksRunning || !state.session) return;
+  await refreshStatus({ celebrate: true });
+}
+
+/** Reads status() and applies the parts the checks and hints blocks show. */
+async function refreshStatus({ celebrate = false } = {}) {
+  const session = state.session;
+  if (!session) return;
   try {
-    const status = await api.status(state.session.id, state.session.token);
-    renderChecks(status.checks);
+    const status = await api.status(session.id, session.token);
+    if (state.session === session) absorbStatus(status, { celebrate });
   } catch {
     /* the event that triggered this will come again */
   }
+}
+
+/**
+ * What one status() says about checks, hints and completion. `celebrate`
+ * is true only when the learner watched the result arrive (a run they
+ * started, or the stream's `check.finished`) — opening a lab that was
+ * finished earlier shows the card without the confetti.
+ */
+function absorbStatus(status, { celebrate = false } = {}) {
+  const meta = status?.meta ?? {};
+  if (Number.isFinite(status?.server_time)) state.clockSkew = status.server_time - Date.now();
+  if (meta.started_at) state.startedAt = meta.started_at;
+  if (status?.manifest_summary) state.summary = status.manifest_summary;
+  if (Array.isArray(status?.checks_history)) state.history = status.checks_history;
+  if (status?.hints) {
+    state.hints = status.hints;
+    renderHints();
+  }
+  if (state.checksRunning) return;
+  if (status?.checks) renderChecks(status.checks);
+  showResultIfComplete(status?.checks, celebrate);
 }
 
 /**
@@ -1281,12 +1327,16 @@ async function refreshChecks() {
  * so in the panel where the results will land.
  */
 async function runChecks() {
-  const button = $('btnChecks');
+  // The header button and the one in the Checks block are the same control.
+  const buttons = [$('btnChecks'), $('btnChecksInline')];
   const panel = $('checksPanel');
   state.checksRunning = true;
-  button.disabled = true;
-  button.textContent = 'Running…';
-  button.setAttribute('aria-busy', 'true');
+  for (const button of buttons) {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+  }
+  $('btnChecks').textContent = 'Running…';
+  $('btnChecksInline').textContent = 'Running…';
   const previous = panel.querySelector('.check') ? panel.innerHTML : '';
   panel.innerHTML = `
     <div class="inline-status">
@@ -1298,6 +1348,9 @@ async function runChecks() {
     const run = await api.runChecks(state.session.id, state.session.token);
     state.checksRunning = false;
     renderChecks(run);
+    showResultIfComplete(run, true);
+    // History and hints move on with every run; the run itself is not enough.
+    refreshStatus();
   } catch (err) {
     state.checksRunning = false;
     addEvent('bad', 'checks', err.message);
@@ -1306,11 +1359,45 @@ async function runChecks() {
     panel.querySelector('.notice').textContent = `The checks could not run — ${err.message}`;
   } finally {
     state.checksRunning = false;
-    button.textContent = 'Run checks';
-    button.removeAttribute('aria-busy');
-    button.disabled = !state.session || $('statePill').dataset.state === 'ended';
+    for (const button of buttons) {
+      button.textContent = 'Run checks';
+      button.removeAttribute('aria-busy');
+      button.disabled = !state.session || $('statePill').dataset.state === 'ended';
+    }
   }
 }
+
+/** A check's weight; a run from before weights existed counts every check once. */
+function weightOf(result) {
+  return Number.isFinite(result?.weight) && result.weight >= 0 ? result.weight : 1;
+}
+
+/** Weighted points and plain counts for a list of `{pass, weight}` results. */
+function tally(results) {
+  let pts = 0;
+  let total = 0;
+  let passed = 0;
+  for (const r of results) {
+    const w = weightOf(r);
+    total += w;
+    if (r.pass) {
+      pts += w;
+      passed++;
+    }
+  }
+  return { pts, total, passed, count: results.length };
+}
+
+function fmtPts(n) {
+  return String(Number.isInteger(n) ? n : Math.round(n * 100) / 100);
+}
+
+/** "3/4 pts · 2/3 checks": points are weighted, checks are not. */
+function summaryText(t) {
+  return `${fmtPts(t.pts)}/${fmtPts(t.total)} pts · ${t.passed}/${t.count} checks`;
+}
+
+const clockTime = (ms) => new Date(ms).toLocaleTimeString([], { hour12: false });
 
 function renderChecks(run) {
   const panel = $('checksPanel');
@@ -1321,47 +1408,332 @@ function renderChecks(run) {
     delete summary.dataset.tone;
     return;
   }
-  const passed = run.results.filter((r) => r.pass).length;
-  const total = run.results.length;
-  summary.textContent = `${passed}/${total} passing`;
-  summary.dataset.tone = passed === total ? 'good' : passed ? 'warn' : 'bad';
+  const t = tally(run.results);
+  summary.textContent = summaryText(t);
+  summary.dataset.tone = t.passed === t.count ? 'good' : t.passed ? 'warn' : 'bad';
 
+  const historyWasOpen = panel.querySelector('details.check-history')?.open ?? false;
   panel.innerHTML = '';
   for (const r of run.results) {
+    const weight = weightOf(r);
     const row = document.createElement('div');
     row.className = `check ${r.pass ? 'check-pass' : 'check-fail'}`;
-    row.innerHTML = `<span class="check-mark" aria-hidden="true"></span><span class="check-msg"><span class="sr-only"></span><strong class="check-name"></strong> <span class="check-detail"></span></span>`;
+    row.dataset.weight = String(weight);
+    row.innerHTML = `<span class="check-mark" aria-hidden="true"></span><span class="check-msg"><span class="sr-only"></span><strong class="check-name"></strong></span>`;
     // Icon plus text, never colour alone.
     row.querySelector('.check-mark').textContent = r.pass ? '✓' : '✗';
     row.querySelector('.sr-only').textContent = r.pass ? 'Passed: ' : 'Failed: ';
+    const msg = row.querySelector('.check-msg');
     row.querySelector('.check-name').textContent = r.name;
-    row.querySelector('.check-detail').textContent = `— ${r.timed_out ? '(timed out) ' : ''}${r.message}`;
+    if (weight !== 1) {
+      const chip = document.createElement('span');
+      chip.className = 'chip chip-weight';
+      chip.textContent = `×${fmtPts(weight)}`;
+      chip.title = `Counts ×${fmtPts(weight)} towards the points`;
+      msg.append(' ', chip);
+    }
+    if (r.timed_out) {
+      const tag = document.createElement('span');
+      tag.className = 'chip chip-warn';
+      tag.textContent = 'timed out';
+      msg.append(' ', tag);
+    }
+    if (r.message) {
+      const detail = document.createElement('pre');
+      detail.className = 'check-detail';
+      detail.textContent = r.message;
+      msg.append(detail);
+    }
     panel.append(row);
   }
   if (run.finished_at) {
     const when = document.createElement('p');
     when.className = 'muted small check-when';
-    when.textContent = `Last run ${new Date(run.finished_at).toLocaleTimeString([], { hour12: false })}`;
+    when.textContent = `Last run ${clockTime(run.finished_at)}`;
     panel.append(when);
+  }
+  // Earlier runs, newest first. The run shown above is already the latest
+  // history entry once status() has caught up, so it is left out.
+  const earlier = state.history.filter((h) => h.run_id !== run.run_id).reverse();
+  if (earlier.length) {
+    const details = document.createElement('details');
+    details.className = 'check-history';
+    details.open = historyWasOpen;
+    const head = document.createElement('summary');
+    head.textContent = `Previous runs (${earlier.length})`;
+    const list = document.createElement('ul');
+    for (const h of earlier) {
+      const li = document.createElement('li');
+      const ht = tally(h.results ?? []);
+      li.textContent = `${clockTime(h.finished_at ?? h.started_at)} · ${fmtPts(ht.pts)}/${fmtPts(ht.total)} pts · ${ht.passed}/${ht.count} checks`;
+      list.append(li);
+    }
+    details.append(head, list);
+    panel.append(details);
   }
 }
 
-function renderHint(data) {
-  const panel = $('hintsPanel');
-  if (panel.querySelector('.muted')) panel.innerHTML = '';
-  // A replayed stream sends the same hint again; show each one once.
-  const key = String(data.index ?? data.text);
-  if (panel.querySelector(`[data-hint="${CSS.escape(key)}"]`)) return;
+// ---------------------------------------------------------------- hints
+
+/** Milliseconds until a hint unlocks, by the server's clock (the learner's may be minutes off). */
+function hintRemainingMs(afterMinutes) {
+  return state.startedAt + afterMinutes * 60_000 - state.clockSkew - Date.now();
+}
+
+/** "Hint 2 · unlocks in 12m". */
+function lockedHintLabel(index, afterMinutes) {
+  const name = `Hint ${index + 1}`;
+  if (!state.startedAt) return `${name} · unlocks in ${afterMinutes}m from the start`;
+  const ms = hintRemainingMs(afterMinutes);
+  if (ms <= 0) return `${name} · unlocking now`;
+  if (ms < 60_000) return `${name} · unlocks in under 1m`;
+  const m = Math.ceil(ms / 60_000);
+  const h = Math.floor(m / 60);
+  return `${name} · unlocks in ${h ? `${h}h${m % 60 ? ` ${m % 60}m` : ''}` : `${m}m`}`;
+}
+
+function hintBox(index, text) {
   const box = document.createElement('div');
   box.className = 'hint';
-  box.dataset.hint = key;
+  box.dataset.hint = String(index ?? text);
   const label = document.createElement('div');
   label.className = 'hint-label';
-  label.textContent = data.index != null ? `Hint ${Number(data.index) + 1}` : 'Hint';
-  const text = document.createElement('div');
-  text.textContent = data.text;
-  box.append(label, text);
-  panel.append(box);
+  label.textContent = index != null ? `Hint ${Number(index) + 1}` : 'Hint';
+  const body = document.createElement('div');
+  body.textContent = text;
+  box.append(label, body);
+  return box;
+}
+
+function lockedHintBox(index, afterMinutes) {
+  const box = document.createElement('div');
+  box.className = 'hint hint-locked';
+  box.dataset.hint = String(index);
+  box.dataset.after = String(afterMinutes);
+  const label = document.createElement('div');
+  label.className = 'hint-label';
+  // A countdown that a screen reader read out every minute would be noise.
+  label.setAttribute('aria-live', 'off');
+  label.textContent = lockedHintLabel(index, afterMinutes);
+  box.append(label);
+  return box;
+}
+
+const hintSignature = (h) => JSON.stringify([h.total, h.schedule, h.delivered.map((d) => d.index)]);
+
+/** Every hint slot from status(): delivered ones open, the rest locked with a countdown. */
+function renderHints() {
+  const hints = state.hints;
+  if (!hints) return;
+  const sig = hintSignature(hints);
+  if (sig === state.hintSig && $('hintsPanel').querySelector('[data-hint]')) return;
+  state.hintSig = sig;
+  const panel = $('hintsPanel');
+  panel.innerHTML = '';
+  const slots = Math.max(hints.total, hints.schedule.length, ...hints.delivered.map((d) => d.index + 1));
+  if (!slots) {
+    panel.innerHTML = '<p class="muted small">This lab has no hints.</p>';
+  }
+  for (let i = 0; i < slots; i++) {
+    const delivered = hints.delivered.find((d) => d.index === i);
+    panel.append(delivered ? hintBox(i, delivered.text) : lockedHintBox(i, hints.schedule[i] ?? 0));
+  }
+  updateResultHints();
+  startHintTimer();
+}
+
+function stopHintTimer() {
+  clearInterval(state.hintTimer);
+  state.hintTimer = 0;
+}
+
+/** Counts the locked labels down once a minute, and asks status() if one is overdue and no event came. */
+function startHintTimer() {
+  stopHintTimer();
+  if (!$('hintsPanel').querySelector('.hint-locked')) return;
+  state.hintTimer = setInterval(() => {
+    const locked = [...$('hintsPanel').querySelectorAll('.hint-locked')];
+    if (!locked.length || !state.session) return stopHintTimer();
+    let overdue = false;
+    for (const box of locked) {
+      const after = Number(box.dataset.after);
+      box.querySelector('.hint-label').textContent = lockedHintLabel(Number(box.dataset.hint), after);
+      if (state.startedAt && hintRemainingMs(after) <= 0) overdue = true;
+    }
+    if (overdue) refreshStatus();
+  }, 60_000);
+}
+
+/** A `hint` event: the locked slot turns into the hint, in place. */
+function renderHint(data) {
+  const index = Number.isInteger(Number(data.index)) && data.index != null ? Number(data.index) : null;
+  const panel = $('hintsPanel');
+  if (state.hints && index != null && !state.hints.delivered.some((d) => d.index === index)) {
+    state.hints.delivered.push({ index, after_minutes: data.after_minutes ?? state.hints.schedule[index] ?? 0, text: data.text });
+    state.hints.delivered.sort((a, b) => a.index - b.index);
+    state.hints.total = Math.max(state.hints.total, index + 1);
+    state.hintSig = hintSignature(state.hints);
+  }
+  // A replayed stream sends the same hint again; show each one once.
+  const key = String(index ?? data.text);
+  const existing = panel.querySelector(`[data-hint="${CSS.escape(key)}"]`);
+  if (existing && !existing.classList.contains('hint-locked')) return;
+  const box = hintBox(index, data.text);
+  if (existing) {
+    existing.replaceWith(box);
+  } else {
+    if (panel.querySelector('.muted')) panel.innerHTML = '';
+    panel.append(box);
+  }
+  updateResultHints();
+  startHintTimer();
+}
+
+// ---------------------------------------------------------------- result
+
+/**
+ * A run finished the lab when every check the manifest lists passed in it.
+ * A run of a subset (`only`) or one still in progress has all-passing
+ * results too, so the names are compared, and `finished_at` is required.
+ * Without a manifest_summary (its manifest purged) every result passing is
+ * all there is to go on.
+ */
+function runCompletesLab(run) {
+  const results = run?.results;
+  if (!results?.length || !run.finished_at || !results.every((r) => r.pass)) return false;
+  const required = state.summary?.checks?.map((c) => c.name) ?? [];
+  const seen = new Set(results.map((r) => r.name));
+  return required.every((name) => seen.has(name));
+}
+
+/**
+ * `status()` has no completed_at, so completion is read off the runs: the
+ * latest one, else the newest all-pass entry in `checks_history` (a console
+ * opened after the learner had finished, and then failed a re-run).
+ */
+function showResultIfComplete(latest, celebrate) {
+  if (state.resultShown || !state.session) return;
+  const winner = [latest, ...[...state.history].reverse()].find(runCompletesLab);
+  if (winner) showResultCard(winner, celebrate);
+}
+
+function fmtElapsed(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function showResultCard(run, celebrate) {
+  state.resultShown = true;
+  const t = tally(run.results);
+  const finished = run.finished_at ?? Date.now() + state.clockSkew;
+  const title = state.summary?.title ?? state.lab?.title ?? state.session.lab;
+  state.result = {
+    title,
+    slug: state.session.lab,
+    checks: `${t.passed}/${t.count} checks`,
+    pts: `${fmtPts(t.pts)} pts`,
+    time: state.startedAt ? fmtElapsed(finished - state.startedAt) : '–',
+  };
+  $('resultLab').textContent = title;
+  $('resultChecks').textContent = `${state.result.checks} · ${state.result.pts}`;
+  $('resultTime').textContent = state.result.time;
+  updateResultHints();
+  $('resultCard').hidden = false;
+  if (celebrate && !matchMedia('(prefers-reduced-motion: reduce)').matches) confettiBurst();
+}
+
+function hintsUsedText() {
+  const h = state.hints;
+  return h ? `${h.delivered.length} of ${h.total}` : '–';
+}
+
+function updateResultHints() {
+  if (state.result) $('resultHints').textContent = hintsUsedText();
+}
+
+const CONFETTI_COLORS = ['--good', '--accent', '--warn', '--bad'];
+
+/** About twenty CSS-animated pieces, gone after 1.2s. The caller has already checked reduced motion. */
+function confettiBurst() {
+  const box = $('confetti');
+  box.innerHTML = '';
+  for (let i = 0; i < 20; i++) {
+    const piece = document.createElement('i');
+    piece.style.setProperty('--x', `${5 + Math.random() * 90}%`);
+    piece.style.setProperty('--dx', `${Math.round((Math.random() - 0.5) * 80)}px`);
+    piece.style.setProperty('--r', `${Math.round(Math.random() * 720 - 360)}deg`);
+    piece.style.setProperty('--d', `${Math.round(Math.random() * 200)}ms`);
+    piece.style.setProperty('--c', `var(${CONFETTI_COLORS[i % CONFETTI_COLORS.length]})`);
+    box.append(piece);
+  }
+  setTimeout(() => (box.innerHTML = ''), 1500);
+}
+
+/** A new session starts with nothing judged, no result and no clock. */
+function resetSessionFeedback() {
+  stopHintTimer();
+  state.summary = null;
+  state.history = [];
+  state.hints = null;
+  state.hintSig = '';
+  state.startedAt = null;
+  state.clockSkew = 0;
+  state.resultShown = false;
+  state.result = null;
+  $('resultCard').hidden = true;
+  $('confetti').innerHTML = '';
+  $('feedbackForm').reset();
+  $('feedbackForm').hidden = false;
+  $('btnFeedback').disabled = true;
+  $('feedbackError').hidden = true;
+  $('feedbackThanks').hidden = true;
+}
+
+function summaryPlainText() {
+  const r = state.result;
+  return [
+    `Opalix lab complete: ${r.title} (${r.slug})`,
+    `Checks: ${r.checks} · ${r.pts}`,
+    `Time: ${r.time}`,
+    `Hints used: ${hintsUsedText()}`,
+  ].join('\n');
+}
+
+async function copySummary() {
+  if (!state.result) return;
+  try {
+    await navigator.clipboard.writeText(summaryPlainText());
+    toast('Summary copied.', 'good');
+  } catch {
+    toast('Could not copy — your browser blocked clipboard access.', 'bad');
+  }
+}
+
+async function sendFeedback(event) {
+  event.preventDefault();
+  const session = state.session;
+  const rating = Number($('feedbackForm').querySelector('input[name="rating"]:checked')?.value);
+  if (!session || !rating) return;
+  const button = $('btnFeedback');
+  const error = $('feedbackError');
+  error.hidden = true;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    await api.feedback(session.id, session.token, { rating, text: $('feedbackText').value.trim().slice(0, 2000) });
+    if (state.session !== session) return;
+    $('feedbackForm').hidden = true;
+    const thanks = $('feedbackThanks');
+    thanks.hidden = false;
+    thanks.tabIndex = -1;
+    thanks.focus();
+  } catch (err) {
+    error.textContent = `Could not send your feedback — ${err.message}`;
+    error.hidden = false;
+    button.disabled = false;
+  } finally {
+    button.removeAttribute('aria-busy');
+  }
 }
 
 // ---------------------------------------------------------------- files
@@ -1828,6 +2200,20 @@ async function withKey(fn) {
 // ---------------------------------------------------------------- wiring
 
 $('btnChecks').addEventListener('click', runChecks);
+$('btnChecksInline').addEventListener('click', runChecks);
+
+$('btnCopySummary').addEventListener('click', copySummary);
+// The lab is done, but its container is still up (and a learner may have one
+// live session), so "back to labs" goes through the end dialog rather than
+// abandoning it.
+$('btnResultBack').addEventListener('click', () => {
+  if ($('statePill').dataset.state === 'ended') backToLabs();
+  else $('btnEnd').click();
+});
+$('feedbackForm').addEventListener('change', () => {
+  $('btnFeedback').disabled = !$('feedbackForm').querySelector('input[name="rating"]:checked');
+});
+$('feedbackForm').addEventListener('submit', sendFeedback);
 
 // A snapshot used to report nothing to the learner either way: success was
 // silent and failure went only to the operator's log.

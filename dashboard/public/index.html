@@ -85,7 +85,8 @@
     <section class="block">
       <h2>
         Checks
-        <span class="block-meta" id="checksSummary"></span>
+        <span class="block-meta" id="checksSummary" aria-live="polite"></span>
+        <button id="btnChecksInline" class="btn btn-tiny" title="Grade your work so far">Run checks</button>
       </h2>
       <div id="checksPanel" class="block-body" aria-live="polite"><p class="muted small">Not run yet. Run checks to grade your work so far.</p></div>
     </section>
@@ -131,6 +132,42 @@
     <p class="banner banner-warn" id="expiryBanner" role="alert" hidden>
       <span class="banner-text">Ends in <span class="countdown" id="expiryCountdown"></span> — end with a snapshot to keep your work.</span>
     </p>
+    <!-- Shown once, when every check has passed; stays for the rest of the session. -->
+    <section class="result-card" id="resultCard" role="status" aria-labelledby="resultTitle" hidden>
+      <div class="confetti" id="confetti" aria-hidden="true"></div>
+      <div class="result-head">
+        <div class="result-title">
+          <h2 id="resultTitle">Lab complete</h2>
+          <p class="result-lab" id="resultLab"></p>
+        </div>
+        <span class="banner-actions">
+          <button id="btnCopySummary" class="btn btn-tiny">Copy summary</button>
+          <button id="btnResultBack" class="btn btn-tiny btn-primary">Back to labs</button>
+        </span>
+      </div>
+      <dl class="result-stats">
+        <div><dt>Checks</dt><dd id="resultChecks"></dd></div>
+        <div><dt>Time</dt><dd id="resultTime"></dd></div>
+        <div><dt>Hints used</dt><dd id="resultHints"></dd></div>
+      </dl>
+      <form class="result-feedback" id="feedbackForm">
+        <fieldset>
+          <legend>How was this lab?</legend>
+          <span class="rating">
+            <label><input type="radio" name="rating" value="1"> 1</label>
+            <label><input type="radio" name="rating" value="2"> 2</label>
+            <label><input type="radio" name="rating" value="3"> 3</label>
+            <label><input type="radio" name="rating" value="4"> 4</label>
+            <label><input type="radio" name="rating" value="5"> 5</label>
+          </span>
+        </fieldset>
+        <label class="sr-only" for="feedbackText">Anything to add? (optional)</label>
+        <textarea id="feedbackText" maxlength="2000" rows="2" placeholder="Anything to add? (optional)"></textarea>
+        <button type="submit" id="btnFeedback" class="btn btn-tiny btn-primary" disabled>Send</button>
+        <p class="notice notice-bad small" id="feedbackError" role="alert" hidden></p>
+      </form>
+      <p class="small result-thanks" id="feedbackThanks" hidden>Thanks — noted.</p>
+    </section>
     <nav class="tabs" id="centerTabs" role="tablist" aria-label="Session views">
       <button class="tab tab-active" data-view="brief" role="tab" aria-selected="true" aria-controls="viewBrief">Brief</button>
       <button class="tab" data-view="terminal" role="tab" aria-selected="false" aria-controls="viewTerminal">Terminal</button>
