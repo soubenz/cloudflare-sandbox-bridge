@@ -15,8 +15,11 @@ The browser only ever talks to this Worker. The Worker holds the API's service k
 | Users | Every distinct `user_id` with session count, completed count, last session, total cost and plan (when the `users` table has a row). "Sessions" jumps to that user's history. | `GET /admin/users` |
 | Waitlist | Signups from the site's waitlist form. | `GET /admin/waitlist` |
 | Feedback | Lab feedback and site feedback merged, newest first, tagged by source. | `GET /admin/feedback` |
+| Learning | How learners answer the quiz questions. Tiles for total answers, distinct questions and the weakest concept; a per-concept table with a percent-correct bar, weakest first; a per-question table (lab, concept, answers, correct, percent correct) that sorts weakest or strongest first, with a lab dropdown and a From / To date range (UTC, the end date inclusive). Under 50% correct, with at least 5 answers, a question is flagged `review`. | `GET /admin/learning` |
 
 Every fetch shows a loading, an empty and an error state. Times are UTC. The tables that hold list data page with a "Load more" cursor.
+
+The Learning tab reads the anonymous `learn_answers` table (see [Learning analytics](api.md#learning-analytics)). There is no user, session or address on a row, so nothing here can be tied to a learner, and the tab says so. A low percent correct means many learners miss that question: review the lesson or the wording of the question. The weakest-concept tile ignores concepts with fewer than 5 answers when any concept has more, so one unlucky answer does not name it. The filters are sent to the API (`?lab=`, `?from=`, `?to=` as epoch ms), and the lab dropdown is filled from the labs seen in the answers. Onboarding-quiz answers have no lab and show as "onboarding quiz"; the lab filter cannot select them. Without the table (migration 0008 not applied) the tab says so; the per-question list is capped at 500 by the API and the tile then reads `500+`.
 
 Two caveats are on the screen and worth repeating here:
 
@@ -35,11 +38,12 @@ All take the service key and nothing else (`requireServiceAuth`, exactly as `/po
 | `GET /admin/usage/summary?from=&to=` | `{ from, to, totals: {sessions, running_s, cost_usd, llm_usd}, by_lab (top 20 by cost), by_day (UTC, oldest first), completion: {completed, ended, rate} }`. `from` and `to` are epoch ms or ISO dates; the default is the last 30 days. The window is on `created_at`. |
 | `GET /admin/users?limit=&before=` | `{ users, next? }`, most recently active first. `before` is a `last_session_at`. Without a `users` table the plan is `null`. |
 | `GET /admin/waitlist?limit=&before=` | `{ available, rows, next? }`. |
+| `GET /admin/learning?lab=&from=&to=` | `{ available, questions, concepts }`: quiz-answer aggregates, weakest first (see `docs/api.md`). `{ available: false, questions: [], concepts: [] }` without the `learn_answers` table. |
 | `GET /admin/feedback?limit=&before=` | `{ available, rows, next? }`. Each row has `source: "lab"` or `"site"`. A site row's own "which link" column is returned as `origin`. If only one of the two tables exists, the other is listed under `missing`. |
 | `GET /labs/:slug/versions` | `{ slug, current, previous, versions: [{version, title, manifest_version, estimated_minutes, published_at, current, previous}] }`, newest version first. A version whose manifest cannot be read is listed with an `error`. |
 | `POST /labs/:slug/promote` body `{ "version": "1.2.0" }` | `{ slug, current, previous }`. 404 `unknown_version` if `labs/{slug}/{version}/manifest.json` does not exist; 400 `bad_version` if the version is not semver. Writes `previous` (the old current) and then `current`, then rebuilds the catalogue index. Promoting the version that is already current changes neither pointer, so `previous` is kept, but the index is still rebuilt. |
 
-A missing waitlist or feedback table (a migration that has not run) answers `{ available: false, rows: [] }` and the screen says so. Any other database error is a 500, on purpose: an outage should not read as "nothing to show".
+A missing waitlist, feedback or learning table (a migration that has not run) answers `available: false` with empty lists and the screen says so. Any other database error is a 500, on purpose: an outage should not read as "nothing to show".
 
 Cursors are millisecond timestamps, so two rows created in the same millisecond can straddle a page boundary. At this scale that is a known, accepted limit.
 

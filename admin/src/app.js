@@ -1,7 +1,7 @@
 /**
  * Opalix Ops: the admin panel's page.
  *
- * Seven tabs, each a screen that mounts the first time it is opened. Every
+ * Eight tabs, each a screen that mounts the first time it is opened. Every
  * fetch goes through this origin's /api proxy (the Worker adds the service
  * key), and every fetch has a loading, an empty and an error state. Server
  * strings only ever become text nodes (see lib.js), never HTML.
@@ -711,6 +711,227 @@ function feedbackScreen(panel) {
   list.reload();
 }
 
+/* ---------------------------------------------------------------- learning */
+
+/** Under this percent correct a question or concept is flagged for review. */
+const LEARNING_LOW = 50;
+/** Fewer answers than this is too small a sample to call a question weak. */
+const LEARNING_MIN_ATTEMPTS = 5;
+/** The API returns at most this many questions; a full page means there may be more. */
+const LEARNING_QUESTION_CAP = 500;
+
+/** `62.5%` or `40%`: the API's 0-100 value with at most one decimal. */
+const pct = (p) => (p === null || p === undefined || !Number.isFinite(Number(p)) ? dash : `${Math.round(Number(p) * 10) / 10}%`);
+
+/** A number as text with thousands separators, en-US so the panel reads the same everywhere. */
+const fmt = (n) => Number(n).toLocaleString('en-US');
+
+/** The percent-correct bar. The number beside it carries the meaning; the bar is decoration. */
+function meter(p) {
+  const value = Number.isFinite(Number(p)) ? Math.min(100, Math.max(0, Number(p))) : 0;
+  const fill = h('span', { class: value < LEARNING_LOW ? 'meter-fill meter-low' : 'meter-fill' });
+  fill.style.width = `${value}%`; // CSSOM, not a style attribute: the CSP forbids inline style
+  return h('span', { class: 'meter-cell' }, h('span', { class: 'meter', 'aria-hidden': 'true' }, fill), h('span', { class: 'meter-value' }, pct(p)));
+}
+
+function learningScreen(panel) {
+  let ticket = 0;
+  let sortDir = 'ascending'; // weakest first, as the API returns it
+  let data = null;
+  const knownLabs = new Set();
+
+  const mount = h('div', { class: 'learning-results' });
+  const view = stateView(mount, () => load());
+
+  const labSelect = h('select', { id: 'l-lab', class: 'input', onchange: () => load() }, h('option', { value: '' }, 'All labs'));
+  const fromInput = h('input', { id: 'l-from', class: 'input', type: 'date', onchange: () => load() });
+  const toInput = h('input', { id: 'l-to', class: 'input', type: 'date', onchange: () => load() });
+  const rangeError = h('p', { class: 'field-error', role: 'alert', hidden: true });
+  const filters = h(
+    'form',
+    {
+      class: 'filters filters-learning',
+      'aria-label': 'Learning filters',
+      onsubmit: (e) => {
+        e.preventDefault();
+        load();
+      },
+    },
+    h('label', { for: 'l-lab' }, 'Lab', labSelect),
+    h('label', { for: 'l-from' }, 'From (UTC)', fromInput),
+    h('label', { for: 'l-to' }, 'To (UTC, inclusive)', toInput),
+    h('div', { class: 'filter-actions' }, h('button', {
+      class: 'btn',
+      type: 'button',
+      onclick: () => {
+        labSelect.value = fromInput.value = toInput.value = '';
+        load();
+      },
+    }, 'Reset'))
+  );
+
+  const body = frame(panel, 'Learning', { refresh: () => load() });
+  body.append(
+    h(
+      'p',
+      { class: 'muted learning-note' },
+      'Answers are anonymous: no user, session or address is stored with them, so an answer cannot be tied to a learner. ',
+      'Percent correct is the share of answers that were right. A low percent means many learners miss that question: ',
+      `review the lesson or the wording of this question. Under ${LEARNING_LOW}% is flagged, once a question has at least ${LEARNING_MIN_ATTEMPTS} answers.`
+    ),
+    filters,
+    rangeError,
+    mount
+  );
+
+  const isFiltered = () => Boolean(labSelect.value || fromInput.value || toInput.value);
+
+  /** `?from=` and `?to=` as epoch ms. The end date is inclusive, and the API's `to` is exclusive, so it is the next midnight. */
+  function range() {
+    const from = fromInput.value ? Date.parse(`${fromInput.value}T00:00:00Z`) : undefined;
+    const to = toInput.value ? Date.parse(`${toInput.value}T00:00:00Z`) + DAY_MS : undefined;
+    return { from, to };
+  }
+
+  function syncLabs(rows) {
+    if (labSelect.value) knownLabs.add(labSelect.value);
+    for (const r of rows) if (r.lab_slug) knownLabs.add(r.lab_slug);
+    const current = labSelect.value;
+    clear(labSelect).append(h('option', { value: '' }, 'All labs'), ...[...knownLabs].sort().map((slug) => h('option', { value: slug }, slug)));
+    labSelect.value = current;
+  }
+
+  async function load() {
+    const { from, to } = range();
+    if (from !== undefined && to !== undefined && from >= to) {
+      rangeError.textContent = 'The "From" date must be on or before the "To" date.';
+      rangeError.hidden = false;
+      return;
+    }
+    rangeError.hidden = true;
+    const mine = ++ticket;
+    view.loading();
+    try {
+      const res = await api('/admin/learning', { query: { lab: labSelect.value, from, to } });
+      if (mine !== ticket) return;
+      if (res?.available === false) return view.empty('The learning table is not in this database yet (migration 0008 has not been applied).');
+      data = { questions: res?.questions ?? [], concepts: res?.concepts ?? [] };
+      syncLabs(data.questions);
+      if (data.questions.length === 0 && data.concepts.length === 0) {
+        return view.empty(isFiltered() ? 'No quiz answers match these filters.' : 'No quiz answers have been recorded yet. They appear here once learners finish a quiz.');
+      }
+      draw();
+    } catch (err) {
+      if (mine !== ticket) return;
+      view.error(err);
+    }
+  }
+
+  const tile = (label, value, note) =>
+    h('div', { class: 'tile stat-tile' }, h('div', { class: 'tile-label' }, label), h('div', { class: 'tile-value' }, value), note ? h('div', { class: 'tile-note' }, note) : null);
+
+  /** Weakest by percent correct. Concepts with a real sample win over a 1-answer fluke; if none qualifies, take any. */
+  function weakest(concepts) {
+    const scored = concepts.filter((c) => c.percent_correct !== null && c.percent_correct !== undefined);
+    const solid = scored.filter((c) => c.attempts >= LEARNING_MIN_ATTEMPTS);
+    const pool = solid.length ? solid : scored;
+    return pool.reduce((a, c) => (!a || c.percent_correct < a.percent_correct || (c.percent_correct === a.percent_correct && c.attempts > a.attempts) ? c : a), null);
+  }
+
+  function draw() {
+    const { questions, concepts } = data;
+    const totalAnswers = concepts.length ? concepts.reduce((sum, c) => sum + c.attempts, 0) : questions.reduce((sum, q) => sum + q.attempts, 0);
+    const capped = questions.length >= LEARNING_QUESTION_CAP;
+    const weak = weakest(concepts);
+
+    const tiles = h(
+      'div',
+      { class: 'tiles tiles-stats' },
+      tile('Total answers', fmt(totalAnswers), isFiltered() ? 'in the current filters' : 'all time'),
+      tile('Distinct questions', `${fmt(questions.length)}${capped ? '+' : ''}`, capped ? `the list is capped at ${LEARNING_QUESTION_CAP}` : 'answered at least once'),
+      tile(
+        'Weakest concept',
+        weak ? h('span', { class: 'tile-text' }, weak.concept) : dash,
+        weak ? `${pct(weak.percent_correct)} correct over ${fmt(weak.attempts)} answer${weak.attempts === 1 ? '' : 's'}${weak.attempts < LEARNING_MIN_ATTEMPTS ? ' (small sample)' : ''}` : 'no concept has answers'
+      )
+    );
+
+    const byConcept = [...concepts].sort((a, b) => (a.percent_correct ?? 101) - (b.percent_correct ?? 101) || b.attempts - a.attempts || a.concept.localeCompare(b.concept));
+    const conceptTable = byConcept.length
+      ? table(
+          [
+            { label: 'Concept', cell: (r) => mono(r.concept) },
+            { label: 'Answers', class: 'num', cell: (r) => fmt(r.attempts) },
+            { label: 'Correct', class: 'num', cell: (r) => fmt(r.correct) },
+            { label: 'Percent correct', class: 'col-meter', cell: (r) => meter(r.percent_correct) },
+          ],
+          byConcept,
+          { caption: 'Percent correct by concept, weakest first' }
+        )
+      : h('p', { class: 'muted' }, 'No concept has any answers in this window.');
+
+    const questionMount = h('div');
+    const sortToggle = h('button', { class: 'btn btn-small sort-toggle', type: 'button', onclick: () => flip() });
+    const flip = () => {
+      sortDir = sortDir === 'ascending' ? 'descending' : 'ascending';
+      drawQuestions(true);
+    };
+
+    function drawQuestions(refocus) {
+      const sorted = [...questions].sort((a, b) => {
+        const d = (a.percent_correct ?? 101) - (b.percent_correct ?? 101) || b.attempts - a.attempts;
+        return sortDir === 'ascending' ? d : -d;
+      });
+      const weakFirst = sortDir === 'ascending';
+      sortToggle.textContent = `Percent correct: ${weakFirst ? 'weakest first' : 'strongest first'}`;
+      const head = h('button', { class: 'sort-btn', type: 'button', id: 'l-sort', onclick: flip }, 'Percent correct', h('span', { class: 'sort-arrow', 'aria-hidden': 'true' }, weakFirst ? '▲' : '▼'));
+      head.title = `Sorted ${weakFirst ? 'weakest first' : 'strongest first'}. Click to reverse.`;
+      clear(questionMount).append(
+        table(
+          [
+            { label: 'Question', cell: (r) => mono(r.question_id) },
+            { label: 'Lab', cell: (r) => (r.lab_slug ? r.lab_slug : h('span', { class: 'muted' }, 'onboarding quiz')) },
+            { label: 'Concept', cell: (r) => mono(r.concept) },
+            { label: 'Answers', class: 'num', cell: (r) => fmt(r.attempts) },
+            { label: 'Correct', class: 'num', cell: (r) => fmt(r.correct) },
+            { label: 'Percent correct', class: 'col-meter', head, sort: sortDir, cell: (r) => meter(r.percent_correct) },
+            {
+              label: 'Flag',
+              cell: (r) =>
+                r.attempts < LEARNING_MIN_ATTEMPTS
+                  ? h('span', { class: 'muted small' }, 'few answers')
+                  : r.percent_correct !== null && r.percent_correct < LEARNING_LOW
+                    ? pill('review', 'warn')
+                    : dash,
+            },
+          ],
+          sorted,
+          { caption: `Questions by percent correct, ${weakFirst ? 'weakest' : 'strongest'} first` }
+        )
+      );
+      if (refocus) (document.getElementById('l-sort')?.offsetParent ? document.getElementById('l-sort') : sortToggle).focus();
+    }
+    drawQuestions(false);
+
+    view.content(
+      h(
+        'div',
+        null,
+        tiles,
+        h('section', { class: 'block' }, h('h3', null, 'By concept', h('span', { class: 'muted small heading-note' }, ' weakest first')), conceptTable),
+        h(
+          'section',
+          { class: 'block' },
+          h('div', { class: 'block-head' }, h('h3', null, 'By question'), sortToggle),
+          questions.length ? questionMount : h('p', { class: 'muted' }, 'No question has any answers in this window.')
+        )
+      )
+    );
+  }
+
+  load();
+}
+
 /* -------------------------------------------------------------------- shell */
 
 const TABS = [
@@ -721,6 +942,7 @@ const TABS = [
   { id: 'users', label: 'Users', screen: usersScreen },
   { id: 'waitlist', label: 'Waitlist', screen: waitlistScreen },
   { id: 'feedback', label: 'Feedback', screen: feedbackScreen },
+  { id: 'learning', label: 'Learning', screen: learningScreen },
 ];
 
 function startShell() {

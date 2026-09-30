@@ -272,6 +272,30 @@ select.input { padding-right: var(--space-2); }
 .chart-svg .axis { stroke: var(--color-border-input); stroke-width: 1; }
 .chart-svg .tick { fill: var(--color-text-muted); font: var(--fs-2xs)/1 var(--font-sans); }
 
+/* ---------------------------------------------------------------- learning */
+
+.learning-note { max-width: 78ch; }
+.learning-results { margin-top: var(--space-5); }
+.field-error { color: var(--color-danger); font-size: var(--fs-sm); font-weight: 600; margin: 0 0 var(--space-3); }
+.field-error[hidden] { display: none; }
+.block-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.block-head > h3 { margin: 0; }
+.tile-text { font-size: var(--fs-xl); overflow-wrap: anywhere; }
+
+/* The percent-correct bar: a track and a fill, with the number beside it. */
+.table .col-meter { min-width: 190px; }
+.meter-cell { display: flex; align-items: center; gap: var(--space-2); }
+.meter { flex: 1 1 auto; min-width: 72px; height: 10px; background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: var(--radius-pill); overflow: hidden; }
+.meter-fill { display: block; height: 100%; background: var(--color-accent); border-radius: var(--radius-pill); }
+.meter-fill.meter-low { background: var(--color-warn); }
+.meter-value { flex: none; min-width: 5.6ch; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.sort-btn { font: inherit; font-weight: 600; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
+.sort-btn:hover { color: var(--color-text); }
+.sort-btn:focus-visible { border-radius: var(--radius-2); }
+.sort-arrow { font-size: 0.8em; }
+.sort-toggle { display: none; }
+
 /* ------------------------------------------------------- dialog and toasts */
 
 .dialog {
@@ -352,4 +376,9 @@ select.input { padding-right: var(--space-2); }
   .detail-cell .table tr { background: var(--color-bg); }
   .catalogue .lab-row { margin-bottom: var(--space-3); }
   .pager { flex-wrap: wrap; }
+  .filters-learning label:first-child { grid-column: 1 / -1; }
+  .sort-toggle { display: inline-flex; align-items: center; }
+  .table .col-meter { min-width: 0; }
+  .meter-cell { flex: 1 1 auto; justify-content: flex-end; max-width: 60%; }
+  .table td.col-meter::before { flex: none; }
 }

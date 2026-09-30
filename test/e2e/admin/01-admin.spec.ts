@@ -11,6 +11,9 @@ import { test, expect, type Page, type Response } from '@playwright/test';
  * which lets the "no secret in any response" check look for that exact value
  * as well as for the names of the secrets.
  *
+ * The Learning tab case answers /api/admin/learning from a route stub, so it
+ * checks the screen's rendering and filters whatever the deployed table holds.
+ *
  * Nothing here changes platform state: it never ends a session, primes or
  * drains a pool, or promotes a version. It stops at each confirm dialog and
  * cancels. Login is limited to five attempts a minute per address, and this
@@ -36,6 +39,7 @@ const TABS = [
   { id: 'users', name: 'Users', heading: 'Users' },
   { id: 'waitlist', name: 'Waitlist', heading: 'Waitlist' },
   { id: 'feedback', name: 'Feedback', heading: 'Feedback' },
+  { id: 'learning', name: 'Learning', heading: 'Learning' },
 ] as const;
 
 /** Every text response the page received, so secrets can be searched for afterwards. */
@@ -136,6 +140,119 @@ test.describe('admin panel', () => {
     }
     expect(failures, 'API calls that failed').toEqual([]);
     expect(consoleErrors, 'uncaught page errors').toEqual([]);
+  });
+
+  test('Learning tab: tiles, tables, filters and states, from a stubbed /api/admin/learning', async () => {
+    // A fresh page in the signed-in context: the stub lives on this page only.
+    const page = await signedIn.context().newPage();
+    const pageErrors: string[] = [];
+    page.on('pageerror', (e) => pageErrors.push(e.message));
+
+    const QUESTIONS = [
+      { lab_slug: 'lab-a', question_id: 'q-hard', concept: 'gateway.routing', attempts: 10, correct: 3, percent_correct: 30 },
+      { lab_slug: null, question_id: 'onboarding-q1', concept: 'basics.terminal', attempts: 2, correct: 0, percent_correct: 0 },
+      { lab_slug: 'lab-b', question_id: 'q-easy', concept: 'storage.objects', attempts: 8, correct: 7, percent_correct: 87.5 },
+      // Markup in a server string must be shown as text, never run.
+      { lab_slug: 'lab-b', question_id: '<img src=x onerror=window.__learningXss=1>', concept: '<b>bold</b>', attempts: 6, correct: 5, percent_correct: 83.3 },
+    ];
+    const CONCEPTS = [
+      { concept: 'basics.terminal', attempts: 2, correct: 0, percent_correct: 0 },
+      { concept: 'gateway.routing', attempts: 10, correct: 3, percent_correct: 30 },
+      { concept: 'storage.objects', attempts: 8, correct: 7, percent_correct: 87.5 },
+    ];
+    type Reply = { status?: number; body: unknown };
+    let reply: Reply = { body: { available: true, questions: QUESTIONS, concepts: CONCEPTS } };
+    const asked: URLSearchParams[] = []; // the query of each call (this file's `URL` is the admin's address)
+    await page.route('**/api/admin/learning*', (route) => {
+      asked.push(new URLSearchParams(route.request().url().split('?')[1] ?? ''));
+      const lab = asked[asked.length - 1].get('lab');
+      const body = lab && (reply.body as { questions?: typeof QUESTIONS }).questions
+        ? { available: true, questions: QUESTIONS.filter((q) => q.lab_slug === lab), concepts: CONCEPTS }
+        : reply.body;
+      return route.fulfill({ status: reply.status ?? 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+
+    await page.goto('/#learning');
+    const panel = page.locator('#panel-learning');
+    await expect(panel.getByRole('heading', { level: 2, name: 'Learning' })).toBeVisible();
+    await expect(panel.locator('.state-loading')).toHaveCount(0);
+
+    // Tiles: 20 answers in total, 4 questions, and the weakest concept with a real sample.
+    const tile = (label: string) => panel.locator('.stat-tile', { hasText: label });
+    await expect(tile('Total answers').locator('.tile-value')).toHaveText('20');
+    await expect(tile('Distinct questions').locator('.tile-value')).toHaveText('4');
+    await expect(tile('Weakest concept').locator('.tile-value')).toHaveText('gateway.routing');
+    await expect(tile('Weakest concept')).toContainText('30% correct over 10 answers');
+
+    // The note says answers are anonymous and what a low percent means.
+    await expect(panel.locator('.learning-note')).toContainText('anonymous');
+    await expect(panel.locator('.learning-note')).toContainText('review the lesson or the wording of this question');
+
+    // Per-concept table: weakest first, each with a bar and its number.
+    const concepts = panel.getByRole('region', { name: /by concept/i }).locator('tbody tr');
+    await expect(concepts).toHaveCount(3);
+    await expect(concepts.first()).toContainText('basics.terminal');
+    await expect(concepts.nth(1).locator('.meter-value')).toHaveText('30%');
+    await expect(concepts.nth(1).locator('.meter-fill')).toHaveCount(1);
+
+    // Per-question table: weakest first by default, reversible, and flagged below 50%.
+    const questions = panel.getByRole('region', { name: /^Questions by percent correct/ });
+    const ids = () => questions.locator('tbody tr td:first-child').allTextContents();
+    expect((await ids())[0]).toBe('onboarding-q1');
+    expect((await ids())[1]).toBe('q-hard');
+    await expect(questions.locator('tbody tr', { hasText: 'q-hard' }).getByText('review')).toBeVisible();
+    await expect(questions.locator('tbody tr', { hasText: 'onboarding-q1' }).getByText('few answers')).toBeVisible();
+    await expect(questions.locator('tbody tr', { hasText: 'onboarding-q1' })).toContainText('onboarding quiz');
+    await expect(questions.locator('th[aria-sort]')).toHaveAttribute('aria-sort', 'ascending');
+    await questions.getByRole('button', { name: /Percent correct/ }).click();
+    await expect(panel.getByRole('region', { name: /^Questions by percent correct, strongest first/ }).locator('th[aria-sort]')).toHaveAttribute('aria-sort', 'descending');
+    expect((await ids())[0]).toBe('q-easy');
+
+    // Server text is text: the markup is on the page as characters and nothing ran.
+    await expect(panel.getByText('<img src=x onerror=window.__learningXss=1>')).toBeVisible();
+    await expect(panel.locator('img')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __learningXss?: number }).__learningXss)).toBeUndefined();
+
+    // The lab dropdown is filled from the answers and sends ?lab=; the dates send ?from= and ?to= (end date inclusive).
+    await expect(panel.getByLabel('Lab')).toContainText('lab-a');
+    await panel.getByLabel('Lab').selectOption('lab-a');
+    await expect(panel.locator('tbody tr td:first-child', { hasText: 'q-easy' })).toHaveCount(0);
+    expect(asked[asked.length - 1].get('lab')).toBe('lab-a');
+    await panel.getByLabel('From (UTC)').fill('2026-09-01');
+    await panel.getByLabel('To (UTC, inclusive)').fill('2026-09-30');
+    await expect.poll(() => asked[asked.length - 1].get('to')).toBe(String(Date.parse('2026-10-01T00:00:00Z')));
+    expect(asked[asked.length - 1].get('from')).toBe(String(Date.parse('2026-09-01T00:00:00Z')));
+    expect(asked[asked.length - 1].get('lab')).toBe('lab-a');
+
+    // A backwards range is refused on the page, without a request.
+    const before = asked.length;
+    await panel.getByLabel('From (UTC)').fill('2026-10-05');
+    await expect(panel.getByRole('alert').filter({ hasText: 'From' })).toBeVisible();
+    expect(asked.length).toBe(before);
+
+    // Reset clears every filter and asks again without them.
+    await panel.getByRole('button', { name: 'Reset' }).click();
+    await expect.poll(() => asked[asked.length - 1].toString()).toBe('');
+
+    // Empty, unavailable and error states.
+    reply = { body: { available: true, questions: [], concepts: [] } };
+    await panel.getByRole('button', { name: 'Refresh' }).click();
+    await expect(panel.locator('.state-empty')).toContainText('No quiz answers have been recorded yet');
+
+    reply = { body: { available: false, questions: [], concepts: [] } };
+    await panel.getByRole('button', { name: 'Refresh' }).click();
+    await expect(panel.locator('.state-empty')).toContainText('not in this database yet');
+
+    reply = { status: 500, body: { error: { code: 'internal', message: 'D1 is having a bad day' } } };
+    await panel.getByRole('button', { name: 'Refresh' }).click();
+    await expect(panel.locator('.state-error')).toContainText('D1 is having a bad day');
+    reply = { body: { available: true, questions: QUESTIONS, concepts: CONCEPTS } };
+    await panel.getByRole('button', { name: 'Retry' }).click();
+    await expect(panel.locator('.state-error')).toHaveCount(0);
+    await expect(tile('Total answers').locator('.tile-value')).toHaveText('20');
+
+    expect(pageErrors, 'uncaught page errors').toEqual([]);
+    await page.close();
   });
 
   test('destructive buttons ask first, and Cancel does nothing', async () => {

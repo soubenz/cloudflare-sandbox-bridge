@@ -194,7 +194,11 @@ export function stateView(mount, retry) {
   };
 }
 
-/** A table inside a container that scrolls sideways on a narrow screen instead of the page doing so. */
+/**
+ * A table inside a container that scrolls sideways on a narrow screen instead of the page doing so.
+ * A column may give `head` (a node, such as a sort button) in place of its text label, and `sort`
+ * (`ascending` | `descending`) for aria-sort; `label` still names the cell on a phone.
+ */
 export function table(columns, rows, { caption } = {}) {
   return h(
     'div',
@@ -203,7 +207,7 @@ export function table(columns, rows, { caption } = {}) {
       'table',
       { class: 'table' },
       caption ? h('caption', { class: 'sr-only' }, caption) : null,
-      h('thead', null, h('tr', null, columns.map((c) => h('th', { scope: 'col', class: c.class }, c.label)))),
+      h('thead', null, h('tr', null, columns.map((c) => h('th', { scope: 'col', class: c.class, 'aria-sort': c.sort }, c.head ?? c.label)))),
       h(
         'tbody',
         null,
