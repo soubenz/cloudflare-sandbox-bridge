@@ -6,6 +6,8 @@ recap: A failed call gets an HTTP status that says whose fault it was (4xx calle
 ---
 A gateway has to say no sometimes, and how it says no matters to every client behind it. The HTTP status is the first signal, and its class carries the meaning.
 
+::diagram[gateway-error-semantics]
+
 A 4xx status means the request was wrong and sending it again unchanged will fail the same way. A malformed body, a missing credential, a name the gateway does not know: all caller problems. A 5xx status means the request may have been fine and something on the serving side failed, such as the provider being down or the gateway erroring. A retry with backoff is reasonable there, and a retry on a 4xx is a wasted call.
 
 The status alone is not enough. LiteLLM copies the shape of the OpenAI API, so an error comes back as JSON with an `error` object, and its `message` field says in words what went wrong. Clients that already speak the OpenAI format can read it without special handling. That is the reason Larkfield wants every team behind one gateway: one error shape to write handling for, instead of four.

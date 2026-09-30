@@ -6,6 +6,8 @@ recap: A search returns its top-k rows however far away they are; a distance thr
 ---
 A vector search answers "what are the k nearest documents?" It does not answer "which documents are relevant?". Those are different questions, and the gap between them is where wrong citations come from.
 
+::diagram[rag-close-matches]
+
 Look at how the app is built. `top_k` defaults to 8, so a plain query returns eight rows, ranked. The ranking is relative: row one is closer than row two. Whether row one is actually close is a fact about its **distance**, an absolute number you have to read for yourself.
 
 A **threshold** turns the ranking into a decision. Pick a line, say distance below 0.72, and everything under it counts as a close match while everything over it is noise. In this lab you are handed that line, so answering "how many documents are close" is a matter of counting rows under it. Two habits help:

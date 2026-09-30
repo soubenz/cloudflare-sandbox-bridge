@@ -6,6 +6,8 @@ recap: MCP is a JSON-RPC protocol where a client lists a server's tools and call
 ---
 MCP, the Model Context Protocol, is an agreement about how an agent talks to something that offers tools. Without it, every tool needs its own glue: Search's weather lookup and Billing's calculator would each have their own request format, and each agent would carry code for each of them. With it, an agent speaks one protocol and any server that speaks it can plug in.
 
+::diagram[mcp-what-is-mcp]
+
 The protocol is JSON-RPC 2.0 over HTTP. Each request has a `method` and `params`, and each response has either a `result` or an `error`. Two methods carry most of the weight for an agent:
 
 - `tools/list` asks a server what it offers. The answer is a list where each tool has a `name`, a human-readable `description` and an input schema saying which arguments it takes.

@@ -6,6 +6,8 @@ recap: The gateway reads its config when it starts, so an edit changes nothing u
 ---
 The alias mapping is a file, and this gateway reads that file when it starts. Editing `gateway/config.yaml` on disk does nothing to the running process. The change takes effect only when `litellm` restarts and reads the file again.
 
+::diagram[gateway-config-reload]
+
 That has a few practical consequences.
 
 There is a gap between saving and taking effect. If you save a file and then test immediately, you are testing the old config. When a change seems to have done nothing, the first thing to suspect is that nothing has reloaded it yet.

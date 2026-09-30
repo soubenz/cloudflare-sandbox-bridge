@@ -6,6 +6,8 @@ recap: A key can only call the aliases on its team's models list, and a refusal 
 ---
 A gateway key does two jobs. It identifies the caller, and it limits what the caller may use. The limit is a list of model aliases. Every alias not on the list is refused, even when the alias exists and works perfectly for someone else.
 
+::diagram[platform-key-scopes]
+
 Think of Larkfield's Support team, holding an alias called `support`. Search holds `fast`. A Search key that asks for `support` is not sent to a different model or downgraded. It gets an error back, and the error names which list said no. LiteLLM reports `key_model_access_denied` when the key's own list refuses, and `team_model_access_denied` when the team's list does.
 
 Where the list lives matters. In this lab, the new team is created with a `models` list, and its key is generated with only a team id. A key made that way inherits the team's list. It has no list of its own, so it cannot drift from the team's. If you gave a key its own separate list, you would have two places to keep in step.

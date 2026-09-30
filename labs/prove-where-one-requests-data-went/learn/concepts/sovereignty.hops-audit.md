@@ -6,6 +6,8 @@ recap: A trace lists every service a request touched; the gateway's own log reco
 ---
 A **hop** is one service that handles a request on its way to the model. The route for one alias in this lab has a service in the middle, and that changes what you can prove.
 
+::diagram[sovereignty-hops-audit]
+
 There are two independent records of every call.
 
 **LiteLLM's spend log** is the gateway's own bookkeeping. Each call becomes a row in the Postgres table `LiteLLM_SpendLogs`, with a `request_id`, the `model_group` (the alias) and the `api_base`. The `api_base` is where the gateway sent the request, which is the first hop. If that address is a proxy, the log says so and stops. It cannot know what the proxy did next.

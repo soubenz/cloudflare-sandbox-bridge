@@ -6,6 +6,8 @@ recap: A search always returns something, even when nothing is relevant; only th
 ---
 Ask a vector search anything and it returns k rows. There is no empty result and no "I do not know", because the database only sorts by distance. If the corpus holds nothing relevant, you get the nearest irrelevant documents.
 
+::diagram[rag-out-of-corpus]
+
 That is the failure Priya described. The assistant asked for context, retrieval handed over its top result, and the model wrote a fluent answer from it. A top-1 with no distance check looks the same to the model whether it is a strong match or the least bad option.
 
 A question outside the corpus, an **out-of-corpus query**, is how you find out which of the two your service does. The test is simple. Ask something the documents cannot answer, request the whole corpus with `--top-k 24`, and look at the best distance in the list rather than at what is ranked first. Ranked first is always something. What matters is how far away it is.

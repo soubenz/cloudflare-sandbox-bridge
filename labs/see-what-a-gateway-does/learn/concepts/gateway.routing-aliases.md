@@ -6,6 +6,8 @@ recap: An alias is the stable name callers send; the gateway's config maps it to
 ---
 Larkfield's teams never write a provider model name in their code. They call the gateway and send an alias, `support` or `fast`, in the `model` field. The gateway looks that name up and decides where the call goes. The caller never has to know, and never has to change when the answer changes.
 
+::diagram[gateway-alias-routing]
+
 The mapping lives in the gateway's config. In this lab it is `gateway/config.yaml`, and each entry has the same three parts:
 
 ```yaml

@@ -6,6 +6,8 @@ recap: Every span except the root names a parent; nesting in the waterfall shows
 ---
 Every span except the first one has a **parent span**, recorded as a parent span id. The first span, the one with no parent, is the **root**. Follow the parent ids and you get a tree, and the waterfall is that tree drawn with indentation.
 
+::diagram[otel-parent-child]
+
 The tree says more than the timing does. Two children of the same parent that run one after another, like `auth.verify_session` and the model call under the gateway's request span, are **siblings**: the parent did one thing, then another. A child nested under a child is different. It means one span was already running when another began, and that inner span is part of the outer span's work. The direct parent is the row it sits immediately under, not the top of the tree. If you were reading a trace where `render_page` called `load_template`, which read a file, the file read's parent would be `load_template`, and only its grandparent would be `render_page`.
 
 This still holds when spans come from different services. The sender needs to know its parent at the moment it starts, and across a network hop that is what the W3C `traceparent` header carries: the trace id and the id of the calling span. The receiving service starts its own span with that as the parent, and the tree stays whole. Without it you get separate traces and no way to connect them.

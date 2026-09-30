@@ -6,6 +6,8 @@ recap: A gateway registers tool servers, discovers their tools, and exposes a ch
 ---
 Security's request was one door for tools. A tool gateway is that door, and ContextForge, the gateway in this lab, builds it in three steps that are worth keeping apart, because each one has its own list.
 
+::diagram[mcp-virtual-servers]
+
 First, you register a tool server with the gateway. ContextForge calls this a gateway too, which is confusing, so think of it as a registration: a name and a URL. Here there are two, `weather-tools` and `calculator-tools`. The gateway connects, asks the server `tools/list` and remembers the tools it finds. These are the discovered tools. Each gets a gateway-prefixed name, which is why the calculator's `add` becomes `calculator-tools-add`. The prefix means two servers can each have a tool with the same name without colliding.
 
 Second, you create a virtual server: a named bundle of tools chosen from the discovered ones. Here it is `toy-tools`. It gets its own endpoint, of the form `/servers/ID/mcp`, and an agent connected there is speaking MCP to what looks like an ordinary single tool server. It has no idea that its tools come from different servers behind the gateway.

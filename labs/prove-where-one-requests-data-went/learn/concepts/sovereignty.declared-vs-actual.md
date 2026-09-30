@@ -6,6 +6,8 @@ recap: To check a residency property, compare every region tag observed on a rea
 ---
 A residency claim has two halves. The **declared** region is what a deployment is configured to be: the `region` under its `model_info`. The **actual** region is what a real request touched, which you read from the trace. Proving a property means putting the two side by side, request by request.
 
+::diagram[sovereignty-declared-vs-actual]
+
 In this lab each service that handles a request tags its own span with `opalix.region`. The gateway does not tag itself, and other spans may carry nothing. So the procedure is:
 
 1. Send a request and find its trace, using the response id.

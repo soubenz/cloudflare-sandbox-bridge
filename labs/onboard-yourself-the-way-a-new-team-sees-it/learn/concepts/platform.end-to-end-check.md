@@ -6,6 +6,8 @@ recap: A team works only when a real model call and a real tool call both succee
 ---
 Configuration can look complete and still fail on the first request. Keys can be scoped to an alias that has no model behind it. A tool server can be registered but empty. A virtual server can exist and offer no tools. The only proof is a request that uses everything that was set up, in the order a real service would use it.
 
+::diagram[platform-end-to-end-check]
+
 For a team like the one in this lab, that is two calls.
 
 **The model half.** Call `/chat/completions` on the gateway with the new key and the alias the team was granted. A 200 with a reply in `choices` means the key, the team, the alias and the provider behind it all lined up.

@@ -6,6 +6,8 @@ recap: Onboarding a team means creating its identity, granting access on the gat
 ---
 Onboarding sounds like one task, but it is a chain where each link makes the next one possible. In this lab the chain has five steps, and `onboard.py` runs them against the real services.
 
+::diagram[platform-onboarding-steps]
+
 **1. Give the team an identity.** On the gateway, a team is a record that owns keys and carries a list of models it may use. Here that is a LiteLLM team, created with a list of aliases. Nothing can be called yet; the team exists.
 
 **2. Mint a key.** A key belongs to the team and is what the team's code sends as its bearer token. Keys are shown once, at creation. Lose it and you mint another.

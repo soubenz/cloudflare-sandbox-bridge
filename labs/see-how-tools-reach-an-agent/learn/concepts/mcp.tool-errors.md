@@ -6,6 +6,8 @@ recap: An MCP failure is either a JSON-RPC error instead of a result, or a resul
 ---
 When a tool call goes wrong, the model behind the agent has to find out and decide what to do next. It only sees what the protocol hands back, so it matters where the failure is reported.
 
+::diagram[mcp-tool-errors]
+
 MCP has two places for it, and both can arrive inside an HTTP 200.
 
 The first is a JSON-RPC error. The response has an `error` object, with a code and a message, in place of a `result`. This layer is for protocol-level trouble: a malformed request, a method the server does not have, arguments that do not fit the input schema.

@@ -6,6 +6,8 @@ recap: Every response carries prompt and completion token counts; the gateway re
 ---
 A model call is billed by size, not by count. The unit is the token: the input you send (prompt tokens) and the output you get back (completion tokens). Every chat response carries a `usage` block with both, plus a total that is simply their sum.
 
+::diagram[gateway-usage-and-spend]
+
 The provider is the one that counts. The gateway reads the `usage` block out of the provider's response and writes it down. That is why a gateway is a good place for cost data: every call passes through it, and it stores what it saw.
 
 The record is the spend log, one row per call. In this lab it sits in Postgres, and LiteLLM serves it at `/spend/logs`. Each row holds the timestamp, the alias, the prompt, completion and total token counts, and a `spend` figure.

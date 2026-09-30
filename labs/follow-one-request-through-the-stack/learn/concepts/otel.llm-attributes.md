@@ -6,6 +6,8 @@ recap: A model call span carries gen_ai.* attributes for model and token counts;
 ---
 A trace tells you where time went. To learn what a model call cost, the model-call span has to carry the numbers. OpenTelemetry has agreed names for that, the **gen_ai semantic conventions**, so any backend can read them:
 
+::diagram[otel-llm-attributes]
+
 - `gen_ai.request.model` is the model the caller asked for, and `gen_ai.response.model` is the one that answered. The two can differ when a provider resolves a name to a dated version.
 - `gen_ai.usage.input_tokens` counts the prompt and `gen_ai.usage.output_tokens` counts the reply.
 - The conventions define input and output counts. Some emitters, including the seed script in this lab, also record `gen_ai.usage.total_tokens`, which is their sum. A total is convenient, but it is derived.

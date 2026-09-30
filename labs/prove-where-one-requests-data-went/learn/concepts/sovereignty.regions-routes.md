@@ -6,6 +6,8 @@ recap: A region is a label a deployment claims, and a route is the path from an 
 ---
 Callers of the gateway never name a region. They name an alias, such as `support-eu`, and the gateway decides where the request goes. Two ideas are involved, and they are easy to confuse.
 
+::diagram[sovereignty-regions-routes]
+
 A **route** is the path a request takes: alias, then a deployment, then the address that deployment calls (its `api_base`), then whatever sits behind that address. In this lab, `gateway/config.yaml` defines three aliases. Each one is a deployment of the same fake model with its own address. Two aliases point straight at a regional provider. One points at a regional proxy first.
 
 A **region** is a fact about a deployment that someone wrote down. LiteLLM has no built-in idea of a region. You attach one yourself as free-form fields under a deployment's `model_info`. This lab uses `region`, `data_residency_zone` and `opalix_hop_count`. The gateway serves those fields back verbatim from `GET /v1/model/info`, so you can read them from the running system:

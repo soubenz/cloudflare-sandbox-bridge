@@ -6,6 +6,8 @@ recap: An embedding turns text into a vector, and pgvector measures how close tw
 ---
 A retrieval service never reads your documents at query time. It compares numbers. An **embedding** is a function that turns a piece of text into a fixed-length list of numbers, a vector. Every document is embedded once and stored; each query is embedded when it arrives, with the same function.
 
+::diagram[rag-embeddings-similarity]
+
 Two texts are "similar" when their vectors point in nearly the same direction. The usual measure is **cosine distance**: 0 means the same direction, about 1 means unrelated, and 2 is the opposite direction. pgvector spells it `<=>`. The query behind this lab's app is one line of SQL:
 
 ```
