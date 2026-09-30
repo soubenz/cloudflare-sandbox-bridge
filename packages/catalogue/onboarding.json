@@ -1,0 +1,280 @@
+{
+  "version": 1,
+  "intro": "Welcome to Larkfield's AI platform. This quiz takes about **4 minutes** and you only take it once. There is **no score** and nothing is graded. Your answers only decide **where each module starts**: topics you already know open as short recaps, and topics that are new open as full lessons. Answer from what you know today, and pick your best guess when unsure. Every lab also asks a few questions of its own, and you can always open any lesson, or skip it.",
+  "questions": [
+    {
+      "id": "ob-gw-alias",
+      "concept": "gateway.routing-aliases",
+      "type": "single",
+      "prompt": "A product team calls the LLM gateway with the model name 'support'. What is 'support'?",
+      "options": [
+        { "id": "a", "text": "The exact model name used by the upstream provider" },
+        { "id": "b", "text": "A name the platform team maps to a real model, so it can change without caller code changing" },
+        { "id": "c", "text": "The team's API key, sent in the model field" },
+        { "id": "d", "text": "A saved prompt template the gateway prepends to every request" }
+      ],
+      "answer": ["b"],
+      "explanation": "An alias is a stable, team-facing name. The gateway config decides which provider and model sit behind it, so the platform team can swap or upgrade models without touching any caller.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-gw-cost",
+      "concept": "gateway.usage-and-spend",
+      "type": "multi",
+      "prompt": "Which of these determine what a single model call costs? Select all that apply.",
+      "options": [
+        { "id": "a", "text": "The number of input (prompt) tokens" },
+        { "id": "b", "text": "The number of output (completion) tokens" },
+        { "id": "c", "text": "The price of the model the alias currently resolves to" },
+        { "id": "d", "text": "How many HTTP connections the caller opened" },
+        { "id": "e", "text": "The length of the alias name" }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": "Cost is tokens in and tokens out, each multiplied by the price of the model that actually served the call. The gateway reads token counts from the provider's usage field and writes them to the spend log per call.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-gw-errors",
+      "concept": "gateway.error-semantics",
+      "type": "single",
+      "prompt": "A caller sends a request with a model alias the gateway does not know. What should a well-behaved gateway do?",
+      "options": [
+        { "id": "a", "text": "Route it to the default model so the caller still gets an answer" },
+        { "id": "b", "text": "Forward the name to the provider and pass on whatever comes back" },
+        { "id": "c", "text": "Reject it with a client error (4xx) that names the unknown alias" },
+        { "id": "d", "text": "Return HTTP 200 with an empty completion so callers do not crash" }
+      ],
+      "answer": ["c"],
+      "explanation": "An unknown alias is the caller's mistake, so it deserves a 4xx that says which alias failed. Silent fallbacks hide the bug and bill the wrong model, and a 200 with empty text looks like success to every dashboard.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-mcp-what",
+      "concept": "mcp.what-is-mcp",
+      "type": "single",
+      "prompt": "What is MCP, the Model Context Protocol?",
+      "options": [
+        { "id": "a", "text": "A model compression format that makes LLMs run on smaller machines" },
+        { "id": "b", "text": "A vendor-specific REST API for calling one provider's models" },
+        { "id": "c", "text": "A standard protocol for an agent to discover and call tools and data sources that servers expose" },
+        { "id": "d", "text": "A fine-tuning method that teaches a model to use tools" }
+      ],
+      "answer": ["c"],
+      "explanation": "MCP standardises how an agent lists the tools a server offers and calls them, so one agent can use many tool servers without custom glue for each. It does not change the model itself.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-mcp-virtual",
+      "concept": "mcp.virtual-servers",
+      "type": "single",
+      "prompt": "Why would a platform put one virtual MCP server in front of several real tool servers?",
+      "options": [
+        { "id": "a", "text": "Agents connect to a single endpoint and see one curated tool list, while the platform controls which underlying tools are exposed" },
+        { "id": "b", "text": "It merges the tool servers into one process so every tool runs faster" },
+        { "id": "c", "text": "It rewrites tool code into the agent's programming language" },
+        { "id": "d", "text": "It removes the need for the real tool servers to exist" }
+      ],
+      "answer": ["a"],
+      "explanation": "A virtual server is a front door. The real servers still do the work, but agents get one address and only the tools you chose to publish, which makes access control and audit far simpler.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-mcp-errors",
+      "concept": "mcp.tool-errors",
+      "type": "single",
+      "prompt": "An agent calls a tool and the service behind it times out. What should the agent receive?",
+      "options": [
+        { "id": "a", "text": "An empty successful result, so the agent loop keeps running" },
+        { "id": "b", "text": "Nothing: the agent waits until the tool server recovers" },
+        { "id": "c", "text": "The raw stack trace, which terminates the agent process" },
+        { "id": "d", "text": "A readable error result it can reason about, such as retrying, trying another tool or telling the user" }
+      ],
+      "answer": ["d"],
+      "explanation": "A tool failure is information the model can act on, so it should come back as a clearly marked error with a useful message. An empty success is the worst case: the agent believes there was simply nothing to find.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-rag-embed",
+      "concept": "rag.embeddings-similarity",
+      "type": "single",
+      "prompt": "Why does a retrieval system compare embeddings instead of only searching for keywords?",
+      "options": [
+        { "id": "a", "text": "Embeddings are exact hashes, so lookups are faster than a keyword index" },
+        { "id": "b", "text": "Embeddings compress documents so that they fit inside the model's prompt" },
+        { "id": "c", "text": "Embeddings encrypt document text so it can be stored safely" },
+        { "id": "d", "text": "Texts with similar meaning land near each other, so 'return an order' can match 'refund policy' with no shared words" }
+      ],
+      "answer": ["d"],
+      "explanation": "An embedding is a vector that places text by meaning. Similarity between vectors, often cosine similarity, finds related passages even when the wording differs. It is a fuzzy match, not an exact one.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-rag-close",
+      "concept": "rag.close-matches",
+      "type": "single",
+      "prompt": "You ask retrieval for the top 3 chunks and get 3 results, even for a strange question. Why does it always return something?",
+      "options": [
+        { "id": "a", "text": "Top-k returns the nearest chunks whether or not they are actually near, so a score threshold is needed to reject weak matches" },
+        { "id": "b", "text": "If three results come back, the corpus must contain the answer" },
+        { "id": "c", "text": "The index is corrupt and is padding the results" },
+        { "id": "d", "text": "The language model generates the chunks when none match" }
+      ],
+      "answer": ["a"],
+      "explanation": "Nearest-neighbour search ranks everything and returns the best k, however poor. The similarity score tells you how close each one really is, and a minimum score is how you say nothing relevant was found.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-rag-outside",
+      "concept": "rag.out-of-corpus",
+      "type": "multi",
+      "prompt": "A user asks something Larkfield's documents do not cover. Which safeguards help stop the system from inventing an answer? Select all that apply.",
+      "options": [
+        { "id": "a", "text": "Drop chunks below a minimum similarity score before they reach the model" },
+        { "id": "b", "text": "Tell the model to say it does not know when the context lacks the answer" },
+        { "id": "c", "text": "Raise top-k to 20 so that something is bound to match" },
+        { "id": "d", "text": "Set the temperature to 0 so the model cannot make things up" }
+      ],
+      "answer": ["a", "b"],
+      "explanation": "Filter weak context out and instruct the model to admit gaps. More chunks only adds noise, and temperature 0 makes wording repeatable but does not make a claim true.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-otel-span",
+      "concept": "otel.traces-and-spans",
+      "type": "single",
+      "prompt": "In distributed tracing, what is a span?",
+      "options": [
+        { "id": "a", "text": "A log line with a severity level and a message" },
+        { "id": "b", "text": "One timed operation with a name, start time, duration and attributes; a trace is the set of spans for one request" },
+        { "id": "c", "text": "A metric summed over a one-minute window" },
+        { "id": "d", "text": "The whole journey of a request from the first service to the last" }
+      ],
+      "answer": ["b"],
+      "explanation": "A span is a single unit of work, like one HTTP call or one model call. Spans that belong to the same request share a trace id, and that whole set is the trace.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-otel-parent",
+      "concept": "otel.parent-child",
+      "type": "single",
+      "prompt": "A request goes from an app to the gateway and on to a provider. What lets the gateway's span join the app's trace?",
+      "options": [
+        { "id": "a", "text": "Both services report timestamps that happen to overlap" },
+        { "id": "b", "text": "Both run on the same hostname" },
+        { "id": "c", "text": "The trace id and parent span id travel with the request, for example in the traceparent header" },
+        { "id": "d", "text": "The tracing backend reads both services' logs and guesses the link" }
+      ],
+      "answer": ["c"],
+      "explanation": "Context propagation is what stitches services together. The caller sends its trace id and current span id, and the callee starts a child span with that parent. Without the header you get separate, unrelated traces.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-otel-llm",
+      "concept": "otel.llm-attributes",
+      "type": "multi",
+      "prompt": "You want cost per team from your traces. Which attributes must a model-call span carry? Select all that apply.",
+      "options": [
+        { "id": "a", "text": "The model that served the call" },
+        { "id": "b", "text": "Input and output token counts" },
+        { "id": "c", "text": "An identifier for the calling team" },
+        { "id": "d", "text": "The call's latency" },
+        { "id": "e", "text": "The HTTP status code" }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": "Cost is tokens multiplied by the model's price, grouped by team, so you need the model, both token counts and a team id. Latency and status describe performance and health, not spend.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-plat-steps",
+      "concept": "platform.onboarding-steps",
+      "type": "multi",
+      "prompt": "Which of these belong in onboarding a new product team to the platform? Select all that apply.",
+      "options": [
+        { "id": "a", "text": "Issue the team its own key, limited to what it needs" },
+        { "id": "b", "text": "Decide which model aliases that key may call" },
+        { "id": "c", "text": "Record a team identifier so spend and traces can be attributed" },
+        { "id": "d", "text": "Hand over the provider's master API key as a fallback" },
+        { "id": "e", "text": "Copy the gateway config into the team's repository" }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": "Onboarding gives a team a scoped identity and a defined set of aliases, and makes its usage attributable. Sharing the master key or copying config defeats the point of a central platform.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-plat-scope",
+      "concept": "platform.key-scopes",
+      "type": "single",
+      "prompt": "What is a scoped API key?",
+      "options": [
+        { "id": "a", "text": "A key that is valid for exactly one request and then expires" },
+        { "id": "b", "text": "A key that can only be used from a single IP address" },
+        { "id": "c", "text": "A key restricted to certain aliases or actions, so a leak or mistake can only reach so far" },
+        { "id": "d", "text": "A key that encrypts the request body end to end" }
+      ],
+      "answer": ["c"],
+      "explanation": "A scope is a limit on what the key may do, such as only the 'support' and 'fast' aliases and no admin calls. The smaller the scope, the smaller the damage if it leaks. A team still on an old alias needs that alias kept in its scope until it migrates.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-plat-e2e",
+      "concept": "platform.end-to-end-check",
+      "type": "single",
+      "prompt": "A new team's key returns HTTP 200 on a test call. Have you proved onboarding works?",
+      "options": [
+        { "id": "a", "text": "Yes, a 200 means every part of the platform is configured correctly" },
+        { "id": "b", "text": "Yes, as long as the gateway's health endpoint is green" },
+        { "id": "c", "text": "No, the gateway must be redeployed before the team can be tested" },
+        { "id": "d", "text": "Not yet: confirm the call ran as that team and appears in the spend log and traces attributed to it" }
+      ],
+      "answer": ["d"],
+      "explanation": "A 200 only shows that some call succeeded. An end-to-end check follows one request as the new team through the real path, then finds it in the spend log and trace with the right team on it.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-sov-routes",
+      "concept": "sovereignty.regions-routes",
+      "type": "single",
+      "prompt": "Some Larkfield data must stay in the EU. What does a region route decide?",
+      "options": [
+        { "id": "a", "text": "Which regional endpoint or deployment a request is sent to, based on rules such as team and data class" },
+        { "id": "b", "text": "Which region the invoice is issued in" },
+        { "id": "c", "text": "Which network path is fastest at that moment" },
+        { "id": "d", "text": "Where the logs are archived after a month" }
+      ],
+      "answer": ["a"],
+      "explanation": "A route ties a request to a place it may run. Rules such as 'Billing traffic stays in the EU' pick the regional endpoint, so residency is enforced when the call is made, not checked afterwards.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-sov-hops",
+      "concept": "sovereignty.hops-audit",
+      "type": "multi",
+      "prompt": "To prove where a request's data went, what should an audit trail record? Select all that apply.",
+      "options": [
+        { "id": "a", "text": "Every service the request passed through, not just the first and last" },
+        { "id": "b", "text": "The region each of those hops actually ran in" },
+        { "id": "c", "text": "A shared request id that links the hops together" },
+        { "id": "d", "text": "The per-token price of the model" },
+        { "id": "e", "text": "Only the hops that returned an error" }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": "Data can be exposed at any hop, so the trail needs all of them, the region of each and one id that ties them into a single path. Recording only failures would hide exactly the calls you were asked about.",
+      "diagnostic": true
+    },
+    {
+      "id": "ob-sov-actual",
+      "concept": "sovereignty.declared-vs-actual",
+      "type": "single",
+      "prompt": "A route is declared as region EU, but a trace shows one hop served from a US host. How can declared and actual regions differ?",
+      "options": [
+        { "id": "a", "text": "They cannot: the config is authoritative, so the trace must be wrong" },
+        { "id": "b", "text": "The declared region is intent; the actual region is where the call ran, for example after a failover or a provider serving from elsewhere" },
+        { "id": "c", "text": "Trace timestamps are in UTC, which shifts the region shown" },
+        { "id": "d", "text": "Providers are never able to serve a request outside the declared region" }
+      ],
+      "answer": ["b"],
+      "explanation": "Declared region is what the config says should happen; actual region is what the evidence shows did happen. When a regulator asks, trust the observed hop, and treat any mismatch as an incident to explain.",
+      "diagnostic": true
+    }
+  ]
+}
