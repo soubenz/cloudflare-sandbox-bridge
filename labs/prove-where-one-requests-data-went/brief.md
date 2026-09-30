@@ -1,84 +1,68 @@
 # Prove where one request's data went
 
-Nothing is broken here. This is a tour: a real gateway, three real
-"regional" model deployments behind it, and a real distributed-tracing
-backend watching every hop. You send a request yourself, then prove -- from
-the system's own real logs and its own real trace, not from what a config
-file merely claims -- exactly where its data actually went.
+Nothing is broken; this is a tour: a gateway, three "regional" model
+deployments behind it, and a tracing backend watching every hop. You send
+a request, then prove -- from the system's own log and trace, not from a
+config file -- where its data actually went.
 
 ## What is running
 
 | Service | What it is |
 |---|---|
-| **litellm** | A real LiteLLM gateway. Its `model_list` has three aliases: `support-us`, `support-apac`, `support-eu` -- three "regional" deployments of the same fake model, each tagged with its own `region` in LiteLLM's own `model_info`. |
-| `support-us`, `support-apac` | Each routes straight to its own regional fake provider. One real hop past the gateway. |
-| `support-eu` | Routes through a **regional proxy** first, which itself then calls the real eu provider. Two real hops past the gateway, not one. |
-| **jaeger** tab | A real Jaeger backend. Every one of the calls above is traced into it over real OTLP, with a real, correctly-connected parent-child span chain all the way from the gateway to wherever the request actually ends up -- never a hand-rolled trace id. |
-| LiteLLM's own log | Every call is also logged the normal way LiteLLM logs any call, in `LiteLLM_SpendLogs` (a real Postgres table) -- `model_group` (which alias), `api_base` (the *first* hop's destination), `request_id`. This is a second, independent view of the same request. |
+| **litellm** | A LiteLLM gateway with three aliases, `support-us`, `support-apac`, `support-eu`: "regional" deployments of the same fake model, each tagged with its own `region` in `model_info`. |
+| `support-us`, `support-apac` | Each routes straight to its own regional fake provider: one hop past the gateway. |
+| `support-eu` | Routes through a **regional proxy** first, which then calls the real eu provider: two hops past the gateway. |
+| **jaeger** tab | Every call is traced into it as one connected span chain, from the gateway to wherever the request ends up. |
+| LiteLLM's own log | Every call is also logged in the Postgres table `LiteLLM_SpendLogs`: `model_group` (alias), `api_base` (the *first* hop's destination), `request_id`. A second, independent view. |
 
 ## Send a request
-
-From a terminal:
 
 ```bash
 python3 -B /workspace/send_request.py support-eu "a question a customer asked"
 ```
 
-(`support-us` and `support-apac` work the same way.) The response carries
-an `id` -- something like `chatcmpl-fake-eu-3c0400b8981d`. That id is your
-thread to pull on: it is a real attribute on the span the request's own
-final provider hop produced (`opalix.response_id`), and it is the literal
-`request_id` LiteLLM itself logged for that exact call.
+(`support-us` and `support-apac` work the same way.) The response `id`,
+like `chatcmpl-fake-eu-3c0400b8981d`, is your thread: it is the
+`opalix.response_id` on the final provider span and the `request_id`
+LiteLLM logged.
 
 ## Look at both views
 
-**In Jaeger** (the jaeger tab, no login needed): click **Find Traces**,
-service `opalix-litellm`, and open the trace whose root span is closest to
-when you just sent your request. Expand every row. Look at:
+**In Jaeger** (no login): **Find Traces**, service `opalix-litellm`, open
+the trace closest to when you sent the request, expand every row, and look at:
 
-- Which services appear in it (each has its own row prefix in the service
-  picker, and its own colour in the waterfall) -- for `support-us` you
-  should see two: `opalix-litellm` and `opalix-provider-us`. For
-  `support-eu` you should see three, because a real second hop is in the
-  middle.
-- The `opalix.region` tag on every span that carries one. Does every single
-  region tag in the trace agree with each other, or does the request ever
-  actually reach a region other than the one you asked for?
-- The `opalix.response_id` tag on the final provider span -- it should
-  match the `id` your own request got back.
+- Which services appear in it: two for `support-us` (`opalix-litellm`,
+  `opalix-provider-us`); `support-eu` has a second hop in the middle.
+- The `opalix.region` tag on every span that carries one. Do they all
+  agree, or does the request reach a region you didn't ask for?
+- The `opalix.response_id` on the final provider span (it matches your `id`).
 
-**In LiteLLM's own log** (a terminal, `psql`):
+**In LiteLLM's log** (`psql`):
 
 ```bash
 psql -h 127.0.0.1 -p 5432 -U postgres -c \
   "select request_id, model_group, api_base from \"LiteLLM_SpendLogs\" where request_id = '<the id you got back>';"
 ```
 
-Notice what this view does and doesn't tell you: `model_group` confirms
-which alias you called, and `api_base` is the address LiteLLM itself
-called -- but for `support-eu`, that address is the *regional proxy*, not
-the real provider two hops down. LiteLLM's own log stops at the first hop;
-only the trace shows you the rest of the journey.
+For `support-eu`, `api_base` is the *regional proxy*, not the provider two
+hops down: the log stops at the first hop, and only the trace shows the
+rest.
 
 ## Answer these
 
-Send a real request through `support-us` and a real request through
-`support-eu`, then answer, from what those two real traces actually show
-*right now*:
+Send a request through `support-us` and one through `support-eu`, then
+answer from what those traces show *right now*:
 
-1. Which single region does a `support-us` request's trace actually show
-   the data reaching (the `opalix.region` tag on its provider span)?
-2. How many distinct services' spans appear in a `support-eu` request's
-   trace (count every service that shows up in it, including the gateway
-   itself)?
-3. Does a `support-eu` request ever actually touch a region other than the
-   one `support-eu` itself is declared to be in (check
-   `support-eu`'s own `model_info.region`, live, against every
-   `opalix.region` tag the trace actually carries)? Answer `true` if every
-   region tag in the trace agrees with `support-eu`'s declared region,
-   `false` if even one hop's tag disagrees.
+1. Which single region does a `support-us` trace show the data reaching
+   (the `opalix.region` tag on its provider span)?
+2. How many distinct services' spans appear in a `support-eu` trace,
+   counting the gateway itself?
+3. Does a `support-eu` request ever touch a region other than the one
+   `support-eu` is declared to be in (its live `model_info.region`)?
+   `true` if every region tag agrees with the declared region, `false` if
+   any hop disagrees.
 
-Write your answers into `/workspace/answers.json`, which starts out as:
+Write them into `/workspace/answers.json`, which starts as:
 
 ```json
 {
@@ -88,17 +72,15 @@ Write your answers into `/workspace/answers.json`, which starts out as:
 }
 ```
 
-Replace each `null`: the first with a region name (a string, exactly as
-the trace's own tag spells it), the second with a number, the third with
-`true` or `false`.
+Replace each `null`: a region string exactly as the trace spells it, a
+number, and `true` or `false`.
 
 ## Checking your work
 
 | Check | Passes when |
 |---|---|
-| `services-are-up` | LiteLLM and Jaeger are both reachable, and all three aliases report a `region` in their own live `model_info` |
-| `answers-match-live-traces` | Your three answers match what a fresh, real request through `support-us` and a fresh, real request through `support-eu` actually show *right now*, checked live against Jaeger's own v3 API and LiteLLM's own spend log -- never against a fixed key |
+| `services-are-up` | LiteLLM and Jaeger are reachable, and all three aliases report a live `model_info` `region`. |
+| `answers-match-live-traces` | Your three answers match what a fresh request through `support-us` and one through `support-eu` show *right now*, checked live against Jaeger's v3 API and LiteLLM's spend log, never a fixed key. |
 
-The second check fires its own real requests and re-reads the real,
-running system every time it runs. It never looks at anything in your
-workspace except the three values you wrote.
+The second check fires its own requests each time and reads only your
+three values from the workspace.

@@ -24,8 +24,8 @@
 #     `123-45-6789`, `987-65-4320` and `078-05-1120` will NEVER be flagged,
 #     on purpose, no matter what. This lab's own seed/test data uses
 #     `234-56-7890`, `512-33-4471` and similar instead -- confirmed live to
-#     be detected correctly. hints.md calls this out, since it's exactly
-#     the kind of real "recall" surprise this lab means to teach, and a
+#     be detected correctly. The timed hint below calls this out, since it's
+#     exactly the kind of real "recall" surprise this lab means to teach, and a
 #     learner who reaches for a placeholder SSN while testing their own fix
 #     will otherwise conclude their fix doesn't work when it does.
 #  4. Presidio + spaCy get their own isolated Python install

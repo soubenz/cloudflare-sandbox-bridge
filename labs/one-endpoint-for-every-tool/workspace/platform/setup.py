@@ -80,7 +80,7 @@ def main():
         "client_token": "",
     }
 
-    # TODO: register each server in tool_servers as a gateway (its URL is in
+    # Your job: register each server in tool_servers as a gateway (its URL is in
     # <NAME>_URL, e.g. INVENTORY_URL for the "inventory" entry), create the
     # one virtual server described by `public_bundle`, mint the one scoped
     # client token, and fill in `result` above with what actually happened.

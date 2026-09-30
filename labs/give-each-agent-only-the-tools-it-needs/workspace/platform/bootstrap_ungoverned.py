@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stand up this lab's broken starting state. Not your job to fix or edit.
+"""Stand up this lab's broken starting state. Not yours to edit.
 
 Runs once, automatically, in the background as ContextForge itself starts
 (see manifest.yaml's `contextforge` service argv) -- the same pattern

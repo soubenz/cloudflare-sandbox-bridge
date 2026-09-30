@@ -93,7 +93,7 @@ def main():
 
     result = {"teams": {name: "" for name in team_specs}, "billing_admin": ""}
 
-    # TODO: make the gateway match team_specs and user_specs, using
+    # Your job: make the gateway match team_specs and user_specs, using
     # _request(...) with LITELLM_MASTER_KEY, then fill in the blanks in
     # `result` above with the real keys you create. See the module
     # docstring for the exact sequence (create teams -> team keys -> team

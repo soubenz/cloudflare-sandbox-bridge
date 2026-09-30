@@ -4,39 +4,36 @@ Three teams each built their own MCP tool server, with no platform involved:
 
 | Team | Server | What it exposes |
 |---|---|---|
-| Inventory | `services/inventory_server.py` | `lookup_stock` -- how many units of a SKU are in stock |
+| Inventory | `services/inventory_server.py` | `lookup_stock` -- units of a SKU in stock |
 | Billing | `services/billing_server.py` | `charge_lookup` (read-only) **and** `refund_charge` (moves money, built for on-call use only) |
 | Search | `services/search_server.py` | `search_docs` -- search a small fixed document set |
 
-All three are up right now, each on its own port. ContextForge is up too,
-but nothing is registered with it: no gateway, no virtual server, no
-token. There is no single endpoint any caller can reach these tools
-through, and billing's `refund_charge` sits right next to its safe
-`charge_lookup` tool on the exact same server -- nothing about the wire
-format marks it as dangerous.
+All three are up on their own ports. ContextForge is up too, but
+nothing is registered with it: no gateway, no virtual server, no token.
+No single endpoint reaches these tools, and billing's `refund_charge`
+sits next to the safe `charge_lookup` on the same server, with nothing on
+the wire marking it as dangerous.
 
-`platform/setup.py` is supposed to fix all of that by reconciling
-ContextForge with `platform/catalogue.yaml`. As shipped, it does nothing.
+`platform/setup.py` is supposed to reconcile ContextForge with
+`platform/catalogue.yaml`. As shipped, it does nothing.
 
 ## What you have
 
 | Where | What |
 |---|---|
-| `platform/catalogue.yaml` | The platform's own record of what should exist: which tool servers, and exactly which tools from them belong in the one public bundle. You don't edit this to make the lab pass -- you make the gateway match it. |
-| `platform/setup.py` | Reads catalogue.yaml and is supposed to reconcile ContextForge with it, then write `platform/client.json`. Its docstring says what it must leave behind; none of it is implemented yet. |
-| `services/*.py` | The three teams' own tool servers. You don't edit these either -- they're the given scenario, not the task. |
-| **view** tab | Read-only: every registered gateway, the virtual server(s) that exist and what each bundles, and every client token (never a usable secret). |
+| `platform/catalogue.yaml` | What should exist: which tool servers, and exactly which tools belong in the one public bundle. You don't edit it; you make the gateway match it. |
+| **`platform/setup.py`** | Yours. Reads catalogue.yaml, must reconcile ContextForge with it, then write `platform/client.json`. Its docstring says what it must leave behind; none of it is implemented yet. |
+| `services/*.py` | The teams' own tool servers: the given scenario, not yours to edit. |
+| **view** tab | Read-only: every registered gateway, the virtual server(s) and what each bundles, and every client token (never a usable secret). |
 
-`CONTEXTFORGE_URL`, `INVENTORY_URL`, `BILLING_URL`, and `SEARCH_URL` are
-all in your environment -- `setup.py` reads them, and so can you, from a
-terminal, with `curl`. ContextForge's own admin dashboard is not exposed
-as a tab in this lab (it requires a login this lab doesn't set up), but
-its management API is still there for you to call directly -- everything
-`setup.py` needs to do, it does through that same API.
+`CONTEXTFORGE_URL`, `INVENTORY_URL`, `BILLING_URL` and `SEARCH_URL` are in
+your environment; `setup.py` reads them, and so can you with `curl`.
+ContextForge's admin dashboard is not a tab here (it needs a login), but
+its documented management API is all `setup.py` needs.
 
 ## Your task
 
-Make `platform/setup.py` actually reconcile ContextForge with
+Make `platform/setup.py` reconcile ContextForge with
 `platform/catalogue.yaml`, then run it:
 
 ```bash
@@ -47,39 +44,28 @@ When it's done:
 
 - Every tool server in `catalogue.yaml` is registered with the gateway.
 - Exactly **one** virtual server exists, bundling exactly the tools
-  `catalogue.yaml`'s `public_bundle` names -- `lookup_stock`,
-  `charge_lookup`, and `search_docs`. Billing's `refund_charge` is not in
-  it.
-- Exactly one client token exists, scoped to that one virtual server. It
-  can call the three bundled tools through the virtual server's own
-  endpoint. It is refused for `refund_charge` -- even called through that
-  same endpoint, even though the tool is right there on the gateway,
-  federated from billing. It is refused for anything that belongs to
-  ContextForge's own admin plane (listing every gateway, minting another
-  token, creating a second virtual server), and refused against any
-  virtual server other than the one it was scoped to.
-- `platform/client.json` reflects all of it, in the shape `setup.py`'s own
+  `public_bundle` names: `lookup_stock`, `charge_lookup`, `search_docs`.
+  `refund_charge` is not in it.
+- Exactly one client token exists, scoped to that virtual server. It can
+  call the three bundled tools through the virtual server's own endpoint.
+  It is refused for `refund_charge` even through that same endpoint, even
+  though the tool is federated on the gateway. It is refused for the
+  admin plane (listing every gateway, minting another token, creating a
+  second virtual server) and against any other virtual server.
+- `platform/client.json` reflects all of it, in the shape `setup.py`'s
   docstring describes.
-
-Nothing here is undocumented API. Every call `setup.py` needs to make is
-one ContextForge's own management API documents -- try a call by hand
-with `curl` first if its shape isn't obvious.
 
 ## Checking your work
 
-**Run checks** never reads your code. It starts its own ContextForge
-against a fresh, empty database, with its own copies of the three tool
-servers, runs *your* `platform/setup.py` against that fresh setup, and
-then calls it with whatever came out -- the same way any real caller
-would.
+**Run checks** never reads your code. It starts its own ContextForge on a
+fresh database with its own tool servers, runs *your* `platform/setup.py`
+against it, and calls the result as any real caller would.
 
 | Check | Passes when |
 |---|---|
-| `bundle-reaches-exactly-its-tools` | Asking the virtual server what it offers returns exactly three tools, and the client token can successfully call all three. |
-| `excluded-tool-stays-out` | Billing's `refund_charge` is not among what the virtual server offers, and calling it directly through that same virtual server is refused. |
-| `client-token-cannot-escalate` | The client token cannot list every gateway, cannot create a second virtual server, and cannot reach a *different* virtual server than the one it was scoped to. |
+| `bundle-reaches-exactly-its-tools` | The virtual server offers exactly three tools, and the client token can call all three. |
+| `excluded-tool-stays-out` | `refund_charge` is not among what the virtual server offers, and calling it through that server is refused. |
+| `client-token-cannot-escalate` | The token cannot list every gateway, cannot create a second virtual server, and cannot reach a *different* virtual server than its own. |
 
-The third check exists to stop the first two being satisfied the easy way
--- handing out a token that can do more than this lab asks for (say, one
-that happens to work everywhere) would otherwise pass "reaches its
-tools" trivially. You need all three.
+The third check stops the first two being met the easy way: a token that
+works everywhere would pass them trivially. You need all three.

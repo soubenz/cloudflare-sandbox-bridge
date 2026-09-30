@@ -69,15 +69,10 @@ def reindex(new_docs_path):
     old_collection = _current_collection_for_alias(ALIAS_NAME)
     docs = _load_documents(new_docs_path)
 
-    # THE BUG: this drops the collection the alias already points at and
-    # recreates it under the exact same name, then repopulates it in place.
-    # Deleting a collection deletes any alias pointing at it -- Qdrant does
-    # not leave the alias dangling, it removes it. Recreating a collection
-    # under that same name does not bring the alias back; nothing here ever
-    # calls the alias API again. So this isn't a brief gap while the
-    # recreate finishes -- `live` stops resolving to anything the moment
-    # the DELETE completes, and stays broken from then on, because nothing
-    # ever asks Qdrant to point it at the new collection.
+    # Your job: load the new documents so that the `live` alias keeps
+    # answering searches for the whole run and, once this function
+    # returns, resolves to the freshly loaded documents. The steps below
+    # are the starting point you are given.
     status, body = _http("DELETE", "/collections/%s" % old_collection)
     if status != 200:
         raise RuntimeError("could not delete %r: %r" % (old_collection, body))

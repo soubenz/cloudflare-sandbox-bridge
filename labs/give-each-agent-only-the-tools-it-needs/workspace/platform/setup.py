@@ -11,7 +11,7 @@ tool, accounts-tools-delete-account -- lives in a single virtual server,
 for it can reach every one of them. (Try it: platform/ungoverned_token.txt
 has that token. Nothing about it is a secret you're not meant to see --
 seeing exactly how much it can reach is the point.) That bundle is not
-yours to fix by deleting or editing it; it can keep existing, or not, once
+yours to delete or edit; it can keep existing, or not, once
 you're done -- what has to be true afterwards is that NO ROLE'S OWN TOKEN
 can reach anything outside that role's own list in roles.yaml, regardless
 of what else still exists on the gateway.
@@ -119,7 +119,7 @@ def main():
     roles = load_roles()
     result = {"roles": {name: {"server_id": "", "token": ""} for name in roles}}
 
-    # TODO: for each role in `roles` (each one's `tools` list is
+    # Your job: for each role in `roles` (each one's `tools` list is
     # [{"server": ..., "tool": ...}, ...] straight from roles.yaml), work
     # out what ContextForge actually calls each of those tools once
     # registered, create that role's own virtual server exposing exactly
