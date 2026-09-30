@@ -27,6 +27,20 @@ describe('collectSolutionFiles', () => {
     }
   });
 
+  it('skips the author-only _degenerate directory at the top level', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'opalix-solution-'));
+    try {
+      writeFileSync(join(dir, 'app.py'), 'ok');
+      mkdirSync(join(dir, '_degenerate'), { recursive: true });
+      writeFileSync(join(dir, '_degenerate', 'app.py'), 'cheat');
+      mkdirSync(join(dir, 'src', '_degenerate'), { recursive: true });
+      writeFileSync(join(dir, 'src', '_degenerate', 'note.txt'), 'nested dirs of that name are ordinary');
+      expect(collectSolutionFiles(dir)).toEqual(['app.py', 'src/_degenerate/note.txt']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('returns nothing for an empty solution directory', () => {
     const dir = mkdtempSync(join(tmpdir(), 'opalix-solution-'));
     try {

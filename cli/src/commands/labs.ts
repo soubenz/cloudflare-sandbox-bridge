@@ -251,12 +251,18 @@ function checkResults(run: { results?: Array<{ name: string; pass: boolean; mess
 }
 
 /** Every file under `dir`, as POSIX-ish paths relative to it, sorted for a stable upload order. */
+/**
+ * Every file under solution/, except `_degenerate/`: lab authors keep the
+ * wrong answers that prove their checks discriminate there, and those must
+ * never land in a learner's workspace, not even during `labs test`.
+ */
 export function collectSolutionFiles(dir: string): string[] {
   const out: string[] = [];
   const walk = (current: string): void => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
       const full = join(current, entry.name);
       const isDir = entry.isDirectory() || (entry.isSymbolicLink() && statSync(full).isDirectory());
+      if (isDir && current === dir && entry.name === '_degenerate') continue;
       if (isDir) walk(full);
       else out.push(relative(dir, full).split(sep).join('/'));
     }
