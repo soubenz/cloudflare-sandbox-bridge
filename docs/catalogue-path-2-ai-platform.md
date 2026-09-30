@@ -156,6 +156,65 @@ each caught only by running against a live container, not by review:
 Phase 1 for Path 2 is functionally complete. What follows is a product
 decision (start phase 2 content, or work elsewhere), not more live
 verification.
+
+MODULES 6 AND 7 EXTENDED PAST PHASE 1 (30 Sep 2026, user decision). Beyond
+their one phase-1 lab each (recorded above), the user asked for each
+module's four remaining unmarked labs (not the full P2-marked backlog) to
+be built too, in parallel by delegated agents, each verified live the same
+way as every phase-1 lab before being committed:
+
+- Module 6 (`onboard-a-new-team-in-an-hour`,
+  `build-the-access-request-portal`, `publish-a-paved-road`,
+  `keep-the-docs-and-the-example-true`)
+- Module 7 (`control-what-can-leave-the-platform`,
+  `keep-eu-data-on-eu-routes`, `set-retention-and-deletion-that-runs`,
+  `strip-personal-data-before-it-leaves`)
+
+All 8 passed `labs test` live (untouched workspace fails a check,
+`solution/` passes every check) and are committed and published. Real
+bugs found and fixed getting there:
+
+- **A LiteLLM API version quirk**: `build-the-access-request-portal`'s own
+  grading harness called `GET /key/list?size=200`, but this pinned
+  LiteLLM (1.102.1) caps `size` at 100 and 400s above it -- silently
+  swallowed by the harness's own `if status != 200: return None`, which
+  then formatted as a bare `None` in a failure message. Fixed by lowering
+  the harness's own hardcoded size to 100.
+- **A stale-file testing race, not a real bug**:
+  `onboard-a-new-team-in-an-hour`'s first `labs test` run showed the same
+  check failing identically pre- and post-solution -- the shape of a
+  broken lab, not a planted-bug lab. The build agent was still mid-rewrite
+  when the run started; re-running against its settled final files (a
+  genuinely different, over-inclusive-tool-bundling design) passed
+  exactly as designed.
+- **The Presidio/spaCy image gap and the disk-size outage it caused**:
+  adding the isolated Presidio+spaCy venv to `images/gateway/Dockerfile`
+  for `strip-personal-data-before-it-leaves` pushed the gateway image's
+  unpacked size past `standard-1`'s 8GB disk allocation. Confirmed live
+  via `wrangler containers info`: every GatewayLab instance failed
+  `ImagePullError` ("the requested disk size was smaller than the
+  unpacked size of the image"), and the whole GatewayLab container
+  application got stuck `provisioning` with 0 healthy instances for
+  several hours -- taking down every gateway-family lab, not just the new
+  one, since no session in that family could claim a container. A first
+  fix attempt (a custom `instance_type` of 0.5 vCPU / 4096 MiB / 16000
+  disk_mb) was rejected outright by a real deploy: Cloudflare requires
+  custom instance types to have >=1 vCPU, and caps disk at 2x memory in
+  GiB, so 16GB disk needs at least 8 GiB memory. Fixed for real with
+  `{vcpu: 1, memory_mib: 8192, disk_mb: 16000}` -- confirmed live via
+  `wrangler containers info` showing `state: "active"`, the new image
+  digest, and healthy instances with zero `health.errors` -- then both
+  warm pools drained and the lab re-verified live.
+
+**Still open, flagged but not independently investigated**: an unrelated
+build agent (building `onboard-a-new-team-in-an-hour`) reported that
+during its own local-verification cleanup it sent SIGTERM to what it
+believed was its own throwaway Postgres process on port 5544, but the
+process log showed an `opalix_pii_learner` database with LiteLLM spend
+tables -- suggesting it was a pre-existing Postgres instance belonging to
+an unrelated process on the shared build machine, not the agent's own.
+This session has no visibility into whose process that was or whether it
+recovered; flagged here for whoever owns that machine to check.
 -->
 
 # Opalix Path 2: Building an AI Platform
