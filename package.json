@@ -22,6 +22,8 @@
     "d1:migrate": "wrangler d1 migrations apply opalix --remote",
     "lab:publish": "tsx cli/src/index.ts labs publish",
     "typecheck:cli": "tsc --noEmit -p cli/tsconfig.json",
+    "build:labs-page": "node scripts/build-labs-page.mjs",
+    "check:labs-page": "node scripts/build-labs-page.mjs --check",
     "lint:labs": "node scripts/lint-labs.mjs",
     "doctor": "node scripts/doctor.mjs",
     "check:contrast": "node scripts/contrast-check.mjs",
