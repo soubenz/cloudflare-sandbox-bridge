@@ -1,0 +1,16 @@
+answers_file: answers.json
+fields:
+  - key: longest_span_name
+    prompt: Not counting the top-level request span, which single span took the longest to run? Give its name exactly as Jaeger shows it.
+    kind: text
+    placeholder: a span name
+    help: Open the jaeger tab, click Find Traces, open the one trace, and compare the duration of every row below the top one. The name is the row label.
+  - key: llm_total_tokens
+    prompt: Add up the total token count across every span in the trace that is a model call. What is the total?
+    kind: number
+    help: In the jaeger tab, expand rows and read their Tags. Model-call spans carry gen_ai.usage.* attributes and an opalix.span_kind tag that says what kind of span they are.
+  - key: cache_get_parent_span
+    prompt: Which span is the direct parent of the span named cache.get? Give the parent's name exactly as it appears.
+    kind: text
+    placeholder: a span name
+    help: In the waterfall in the jaeger tab, find cache.get and look at the row directly above it with one level less indentation. That row is the parent.

@@ -1,0 +1,16 @@
+answers_file: answers.json
+fields:
+  - key: top_match_id
+    prompt: Run the succulent watering query from the brief. What is the id of the document ranked first?
+    kind: text
+    placeholder: a document id
+    help: Run query.py in the terminal and read the id column of the first row. The same id appears under retrieval.documents.0 on the retrieve_documents span in the phoenix-view tab.
+  - key: close_match_count
+    prompt: For that same succulent query, how many documents came back with a distance below 0.72?
+    kind: number
+    help: Count rows in the query.py output whose distance column is under 0.72. Distance is the first number, not the score. The default returns 8 rows, which is enough to see where the line falls.
+  - key: out_of_corpus_has_close_match
+    prompt: Run the tungsten boiling-point query with all 24 documents returned. Does any result have a distance below 0.65?
+    kind: choice
+    choices: ["true", "false"]
+    help: Run query.py with --top-k 24 in the terminal and look at the smallest distance in the whole list, which is on the first row.

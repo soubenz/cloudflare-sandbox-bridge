@@ -1,0 +1,100 @@
+questions:
+  - id: q-region-label
+    concept: sovereignty.regions-routes
+    type: single
+    prompt: A deployment has region set under its model_info. What does that field tell you?
+    options:
+      - { id: a, text: What the platform team declared about the deployment; it does not by itself prove where data went }
+      - { id: b, text: Where every request through the alias was actually processed }
+      - { id: c, text: A setting the gateway enforces by refusing calls that leave the region }
+      - { id: d, text: The physical location of the gateway process itself }
+    answer: [a]
+    explanation: model_info is free-form. The gateway serves it back but does not enforce it or verify it, so it is a claim to check against what a real request touched.
+  - id: q-route-parts
+    concept: sovereignty.regions-routes
+    type: multi
+    prompt: Which of these are part of a route in the sense used here? Pick all that apply.
+    options:
+      - { id: a, text: The alias the caller names }
+      - { id: b, text: The api_base the deployment sends the request to }
+      - { id: c, text: Any service that address forwards to }
+      - { id: d, text: The name of the team that wrote the config file }
+    answer: [a, b, c]
+    explanation: A route runs from the alias to the deployment's address and on through whatever that address calls. Who wrote the config is metadata, not part of the path.
+  - id: q-region-source
+    concept: sovereignty.regions-routes
+    type: single
+    prompt: You need the declared region of an alias in a running gateway. What is the most reliable place to read it?
+    options:
+      - { id: a, text: The alias name, since it ends in a region }
+      - { id: b, text: The config file on disk, since it is what was deployed }
+      - { id: c, text: The gateway's live model info endpoint }
+      - { id: d, text: The api_base hostname }
+    answer: [c]
+    explanation: The live endpoint reports what the gateway actually loaded. The file on disk may differ, and names and hostnames are conventions rather than declarations.
+  - id: q-log-vs-trace
+    concept: sovereignty.hops-audit
+    type: single
+    prompt: A spend log row for an alias shows api_base pointing at a regional proxy. What can you conclude about where the request finally went?
+    options:
+      - { id: a, text: It ended at the proxy, since that is the address logged }
+      - { id: b, text: Nothing beyond the first hop; the log records only where the gateway sent it }
+      - { id: c, text: It reached the provider in the same region as the proxy }
+      - { id: d, text: It left the platform, because proxies are external }
+    answer: [b]
+    explanation: The gateway logs its own outgoing call. What the proxy did next is invisible to that log, which is why a trace is needed to see the rest.
+  - id: q-count-hops
+    concept: sovereignty.hops-audit
+    type: single
+    prompt: How do you count the services a request touched from a trace?
+    options:
+      - { id: a, text: Count the spans, since each span is one service }
+      - { id: b, text: Count the distinct service names across the spans }
+      - { id: c, text: Count only the spans that carry a region tag }
+      - { id: d, text: Count the rows in the gateway's spend log }
+    answer: [b]
+    explanation: One service can emit several spans. Distinct service names give the number of services, and you should state whether the gateway is included.
+  - id: q-missing-span
+    concept: sovereignty.hops-audit
+    type: multi
+    prompt: A hop does not pass the traceparent header on its outgoing call. What happens? Pick all that apply.
+    options:
+      - { id: a, text: Its downstream spans start a separate trace }
+      - { id: b, text: The original trace looks as if the journey ended earlier than it did }
+      - { id: c, text: The gateway automatically reconnects the two traces afterwards }
+      - { id: d, text: The request is refused, because context is mandatory }
+    answer: [a, b]
+    explanation: Context propagation is what joins spans into one tree. Without it the trace silently loses the rest of the journey, and nothing reconnects it.
+  - id: q-untagged
+    concept: sovereignty.declared-vs-actual
+    type: single
+    prompt: In a trace, one span has no region tag. How should you treat it when checking residency?
+    options:
+      - { id: a, text: As inside the declared region, since nothing contradicts it }
+      - { id: b, text: As outside the declared region, since it is not tagged }
+      - { id: c, text: As unknown; it proves nothing either way }
+      - { id: d, text: As proof the hop did not happen }
+    answer: [c]
+    explanation: An absent tag is missing evidence, not a region. Only tagged spans support a conclusion, and you should say so.
+  - id: q-compare-all
+    concept: sovereignty.declared-vs-actual
+    type: multi
+    prompt: To check that a request stayed in its declared region, which steps are needed? Pick all that apply.
+    options:
+      - { id: a, text: Read the declared region from the deployment's model info }
+      - { id: b, text: List the region tag on every tagged span in the trace }
+      - { id: c, text: Compare every observed tag to the declared value }
+      - { id: d, text: Look only at the final provider span }
+    answer: [a, b, c]
+    explanation: A middle hop can sit in a different region from the final provider. Checking only the last span could miss it.
+  - id: q-tag-strength
+    concept: sovereignty.declared-vs-actual
+    type: single
+    prompt: Each service tags its own span with its region. How strong is that evidence?
+    options:
+      - { id: a, text: Conclusive, because a tag cannot be wrong }
+      - { id: b, text: Worthless, since only a config file counts }
+      - { id: c, text: Stronger than a config file because it comes from the service that handled the data, yet self-reported }
+      - { id: d, text: The same as the alias name, since both are labels }
+    answer: [c]
+    explanation: A span tag is observed at runtime by the service itself, which beats a stated intent. It is still self-reported, so a stronger audit adds network or provider evidence.

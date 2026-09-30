@@ -1,0 +1,133 @@
+questions:
+  - id: q-alias-caller-sends
+    concept: gateway.routing-aliases
+    type: single
+    prompt: "A Larkfield team calls the gateway. What does it put in the model field of the request?"
+    options:
+      - { id: a, text: "An alias such as support, which the gateway maps to a deployment" }
+      - { id: b, text: "The provider's own model name, so the gateway can forward it unchanged" }
+      - { id: c, text: "The URL of the deployment it wants to reach" }
+      - { id: d, text: "Nothing, because the gateway picks a model from the message text" }
+    answer: [a]
+    explanation: "Callers send a stable alias. The gateway's config decides which model and deployment it means, so callers never carry provider names or URLs."
+  - id: q-alias-where-defined
+    concept: gateway.routing-aliases
+    type: single
+    prompt: "In a LiteLLM-style config, what decides which deployment receives the calls for one alias?"
+    options:
+      - { id: a, text: "The alias entry's litellm_params, including its api_base" }
+      - { id: b, text: "The order in which the aliases are listed in the file" }
+      - { id: c, text: "The wording of the message the caller sends" }
+      - { id: d, text: "The master key the caller authenticates with" }
+    answer: [a]
+    explanation: "Each entry pairs a model_name (the alias) with litellm_params that say which model to ask for and where to send it. Order, message text and the key do not pick the deployment."
+  - id: q-alias-why
+    concept: gateway.routing-aliases
+    type: multi
+    prompt: "Which two things does calling by alias give a platform team?"
+    options:
+      - { id: a, text: "Repointing an alias to another model without any application change" }
+      - { id: b, text: "Provider-specific names and keys kept out of every team's repository" }
+      - { id: c, text: "Lower latency on every call" }
+      - { id: d, text: "Guaranteed lower cost per token" }
+    answer: [a, b]
+    explanation: "An alias is an indirection, so it buys flexibility and tidiness. It does not make calls faster or cheaper by itself; the model and price behind it do that."
+  - id: q-usage-source
+    concept: gateway.usage-and-spend
+    type: single
+    prompt: "Where does the gateway get the token counts it writes to its spend log?"
+    options:
+      - { id: a, text: "The usage block in the provider's response" }
+      - { id: b, text: "A tokenizer the caller must run before sending" }
+      - { id: c, text: "The length of the alias name" }
+      - { id: d, text: "A header the caller adds to say how much it expects to use" }
+    answer: [a]
+    explanation: "The provider counts and reports usage in each response. The gateway records what it saw, which is why it is a good place to collect cost data."
+  - id: q-usage-total
+    concept: gateway.usage-and-spend
+    type: single
+    prompt: "A response reports 7 prompt tokens and 9 completion tokens. What total should the usage block and the spend log show?"
+    options:
+      - { id: a, text: "16" }
+      - { id: b, text: "9, because only output is billed" }
+      - { id: c, text: "63" }
+      - { id: d, text: "8, the average of the two" }
+    answer: [a]
+    explanation: "Total tokens is the sum of prompt and completion tokens. If the gateway's total does not equal that sum for a call, something is being counted twice or dropped."
+  - id: q-spend-derived
+    concept: gateway.usage-and-spend
+    type: multi
+    prompt: "Which two things does a gateway need in order to report a meaningful spend figure for a call?"
+    options:
+      - { id: a, text: "The token counts for that call" }
+      - { id: b, text: "A per-token price for the model that answered" }
+      - { id: c, text: "The response time of the call" }
+      - { id: d, text: "The HTTP status of the call" }
+    answer: [a, b]
+    explanation: "Spend is tokens multiplied by a price. Latency and status are useful signals but do not turn tokens into money. With no price known, tokens stay exact and spend stays unhelpful."
+  - id: q-error-class
+    concept: gateway.error-semantics
+    type: single
+    prompt: "A caller asks the gateway for a model alias that is not in its config. Which status class does that request belong to?"
+    options:
+      - { id: a, text: "4xx, because the request itself is wrong" }
+      - { id: b, text: "5xx, because the gateway failed to find something" }
+      - { id: c, text: "2xx, with the error described in the body" }
+      - { id: d, text: "3xx, because the caller should be redirected" }
+    answer: [a]
+    explanation: "4xx means the caller sent something the gateway will never accept as it stands. A 5xx would suggest that trying again might work, and here it cannot."
+  - id: q-error-retry
+    concept: gateway.error-semantics
+    type: single
+    prompt: "A client gets the same 4xx from the gateway three times in a row. What does that tell it?"
+    options:
+      - { id: a, text: "Resending the identical request will keep failing; fix the request" }
+      - { id: b, text: "The provider is overloaded, so it should wait and retry" }
+      - { id: c, text: "The gateway is restarting, so retry after thirty seconds" }
+      - { id: d, text: "The gateway is rate limiting it for a fixed time" }
+    answer: [a]
+    explanation: "A 4xx is about the request. Retrying with backoff makes sense for transient 5xx failures on the serving side, not for a request the gateway rejects for what it contains."
+  - id: q-error-body
+    concept: gateway.error-semantics
+    type: multi
+    prompt: "Which two things should a useful gateway error give the client?"
+    options:
+      - { id: a, text: "A status code that separates caller faults from server-side faults" }
+      - { id: b, text: "A message in the body that says what was wrong" }
+      - { id: c, text: "The provider's API key so the client can retry directly" }
+      - { id: d, text: "A 200 with an empty reply so clients never see a failure" }
+    answer: [a, b]
+    explanation: "The status tells a client whether to retry and the message tells a human what to fix. Leaking a key or hiding failures behind a 200 both make problems harder to find."
+  - id: q-reload-effect
+    concept: gateway.config-reload
+    type: single
+    prompt: "You edit the alias mapping in the gateway's config file while the gateway is running. What happens to calls made right after you save?"
+    options:
+      - { id: a, text: "They still follow the old mapping until the gateway restarts and rereads the file" }
+      - { id: b, text: "They follow the new mapping immediately" }
+      - { id: c, text: "They fail until the provider is restarted" }
+      - { id: d, text: "They are split between the old and new mapping" }
+    answer: [a]
+    explanation: "The config is read at start. Saving the file changes the file, not the process. If a change appears to do nothing, check whether anything has reloaded it."
+  - id: q-reload-survives
+    concept: gateway.config-reload
+    type: multi
+    prompt: "After the gateway restarts, which two things are still true?"
+    options:
+      - { id: a, text: "Aliases you did not edit route exactly as before" }
+      - { id: b, text: "Earlier rows in the spend log are still in the database" }
+      - { id: c, text: "The provider's own record of past calls has been cleared" }
+      - { id: d, text: "Every caller must be updated with the new alias names" }
+    answer: [a, b]
+    explanation: "A restart rereads config only. Unedited aliases behave the same, and the spend log lives in Postgres, a separate service. The provider is a different process and keeps its own log."
+  - id: q-reload-verify
+    concept: gateway.config-reload
+    type: single
+    prompt: "What is the most reliable way to confirm that a routing change took effect?"
+    options:
+      - { id: a, text: "Send a call to the alias and check which deployment the provider recorded" }
+      - { id: b, text: "Reread the config file and confirm it says what you meant" }
+      - { id: c, text: "Check that the restart command exited without an error" }
+      - { id: d, text: "Wait for the next spend report" }
+    answer: [a]
+    explanation: "The file only proves what you wrote. A call, checked against the provider's own record, proves what the gateway actually does now."

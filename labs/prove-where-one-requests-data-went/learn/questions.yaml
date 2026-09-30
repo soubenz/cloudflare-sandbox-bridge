@@ -1,0 +1,17 @@
+answers_file: answers.json
+fields:
+  - key: support_us_region_reached
+    prompt: Which single region does a support-us trace show the data reaching? Give it exactly as the trace spells it.
+    kind: text
+    placeholder: the region tag, as spelled in the trace
+    help: Send a request through support-us with send_request.py, then open its trace in the jaeger tab. Read the opalix.region tag on the provider span.
+  - key: support_eu_hop_count
+    prompt: How many distinct services appear in a support-eu trace, counting the gateway itself?
+    kind: number
+    placeholder: a whole number
+    help: Open a support-eu trace in the jaeger tab and expand every row. Count distinct service names, not spans.
+  - key: support_eu_stays_in_declared_region
+    prompt: Does every region tag in a support-eu trace agree with support-eu's declared region in its live model_info?
+    kind: choice
+    choices: ["true", "false"]
+    help: Read the declared region from the gateway's model info endpoint, then compare every opalix.region tag in a support-eu trace against it.

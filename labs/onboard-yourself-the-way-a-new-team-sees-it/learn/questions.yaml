@@ -1,0 +1,17 @@
+answers_file: answers.json
+fields:
+  - key: systems_touched_end_to_end
+    prompt: How many separate platform systems did the whole path touch, from getting a key to the real call? Count systems you talked to, not API calls.
+    kind: number
+    placeholder: a whole number
+    help: Each step line in onboard.py's output names the system in brackets. Count the distinct systems you addressed, not services that only sit behind one of them.
+  - key: new_key_reaches_legacy_alias
+    prompt: Can the new team's key call legacy-writer, the alias platform-core already had?
+    kind: choice
+    choices: ["true", "false"]
+    help: Step 5 of onboard.py prints the HTTP status the new key got for that alias. A 200 means it can; a 401 or 403 means it cannot.
+  - key: end_to_end_call_succeeded
+    prompt: Did the real end-to-end call succeed, the model call through the new key followed by the tool call through the new virtual server?
+    kind: choice
+    choices: ["true", "false"]
+    help: Run step 5 of onboard.py and read the status printed for each of its calls. The end of the output says whether the whole step completed.

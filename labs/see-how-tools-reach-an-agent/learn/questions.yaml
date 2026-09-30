@@ -1,0 +1,15 @@
+answers_file: answers.json
+fields:
+  - key: virtual_server_tool_count
+    prompt: "How many tools does the virtual server toy-tools expose to an agent right now?"
+    kind: number
+    help: "Run call_tool.py --list in a terminal and count the tools it prints. The view tab shows the same server, but the list an agent gets is the one from --list."
+  - key: calculator_add_result
+    prompt: "Call calculator-tools-add with exactly a=17 and b=25. What number comes back?"
+    kind: number
+    help: "Use call_tool.py with that tool name and a JSON argument object. The number is printed under Result."
+  - key: unregistered_tool_call_is_error
+    prompt: "Call the tool name does-not-exist through the same virtual server. Does the JSON-RPC result mark the call as an error?"
+    kind: choice
+    choices: ["true", "false"]
+    help: "Call it with call_tool.py and read the raw response it prints, not the HTTP status. The last line of output also shows which kind of failure it saw."

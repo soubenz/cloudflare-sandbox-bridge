@@ -1,0 +1,100 @@
+questions:
+  - id: q-embed-what
+    concept: rag.embeddings-similarity
+    type: single
+    prompt: A query is sent to a pgvector search. What does the database actually compare to rank the documents?
+    options:
+      - { id: a, text: The query's vector against each stored document vector, using a distance measure }
+      - { id: b, text: The query's words against each document's words, counting how many match }
+      - { id: c, text: The query's meaning against each document's meaning, as understood by Postgres }
+      - { id: d, text: The query against a summary the database wrote for each document }
+    answer: [a]
+    explanation: pgvector only sorts rows by the distance between two vectors. It has no notion of words or meaning; the embedding function upstream decided what closeness means.
+  - id: q-embed-distance
+    concept: rag.embeddings-similarity
+    type: single
+    prompt: Cosine distance is 0.10 for one document and 0.60 for another. Which reading is right?
+    options:
+      - { id: a, text: The 0.10 document is much closer to the query than the 0.60 one }
+      - { id: b, text: The 0.60 document is closer, because a higher number is a better match }
+      - { id: c, text: Both are matches, since neither is above 1 }
+      - { id: d, text: The two are equally similar; only rank order carries meaning }
+    answer: [a]
+    explanation: Distance grows as vectors diverge, so smaller is closer. A higher number is better only for similarity, which is 1 minus distance. Always check which one you are reading.
+  - id: q-embed-similarity
+    concept: rag.embeddings-similarity
+    type: multi
+    prompt: A result row shows distance 0.30. Which statements are true?
+    options:
+      - { id: a, text: Its similarity score is 0.70 }
+      - { id: b, text: A distance of 0.05 would be a closer match }
+      - { id: c, text: A distance of 0.30 means 30 percent of the words are shared }
+      - { id: d, text: The number is only comparable between texts embedded by the same function }
+    answer: [a, b, d]
+    explanation: Similarity is 1 minus distance, and smaller distance is closer. The value is not a word-overlap percentage, and it only means something for vectors from the same embedding function.
+  - id: q-close-topk
+    concept: rag.close-matches
+    type: single
+    prompt: A search with top_k set to 8 returns 8 rows. What does that tell you about how many of them are relevant?
+    options:
+      - { id: a, text: Nothing; top-k returns k rows however far away they are }
+      - { id: b, text: All 8 are relevant, otherwise the database would have returned fewer }
+      - { id: c, text: Only the first is relevant and the other 7 are padding }
+      - { id: d, text: About half, because pgvector drops rows below a default cutoff }
+    answer: [a]
+    explanation: A nearest-neighbour search always fills k slots when the table has enough rows. Relevance is a separate judgement you make from the distances, usually with a threshold.
+  - id: q-close-threshold
+    concept: rag.close-matches
+    type: multi
+    prompt: Your team counts a document as close when its distance is below 0.72. Which practices make that threshold trustworthy?
+    options:
+      - { id: a, text: Run known-good and known-bad queries and see where their distances fall }
+      - { id: b, text: Request the whole corpus once so you can see where distances stop being close }
+      - { id: c, text: Pick the threshold once and reuse it unchanged after switching embedding models }
+      - { id: d, text: Set it so exactly the top 3 rows always pass }
+    answer: [a, b]
+    explanation: A threshold is a tuning choice grounded in real numbers. It is tied to the embedding function, so a model change means recalibrating, and a fixed count of rows is a rank cutoff, not a closeness test.
+  - id: q-close-paraphrase
+    concept: rag.close-matches
+    type: single
+    prompt: You reword a query and the same document is still ranked first. What can you say about the rest of the list?
+    options:
+      - { id: a, text: Its distances can shift, so a document near the threshold may cross it }
+      - { id: b, text: Nothing else changes; only the top row can move }
+      - { id: c, text: Every distance stays identical because the topic is the same }
+      - { id: d, text: The rest of the list is discarded and re-embedded }
+    answer: [a]
+    explanation: A new phrasing is a new vector, so every distance is recomputed. The top document can stay put while others move, which is why threshold counts are sensitive to wording.
+  - id: q-oc-empty
+    concept: rag.out-of-corpus
+    type: single
+    prompt: You search a knowledge base for a topic none of its documents cover. What comes back?
+    options:
+      - { id: a, text: The k nearest documents, however unrelated, unless the service adds its own guard }
+      - { id: b, text: An empty list, because nothing matches }
+      - { id: c, text: An error saying the query is out of scope }
+      - { id: d, text: A single document, the one with the highest keyword count }
+    answer: [a]
+    explanation: Vector search only ranks by distance. Without a threshold check in the service, the nearest irrelevant documents are returned as confidently as a real match, and a model will happily cite them.
+  - id: q-oc-signal
+    concept: rag.out-of-corpus
+    type: single
+    prompt: Which observation best tells you a query is outside what the corpus can answer?
+    options:
+      - { id: a, text: Even the closest row has a distance well beyond your close-match threshold }
+      - { id: b, text: The first row is a different document from last time }
+      - { id: c, text: The result list is shorter than top_k }
+      - { id: d, text: The query contains words that appear in no document title }
+    answer: [a]
+    explanation: Rank position is always filled, so it cannot show absence. The distance of the best row against a calibrated threshold is the evidence the corpus has nothing close.
+  - id: q-oc-cautions
+    concept: rag.out-of-corpus
+    type: multi
+    prompt: An off-topic query produces one document with a fairly small distance. Which cautions apply before you trust it?
+    options:
+      - { id: a, text: Shared word fragments can produce closeness without shared meaning, so read the text }
+      - { id: b, text: The threshold must suit the embedding function that produced the number }
+      - { id: c, text: A small distance proves the document answers the question }
+      - { id: d, text: Distances are the same across every embedding model, so any threshold transfers }
+    answer: [a, b]
+    explanation: Distance is evidence, not proof. A cheap embedding can match on surface fragments, and every model has its own scale, so check the number against the right threshold and then read the document.

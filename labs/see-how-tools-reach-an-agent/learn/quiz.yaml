@@ -1,0 +1,100 @@
+questions:
+  - id: q-mcp-purpose
+    concept: mcp.what-is-mcp
+    type: single
+    prompt: "What problem does MCP solve for an agent that uses tools from several teams?"
+    options:
+      - { id: a, text: "One protocol for listing and calling tools, instead of custom glue code per tool" }
+      - { id: b, text: "A faster way to run the language model" }
+      - { id: c, text: "A shared format for prompts across model providers" }
+      - { id: d, text: "A way to train the model on each tool's source code" }
+    answer: [a]
+    explanation: "MCP standardises how a client lists and calls tools. It says nothing about the model, its prompts or its training. Any server that speaks it can be used by any agent that speaks it."
+  - id: q-mcp-discovery
+    concept: mcp.what-is-mcp
+    type: single
+    prompt: "How does an MCP client find out which tools a server offers?"
+    options:
+      - { id: a, text: "It sends tools/list and reads the names, descriptions and input schemas" }
+      - { id: b, text: "The tool names are compiled into the agent when it is built" }
+      - { id: c, text: "It reads the tool server's source code" }
+      - { id: d, text: "A developer pastes the tool list into the prompt by hand" }
+    answer: [a]
+    explanation: "Discovery happens at runtime, so a server can add a tool without any agent change. The listed descriptions are also what the model reads to choose between tools."
+  - id: q-mcp-listing
+    concept: mcp.what-is-mcp
+    type: multi
+    prompt: "Which two items does a tool entry in a tools/list response carry?"
+    options:
+      - { id: a, text: "A name the agent uses to call it" }
+      - { id: b, text: "A description and input schema the model uses to decide how to call it" }
+      - { id: c, text: "The tool server's source code" }
+      - { id: d, text: "A price per call" }
+    answer: [a, b]
+    explanation: "Name, description and input schema are what an agent needs. Neither source code nor pricing is part of the listing, which is why a description written badly can cause bad tool choices."
+  - id: q-virtual-what
+    concept: mcp.virtual-servers
+    type: single
+    prompt: "What is a virtual server in a tool gateway?"
+    options:
+      - { id: a, text: "A named set of tools chosen from registered servers, exposed at a single MCP endpoint" }
+      - { id: b, text: "A container that runs a copy of each tool server" }
+      - { id: c, text: "A second gateway that mirrors the first for failover" }
+      - { id: d, text: "A cache that stores the results of earlier tool calls" }
+    answer: [a]
+    explanation: "A virtual server is a selection. It does not run the tools or copy them. It presents chosen ones under one endpoint that an agent treats like a single server."
+  - id: q-virtual-subset
+    concept: mcp.virtual-servers
+    type: single
+    prompt: "A gateway has discovered 8 tools across its registered servers, and one virtual server was built from 6 of them. An agent connected to that virtual server runs tools/list. How many tools does it get?"
+    options:
+      - { id: a, text: "6, only the ones the virtual server was built from" }
+      - { id: b, text: "8, because the gateway lists everything it knows" }
+      - { id: c, text: "14, the two counts added together" }
+      - { id: d, text: "2, the tools left out" }
+    answer: [a]
+    explanation: "An agent sees what its virtual server exposes, not what the gateway has discovered. That gap is how different agents can be given different tool sets."
+  - id: q-virtual-door
+    concept: mcp.virtual-servers
+    type: multi
+    prompt: "Which two things does routing every agent through one tool gateway make possible?"
+    options:
+      - { id: a, text: "One place to record which tool was called and how it went" }
+      - { id: b, text: "Different agents seeing different sets of tools" }
+      - { id: c, text: "Tool servers that no longer need to exist" }
+      - { id: d, text: "Faster tool execution on every call" }
+    answer: [a, b]
+    explanation: "A single door gives you a central record and control over what each agent can reach. The tool servers still do the work, and the extra hop does not make it faster."
+  - id: q-error-http
+    concept: mcp.tool-errors
+    type: single
+    prompt: "A tools/call response arrives with HTTP 200 and a result containing isError set to true. Did the tool call succeed?"
+    options:
+      - { id: a, text: "No, the transport worked but the tool call failed, and the content says why" }
+      - { id: b, text: "Yes, because HTTP 200 means success" }
+      - { id: c, text: "Unknown until the gateway is restarted" }
+      - { id: d, text: "Yes, because isError only applies to protocol errors" }
+    answer: [a]
+    explanation: "HTTP 200 means the request was delivered and answered. Whether the tool succeeded is in the body. isError is the tool-level failure flag."
+  - id: q-error-places
+    concept: mcp.tool-errors
+    type: multi
+    prompt: "Which two places can a failed MCP tool call be reported, even when HTTP is 200?"
+    options:
+      - { id: a, text: "A JSON-RPC error object in place of a result" }
+      - { id: b, text: "A result flagged isError with a text message" }
+      - { id: c, text: "A custom HTTP header that names the failed tool" }
+      - { id: d, text: "Only in the tool server's own log file" }
+    answer: [a, b]
+    explanation: "The protocol defines two shapes: a JSON-RPC error for protocol-level problems, and a flagged result for failures inside the tool. Neither depends on the HTTP status."
+  - id: q-error-content
+    concept: mcp.tool-errors
+    type: single
+    prompt: "Why does an isError result carry a text message in its content?"
+    options:
+      - { id: a, text: "So the model can read what went wrong and adjust or retry" }
+      - { id: b, text: "So the gateway can bill the caller for the failed call" }
+      - { id: c, text: "So HTTP clients can decide whether to retry the request" }
+      - { id: d, text: "So the tool server can restart itself" }
+    answer: [a]
+    explanation: "The message is ordinary content the model reads. It can notice a wrong argument or a missing city and try again, which a bare failure signal would not allow."

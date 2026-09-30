@@ -1,0 +1,15 @@
+answers_file: answers.json
+fields:
+  - key: support_deployment
+    prompt: "Which deployment does the support alias actually route to?"
+    kind: choice
+    choices: [a, b]
+    help: "Send a support call with send_calls.py and read which deployment answered, then open the view tab and check the provider log agrees."
+  - key: support_tokens_hello
+    prompt: "Send support one call whose message is exactly hello gateway. What total token count comes back?"
+    kind: number
+    help: "send_calls.py prints the usage the provider recorded and the usage LiteLLM reported. The view tab has a total_tokens column in the spend log."
+  - key: unknown_alias_status
+    prompt: "Ask the gateway for the alias does-not-exist, which is not in the config. What HTTP status number does it return?"
+    kind: number
+    help: "Run send_calls.py with that alias. On a failure it prints the HTTP status instead of usage lines."

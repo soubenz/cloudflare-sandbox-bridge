@@ -1,0 +1,100 @@
+questions:
+  - id: q-span-what
+    concept: otel.traces-and-spans
+    type: single
+    prompt: In tracing terms, what is a span?
+    options:
+      - { id: a, text: One timed unit of work with a name, a duration and attributes }
+      - { id: b, text: One log line written by a service }
+      - { id: c, text: A whole request, from the first service to the last }
+      - { id: d, text: A metric sampled once a minute }
+    answer: [a]
+    explanation: A span is a single timed operation. A trace is the set of spans for one request. Logs and metrics are separate signals that a span does not replace.
+  - id: q-span-trace
+    concept: otel.traces-and-spans
+    type: multi
+    prompt: Four services each emit spans for the same request. Which statements about the resulting trace are true?
+    options:
+      - { id: a, text: The spans share one trace id }
+      - { id: b, text: Each span records the name of the service that emitted it }
+      - { id: c, text: The services must share a log file for the trace to be assembled }
+      - { id: d, text: The trace exists only if all four run in one process }
+    answer: [a, b]
+    explanation: The trace id ties spans together and each span carries its own service name, so the backend can show one request across services. No shared file or process is needed.
+  - id: q-span-duration
+    concept: otel.traces-and-spans
+    type: single
+    prompt: In a waterfall, the span for the whole request has the widest bar. Why does that not show where the time went?
+    options:
+      - { id: a, text: Its duration includes all the spans nested inside it, so compare the spans below it }
+      - { id: b, text: Root spans are always slower than their children because of tracing overhead }
+      - { id: c, text: Its bar is drawn to fit the screen, not to scale }
+      - { id: d, text: It only measures network time }
+    answer: [a]
+    explanation: A parent span runs from its start to its end, and its children run inside that window. The request span therefore covers everything. The useful comparison is among the spans beneath it.
+  - id: q-pc-root
+    concept: otel.parent-child
+    type: single
+    prompt: In a trace, which span has no parent span id?
+    options:
+      - { id: a, text: The root span, the first one in the tree }
+      - { id: b, text: The slowest span }
+      - { id: c, text: Any span from a different service }
+      - { id: d, text: The last span to finish }
+    answer: [a]
+    explanation: The root is the span nobody started it from. Every other span names a parent, and following those ids builds the tree the waterfall shows.
+  - id: q-pc-nested
+    concept: otel.parent-child
+    type: single
+    prompt: A span named read_file is drawn indented under load_template, which is indented under render_page. What is read_file's direct parent?
+    options:
+      - { id: a, text: load_template }
+      - { id: b, text: render_page }
+      - { id: c, text: Both, since it is inside both }
+      - { id: d, text: Neither; nesting says nothing about parents }
+    answer: [a]
+    explanation: The direct parent is the row immediately above at one level less indent. render_page is an ancestor, not the parent.
+  - id: q-pc-cross
+    concept: otel.parent-child
+    type: multi
+    prompt: A gateway calls a vector store over HTTP and the store's span appears as a child of the gateway's span. What made that possible?
+    options:
+      - { id: a, text: The gateway sent the trace id and its span id, for example in a traceparent header }
+      - { id: b, text: The store started its span using that context as the parent }
+      - { id: c, text: Both services ran on the same host }
+      - { id: d, text: The backend matched the two spans by their names }
+    answer: [a, b]
+    explanation: Context propagation carries the trace id and calling span id across the hop, and the receiver uses it as its parent. Without it you get two unconnected traces, whatever host they ran on.
+  - id: q-llm-attr
+    concept: otel.llm-attributes
+    type: multi
+    prompt: Which are gen_ai attributes an LLM call span typically carries?
+    options:
+      - { id: a, text: gen_ai.request.model }
+      - { id: b, text: gen_ai.usage.input_tokens }
+      - { id: c, text: gen_ai.usage.output_tokens }
+      - { id: d, text: gen_ai.cost.dollars }
+    answer: [a, b, c]
+    explanation: The conventions name the requested model and the input and output token counts. Cost is not a standard attribute; it is derived from tokens and a per-model price.
+  - id: q-llm-cost
+    concept: otel.llm-attributes
+    type: single
+    prompt: Finance wants the cost of one traced request. Which is the sound way to get it?
+    options:
+      - { id: a, text: Multiply the input and output token counts by the price for the model that answered }
+      - { id: b, text: Read the cost attribute off the root span }
+      - { id: c, text: Multiply the request's duration by a price per second }
+      - { id: d, text: Count the spans and multiply by a flat rate }
+    answer: [a]
+    explanation: Spend follows tokens, priced per model and usually differently for input and output. Duration and span count do not track what a provider charges.
+  - id: q-llm-sum
+    concept: otel.llm-attributes
+    type: single
+    prompt: A request retried its model call twice. How do you count its tokens?
+    options:
+      - { id: a, text: Sum the usage attributes over every span that is a model call }
+      - { id: b, text: Take the last model call only, since that produced the answer }
+      - { id: c, text: Take the first model call only, since it is the largest }
+      - { id: d, text: Take the average across the calls }
+    answer: [a]
+    explanation: Every call is billed, including the retries. Each is its own span with its own counts, so the request total is the sum, chosen by what the spans carry rather than by assuming there is one.

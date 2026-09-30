@@ -1,0 +1,100 @@
+questions:
+  - id: q-steps-order
+    concept: platform.onboarding-steps
+    type: single
+    prompt: A new team has a working key on the gateway. Why can its agent still not call its own tool?
+    options:
+      - { id: a, text: Keys on the gateway also cover tools, so the key must have expired }
+      - { id: b, text: The tool server has to be registered with the tool hub and offered through a virtual server first }
+      - { id: c, text: Tools can only be called after the model has been called at least once }
+      - { id: d, text: The tool server has to be restarted after the key is created }
+    answer: [b]
+    explanation: The gateway key and the tool path are separate. The hub has to know the tool server, discover its tools and put them in a virtual server before any caller can reach them.
+  - id: q-steps-idempotent
+    concept: platform.onboarding-steps
+    type: multi
+    prompt: An onboarding script looks up a team by name before creating it. Which benefits does that give? Pick all that apply.
+    options:
+      - { id: a, text: It can be rerun after a failure without creating a duplicate team }
+      - { id: b, text: A single step can be rerun on its own to see what it costs }
+      - { id: c, text: It makes the gateway skip authentication on later runs }
+      - { id: d, text: It guarantees that every step takes the same time }
+    answer: [a, b]
+    explanation: Idempotent steps are safe to repeat, which makes recovery and timing easy. It does not change authentication, and steps still take whatever time their calls take.
+  - id: q-steps-grant
+    concept: platform.onboarding-steps
+    type: single
+    prompt: On the tool side of this platform, what does it mean to give a team access to a tool?
+    options:
+      - { id: a, text: Put the tool in a virtual server that the team's callers connect to }
+      - { id: b, text: Add the tool's name to the team's models list on the gateway }
+      - { id: c, text: Give the tool server a copy of the team's key }
+      - { id: d, text: Register the team's name inside the tool server's code }
+    answer: [a]
+    explanation: The models list is a gateway concept for aliases. Tools reach callers through the virtual server they ask for.
+  - id: q-scope-inherit
+    concept: platform.key-scopes
+    type: single
+    prompt: A key is generated with only a team id, and the team's models list holds one alias. What can the key call?
+    options:
+      - { id: a, text: Every alias on the gateway, because the key has no list of its own }
+      - { id: b, text: Nothing until someone gives the key its own list }
+      - { id: c, text: The aliases on the team's list, because the key inherits it }
+      - { id: d, text: The team's alias plus every alias older teams still use }
+    answer: [c]
+    explanation: A key with no list of its own follows its team, which is why keys made this way cannot drift from the team's grant.
+  - id: q-scope-refusal
+    concept: platform.key-scopes
+    type: multi
+    prompt: A key scoped to one alias calls a different alias that exists and works for other teams. What do you expect? Pick all that apply.
+    options:
+      - { id: a, text: An HTTP error, 401 or 403, rather than a 200 }
+      - { id: b, text: The error names whether the key's list or the team's list refused it }
+      - { id: c, text: The gateway silently routes the call to the alias the key does have }
+      - { id: d, text: A 200 with an empty reply, because the model is not allowed to answer }
+    answer: [a, b]
+    explanation: A scope is enforced as a refusal, not a redirect or an empty answer. Codes like key_model_access_denied and team_model_access_denied say which list refused.
+  - id: q-scope-legacy
+    concept: platform.key-scopes
+    type: single
+    prompt: Why are legacy aliases a common source of over-broad access for a new team?
+    options:
+      - { id: a, text: Legacy aliases cannot be restricted by a models list }
+      - { id: b, text: Setups are often copied from an older team, which brings its whole list along }
+      - { id: c, text: Legacy aliases are always cheaper, so teams add them on purpose }
+      - { id: d, text: The gateway grants legacy aliases to every new team automatically }
+    answer: [b]
+    explanation: Legacy aliases restrict like any other. The risk is copying an old team's list wholesale. Grant what the team asked for and test the boundary.
+  - id: q-e2e-proof
+    concept: platform.end-to-end-check
+    type: single
+    prompt: A team's key, tool server and virtual server all appear in the admin view. What does that prove?
+    options:
+      - { id: a, text: That the team can make requests, because the records exist }
+      - { id: b, text: That the tools work, because federation succeeded }
+      - { id: c, text: That the key works, because it was minted without an error }
+      - { id: d, text: That the configuration exists; only a real call shows it works }
+    answer: [d]
+    explanation: Records can exist and still fail on first use, for example an alias with no model behind it or a virtual server with no tools. Only a real request through both paths proves the team works.
+  - id: q-e2e-toolerror
+    concept: platform.end-to-end-check
+    type: single
+    prompt: A tools/call request returns HTTP 200, but the JSON result contains isError set to true. How should an end-to-end check treat it?
+    options:
+      - { id: a, text: As a success, because HTTP 200 means the request was accepted }
+      - { id: b, text: As a failed tool call, because the result reports the tool itself failed }
+      - { id: c, text: As a gateway outage that should be retried against the model }
+      - { id: d, text: As a success on the second attempt, because tool errors are always transient }
+    answer: [b]
+    explanation: MCP reports tool failures inside a successful HTTP response. The agent treats the call as failed, so a check has to read the flag as well as the status.
+  - id: q-e2e-halves
+    concept: platform.end-to-end-check
+    type: multi
+    prompt: Which of these does a genuine end-to-end onboarding check need? Pick all that apply.
+    options:
+      - { id: a, text: A completion request made with the new key on its granted alias }
+      - { id: b, text: A tool call made through the new virtual server }
+      - { id: c, text: A copy of the printed output from the last time the script ran }
+      - { id: d, text: A guarantee that the config file has not changed since it was written }
+    answer: [a, b]
+    explanation: The check has to use the new key and the new tool path live. Old output and an unchanged file describe the past, not whether the team works now.
