@@ -12,7 +12,7 @@
 // Rules: leak, python-no-B, port-kill, port, hints-duplicate, brief-length,
 // pressure-undisclosed, harness-stale-lock. See "Lint" in docs/lab-authoring.md.
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LineCounter, parseDocument } from 'yaml';
 
@@ -46,6 +46,12 @@ const LEAK_PATTERNS = [
   { label: 'to fix', re: /to fix/i },
   { label: "That's the function", re: /That's the function/ },
 ];
+
+// Data files hold the lab's fictional world (customer messages, logs, cases):
+// ordinary prose there says "to fix" or "the bug" without leaking anything, so
+// they are only checked for TODO.
+const DATA_EXTENSIONS = new Set(['.json', '.jsonl', '.csv', '.tsv', '.log', '.txt']);
+const isDataFile = (file) => DATA_EXTENSIONS.has(extname(file).toLowerCase());
 
 /** Every regular file under `dir` (symlinks are not followed), sorted. */
 function walkFiles(dir) {
@@ -123,7 +129,8 @@ function ruleLeak(dir, add) {
     if (text === null) continue;
     const lines = text.split('\n');
     lines.forEach((line, i) => {
-      const hits = LEAK_PATTERNS.filter((p) => p.re.test(line)).map((p) => p.label);
+      const patterns = isDataFile(file) ? LEAK_PATTERNS.filter((p) => p.label.startsWith('TODO')) : LEAK_PATTERNS;
+      const hits = patterns.filter((p) => p.re.test(line)).map((p) => p.label);
       // "TODO(you)" also matches "TODO"; report the more specific one only.
       const labels = hits.includes('TODO(you)') ? hits.filter((h) => h !== 'TODO') : hits;
       if (labels.length === 0) return;

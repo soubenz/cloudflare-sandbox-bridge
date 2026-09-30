@@ -102,6 +102,14 @@ describe('leak', () => {
     expect(rules(r.errors)).not.toContain('leak');
   });
 
+  it('checks data files for TODO only, so fictional prose may say "to fix"', () => {
+    const prose = '{"text": "tell me which feed to fix first; the bug is in the import"}\n';
+    const ok = lintLab(lab({ 'workspace/traffic.json': prose }));
+    expect(rules(ok.errors)).not.toContain('leak');
+    const bad = lintLab(lab({ 'workspace/traffic.json': '{"note": "TODO"}\n' }));
+    expect(rules(bad.errors)).toContain('leak');
+  });
+
   it('skips binaries and files over 512 KB', () => {
     const r = lintLab(
       lab({
