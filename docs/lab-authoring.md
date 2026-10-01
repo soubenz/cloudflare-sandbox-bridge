@@ -43,6 +43,7 @@ order: 2                       # 1-based position within the module
 prerequisites: [gateway-hello] # lab slugs to do first
 tier: free                     # free | pro, default pro
 estimated_minutes: 45          # 5-240; the card's "about N min"
+archived: false                # default false; true hides the lab from learners
 idle_minutes: 10               # 1-60, default 10
 env:
   SOME_VAR: "value, may use {{session.id}} etc."
@@ -100,6 +101,7 @@ Defaults and limits worth knowing, since the schema fills them in silently:
 | `prerequisites` | optional; lab slugs to do first. A slug that is not published logs a warning in the publish response (`warnings`), it does not fail the publish |
 | `tier` | `free` or `pro`, default `pro`; whether the free plan may start the lab |
 | `estimated_minutes` | optional; integer 5-240, how long the lab honestly takes (distinct from `timeout_minutes`, the session cap) |
+| `archived` | optional boolean, default `false`; `true` hides the lab from learners (see [Archiving a lab](#archiving-a-lab)) |
 | catalogue sort | `labs/index.json` is ordered by `(path, module, order, slug)`; a missing `path` sorts as `zz` (last), a missing `module`/`order` as 999. The manifest is the only source of placement — there is no separate paths file |
 | `env` keys (both levels) | must be shell identifiers: `^[A-Za-z_][A-Za-z0-9_]*$` |
 | `services[].name` | 1-40 chars |
@@ -125,6 +127,10 @@ The env key rule matters because the session's env is written to
 `MY-KEY` would break shell startup and a key containing a backtick would
 execute. Values are single-quoted on the way in, so nothing in a value is
 expanded.
+
+### Archiving a lab
+
+Set `archived: true` for a lab learners should not see: a test fixture, or a lab you have retired. The lab stays published and startable by slug (`POST /sessions`, `/labs/<slug>/session` and the test suites keep working), and `GET /labs` still lists it with `archived: true`. The learner console leaves it out of the launcher, path and module counts, search, suggestions and progress totals; the admin Catalogue tab shows it with an "Archived" chip. Republish the lab for the flag to reach the catalogue index.
 
 ### Templated strings
 

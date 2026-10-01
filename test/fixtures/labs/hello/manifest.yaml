@@ -1,6 +1,8 @@
 # Trivial lab used only to exercise the sandbox API end to end (spike,
 # integration tests, and `opalix labs test`). Not a real Opalix lab.
 slug: hello
+# Archived: a test fixture, kept published (and startable by slug) for the e2e and integration suites, hidden from learners.
+archived: true
 version: 1.0.0
 title: "Hello, sandbox"
 type: build

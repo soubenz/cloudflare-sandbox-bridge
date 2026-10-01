@@ -136,6 +136,14 @@ export const labManifestSchema = z.object({
   order: z.number().int().min(1).optional(),
   /** Slugs of labs to do first. Unknown slugs warn at publish, they do not fail it. */
   prerequisites: z.array(z.string().regex(/^[a-z0-9-]+$/, 'prerequisite must be a lab slug')).optional(),
+  /**
+   * Hide this lab from learners. An archived lab stays published and
+   * startable by slug (deep links, `POST /sessions`, the test suites all keep
+   * working) and `GET /labs` still lists it with `archived: true`; the
+   * learner console just leaves it out of the launcher, its counts, search
+   * and suggestions. Use it for test fixtures and retired labs.
+   */
+  archived: z.boolean().default(false),
   /** Whether the free plan may start this lab. */
   tier: z.enum(['free', 'pro']).default('pro'),
   /** Honest time to finish, for the card; distinct from the session cap `timeout_minutes`. */

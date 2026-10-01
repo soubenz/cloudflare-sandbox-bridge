@@ -5,6 +5,8 @@
 # when it did, idle ended the session and destroyed the container first,
 # and the pressure exec then failed against a container that was gone.
 slug: impatient
+# Archived: a test fixture, kept published (and startable by slug) for the e2e and integration suites, hidden from learners.
+archived: true
 version: 1.0.0
 title: "Impatient (idle-timeout fixture)"
 type: build

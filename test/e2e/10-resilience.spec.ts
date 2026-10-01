@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, emit, fulfillCors, openConsole, patchStatus, sessionIdOf, SERVICE_KEY } from './fixtures';
+import { test, expect, emit, fulfillCors, openConsole, patchStatus, sessionIdOf, showArchivedLabs, SERVICE_KEY } from './fixtures';
 
 /**
  * The console when things go wrong under it: a dropped event stream, a
@@ -120,6 +120,9 @@ test.describe('a session token that has expired', () => {
 
 test.describe('no free lab slot', () => {
   test('says so and that it will try again', async ({ page }) => {
+    // `hello` is archived, so the learner launcher has no card for it: show it as an ordinary lab
+    // for this test, which is about what a card's Start does when no slot is free.
+    await showArchivedLabs(page);
     await openConsole(page);
     // The picker, not the run's session: forget it in this browser only.
     await page.evaluate(() => localStorage.removeItem('opalix.session'));

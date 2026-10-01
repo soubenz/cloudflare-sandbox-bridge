@@ -27,6 +27,13 @@ describe('parseManifest', () => {
     expect(m.egress.allow).toEqual([]);
   });
 
+  it('defaults archived to false and accepts archived: true', () => {
+    expect(parseManifest(baseManifest()).archived).toBe(false);
+    expect(parseManifest(baseManifest({ archived: true })).archived).toBe(true);
+    expect(parseManifest(baseManifest({ archived: false })).archived).toBe(false);
+    expect(() => parseManifest(baseManifest({ archived: 'yes' }))).toThrow(/archived/);
+  });
+
   it('rejects a bad slug', () => {
     expect(() => parseManifest(baseManifest({ slug: 'Not Valid!' }))).toThrow(/slug/);
   });

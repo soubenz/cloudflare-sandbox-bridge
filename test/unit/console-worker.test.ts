@@ -339,6 +339,25 @@ describe('GET /api/labs', () => {
     ]);
     expect(labs.every((l) => l.progress === null)).toBe(true);
   });
+
+  it('passes archived through untouched, and does not filter the archived labs out', async () => {
+    replies.push((u) =>
+      u.endsWith('/labs')
+        ? {
+            body: [
+              { slug: 'real', has_learn: false, title: 'A' },
+              { slug: 'hello', has_learn: false, title: 'Hello', archived: true },
+            ],
+          }
+        : undefined
+    );
+    const res = await call('/api/labs', { cookie });
+    const labs = (await res.json()) as Array<{ slug: string; archived?: boolean }>;
+    // Hiding is the launcher's job; the Worker hands the console every lab so a deep link to one still resolves.
+    expect(labs.map((l) => l.slug)).toEqual(['real', 'hello']);
+    expect(labs[1]!.archived).toBe(true);
+    expect('archived' in labs[0]!).toBe(false);
+  });
 });
 
 describe('deep links and signing in', () => {

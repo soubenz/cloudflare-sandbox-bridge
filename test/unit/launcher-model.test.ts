@@ -10,6 +10,7 @@ import realMeta from '../../packages/catalogue/paths.json';
  * TypeScript project (which does not compile JS) needs no declaration file.
  */
 interface Lab {
+  archived?: boolean;
   slug: string;
   title?: string;
   path?: string;
@@ -526,5 +527,118 @@ describe('moduleViews', () => {
   it('keeps every module in the result, however many are condensed', () => {
     const path = many(7);
     expect([...extra.moduleViews(path).keys()]).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+});
+
+const learner = (await import('../../dashboard/src/launcher-model.js' as string)) as {
+  isArchived: (lab: unknown) => boolean;
+  visibleLabs: (labs: unknown) => Lab[];
+};
+const learnModel = (await import('../../dashboard/src/learn-model.js' as string)) as {
+  suggestStart: (mods: Array<{ path: string; number: number }>, m: unknown) => { path: string; number: number } | null;
+  emptyMastery: () => Record<string, unknown>;
+};
+describe('archived labs', () => {
+  const arch = (slug: string, over: Partial<Lab> = {}): Lab => ({ ...lab(slug, over), archived: true });
+
+  const catalogue = [
+    lab('a1', { path: 'agents', order: 1 }),
+    lab('p1-a', { path: 'platform', module: 1, order: 1, tier: 'free', progress: { attempts: 1, best_score: 1, passed_all: true } }),
+    lab('p1-b', { path: 'platform', module: 1, order: 2, prerequisites: ['fx-hidden'] }),
+    arch('p1-hidden', { path: 'platform', module: 1, order: 3 }),
+    arch('p2-hidden', { path: 'platform', module: 2, order: 1 }),
+    arch('fixture-agents', { path: 'agents', order: 2 }),
+    arch('hello'),
+    arch('impatient'),
+    arch('fx-hidden'),
+  ];
+
+  it('knows an archived lab and leaves the others, whatever they hold', () => {
+    expect(learner.isArchived({ slug: 'x', archived: true })).toBe(true);
+    expect(learner.isArchived({ slug: 'x', archived: false })).toBe(false);
+    expect(learner.isArchived({ slug: 'x' })).toBe(false);
+    expect(learner.isArchived(null)).toBe(false);
+    expect(learner.visibleLabs(catalogue).map((l) => l.slug)).toEqual(['a1', 'p1-a', 'p1-b']);
+    expect(learner.visibleLabs(undefined)).toEqual([]);
+  });
+
+  it('leaves archived labs out of every group, and the "Other labs" group disappears when only they have no path', () => {
+    const m = buildLauncherModel(catalogue, meta);
+    expect(m.paths.map((p) => p.slug)).toEqual(['agents', 'platform']);
+    expect(m.paths.some((p) => p.other)).toBe(false);
+    expect(slugs(m.paths[0]!.labs)).toEqual(['a1']);
+    expect(slugs(m.paths[1]!.labs)).toEqual(['p1-a', 'p1-b']);
+    const everyShown = m.paths.flatMap((p) => p.modules.flatMap((x) => slugs(x.labs)));
+    expect(everyShown.sort()).toEqual(['a1', 'p1-a', 'p1-b']);
+  });
+
+  it('drops a module whose labs are all archived, and a path that only archived labs belong to', () => {
+    const m = buildLauncherModel(catalogue, meta);
+    expect(m.paths[1]!.modules.map((x) => x.number)).toEqual([1]);
+    const onlyHidden = buildLauncherModel([lab('keep', { path: 'platform', module: 1 }), arch('gone', { path: 'agents' })], meta);
+    expect(onlyHidden.paths.map((p) => p.slug)).toEqual(['platform']);
+  });
+
+  it('counts only what a learner sees, per module, per path and overall', () => {
+    const m = buildLauncherModel(catalogue, meta);
+    expect(m.paths[0]!.totals).toEqual({ labs: 1, done: 0, minutes: 30, free: 0 });
+    expect(m.paths[1]!.totals).toEqual({ labs: 2, done: 1, minutes: 60, free: 1 });
+    expect(m.paths[1]!.modules[0]!.totals.labs).toBe(2);
+    expect(m.totals).toEqual({ labs: 3, done: 1, minutes: 90, free: 1 });
+  });
+
+  it('still names an archived prerequisite by title, and counts it passed when it was', () => {
+    const m = buildLauncherModel(catalogue, meta);
+    const b = m.paths[1]!.modules[0]!.labs.find((e) => e.lab.slug === 'p1-b')!;
+    expect(b.locked).toBe(true);
+    expect(b.lockedBy).toBe('fx-hidden');
+    expect(b.lockedByTitle).toBe('Title of fx-hidden');
+    const passed = buildLauncherModel(catalogue, meta, { passed: new Set(['p1-a', 'fx-hidden']) });
+    expect(passed.paths[1]!.modules[0]!.labs.find((e) => e.lab.slug === 'p1-b')!.locked).toBe(false);
+  });
+
+  it('keeps a real lab with no path in "Other labs"', () => {
+    const m = buildLauncherModel([...catalogue, lab('loose')], meta);
+    expect(m.paths.map((p) => p.slug)).toEqual(['agents', 'platform', '']);
+    expect(m.paths[2]!.other).toBe(true);
+    expect(slugs(m.paths[2]!.labs)).toEqual(['loose']);
+    expect(m.totals.labs).toBe(4);
+  });
+
+  it('gives a catalogue of only archived labs an empty launcher', () => {
+    const m = buildLauncherModel([arch('hello'), arch('impatient')], meta);
+    expect(m.paths).toEqual([]);
+    expect(m.totals).toEqual({ labs: 0, done: 0, minutes: 0, free: 0 });
+  });
+
+  it('does not place an archived lab in the launcher, while the full list still resolves it by slug', () => {
+    const m = buildLauncherModel(catalogue, meta);
+    expect(extra.locateLab(m, 'hello')).toBeNull();
+    expect(extra.locateLab(m, 'p1-hidden')).toBeNull();
+    expect(extra.locateLab(m, 'p1-a')).not.toBeNull();
+    // What app.js does: a deep link looks the slug up in the whole catalogue, never in the model.
+    const bySlug = new Map(catalogue.map((l) => [l.slug, l]));
+    expect(bySlug.get('hello')?.title).toBe('Title of hello');
+    expect(bySlug.get('p1-hidden')).toBeDefined();
+    expect(bySlug.get('nope')).toBeUndefined();
+  });
+
+  it('never suggests a module that only archived labs would fill', () => {
+    const labs = [
+      lab('g1', { path: 'ai-platform', module: 1, order: 1 }),
+      arch('rag-only-archived', { path: 'ai-platform', module: 3, order: 1 }),
+      lab('o1', { path: 'ai-platform', module: 4, order: 1 }),
+    ];
+    const cardsOf = (m: Model) => m.paths.flatMap((p) => (p.cards ? p.modules.map((x) => ({ path: p.slug, number: x.number as number })) : []));
+    const levels = { gateway: 'strong', mcp: 'strong', rag: 'new', otel: 'new' };
+    const mastery = { ...learnModel.emptyMastery(), onboarding: { status: 'done', at: 1, levels } };
+
+    const cards = cardsOf(buildLauncherModel(labs, realMeta));
+    expect(cards.map((c) => c.number)).toEqual([1, 4]);
+    expect(learnModel.suggestStart(cards, mastery)).toEqual({ path: 'ai-platform', number: 4 });
+
+    // The same catalogue with nothing archived would have suggested module 3: the filter is what moves it.
+    const unarchived = labs.map((l) => ({ ...l, archived: false }));
+    expect(learnModel.suggestStart(cardsOf(buildLauncherModel(unarchived, realMeta)), mastery)).toEqual({ path: 'ai-platform', number: 3 });
   });
 });

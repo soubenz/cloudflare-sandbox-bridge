@@ -2,6 +2,8 @@
 # idle_minutes is the schema minimum so the idle-timeout path is
 # observable in a test run rather than in ten minutes.
 slug: fragile
+# Archived: a test fixture, kept published (and startable by slug) for the e2e and integration suites, hidden from learners.
+archived: true
 version: 1.0.0
 title: "Fragile (container-restart fixture)"
 type: build

@@ -58,19 +58,29 @@ test.describe('lab launcher', () => {
     // nothing about what you would actually do. A learner should not have
     // to spend a container to find that out.
     await openConsole(page);
-    const lab = page.locator(`.lab[data-slug="${LAB}"]`);
+    // The first card on the page: the fixture labs are archived and have none.
+    await page.waitForSelector('.lab', { timeout: 30_000 });
+    const lab = page.locator('.lab').first();
     await expect(lab.locator('.lab-summary')).not.toBeEmpty();
     await lab.locator('.lab-more > summary').click();
     await expect(lab.locator('.lab-objectives li').first()).toBeVisible();
   });
 
-  test('offers the hello fixture lab', async ({ page }) => {
+  test('keeps archived labs out of the launcher, but in the catalogue', async ({ page }) => {
     await openConsole(page);
-    // By slug: `hasText: 'hello'` also matches the gateway-hello row, so
-    // this passed while the hello lab was missing entirely.
-    const lab = page.locator(`.lab[data-slug="${LAB}"]`);
-    await expect(lab).toBeVisible();
-    await expect(lab.locator('.lab-sub')).toHaveText(new RegExp(`^${LAB}@`));
+    await page.waitForSelector('.lab', { timeout: 30_000 });
+    // The catalogue API still lists every lab; the learner launcher draws only the ones that are not archived.
+    const res = await page.request.get('/api/labs');
+    expect(res.ok()).toBe(true);
+    const labs = (await res.json()) as Array<{ slug: string; archived?: boolean }>;
+    // The fixtures are archived, so `hello` is in the list (the suite starts it by slug) and has no card.
+    const hello = labs.find((l) => l.slug === LAB);
+    expect(hello, `the catalogue lists ${LAB}`).toBeTruthy();
+    expect(hello!.archived, `${LAB} is archived`).toBe(true);
+    for (const l of labs) {
+      await expect(page.locator(`.lab[data-slug="${l.slug}"]`)).toHaveCount(l.archived ? 0 : 1);
+    }
+    await expect(page.locator('#labCount')).toHaveText(new RegExp(`^${labs.filter((l) => !l.archived).length} of ${labs.filter((l) => !l.archived).length} labs$`));
   });
 
   test('surfaces a failing catalogue instead of hanging', async ({ page }) => {

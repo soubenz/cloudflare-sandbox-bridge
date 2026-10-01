@@ -20,6 +20,8 @@
 #     manifest strings are), so prometheus.yml carries a __PREFIX__
 #     placeholder that the service's own argv substitutes at start.
 slug: gateway-hello
+# Archived: a test fixture, kept published (and startable by slug) for the e2e and integration suites, hidden from learners.
+archived: true
 version: 1.0.0
 title: "Gateway image smoke test"
 type: scale

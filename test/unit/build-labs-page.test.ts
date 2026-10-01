@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 interface Lab {
+  archived?: boolean;
   slug: string;
   title: string;
   summary?: string;
@@ -155,6 +156,12 @@ describe('renderLabsPage on fixture data', () => {
     expect(html).toContain('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; it&#39;s');
     // The aria-label attribute carries the title, so it must be escaped too.
     expect(html).toContain('aria-label="Join the waitlist: &lt;img');
+  });
+
+  it('leaves an archived lab off the public page, as the launcher does', () => {
+    const html = mod.renderLabsPage([...fixture, lab({ slug: 'old-one', title: 'An archived lab', path: 'ai-platform', archived: true })]);
+    expect(html).not.toContain('An archived lab');
+    expect(html).toBe(mod.renderLabsPage(fixture));
   });
 
   it('refuses a lab whose path the copy does not describe, instead of dropping it', () => {

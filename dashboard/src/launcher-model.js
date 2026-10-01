@@ -14,7 +14,13 @@
  * The result is paths -> modules -> labs, in the order the catalogue gives:
  * paths in the order of the metadata (then any path the metadata does not
  * know, by slug), modules by number, labs by `order` then slug. Labs with no
- * `path` close the list as one "Other labs" group.
+ * `path` close the list as one "Other labs" group (and that group is not
+ * drawn when it has no labs).
+ *
+ * Archived labs (`archived: true`: test fixtures, retired labs) are not
+ * learner-facing: they are left out of every group, count and total here.
+ * They are still in the catalogue the caller holds, which is what a lookup by
+ * slug (a deep link, the resume card, starting a lab) must use.
  */
 
 /** The accent families the design tokens define (packages/design/tokens.css). */
@@ -81,6 +87,12 @@ export function approxMinutes(minutes) {
   return `${Math.round(n / 60)} h`;
 }
 
+/** True for a lab the manifest archived: hidden from learners, still startable by slug. */
+export const isArchived = (lab) => lab?.archived === true;
+
+/** The labs a learner sees: the catalogue without the archived ones. Keep the full list for lookups by slug. */
+export const visibleLabs = (labs) => (Array.isArray(labs) ? labs.filter((lab) => !isArchived(lab)) : []);
+
 /** Slugs this person has passed every check of. */
 export function passedSlugs(labs) {
   return new Set(labs.filter((lab) => lab.progress?.passed_all).map((lab) => lab.slug));
@@ -119,7 +131,10 @@ function totalsOf(entries) {
 export function buildLauncherModel(labs, meta, { passed } = {}) {
   const all = Array.isArray(labs) ? labs.filter((lab) => lab && typeof lab === 'object' && lab.slug) : [];
   const passedSet = passed ?? passedSlugs(all);
+  // Titles and passed slugs come from the whole catalogue (a visible lab may
+  // name an archived prerequisite); only the grouping below is learner-facing.
   const titleOf = new Map(all.map((lab) => [lab.slug, lab.title]));
+  const shown = visibleLabs(all);
 
   const metaPaths = Array.isArray(meta?.paths) ? meta.paths.filter((p) => p && typeof p.slug === 'string') : [];
   const metaPath = new Map(metaPaths.map((p) => [p.slug, p]));
@@ -144,7 +159,7 @@ export function buildLauncherModel(labs, meta, { passed } = {}) {
   // Bucket by path (in first-seen order, fixed up below), then by module.
   const byPath = new Map();
   const noPath = [];
-  for (const lab of all) {
+  for (const lab of shown) {
     const slug = text(lab.path);
     if (!slug) {
       noPath.push(lab);

@@ -128,12 +128,10 @@ export async function startOrResume(page: Page): Promise<string> {
   const resumed = await page.locator('#workspace').isVisible();
 
   if (!resumed) {
-    await page.waitForSelector('.lab', { timeout: 30_000 });
-    // By slug, exactly. `hasText: 'hello'` is a substring match, and the
-    // catalogue also publishes `gateway-hello`, whose row sorts first — so
-    // the suite silently started the gateway smoke lab and then failed
-    // every spec that named a file, a service or a check of the hello lab.
-    await page.locator(`.lab[data-slug="${LAB}"]`).locator('button').click();
+    // By address, not by card: `hello` is an archived lab (a test fixture the
+    // learner launcher hides), so it has no card to click, but its address
+    // /labs/hello/session starts it, or rejoins it, exactly as a card would.
+    await page.goto(`/labs/${LAB}/session`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#workspace:not([hidden])', { timeout: 30_000 });
   }
 
@@ -154,6 +152,20 @@ export async function startOrResume(page: Page): Promise<string> {
   ).toHaveText(LAB, { timeout: 30_000 });
   sharedSession = await page.evaluate(() => localStorage.getItem('opalix.session'));
   return (await page.locator('#sessionId').textContent()) ?? '';
+}
+
+/**
+ * Makes the catalogue the console reads show archived labs as ordinary ones,
+ * for a spec that has to click a fixture's card (the launcher hides archived
+ * labs from learners, and the five test fixtures are archived). Only the
+ * `archived` flag is cleared; every other field is the API's own answer.
+ */
+export async function showArchivedLabs(page: Page): Promise<void> {
+  await page.route('**/api/labs', async (route) => {
+    const res = await route.fetch();
+    const labs = (await res.json()) as Array<Record<string, unknown>>;
+    await route.fulfill({ status: res.status(), json: labs.map(({ archived: _archived, ...lab }) => lab) });
+  });
 }
 
 /**

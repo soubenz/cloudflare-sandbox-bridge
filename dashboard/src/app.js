@@ -10,6 +10,7 @@ import {
   moduleViews,
   passedSlugs,
   summaryLine,
+  visibleLabs,
 } from './launcher-model.js';
 import { isPhoneLike, readDevice } from './device.js';
 import { createRouter } from './router.js';
@@ -572,17 +573,21 @@ async function loadLabs() {
   try {
     const labs = await api.labs();
     list.innerHTML = '';
-    if (!labs.length) {
+    // Every lab is known before any card is drawn: a card names its
+    // prerequisite by title, and that lab may sit in a later group. This map
+    // holds the archived labs too: an address, the resume card and Start look
+    // a lab up here, and an archived lab must still resolve. Only what the
+    // learner is shown (cards, counts, filters, suggestions) leaves them out.
+    for (const lab of labs) labsBySlug.set(lab.slug, lab);
+    updateTitle();
+    const visible = visibleLabs(labs);
+    if (!visible.length) {
       list.innerHTML =
         '<div class="empty-state"><p>No labs are published yet.</p><p class="muted small">Publish one with <code>opalix labs publish</code>, then reload.</p></div>';
       return;
     }
-    // Every lab is known before any card is drawn: a card names its
-    // prerequisite by title, and that lab may sit in a later group.
-    for (const lab of labs) labsBySlug.set(lab.slug, lab);
-    updateTitle();
     renderLauncher(buildLauncherModel(labs, pathMeta, { passed: passedSlugs(labs) }));
-    renderFilters(labs);
+    renderFilters(visible);
     applyFilters();
   } catch (err) {
     if (/^401:/.test(err.message)) {

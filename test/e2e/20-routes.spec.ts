@@ -1004,3 +1004,162 @@ test.describe('no horizontal scroll at the new addresses', () => {
     });
   }
 });
+
+// =========================================================================
+// archived labs: hidden from the launcher, still reachable by address
+// =========================================================================
+
+/**
+ * The catalogue the way the API serves it once the five test fixtures are archived: every lab is
+ * there, the archived ones flagged. One archived lab has a story (so its address opens a step);
+ * `hello`, `impatient` and `gateway-hello` have nothing to read and belong to no path.
+ */
+const ARCHIVED_STORY = 'archived-with-a-story';
+type LabRow = Record<string, unknown> & { slug: string; archived?: boolean };
+const archivedLab = (o: LabRow) => lab({ archived: true, family: 'agent', has_learn: false, ...o }) as unknown as LabRow;
+const NO_PATH = { path: undefined, module: undefined, order: undefined };
+const WITH_ARCHIVED: LabRow[] = [
+  ...(LABS as unknown as LabRow[]),
+  archivedLab({ slug: 'hello', title: 'Hello, sandbox', ...NO_PATH }),
+  archivedLab({ slug: 'impatient', title: 'Impatient (idle-timeout fixture)', ...NO_PATH }),
+  archivedLab({ slug: 'gateway-hello', title: 'Gateway hello', family: 'gateway', ...NO_PATH }),
+  archivedLab({ slug: ARCHIVED_STORY, title: 'Archived with a story', order: 9, has_learn: true }),
+];
+BUNDLES[ARCHIVED_STORY] = { story: full.story, concepts: [], questions: [], answers_file: full.answers_file, fields: [] };
+
+/** The stub, with the catalogue above in place of its own. */
+async function stubArchived(page: Page): Promise<Stub> {
+  const s = await stub(page);
+  // The last route registered answers first, so this replaces the catalogue and leaves the rest of the stub.
+  await page.route('**/api/labs', (route) => json(route, WITH_ARCHIVED));
+  return s;
+}
+
+test.describe('archived labs', () => {
+  test('the launcher shows none of them: no "Other labs" band, no cards, no pill, and the counts leave them out', async ({ page }) => {
+    const s = await stubArchived(page);
+    await wide(page);
+    await visit(page, '/');
+    await expect(page.locator('.lab')).toHaveCount(LABS.length);
+    for (const l of WITH_ARCHIVED.filter((x) => x.archived)) await expect(page.locator(`.lab[data-slug="${l.slug}"]`)).toHaveCount(0);
+    // One path, so no signpost and no band for labs with no path.
+    await expect(page.locator('.lab-group')).toHaveCount(1);
+    await expect(page.locator('#path-other')).toHaveCount(0);
+    await expect(page.locator('#labList')).not.toContainText('Other labs');
+    await expect(page.locator('#pathNav')).toBeHidden();
+    // The totals are the learner's: five labs, not nine.
+    await expect(page.locator('#labCount')).toHaveText(`${LABS.length} of ${LABS.length} labs`);
+    await expect(page.locator('.lab-group .path-summary')).toContainText(`${LABS.length} labs`);
+    await expect(page.locator('.lab-group .progress').first()).toHaveAttribute('aria-valuemax', String(LABS.length));
+    // The archived labs' own family (agent) is not offered as a filter.
+    await expect(page.locator('button.filter-chip[data-filter="family"]')).toHaveText(['gateway']);
+    expect(s.starts).toEqual([]);
+    expect(s.errors).toEqual([]);
+  });
+
+  test('search finds none of them, by title or by slug', async ({ page }) => {
+    await stubArchived(page);
+    await wide(page);
+    await visit(page, '/');
+    for (const q of ['hello', 'Impatient', ARCHIVED_STORY]) {
+      await page.locator('#labSearch').fill(q);
+      await expect(page.locator('.lab:not([hidden])')).toHaveCount(0);
+      await expect(page.locator('#labNoMatch')).toBeVisible();
+      await expect(page.locator('#labCount')).toHaveText(`0 of ${LABS.length} labs`);
+    }
+    // A lab that is not archived is still found by the same box.
+    await page.locator('#labSearch').fill(PLAIN_TITLE);
+    await expect(page.locator('.lab:not([hidden])')).toHaveCount(1);
+  });
+
+  test('the "Other labs" band is still there for a real lab with no path', async ({ page }) => {
+    await stubArchived(page);
+    const loose = lab({ slug: 'loose-real', title: 'A loose real lab', ...NO_PATH });
+    await page.route('**/api/labs', (route) => json(route, [...WITH_ARCHIVED, loose]));
+    await wide(page);
+    await visit(page, '/');
+    await expect(page.locator('#path-other')).toBeVisible();
+    await expect(page.locator('#path-other .lab')).toHaveCount(1);
+    await expect(page.locator('#path-other .lab')).toHaveAttribute('data-slug', 'loose-real');
+    await expect(page.locator('#labCount')).toHaveText(`${LABS.length + 1} of ${LABS.length + 1} labs`);
+  });
+
+  test('a catalogue with only archived labs says no labs are published, and their addresses still open', async ({ page }) => {
+    const s = await stub(page);
+    await page.route('**/api/labs', (route) => json(route, WITH_ARCHIVED.filter((l) => l.archived)));
+    await wide(page);
+    await visit(page, '/');
+    await expect(page.locator('#labList .empty-state')).toContainText('No labs are published yet');
+    await expect(page.locator('.lab')).toHaveCount(0);
+    await visit(page, `/labs/${ARCHIVED_STORY}`);
+    await expect(page.locator('#notFound')).toBeHidden();
+    await expect(heading(page)).toHaveText(full.story!.title);
+    expect(s.starts).toEqual([]);
+  });
+
+  test('/labs/<slug> still opens the page of an archived lab with something to read, not "Page not found"', async ({ page }) => {
+    const s = await stubArchived(page);
+    await wide(page);
+    await visit(page, `/labs/${ARCHIVED_STORY}`);
+    await expect(page.locator('#notFound')).toBeHidden();
+    await expect(heading(page)).toHaveText(full.story!.title);
+    expect(here_(page)).toBe(`/labs/${ARCHIVED_STORY}/story`);
+    await expect(page).toHaveTitle('Archived with a story · Opalix labs');
+    expect(s.starts).toEqual([]);
+    expect(s.errors).toEqual([]);
+  });
+
+  test('/labs/<slug> of an archived lab with nothing to read lands on the launcher, not "Page not found"', async ({ page }) => {
+    const s = await stubArchived(page);
+    await wide(page);
+    await visit(page, '/labs/hello');
+    await expect(page.locator('#notFound')).toBeHidden();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await expect(page.locator('.lab[data-slug="hello"]')).toHaveCount(0);
+    expect(here_(page)).toBe('/labs/hello');
+    await expect(page).toHaveTitle('Hello, sandbox · Opalix labs');
+    // A lab that does not exist is still not found.
+    await page.goto('/labs/never-published', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('body[data-booted="1"]');
+    await expect(page.locator('#notFound')).toBeVisible();
+    expect(s.starts).toEqual([]);
+  });
+
+  test('/labs/<slug>/session starts an archived lab by its slug, and a refresh rejoins it', async ({ page }) => {
+    const s = await stubArchived(page);
+    await wide(page);
+    await visit(page, '/labs/hello/session');
+    await inSession(page);
+    expect(s.starts).toEqual(['hello']);
+    expect(here_(page)).toBe('/labs/hello/session');
+    await expect(page.locator('#sessionLab')).toHaveText('hello');
+    await expect(page.locator('#sessionTitle')).toHaveText('Hello, sandbox');
+    await expect(page).toHaveTitle('Session · Hello, sandbox · Opalix labs');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('body[data-booted="1"]');
+    await inSession(page);
+    expect(s.starts).toEqual(['hello']);
+    expect(s.errors).toEqual([]);
+    await noSecretsInAddresses(page);
+  });
+
+  test('a running archived lab is rejoined, and the resume card names it though the launcher has no card for it', async ({ page }) => {
+    const s = await stubArchived(page);
+    s.session.lab = 'hello';
+    await wide(page);
+    await visit(page, '/', { remembered: 'hello' });
+    await inSession(page);
+    expect(here_(page)).toBe('/labs/hello/session');
+    expect(s.starts).toEqual([]);
+    await page.goBack();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await expect(page.locator('#resumeCard')).toContainText('Hello, sandbox');
+    await expect(page.locator('.lab[data-slug="hello"]')).toHaveCount(0);
+    // Rejoin asks the API to start the lab, which hands back the running session (as for any lab).
+    await page.getByRole('button', { name: /Rejoin the lab/ }).click();
+    await inSession(page);
+    expect(here_(page)).toBe('/labs/hello/session');
+    expect(s.starts).toEqual(['hello']);
+    expect(s.errors).toEqual([]);
+  });
+});

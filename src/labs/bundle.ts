@@ -69,6 +69,8 @@ export interface LabIndexEntry {
   prerequisites?: string[];
   tier: LabManifest['tier'];
   estimated_minutes?: number;
+  /** Present (and true) only for an archived lab: hidden from learners, still startable by slug. Absent otherwise, so other entries stay as they were. */
+  archived?: true;
   /** True when the current version ships a learning layer (`learn.json`), so the console can offer "Before you begin" without fetching it. */
   has_learn: boolean;
 }
@@ -354,6 +356,8 @@ export async function rebuildIndex(env: Env): Promise<LabIndexEntry[]> {
             prerequisites: manifest.prerequisites,
             tier: manifest.tier,
             estimated_minutes: manifest.estimated_minutes,
+            // Only when true: every other entry keeps exactly its old shape.
+            ...(manifest.archived ? { archived: true as const } : {}),
             has_learn: hasLearn,
           });
         } catch {

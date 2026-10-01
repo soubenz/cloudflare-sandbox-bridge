@@ -34,6 +34,8 @@
 # (images/gateway/build-pg-template.sh), so a session never runs LiteLLM's
 # 171 migrations.
 slug: gateway-litellm-hello
+# Archived: a test fixture, kept published (and startable by slug) for the e2e and integration suites, hidden from learners.
+archived: true
 version: 1.0.0
 title: "LiteLLM gateway smoke test"
 type: scale

@@ -115,6 +115,25 @@ describe('rebuildIndex ordering', () => {
     expect(e).toMatchObject({ path: 'p', module: 3, order: 4, prerequisites: ['x'], tier: 'free', estimated_minutes: 30 });
   });
 
+  it('carries archived into the index entry only when it is true', async () => {
+    const { env, store } = fakeBucket();
+    await publish(env, manifest('archived-lab', { archived: true }));
+    await publish(env, manifest('plain-lab'));
+    await publish(env, manifest('explicit-false-lab', { archived: false }));
+    // A lab published before the field existed has no `archived` in its stored manifest at all.
+    seed(store, 'legacy-lab');
+    await rebuildIndex(env);
+    const raw = JSON.parse(store.get(INDEX_KEY)!) as Array<Record<string, unknown>>;
+    const bySlug = new Map(raw.map((e) => [e.slug as string, e]));
+    expect(bySlug.get('archived-lab')!.archived).toBe(true);
+    for (const slug of ['plain-lab', 'explicit-false-lab', 'legacy-lab']) {
+      expect(Object.keys(bySlug.get(slug)!), slug).not.toContain('archived');
+    }
+    // The catalogue still lists every lab: archived is a flag, not a filter.
+    expect((await loadCatalogue(env)).map((e) => e.slug).sort()).toEqual(['archived-lab', 'explicit-false-lab', 'legacy-lab', 'plain-lab']);
+    expect((await listCatalogue(env)).labs.find((e) => e.slug === 'archived-lab')?.archived).toBe(true);
+  });
+
   it('indexes every slug when the bucket holds more than one list() page', async () => {
     const { env, store, listCalls } = fakeBucket(1000);
     for (let i = 0; i < 1100; i++) seed(store, `lab-${String(i).padStart(4, '0')}`);

@@ -363,7 +363,7 @@ function catalogueScreen(panel) {
       const main = h(
         'tr',
         { class: 'lab-row' },
-        h('td', { 'data-label': 'Lab' }, h('div', { class: 'lab-title' }, lab.title ?? lab.slug), h('div', { class: 'mono muted small' }, lab.slug)),
+        h('td', { 'data-label': 'Lab' }, h('div', { class: 'lab-title' }, lab.title ?? lab.slug, lab.archived ? [' ', pill('Archived', 'muted')] : null), h('div', { class: 'mono muted small' }, lab.slug)),
         h('td', { 'data-label': 'Path / module' }, lab.path ? `${lab.path}${lab.module !== undefined ? ` · M${lab.module}` : ''}` : dash),
         h('td', { 'data-label': 'Tier' }, pill(lab.tier ?? 'pro', lab.tier === 'free' ? 'good' : 'muted')),
         h('td', { 'data-label': 'Family' }, lab.family ?? dash),
