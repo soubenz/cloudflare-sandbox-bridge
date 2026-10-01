@@ -28,6 +28,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     # Was 30. Two real runs (27 Sep 2026, run #68 attempts 1 and 2) hit this
     # exact ceiling on the Dry-run step alone, cancelled at 29m47s and
     # 29m50s -- not a hang (no loop or prompt anywhere in either Dockerfile),
@@ -69,17 +72,64 @@ jobs:
             && cmp images/common/opalix-init.sh images/gateway/opalix-init.sh \
             || { echo "opalix-init.sh copies differ; edit all three"; exit 1; }
 
+      # Decide whether this push changed the container images or their config.
+      # Building and pushing both images is most of this workflow's runtime
+      # (the runner has no layer cache, so every build is from scratch and the
+      # rebuilt layers are pushed again). A console-only or API-only push
+      # changes neither image, so it skips the build, the push, the size gate,
+      # the rollout wait and the pool drain, and deploys in a few minutes.
+      #
+      # The comparison is against the last *successful* Deploy run, not the
+      # push's own `before`: if an earlier run changed the images and then
+      # failed, the next push must still roll them out. Falls back to `before`
+      # when the API cannot answer. workflow_dispatch always counts as changed;
+      # so does anything unusable (first push, force push, unreachable commit).
+      # package*.json counts because the base image tag must match the pinned
+      # @cloudflare/sandbox version.
+      - name: Detect container changes
+        id: containers
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          changed=true
+          base=""
+          if [ "$EVENT_NAME" = "push" ]; then
+            base="$(gh run list --workflow deploy.yml --branch main --status success \
+              --limit 1 --json headSha --jq '.[0].headSha // empty' 2>/dev/null || true)"
+            if [ -n "$base" ] && ! git cat-file -e "$base^{commit}" 2>/dev/null; then base=""; fi
+            if [ -z "$base" ]; then base="$BEFORE"; fi
+          fi
+          if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ] \
+             && files="$(git diff --name-only "$base" "$GITHUB_SHA")"; then
+            echo "Comparing against $base"
+            if echo "$files" | grep -Eq '^(images/|wrangler\.jsonc$|package(-lock)?\.json$)'; then
+              changed=true
+            else
+              changed=false
+            fi
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "Container images or their config changed: $changed"
+          if [ "$changed" = "true" ]; then
+            echo "ROLLOUT=immediate" >> "$GITHUB_ENV"
+          else
+            echo "ROLLOUT=none" >> "$GITHUB_ENV"
+          fi
+
       # Confirms the config compiles before spending time on a Docker build.
       - name: Dry-run
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx wrangler deploy --dry-run --env=""
+        run: npx wrangler deploy --dry-run --containers-rollout="$ROLLOUT" --env=""
 
       # The dry-run built both images locally. Fail before deploying if one has
       # outgrown 85% of its instance type's disk: the failure otherwise only
       # shows after deploy, as ImagePullError with the whole pool stuck in
       # `provisioning` (see the GatewayLab comment in wrangler.jsonc).
       - name: Image size gate
+        if: steps.containers.outputs.changed == 'true'
         run: node scripts/image-size-gate.mjs
 
       # Before the deploy, never after: a Worker that writes a column its
@@ -90,13 +140,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npx wrangler d1 migrations apply opalix --remote
 
-      - name: Deploy (Worker, Durable Objects, and both container images)
+      - name: Deploy (Worker and Durable Objects; both container images when they changed)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           # The rollout wait below only trusts container apps modified after this.
           echo "ROLLOUT_SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
-          npx wrangler deploy --containers-rollout=immediate --env=""
+          npx wrangler deploy --containers-rollout="$ROLLOUT" --env=""
 
       # The dashboard is its own Worker (assets only, no server side). It
       # deploys after the API so a new UI never talks to an older API.
@@ -118,29 +168,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npx wrangler deploy --config admin/wrangler.jsonc
-
-      # Decide whether this push changed the container images or their
-      # config. Only then is there a rollout to wait for and a pool to drain.
-      # workflow_dispatch always counts as changed; so does an unusable
-      # `before` (first push, force push, unreachable commit).
-      - name: Detect container changes
-        id: containers
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
-        run: |
-          changed=true
-          if [ "$EVENT_NAME" = "push" ] && [ -n "$BEFORE" ] \
-             && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
-             && files="$(git diff --name-only "$BEFORE" "$GITHUB_SHA")"; then
-            if echo "$files" | grep -Eq '^(images/|wrangler\.jsonc$)'; then
-              changed=true
-            else
-              changed=false
-            fi
-          fi
-          echo "changed=$changed" >> "$GITHUB_OUTPUT"
-          echo "Container images or wrangler.jsonc changed: $changed"
 
       # `--containers-rollout=immediate` returns before Cloudflare finishes
       # rolling out (docs/spike.md, "A deploy lesson"); draining inside that
