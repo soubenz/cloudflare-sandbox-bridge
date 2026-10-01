@@ -17,14 +17,39 @@ const CONTROL_PREFIX = 0x01;
  * create the terminal with and what we store for relaunch after a
  * container restart, and the two must not drift.
  */
-const TERMINAL_ARGV = [
+/**
+ * The learner gets one shell, not a window manager: splitting panes and the right-click menu are
+ * unbound, and the prefix is turned off so none of tmux's key chords can be reached. Scrolling and
+ * selecting with the mouse stay. These run after `new-session` (tmux's own `\;` separator) so they
+ * apply on every attach, including to a tmux server that was started by an older argv; no image
+ * change is needed.
+ */
+const TMUX_LOCKDOWN = [
+  ...[
+    'MouseDown3Pane',
+    'M-MouseDown3Pane',
+    'MouseDown3Status',
+    'M-MouseDown3Status',
+    'MouseDown3StatusLeft',
+    'M-MouseDown3StatusLeft',
+    'MouseDown3StatusRight',
+    'M-MouseDown3StatusRight',
+  ].map((key) => `unbind-key -n ${key}`),
+  `unbind-key '"'`,
+  'unbind-key %',
+  'unbind-key C-b',
+  'set-option -g prefix None',
+  'set-option -g prefix2 None',
+].join(' \\; ');
+
+export const TERMINAL_ARGV = [
   'su',
   '-l',
   'learner',
   '-s',
   '/bin/bash',
   '-c',
-  'exec tmux -f /etc/opalix-tmux.conf new-session -A -s opalix -c /workspace',
+  `exec tmux -f /etc/opalix-tmux.conf new-session -A -s opalix -c /workspace \\; ${TMUX_LOCKDOWN}`,
 ] as const;
 
 /**
@@ -228,6 +253,8 @@ async function persistCursor(rt: SessionRuntime, cursor: string): Promise<void> 
 
 /** Called from the Session DO's `webSocketMessage` hibernation hook. */
 export async function handleClientMessage(rt: SessionRuntime, message: ArrayBuffer | string): Promise<void> {
+  // The page's keepalive is not the learner being there: it must not reset the idle clock.
+  if (isKeepalive(message)) return;
   await rt.touchInput();
 
   if (typeof message === 'string' && message.charCodeAt(0) === CONTROL_PREFIX) {
@@ -257,6 +284,17 @@ export async function handleClientMessage(rt: SessionRuntime, message: ArrayBuff
   if (rt.upstreamTerminalSocket?.readyState === WebSocket.READY_STATE_OPEN) {
     rt.upstreamTerminalSocket.send(message);
   }
+}
+
+function isKeepalive(message: ArrayBuffer | string): boolean {
+  let body: string | undefined;
+  if (typeof message === 'string') {
+    if (message.charCodeAt(0) === CONTROL_PREFIX) body = message.slice(1);
+  } else {
+    const bytes = new Uint8Array(message);
+    if (bytes.length > 0 && bytes[0] === CONTROL_PREFIX) body = new TextDecoder().decode(bytes.slice(1));
+  }
+  return body !== undefined && (parseControlFrame(body) as { type?: string } | undefined)?.type === 'ping';
 }
 
 async function handleControlMessage(rt: SessionRuntime, body: string): Promise<void> {

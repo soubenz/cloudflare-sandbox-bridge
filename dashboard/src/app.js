@@ -3003,6 +3003,12 @@ function setTerminalStatus(status, detail) {
     panel.hidden = true;
     return;
   }
+  if (status === 'reconnecting') {
+    $('termStatusText').textContent = `Reconnecting… ${detail?.match(/\((\d+\/\d+)\)/)?.[1] ?? ''}`.trim();
+    $('btnReconnectTerm').hidden = true;
+    panel.hidden = false;
+    return;
+  }
   $('termStatusText').textContent = detail ? `Terminal disconnected — ${detail}.` : 'Terminal disconnected.';
   $('btnReconnectTerm').hidden = false;
   panel.hidden = false;

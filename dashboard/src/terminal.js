@@ -45,49 +45,100 @@ export function attachTerminal({ container, sessionId, token, onNotice, onStatus
     })
     .catch(() => {});
 
-  const ws = new WebSocket(terminalUrl(sessionId, token));
-  ws.binaryType = 'arraybuffer';
   const encoder = new TextEncoder();
+  let ws = null;
   let open = false;
+  let disposed = false;
+  let attempt = 0;
+  let retryTimer = 0;
+  let pingTimer = 0;
+  // A drop is usually a deploy or a blip, not the end of the lab: try again after 1, 2, 4, then every 8
+  // seconds, for about a minute, before handing the choice back to the learner (the Reconnect button).
+  const RETRY_SECONDS = [1, 2, 4, 8, 8, 8, 8, 8];
+  // Not input: the server ignores it for the idle clock. It only keeps the path warm and shows a dead one sooner.
+  const PING_EVERY_MS = 25_000;
+  let everOpened = false;
 
-  ws.onopen = () => {
-    open = true;
-    onStatus?.('open');
-    safeFit();
-    sendResize();
-    // Only take focus when the terminal is on screen: a reconnect after a
-    // container restart would otherwise pull the cursor out of the editor
-    // mid-keystroke, and send the next few keys to a shell nobody can see.
-    if (container.offsetWidth) term.focus();
-  };
+  function connect() {
+    if (disposed) return;
+    ws = new WebSocket(terminalUrl(sessionId, token));
+    ws.binaryType = 'arraybuffer';
+    const mine = ws;
 
-  ws.onmessage = (event) => {
-    if (typeof event.data === 'string') {
-      if (event.data.startsWith(CONTROL_PREFIX)) {
-        const msg = safeParse(event.data.slice(1));
-        if (msg?.type === 'reset') {
-          term.reset();
-          onNotice?.('The container was replaced; the shell has restarted.');
+    mine.onopen = () => {
+      if (mine !== ws) return;
+      open = true;
+      // The shell lives in the lab, so a re-attach redraws it: start from a clean screen rather than stacking a copy.
+      if (everOpened && attempt > 0) term.reset();
+      everOpened = true;
+      attempt = 0;
+      onStatus?.('open');
+      safeFit();
+      sendResize();
+      clearInterval(pingTimer);
+      pingTimer = setInterval(() => {
+        if (open) ws.send(`${CONTROL_PREFIX}${JSON.stringify({ type: 'ping' })}`);
+      }, PING_EVERY_MS);
+      // Only take focus when the terminal is on screen: a reconnect after a
+      // container restart would otherwise pull the cursor out of the editor
+      // mid-keystroke, and send the next few keys to a shell nobody can see.
+      if (container.offsetWidth) term.focus();
+    };
+
+    mine.onmessage = (event) => {
+      if (typeof event.data === 'string') {
+        if (event.data.startsWith(CONTROL_PREFIX)) {
+          const msg = safeParse(event.data.slice(1));
+          if (msg?.type === 'reset') {
+            term.reset();
+            onNotice?.('The container was replaced; the shell has restarted.');
+          }
+          return;
         }
+        term.write(event.data);
         return;
       }
-      term.write(event.data);
-      return;
-    }
-    term.write(new Uint8Array(event.data));
-  };
+      term.write(new Uint8Array(event.data));
+    };
 
-  ws.onclose = (event) => {
-    open = false;
-    // A blank black rectangle reads as a broken app. Say what happened.
-    onStatus?.('closed', event.reason || `closed (${event.code})`);
-    onNotice?.('Terminal disconnected.');
-  };
+    mine.onclose = (event) => {
+      if (mine !== ws) return;
+      open = false;
+      clearInterval(pingTimer);
+      if (disposed) return;
+      if (attempt < RETRY_SECONDS.length) {
+        const wait = RETRY_SECONDS[attempt];
+        attempt += 1;
+        onStatus?.('reconnecting', `reconnecting (${attempt}/${RETRY_SECONDS.length})`);
+        retryTimer = setTimeout(connect, wait * 1000);
+        return;
+      }
+      // A blank black rectangle reads as a broken app. Say what happened.
+      onStatus?.('closed', event.reason || `closed (${event.code})`);
+      onNotice?.('Terminal disconnected.');
+    };
 
-  ws.onerror = () => {
-    open = false;
-    onStatus?.('closed', 'could not connect');
+    mine.onerror = () => {
+      // `close` follows an error and does the retrying; this only records that nothing is open.
+      open = false;
+    };
+  }
+
+  // Coming back to the tab, or the network returning, is a better moment to retry than a timer's.
+  function retryNow() {
+    if (disposed || open || !everOpened) return;
+    if (ws && ws.readyState === WebSocket.CONNECTING) return;
+    clearTimeout(retryTimer);
+    attempt = 0;
+    connect();
+  }
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') retryNow();
   };
+  document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('online', retryNow);
+  // No right-click menu on the terminal: the shell is the only thing in it.
+  container.addEventListener('contextmenu', (event) => event.preventDefault());
 
   term.onData((data) => {
     // Typing is the learner saying they are there, whether or not the
@@ -102,6 +153,7 @@ export function attachTerminal({ container, sessionId, token, onNotice, onStatus
   }
 
   term.onResize(sendResize);
+  connect();
 
   /**
    * Fitting a hidden terminal (the Brief tab is showing, so this view is
@@ -135,10 +187,15 @@ export function attachTerminal({ container, sessionId, token, onNotice, onStatus
     refit: safeFit,
     focus: () => term.focus(),
     dispose() {
+      disposed = true;
+      clearTimeout(retryTimer);
+      clearInterval(pingTimer);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', retryNow);
       observer.disconnect();
       cancelAnimationFrame(frame);
       try {
-        ws.close();
+        ws?.close();
       } catch {
         /* already closing */
       }

@@ -102,6 +102,8 @@ const LABS = [
 // ------------------------------------------------------------- a fake console
 
 interface Stub {
+  /** Every terminal socket the page has opened, with the frames it sent; the server can close one. */
+  terminals: Array<{ close: () => void; frames: string[]; opened: number }>;
   /** What the next status says: `expires_at` in ms from now, and the lab's state and end reason. */
   status: { expiresInMs: number; state: string; endReason: string | null };
   /** Server-sent events the stream delivers when it is next opened (`id`, `event`, `data`); a stream with none waits for emit(). */
@@ -142,6 +144,7 @@ async function stub(page: Page): Promise<Stub> {
       s.events.push(...events);
       while (waiting.length) waiting.shift()!();
     },
+    terminals: [],
     resumes: 0,
     touches: 0,
     starts: [],
@@ -276,7 +279,11 @@ async function stub(page: Page): Promise<Stub> {
   });
 
   // The terminal's WebSocket: accepted and silent.
-  await page.routeWebSocket(/\/terminal/, () => {});
+  await page.routeWebSocket(/\/terminal/, (ws) => {
+    const entry = { close: () => ws.close({ code: 1006 }), frames: [] as string[], opened: Date.now() };
+    s.terminals.push(entry);
+    ws.onMessage((m) => entry.frames.push(typeof m === 'string' ? m : '<binary>'));
+  });
   return s;
 }
 
@@ -959,6 +966,32 @@ test.describe('the workspace window', () => {
 // =========================================================================
 // the header
 // =========================================================================
+
+test.describe('the terminal', () => {
+  test('comes back by itself after the connection drops, and keeps its keepalive off the idle clock', async ({ page }) => {
+    const s = await session(page, BUILD);
+    await expect.poll(() => s.terminals.length).toBe(1);
+    s.terminals[0]!.close();
+    // Not a dead panel: a notice that it is trying again, then a second connection without anyone clicking.
+    await expect(page.locator('#termStatusText')).toContainText(/Reconnecting/);
+    await expect(page.locator('#btnReconnectTerm')).toBeHidden();
+    await expect.poll(() => s.terminals.length, { timeout: 10_000 }).toBe(2);
+    await expect(page.locator('#termStatus')).toBeHidden();
+    // The first thing a fresh connection says is the window size.
+    await expect.poll(() => s.terminals[1]!.frames.some((f) => f.includes('"resize"'))).toBe(true);
+  });
+
+  test('has no right-click menu', async ({ page }) => {
+    await session(page, BUILD);
+    const prevented = await page.evaluate(() => {
+      const el = document.getElementById('term')!;
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      el.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(prevented).toBe(true);
+  });
+});
 
 test.describe('the header', () => {
   test('says where the lab sits, its title, the time left, the checks and the three actions', async ({ page }) => {

@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import { createFakeRuntime } from '../fakes/fake-runtime';
-import { ensureUpstreamConnected } from '../../src/session/terminal';
+import { ensureUpstreamConnected, handleClientMessage, TERMINAL_ARGV } from '../../src/session/terminal';
 import type { SessionRuntime, TerminalRuntime } from '../../src/session/state';
 
 /**
@@ -183,5 +184,36 @@ describe('re-attaching to a stored terminal', () => {
     expect(backend.created[0]!.cols).toBe(120);
     expect(backend.created[0]!.rows).toBe(30);
     expect(await rt.terminal()).toBeDefined();
+  });
+});
+
+describe('the learner shell is one pane with no menus', () => {
+  const hasTmux = spawnSync('tmux', ['-V']).status === 0;
+  const SOCK = `opalix-lockdown-${process.pid}`;
+
+  it.skipIf(!hasTmux)('leaves no right-click menu, no split and no prefix once the argv has run', () => {
+    // The argv's script, started detached on a private socket so it can be inspected.
+    const script = TERMINAL_ARGV[TERMINAL_ARGV.length - 1]!
+      .replace('tmux -f /etc/opalix-tmux.conf new-session -A -s opalix -c /workspace', `tmux -f /dev/null -L ${SOCK} new-session -d -s opalix -c /tmp`)
+      .replace(/^exec /, '');
+    const ran = spawnSync('bash', ['-c', script]);
+    try {
+      expect(ran.status, String(ran.stderr)).toBe(0);
+      const keys = spawnSync('tmux', ['-L', SOCK, 'list-keys']).stdout.toString();
+      // No right-click binding of any kind survives, and neither does either way to split a pane.
+      expect(keys).not.toMatch(/MouseDown3/);
+      expect(keys).not.toMatch(/-T prefix\s+(\\?"|\\?%)\s/);
+      const prefix = spawnSync('tmux', ['-L', SOCK, 'show-options', '-g', 'prefix']).stdout.toString();
+      expect(prefix.trim()).toBe('prefix None');
+    } finally {
+      spawnSync('tmux', ['-L', SOCK, 'kill-server']);
+    }
+  });
+
+  it('answers a keepalive ping without counting it as the learner being there', async () => {
+    const { rt } = await attach(STORED, { id: 'term-old', status: 'running' });
+    const touched = vi.spyOn(rt, 'touchInput');
+    await handleClientMessage(rt, '\x01{"type":"ping"}');
+    expect(touched).not.toHaveBeenCalled();
   });
 });
