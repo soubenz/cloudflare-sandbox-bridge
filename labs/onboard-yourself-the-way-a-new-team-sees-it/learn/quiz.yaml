@@ -1,4 +1,38 @@
 questions:
+  - id: q-platform-why
+    concept: platform.what-is-a-platform
+    type: single
+    prompt: Four product teams each call a different model provider with their own key. Which problem does a shared platform most directly remove?
+    options:
+      - { id: a, text: Nobody can see which keys exist, who spent what, or what a request did }
+      - { id: b, text: Provider models are too slow to be called without a platform in front }
+      - { id: c, text: A product team cannot call a provider at all without a gateway in between }
+      - { id: d, text: Only one team at a time can use a given model }
+    answer: [a]
+    explanation: Teams can call providers directly, which is exactly how keys, bills and logs end up scattered. The platform gives one place to see and control them.
+  - id: q-platform-gives
+    concept: platform.what-is-a-platform
+    type: multi
+    prompt: Which of these does a team get from the platform that it would otherwise build for itself? Pick all that apply.
+    options:
+      - { id: a, text: One address for models, with stable alias names }
+      - { id: b, text: Its own key, limited to the aliases it was given }
+      - { id: c, text: Usage and cost records kept in one shared place }
+      - { id: d, text: A private copy of every model, trained on the team's own data }
+    answer: [a, b, c]
+    explanation: The platform shares access, identity and records. It does not copy or retrain models for each team.
+    diagnostic: false
+  - id: q-platform-onboarding
+    concept: platform.what-is-a-platform
+    type: single
+    prompt: What does onboarding a team mean on this platform?
+    options:
+      - { id: a, text: Adding the team to the shared services, with its record and key, its tools, and a first call that proves it works }
+      - { id: b, text: Training the team's engineers on how language models work }
+      - { id: c, text: Copying an older team's repository into the new team's }
+      - { id: d, text: Installing a gateway inside the new team's own application }
+    answer: [a]
+    explanation: Onboarding connects a team to services that already exist and are shared. The gateway is not installed per team, and nothing is copied from another team.
   - id: q-steps-order
     concept: platform.onboarding-steps
     type: single

@@ -1,4 +1,38 @@
 questions:
+  - id: q-tracing-why
+    concept: otel.what-is-tracing
+    type: single
+    prompt: Four services each write a log line for the same customer request, each in its own format. Why can you still not say where the request spent its time?
+    options:
+      - { id: a, text: Nothing in the lines says they belong to the same request, so you cannot line them up }
+      - { id: b, text: Services only log errors, so a slow request that succeeded leaves no line }
+      - { id: c, text: The four services would have to be merged into one program before they could be logged }
+      - { id: d, text: Log lines are too long to compare by eye }
+    answer: [a]
+    explanation: Each log describes one service on its own clock. Without something shared that marks the lines as one request, you are left guessing. A trace adds that shared mark, the trace id.
+  - id: q-tracing-what
+    concept: otel.what-is-tracing
+    type: single
+    prompt: What is a trace?
+    options:
+      - { id: a, text: The record of one request across every service that handled it }
+      - { id: b, text: A log file that every service in the company writes to }
+      - { id: c, text: A graph of how busy a service has been over the last hour }
+      - { id: d, text: The single slowest step of a request }
+    answer: [a]
+    explanation: A trace follows one request through all the services it touched. A shared log, a usage graph and the slowest step are different things; the slowest step is only one span inside a trace.
+  - id: q-tracing-parent
+    concept: otel.what-is-tracing
+    type: single
+    prompt: In a trace, a span has a parent. What does that mean?
+    options:
+      - { id: a, text: The parent was the span running when this one started }
+      - { id: b, text: The parent ended just before this span began }
+      - { id: c, text: The parent is the first span of the trace, for every span }
+      - { id: d, text: The parent is the service with the most traffic }
+    answer: [a]
+    explanation: A span records the span it was started from. A span that merely ran before it is a sibling, not a parent, and only the first span of the trace has no parent at all.
+    diagnostic: false
   - id: q-span-what
     concept: otel.traces-and-spans
     type: single

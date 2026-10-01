@@ -2,9 +2,10 @@
 title: Hops and audit trails
 id: sovereignty.hops-audit
 minutes: 4
+order: 3
 recap: A trace lists every service a request touched; the gateway's own log records only the first destination, so only the trace shows a multi-hop route.
 ---
-A **hop** is one service that handles a request on its way to the model. The route for one alias in this lab has a service in the middle, and that changes what you can prove.
+You have met the hop: a service that handles a request on its way to the model. The route for one alias in this lab has a service in the middle, and that changes what you can prove.
 
 ::diagram[sovereignty-hops-audit]
 

@@ -1,4 +1,26 @@
 questions:
+  - id: q-mcp-who-runs
+    concept: mcp.what-is-mcp
+    type: single
+    prompt: "An agent's model decides it needs a weather lookup. Who actually runs the tool?"
+    options:
+      - { id: a, text: "The agent's code, which sends the call to a tool server and reports the result to the model" }
+      - { id: b, text: "The model itself, which executes the function while it writes its reply" }
+      - { id: c, text: "The MCP protocol, which hosts the tool code" }
+      - { id: d, text: "The user, who copies the model's request into the tool by hand" }
+    answer: [a]
+    explanation: "A model only produces text, including a request such as call this tool with these arguments. The agent carries it out and passes the output back. MCP is the agreement for how that request travels, not a place where tools run."
+  - id: q-mcp-roles
+    concept: mcp.what-is-mcp
+    type: single
+    prompt: "In MCP, what are the client and the server?"
+    options:
+      - { id: a, text: "The client sits in the agent and lists and calls tools; the server offers the tools" }
+      - { id: b, text: "The client is the language model; the server is the user's browser" }
+      - { id: c, text: "The client is the tool; the server is the agent that uses it" }
+      - { id: d, text: "Both are agents, one that asks questions and one that answers them" }
+    answer: [a]
+    explanation: "A server offers tools and a client, inside the agent, discovers and calls them. The model is not a party to the protocol. It only reads what the client passes along."
   - id: q-mcp-purpose
     concept: mcp.what-is-mcp
     type: single

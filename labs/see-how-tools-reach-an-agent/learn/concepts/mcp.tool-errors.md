@@ -2,9 +2,10 @@
 id: mcp.tool-errors
 title: How a tool call fails, and what the agent sees
 minutes: 3
+order: 3
 recap: An MCP failure is either a JSON-RPC error instead of a result, or a result flagged isError; HTTP 200 can carry either, so read the body.
 ---
-When a tool call goes wrong, the model behind the agent has to find out and decide what to do next. It only sees what the protocol hands back, so it matters where the failure is reported.
+So far every `tools/call` has worked. When one goes wrong, the model behind the agent has to find out and decide what to do next. It only sees what the protocol hands back, so it matters where the failure is reported.
 
 ::diagram[mcp-tool-errors]
 

@@ -1,4 +1,37 @@
 questions:
+  - id: q-ret-why
+    concept: rag.what-is-retrieval
+    type: single
+    prompt: Why does an assistant fetch a few documents first instead of putting every document into each request?
+    options:
+      - { id: a, text: The context window is limited and extra text costs money, so only the relevant pieces are fetched }
+      - { id: b, text: A model cannot read anything longer than a sentence }
+      - { id: c, text: Documents must be turned into vectors before a model is allowed to read them }
+      - { id: d, text: Pasting documents into a request erases what the model learned in training }
+    answer: [a]
+    explanation: A model has never seen your documents and can read only a limited amount per request. Retrieval picks the few chunks worth showing it. The vectors are for searching, not for the model to read.
+  - id: q-ret-handoff
+    concept: rag.what-is-retrieval
+    type: single
+    prompt: A user asks a question and the retrieval service finishes its work. What does the model receive?
+    options:
+      - { id: a, text: The question plus a few retrieved chunks to write its answer from }
+      - { id: b, text: A copy of the whole corpus }
+      - { id: c, text: A vector that it decodes back into the answer }
+      - { id: d, text: Nothing; the model searches the documents itself }
+    answer: [a]
+    explanation: The service searches, the model writes. It gets the question and the chunks the search ranked highest, and it answers from them, whether or not they were good matches.
+  - id: q-ret-terms
+    concept: rag.what-is-retrieval
+    type: multi
+    prompt: Which two statements about retrieval terms are right?
+    options:
+      - { id: a, text: A chunk is a short passage of a document that is embedded and stored on its own }
+      - { id: b, text: Top-k is how many nearest results the search returns }
+      - { id: c, text: The corpus is the data the model was trained on }
+      - { id: d, text: A similarity score counts the words a chunk shares with the question }
+    answer: [a, b]
+    explanation: The corpus is the set of documents the service searches, not the model's training data. A score comes from comparing vectors, which can be high with few shared words.
   - id: q-embed-what
     concept: rag.embeddings-similarity
     type: single

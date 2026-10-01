@@ -2,9 +2,10 @@
 id: otel.parent-child
 title: Parent and child spans across services
 minutes: 3
+order: 3
 recap: Every span except the root names a parent; nesting in the waterfall shows which span was running when another started, even across services.
 ---
-Every span except the first one has a **parent span**, recorded as a parent span id. The first span, the one with no parent, is the **root**. Follow the parent ids and you get a tree, and the waterfall is that tree drawn with indentation.
+Now that you can read one span, look at how spans connect. Each span except the first records a **parent span id**. The first span, the one with no parent, is the **root**. Follow the parent ids and you get a tree, and the waterfall is that tree drawn with indentation.
 
 ::diagram[otel-parent-child]
 

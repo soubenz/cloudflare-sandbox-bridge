@@ -2,9 +2,10 @@
 id: rag.embeddings-similarity
 title: Embeddings and similarity
 minutes: 3
+order: 2
 recap: An embedding turns text into a vector, and pgvector measures how close two vectors are; distance is 0 for the same direction and grows as they diverge.
 ---
-A retrieval service never reads your documents at query time. It compares numbers. An **embedding** is a function that turns a piece of text into a fixed-length list of numbers, a vector. Every document is embedded once and stored; each query is embedded when it arrives, with the same function.
+The last lesson said a retrieval service returns the chunks nearest to the question. Here is what "nearest" means. The service never reads your documents at query time. It compares numbers: the **embedding** of each document, made once and stored, against the embedding of the query, made when it arrives with the same function.
 
 ::diagram[rag-embeddings-similarity]
 

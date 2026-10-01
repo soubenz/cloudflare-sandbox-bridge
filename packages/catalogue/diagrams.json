@@ -171,6 +171,32 @@
       ]
     },
     {
+      "id": "rag-what-is-retrieval",
+      "title": "Fetch the pages first, then answer",
+      "summary": "Documents are stored ahead of time as vectors. A question goes to the retrieval service, which asks the store for the nearest chunks with scores and hands them, with the question, to the model that writes the answer.",
+      "nodes": [
+        { "id": "docs", "label": "Your documents", "sub": "split into chunks", "kind": "store", "x": 10, "y": 20 },
+        { "id": "store", "label": "Vector store", "sub": "one vector per chunk", "kind": "store", "x": 58, "y": 20 },
+        { "id": "q", "label": "Question", "kind": "client", "x": 8, "y": 80 },
+        { "id": "svc", "label": "Retrieval service", "kind": "service", "x": 49, "y": 66 },
+        { "id": "model", "label": "Model", "kind": "model", "x": 93, "y": 66 }
+      ],
+      "edges": [
+        { "id": "docs-store", "from": "docs", "to": "store" },
+        { "id": "q-svc", "from": "q", "to": "svc" },
+        { "id": "svc-store", "from": "svc", "to": "store" },
+        { "id": "svc-model", "from": "svc", "to": "model" }
+      ],
+      "steps": [
+        { "caption": "Ahead of time, each document is cut into chunks. Each chunk is turned into a vector, a list of numbers, and saved in the store.", "active": ["docs", "store"], "packets": [{ "edge": "docs-store", "label": "chunk vectors", "tone": "default" }], "notes": [{ "node": "store", "text": "the corpus, as numbers", "tone": "default" }] },
+        { "caption": "Later a question arrives. The model has never read your documents, so it cannot answer from memory.", "active": ["q", "svc"], "packets": [{ "edge": "q-svc", "label": "question", "tone": "default" }] },
+        { "caption": "The service turns the question into a vector with the same function and asks the store for the closest chunks.", "active": ["svc", "store"], "packets": [{ "edge": "svc-store", "label": "query vector", "tone": "default" }] },
+        { "caption": "The store returns the top-k nearest chunks, each with a similarity score. It ranks them, it does not judge them.", "active": ["store", "svc"], "packets": [{ "edge": "svc-store", "reverse": true, "label": "top-k + scores", "tone": "ok" }], "notes": [{ "node": "svc", "text": "0.81, 0.77, 0.52", "tone": "ok" }] },
+        { "caption": "The service hands the question and those chunks to the model. Only the chunks go into its context window, not the whole corpus.", "active": ["svc", "model"], "packets": [{ "edge": "svc-model", "label": "question + chunks", "tone": "default" }] },
+        { "caption": "The model writes its answer from the chunks it was given. If they were the wrong chunks, the answer is fluent and wrong.", "active": ["model"], "packets": [], "notes": [{ "node": "model", "text": "answers from the chunks", "tone": "warn" }] }
+      ]
+    },
+    {
       "id": "rag-embeddings-similarity",
       "title": "Meaning as numbers",
       "summary": "Documents and a question pass through the same embedding model. Each becomes a list of numbers, and the vector index returns the chunks whose numbers point in the most similar direction.",
@@ -467,6 +493,91 @@
         { "caption": "To keep the service up, the proxy quietly overflows to a US provider. The call has left the declared region.", "active": ["px", "us"], "packets": [{ "edge": "px-us", "label": "overflow call", "tone": "bad" }], "notes": [{ "node": "us", "text": "actual region: US", "tone": "bad" }] },
         { "caption": "The answer returns as usual. Nothing in the reply or the label shows that anything changed.", "active": ["us", "px", "gw", "app"], "packets": [{ "edge": "px-us", "reverse": true, "label": "answer", "tone": "ok" }, { "edge": "app-gw", "reverse": true, "label": "answer", "tone": "ok" }], "notes": [{ "node": "gw", "text": "still says: EU", "tone": "warn" }] },
         { "caption": "Declared is what the config promises. Actual is where the call really went. Compare the region on each span of the trace, not the label on the route.", "active": ["px", "us"], "packets": [], "notes": [{ "node": "px", "text": "declared EU, actual US", "tone": "bad" }] }
+      ]
+    },
+    {
+      "id": "otel-what-is-tracing",
+      "title": "One request, one trace id",
+      "summary": "The gateway starts a trace and passes its id to every service it calls. Each service times its own work as spans and sends them to the tracing backend, which joins them into one trace.",
+      "nodes": [
+        { "id": "gw", "label": "Gateway", "kind": "gateway", "x": 8, "y": 42 },
+        { "id": "wk", "label": "LLM worker", "kind": "model", "x": 44, "y": 14 },
+        { "id": "vs", "label": "Vector store", "kind": "store", "x": 44, "y": 70 },
+        { "id": "ca", "label": "Cache", "kind": "store", "x": 76, "y": 86 },
+        { "id": "obs", "label": "Trace backend", "kind": "log", "x": 90, "y": 40 }
+      ],
+      "edges": [
+        { "id": "gw-wk", "from": "gw", "to": "wk" },
+        { "id": "gw-vs", "from": "gw", "to": "vs" },
+        { "id": "vs-ca", "from": "vs", "to": "ca" },
+        { "id": "gw-obs", "from": "gw", "to": "obs" },
+        { "id": "wk-obs", "from": "wk", "to": "obs" },
+        { "id": "vs-obs", "from": "vs", "to": "obs" },
+        { "id": "ca-obs", "from": "ca", "to": "obs" }
+      ],
+      "steps": [
+        { "caption": "A request reaches the gateway. It makes a trace id, a label that belongs to this one request, and opens the first span.", "active": ["gw"], "packets": [], "notes": [{ "node": "gw", "text": "new trace id, first span", "tone": "ok" }] },
+        { "caption": "The gateway calls the model worker and sends the trace id along with the call. The worker opens its own span.", "active": ["gw", "wk"], "packets": [{ "edge": "gw-wk", "label": "call + id", "tone": "default" }], "notes": [{ "node": "wk", "text": "span: model call", "tone": "ok" }] },
+        { "caption": "Then the gateway calls the vector store, with the same id. The store opens a span of its own.", "active": ["gw", "vs"], "packets": [{ "edge": "gw-vs", "label": "call + id", "tone": "default" }], "notes": [{ "node": "vs", "text": "span: document lookup", "tone": "ok" }] },
+        { "caption": "The vector store calls the cache and passes the id on again. That span records the store as its parent.", "active": ["vs", "ca"], "packets": [{ "edge": "vs-ca", "label": "call + id", "tone": "default" }], "notes": [{ "node": "ca", "text": "span: cache read", "tone": "ok" }] },
+        { "caption": "Every service sends its finished spans, with start, end and id, to the tracing backend.", "active": ["gw", "wk", "vs", "ca", "obs"], "packets": [{ "edge": "wk-obs", "label": "spans", "tone": "default" }, { "edge": "ca-obs", "label": "spans", "tone": "default" }] },
+        { "caption": "The backend groups the spans by trace id and draws one timeline. No one had to line up four logs by hand.", "active": ["obs"], "packets": [], "notes": [{ "node": "obs", "text": "1 trace, 6 spans", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "platform-what-is-a-platform",
+      "title": "One platform, shared by every team",
+      "summary": "A team calls one gateway with its own key and one tool hub for its tools. Both sit in front of the models and tool servers, and every call leaves a record of who made it and what it cost.",
+      "nodes": [
+        { "id": "team", "label": "Product team", "kind": "client", "x": 8, "y": 50 },
+        { "id": "gw", "label": "Gateway", "sub": "one front door", "kind": "gateway", "x": 46, "y": 20 },
+        { "id": "hub", "label": "Tool hub", "sub": "shared tools", "kind": "gateway", "x": 46, "y": 80 },
+        { "id": "model", "label": "Models", "kind": "model", "x": 92, "y": 14 },
+        { "id": "tools", "label": "Tool servers", "kind": "tool", "x": 92, "y": 86 },
+        { "id": "log", "label": "Shared logs", "sub": "who, what, cost", "kind": "log", "x": 92, "y": 50 }
+      ],
+      "edges": [
+        { "id": "team-gw", "from": "team", "to": "gw" },
+        { "id": "team-hub", "from": "team", "to": "hub" },
+        { "id": "gw-model", "from": "gw", "to": "model" },
+        { "id": "hub-tools", "from": "hub", "to": "tools" },
+        { "id": "gw-log", "from": "gw", "to": "log" },
+        { "id": "hub-log", "from": "hub", "to": "log" }
+      ],
+      "steps": [
+        { "caption": "The team has one address to learn for models and one for tools. It does not choose providers or keep provider keys.", "active": ["team"], "packets": [], "notes": [{ "node": "team", "text": "one key, issued to the team", "tone": "ok" }] },
+        { "caption": "The team's app calls the gateway with a model alias. The key says which aliases this team may use.", "active": ["team", "gw"], "packets": [{ "edge": "team-gw", "label": "alias + key", "tone": "default" }] },
+        { "caption": "The gateway checks the key, then sends the call to the model behind the alias.", "active": ["gw", "model"], "packets": [{ "edge": "gw-model", "label": "chat request", "tone": "default" }] },
+        { "caption": "When an agent needs a tool, it asks the tool hub. The hub offers only the tools bundled for this team.", "active": ["team", "hub"], "packets": [{ "edge": "team-hub", "label": "call a tool", "tone": "default" }], "notes": [{ "node": "hub", "text": "bundle for this team", "tone": "ok" }] },
+        { "caption": "The hub passes the call to the tool server that owns the tool and returns the result.", "active": ["hub", "tools"], "packets": [{ "edge": "hub-tools", "label": "tool call", "tone": "default" }] },
+        { "caption": "Both doors write to the same place, so a question like who spent this has one place to look.", "active": ["gw", "hub", "log"], "packets": [{ "edge": "gw-log", "label": "usage row", "tone": "ok" }, { "edge": "hub-log", "label": "tool call row", "tone": "ok" }], "notes": [{ "node": "log", "text": "cost and logs per team", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "sovereignty-what-is-data-sovereignty",
+      "title": "A prompt is data that travels",
+      "summary": "A support ticket becomes a prompt, and the prompt is processed by a provider in some region. The contract names a region, and only a record kept as the request ran can prove which one it was.",
+      "nodes": [
+        { "id": "app", "label": "Support app", "kind": "client", "x": 8, "y": 50 },
+        { "id": "gw", "label": "Gateway", "kind": "gateway", "x": 46, "y": 50 },
+        { "id": "eu", "label": "EU provider", "kind": "model", "x": 76, "y": 16 },
+        { "id": "us", "label": "US provider", "kind": "model", "x": 76, "y": 84 },
+        { "id": "trail", "label": "Audit trail", "sub": "hops and regions", "kind": "log", "x": 92, "y": 50 }
+      ],
+      "edges": [
+        { "id": "app-gw", "from": "app", "to": "gw" },
+        { "id": "gw-eu", "from": "gw", "to": "eu" },
+        { "id": "gw-us", "from": "gw", "to": "us" },
+        { "id": "gw-trail", "from": "gw", "to": "trail" },
+        { "id": "eu-trail", "from": "eu", "to": "trail" }
+      ],
+      "steps": [
+        { "caption": "A support ticket holds a customer's name, order and complaint. As soon as it goes into a prompt, that text is personal data.", "active": ["app"], "packets": [], "notes": [{ "node": "app", "text": "ticket text is personal data", "tone": "warn" }] },
+        { "caption": "The app sends the prompt to the gateway. The gateway decides which provider will process it.", "active": ["app", "gw"], "packets": [{ "edge": "app-gw", "label": "prompt", "tone": "default" }] },
+        { "caption": "The provider reads the prompt and writes the answer. From here the customer's data is being processed in that provider's region.", "active": ["gw", "eu"], "packets": [{ "edge": "gw-eu", "label": "prompt", "tone": "default" }], "notes": [{ "node": "eu", "text": "processed in the EU", "tone": "ok" }] },
+        { "caption": "The customer's contract names a region. A different provider could have been used, and the answer would look the same.", "active": ["gw", "us"], "packets": [], "notes": [{ "node": "us", "text": "not used this time", "tone": "warn" }] },
+        { "caption": "So each service the request touches records that it was there, and in which region. Kept together, those records are the audit trail.", "active": ["gw", "eu", "trail"], "packets": [{ "edge": "gw-trail", "label": "gateway span", "tone": "ok" }, { "edge": "eu-trail", "label": "provider span", "tone": "ok" }] },
+        { "caption": "Rules and config files state what should happen. The trail shows what did, which is what an auditor can sign.", "active": ["trail"], "packets": [], "notes": [{ "node": "trail", "text": "proof for this request", "tone": "ok" }] }
       ]
     }
   ]

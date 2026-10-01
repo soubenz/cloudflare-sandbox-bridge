@@ -2,9 +2,10 @@
 id: platform.key-scopes
 title: Key scopes and legacy aliases
 minutes: 3
+order: 3
 recap: A key can only call the aliases on its team's models list, and a refusal is a real 401 or 403, so test the boundary instead of assuming it.
 ---
-A gateway key does two jobs. It identifies the caller, and it limits what the caller may use. The limit is a list of model aliases. Every alias not on the list is refused, even when the alias exists and works perfectly for someone else.
+Step 2 of onboarding mints a key, so it is worth knowing what that key can and cannot do. A gateway key does two jobs. It identifies the caller, and it limits what the caller may use. The limit is a list of model aliases. Every alias not on the list is refused, even when the alias exists and works perfectly for someone else.
 
 ::diagram[platform-key-scopes]
 

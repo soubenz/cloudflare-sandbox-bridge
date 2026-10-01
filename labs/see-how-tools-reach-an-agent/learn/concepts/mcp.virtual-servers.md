@@ -2,9 +2,10 @@
 id: mcp.virtual-servers
 title: "Virtual servers: one endpoint over many tool servers"
 minutes: 3
+order: 2
 recap: A gateway registers tool servers, discovers their tools, and exposes a chosen set through one virtual server; an agent sees only that set.
 ---
-Security's request was one door for tools. A tool gateway is that door, and ContextForge, the gateway in this lab, builds it in three steps that are worth keeping apart, because each one has its own list.
+The last lesson ended with a problem: many tool servers, and an address and credentials for each in every agent. Security's request was one door instead. A tool gateway is that door, and ContextForge, the gateway in this lab, builds it in three steps that are worth keeping apart, because each one has its own list.
 
 ::diagram[mcp-virtual-servers]
 

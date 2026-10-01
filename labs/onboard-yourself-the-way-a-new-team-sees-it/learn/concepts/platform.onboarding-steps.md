@@ -2,9 +2,10 @@
 id: platform.onboarding-steps
 title: What onboarding a team involves
 minutes: 3
+order: 2
 recap: Onboarding a team means creating its identity, granting access on the gateway, registering its tools, and only then making a first call.
 ---
-Onboarding sounds like one task, but it is a chain where each link makes the next one possible. In this lab the chain has five steps, and `onboard.py` runs them against the real services.
+The first lesson called onboarding the act of adding a team to the platform. Here is that act as a chain where each link makes the next one possible. In this lab it has five steps, and `onboard.py` runs them against the real services.
 
 ::diagram[platform-onboarding-steps]
 

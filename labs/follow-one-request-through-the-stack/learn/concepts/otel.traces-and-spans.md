@@ -2,9 +2,10 @@
 id: otel.traces-and-spans
 title: Traces and spans
 minutes: 3
+order: 2
 recap: A span is one timed unit of work with a name and attributes; a trace is every span that belongs to one request, sharing a trace id.
 ---
-A **span** is one unit of work that someone chose to time: an HTTP handler, a database query, a model call. It records a name, a start time, a duration, a status and a set of **attributes** (Jaeger shows them as **Tags**). A **trace** is the set of spans that belong to one request. They share a trace id, which is what lets a tool stitch them into a single picture even when they came from different processes.
+The first lesson said a trace is made of spans. Here is what one span records and how Jaeger shows it. A span is one unit of work that someone chose to time: an HTTP handler, a database query, a model call. It records a name, a start time, a duration, a status and a set of **attributes** (Jaeger shows them as **Tags**). The shared trace id is what lets a tool stitch spans into a single picture, even when they came from different processes.
 
 ::diagram[otel-traces-and-spans]
 

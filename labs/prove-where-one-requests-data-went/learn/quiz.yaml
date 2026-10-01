@@ -1,4 +1,38 @@
 questions:
+  - id: q-sov-why
+    concept: sovereignty.what-is-data-sovereignty
+    type: single
+    prompt: A support agent sends a customer's ticket text to a model. Why does it matter which region processes it?
+    options:
+      - { id: a, text: The text is personal data, and the customer's contract or the law may limit where it can be processed }
+      - { id: b, text: Models give worse answers when they run outside the customer's region }
+      - { id: c, text: Only the answer counts as data; the prompt is just an instruction and can go anywhere }
+      - { id: d, text: Regions only change the price of a call, not what is allowed }
+    answer: [a]
+    explanation: The prompt carries the customer's own words and details, so processing it is handling personal data. Where that happens can be restricted by contract or law, whatever the answer looks like.
+  - id: q-sov-hop
+    concept: sovereignty.what-is-data-sovereignty
+    type: single
+    prompt: What is a hop in the path of an AI request?
+    options:
+      - { id: a, text: Any service the request passes through on its way, such as a gateway, a proxy or the provider }
+      - { id: b, text: One automatic retry of a call that failed }
+      - { id: c, text: One token in the prompt }
+      - { id: d, text: The network cable between two data centres }
+    answer: [a]
+    explanation: Each service that handles the request is a hop, and each one is a place the data is handled. Retries, tokens and cables are different ideas.
+  - id: q-sov-trail
+    concept: sovereignty.what-is-data-sovereignty
+    type: multi
+    prompt: Why is an audit trail better proof of where data went than the routing rules? Pick all that apply.
+    options:
+      - { id: a, text: It is recorded while the request runs, instead of describing what was intended }
+      - { id: b, text: It can list the services in the middle of the path as well as the last one }
+      - { id: c, text: It stops a request from leaving its region, so nothing can go wrong }
+      - { id: d, text: It is the same file as the routing rules, so it always agrees with them }
+    answer: [a, b]
+    explanation: A trail is evidence made at run time and can cover every hop. It records what happened and does not enforce anything, and it is separate from the rules it is checked against.
+    diagnostic: false
   - id: q-region-label
     concept: sovereignty.regions-routes
     type: single

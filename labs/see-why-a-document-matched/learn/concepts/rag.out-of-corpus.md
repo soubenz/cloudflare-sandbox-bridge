@@ -2,9 +2,10 @@
 id: rag.out-of-corpus
 title: Questions the corpus cannot answer
 minutes: 3
+order: 4
 recap: A search always returns something, even when nothing is relevant; only the scores can tell you the corpus has no answer.
 ---
-Ask a vector search anything and it returns k rows. There is no empty result and no "I do not know", because the database only sorts by distance. If the corpus holds nothing relevant, you get the nearest irrelevant documents.
+A threshold sorts close from far, but it only helps if you look at it. The hardest case is a question the corpus has no answer for. Ask a vector search anything and it returns k rows. There is no empty result and no "I do not know", because the database only sorts by distance. If the corpus holds nothing relevant, you get the nearest irrelevant documents.
 
 ::diagram[rag-out-of-corpus]
 

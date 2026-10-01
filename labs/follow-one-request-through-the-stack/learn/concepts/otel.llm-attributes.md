@@ -2,9 +2,10 @@
 id: otel.llm-attributes
 title: Token and cost attributes on model calls
 minutes: 3
+order: 4
 recap: A model call span carries gen_ai.* attributes for model and token counts; cost is derived from tokens and a price, and totals come from summing across spans.
 ---
-A trace tells you where time went. To learn what a model call cost, the model-call span has to carry the numbers. OpenTelemetry has agreed names for that, the **gen_ai semantic conventions**, so any backend can read them:
+Time was Priya's question. Jonas asked about cost, and a trace can answer that too, but only if the model-call span carries the numbers. OpenTelemetry has agreed names for that, the **gen_ai semantic conventions**, so any backend can read them:
 
 ::diagram[otel-llm-attributes]
 

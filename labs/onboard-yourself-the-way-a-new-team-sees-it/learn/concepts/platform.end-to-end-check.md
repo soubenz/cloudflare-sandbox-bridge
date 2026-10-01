@@ -2,9 +2,10 @@
 id: platform.end-to-end-check
 title: Proving a new team works end to end
 minutes: 3
+order: 4
 recap: A team works only when a real model call and a real tool call both succeed. A tool result flagged isError has failed even on HTTP 200.
 ---
-Configuration can look complete and still fail on the first request. Keys can be scoped to an alias that has no model behind it. A tool server can be registered but empty. A virtual server can exist and offer no tools. The only proof is a request that uses everything that was set up, in the order a real service would use it.
+The last step of onboarding is the proof. Configuration can look complete and still fail on the first request. Keys can be scoped to an alias that has no model behind it. A tool server can be registered but empty. A virtual server can exist and offer no tools. The only proof is a request that uses everything that was set up, in the order a real service would use it.
 
 ::diagram[platform-end-to-end-check]
 

@@ -2,9 +2,10 @@
 id: sovereignty.regions-routes
 title: Regions and routes
 minutes: 3
+order: 2
 recap: A region is a label a deployment claims, and a route is the path from an alias to wherever the request really goes.
 ---
-Callers of the gateway never name a region. They name an alias, such as `support-eu`, and the gateway decides where the request goes. Two ideas are involved, and they are easy to confuse.
+The first lesson introduced region and route. Here is how each looks in this lab, because they are easy to confuse. Callers of the gateway never name a region. They name an alias, such as `support-eu`, and the gateway decides where the request goes.
 
 ::diagram[sovereignty-regions-routes]
 

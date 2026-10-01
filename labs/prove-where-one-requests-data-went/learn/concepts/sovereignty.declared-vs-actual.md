@@ -2,9 +2,10 @@
 id: sovereignty.declared-vs-actual
 title: Declared region versus actual region
 minutes: 3
+order: 4
 recap: To check a residency property, compare every region tag observed on a real trace against the region the deployment is declared to be in.
 ---
-A residency claim has two halves. The **declared** region is what a deployment is configured to be: the `region` under its `model_info`. The **actual** region is what a real request touched, which you read from the trace. Proving a property means putting the two side by side, request by request.
+This lesson turns declared and actual regions into a procedure. The declared region is what a deployment is configured to be: the `region` under its `model_info`. The actual region is what a real request touched, which you read from the trace. Proving a property means putting the two side by side, request by request.
 
 ::diagram[sovereignty-declared-vs-actual]
 

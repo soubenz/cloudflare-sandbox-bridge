@@ -2,9 +2,10 @@
 id: rag.close-matches
 title: Close matches and score thresholds
 minutes: 3
+order: 3
 recap: A search returns its top-k rows however far away they are; a distance threshold is what decides which rows count as close.
 ---
-A vector search answers "what are the k nearest documents?" It does not answer "which documents are relevant?". Those are different questions, and the gap between them is where wrong citations come from.
+With distances in hand, the next step is deciding which results to trust. A vector search answers "what are the k nearest documents?" It does not answer "which documents are relevant?". Those are different questions, and the gap between them is where wrong citations come from.
 
 ::diagram[rag-close-matches]
 
