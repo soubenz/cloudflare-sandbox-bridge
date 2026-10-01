@@ -252,6 +252,8 @@ services:
     ui: false
     depends_on: [tool-server-v1, tool-server-v2]
   - name: view
+    label: Live view
+    about: A read-only page that updates as you work. It shows what your lab is doing right now.
     argv: ["python3", "-B", "/workspace/services/view.py"]
     cwd: /workspace
     env:

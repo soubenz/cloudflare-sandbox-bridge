@@ -34,6 +34,16 @@ describe('parseManifest', () => {
     expect(() => parseManifest(baseManifest({ archived: 'yes' }))).toThrow(/archived/);
   });
 
+  it('accepts a tab label and a one-line about on a service, and carries them into the summary', async () => {
+    const m = parseManifest(baseManifest({
+      services: [{ name: 'view', argv: ['python3', '-m', 'http.server'], port: 8962, ui: true, label: 'Live view', about: 'Shows the calls.' }],
+    }));
+    expect(m.services[0]!.label).toBe('Live view');
+    const { summarizeManifest } = await import('../../src/session/state');
+    expect(summarizeManifest(m).services[0]).toMatchObject({ name: 'view', label: 'Live view', about: 'Shows the calls.' });
+    expect(() => parseManifest(baseManifest({ services: [{ name: 'a', argv: ['x'], label: 'x'.repeat(31) }] }))).toThrow();
+  });
+
   it('rejects a bad slug', () => {
     expect(() => parseManifest(baseManifest({ slug: 'Not Valid!' }))).toThrow(/slug/);
   });

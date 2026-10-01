@@ -238,6 +238,8 @@ services:
     ui: false
     depends_on: [knowledge-tools, tickets-tools, accounts-tools]
   - name: view
+    label: Live view
+    about: A read-only page that updates as you work. It shows what your lab is doing right now.
     # This lab's substitute for ContextForge's own (browser-gated) admin
     # UI: a small read-only stdlib page, workspace/view.py. It never
     # accepts a write and never shows a token's own usable value.

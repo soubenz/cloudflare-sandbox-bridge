@@ -173,6 +173,8 @@ client surfaces that alert.
 
 ### services[].ui
 
+A service's tab is named after the service. When that name means nothing to a learner (`view`), give it a `label` (up to 30 characters) and an `about` sentence (shown as the tab's tooltip).
+
 `ui: true` does two things: the service's URL appears in the `urls.services`
 map returned by `POST /sessions`, and the service proxy will serve it. A
 service with `ui: false` is refused by the proxy with `403 not_exposed` even

@@ -192,6 +192,8 @@ services:
     ui: false
     depends_on: [wiki, tickets]
   - name: view
+    label: Live view
+    about: A read-only page that updates as you work. It shows what your lab is doing right now.
     # This lab's read-only substitute for both gateways' own (login-gated
     # or bypass-unsafe) admin surfaces -- services/view.py. Never accepts a
     # write and never returns a usable key or token.

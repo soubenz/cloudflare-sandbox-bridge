@@ -192,6 +192,8 @@ services:
   # write and calls ContextForge's REST API the same non-browser way
   # register.py does.
   - name: view
+    label: Live view
+    about: A read-only page that updates as you work. It shows what your lab is doing right now.
     argv: ["python3", "-B", "/workspace/view.py"]
     cwd: /workspace
     env:

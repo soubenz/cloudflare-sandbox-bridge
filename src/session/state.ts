@@ -145,7 +145,7 @@ export interface ManifestSummary {
   timeout_minutes: number;
   idle_minutes: number;
   checks: Array<{ name: string; weight: number }>;
-  services: Array<{ name: string; ui: boolean; port?: number }>;
+  services: Array<{ name: string; ui: boolean; port?: number; label?: string; about?: string }>;
   hints_schedule: number[];
 }
 
@@ -176,7 +176,13 @@ export function summarizeManifest(manifest: LabManifest): ManifestSummary {
     timeout_minutes: manifest.timeout_minutes,
     idle_minutes: manifest.idle_minutes,
     checks: manifest.checks.map((c) => ({ name: c.name, weight: c.weight })),
-    services: manifest.services.map((s) => ({ name: s.name, ui: s.ui, ...(s.port !== undefined ? { port: s.port } : {}) })),
+    services: manifest.services.map((s) => ({
+      name: s.name,
+      ui: s.ui,
+      ...(s.port !== undefined ? { port: s.port } : {}),
+      ...(s.label ? { label: s.label } : {}),
+      ...(s.about ? { about: s.about } : {}),
+    })),
     hints_schedule: manifest.hints.map((h) => h.after_minutes),
   };
 }

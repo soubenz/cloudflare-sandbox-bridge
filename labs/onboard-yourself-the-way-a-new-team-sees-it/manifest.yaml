@@ -238,6 +238,8 @@ services:
     ui: false
     depends_on: [calculator-tools, weather-tools]
   - name: view
+    label: Live view
+    about: A read-only page that updates as you work. It shows what your lab is doing right now.
     # This lab's substitute for BOTH admin UIs at once: a small read-only
     # stdlib page (workspace/view_service.py) showing LiteLLM's teams, keys
     # and model aliases, and ContextForge's registered tool servers,

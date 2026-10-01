@@ -3255,7 +3255,10 @@ function absorbStatus(status, { celebrate = false } = {}) {
   const meta = status?.meta ?? {};
   if (Number.isFinite(status?.server_time)) state.clockSkew = status.server_time - Date.now();
   if (meta.started_at) state.startedAt = meta.started_at;
-  if (status?.manifest_summary) state.summary = status.manifest_summary;
+  if (status?.manifest_summary) {
+    state.summary = status.manifest_summary;
+    relabelServiceTabs();
+  }
   if (Array.isArray(status?.checks_history)) state.history = status.checks_history;
   if (status?.hints) {
     state.hints = status.hints;
@@ -4271,6 +4274,26 @@ function formatSize(bytes) {
 
 // ---------------------------------------------------------------- services
 
+/** What the lab calls a service's tab (its `label`), else the service's own name. */
+function serviceLabel(name) {
+  return state.summary?.services?.find((s) => s.name === name)?.label ?? name;
+}
+
+/** The tab's one-line explanation (the lab's `about`), else a plain "Open …". */
+function serviceAbout(name) {
+  return state.summary?.services?.find((s) => s.name === name)?.about ?? `Open ${serviceLabel(name)}`;
+}
+
+/** The summary can arrive after the tabs are drawn; give them the lab's own words once it has. */
+function relabelServiceTabs() {
+  for (const tab of $('serviceTabs').querySelectorAll('.tab')) {
+    const name = tab.dataset.service;
+    const text = tab.querySelector('.svc-label');
+    if (text) text.textContent = serviceLabel(name);
+    tab.title = serviceAbout(name);
+  }
+}
+
 function renderServiceTabs() {
   const host = $('serviceTabs');
   host.innerHTML = '';
@@ -4284,14 +4307,17 @@ function renderServiceTabs() {
     tab.setAttribute('aria-selected', 'false');
     tab.setAttribute('aria-controls', 'viewService');
     tab.tabIndex = -1;
-    tab.title = `Open the ${name} service`;
+    tab.title = serviceAbout(name);
     tab.dataset.service = name;
     tab.dataset.health = 'unknown';
     const dot = document.createElement('span');
     dot.className = 'svc-dot';
     dot.dataset.health = 'unknown';
     dot.setAttribute('aria-hidden', 'true');
-    tab.append(dot, name);
+    const text = document.createElement('span');
+    text.className = 'svc-label';
+    text.textContent = serviceLabel(name);
+    tab.append(dot, text);
     tab.addEventListener('click', () => {
       syncTabUrl('service', name);
       openService(name, tab);
@@ -4354,7 +4380,7 @@ function setServiceHealth(name, health) {
   const tab = [...$('serviceTabs').children].find((el) => el.dataset.service === name);
   if (tab) {
     tab.dataset.health = health;
-    tab.title = `Open the ${name} service (${health})`;
+    tab.title = `${serviceAbout(name)} (${health})`;
     const dot = tab.querySelector('.svc-dot');
     if (dot) dot.dataset.health = health;
   }
@@ -4480,7 +4506,7 @@ function showServiceDown(name) {
   state.serviceDown = name;
   $('serviceLoading').hidden = true;
   $('serviceFrame').hidden = true;
-  $('serviceDownName').textContent = name;
+  $('serviceDownName').textContent = serviceLabel(name);
   // Logs only come with a `service.health` event, and only from a failed start.
   const logs = bootServices.get(name)?.logs;
   $('serviceDownLogs').textContent = logs ?? '';

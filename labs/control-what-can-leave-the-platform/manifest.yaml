@@ -110,6 +110,8 @@ services:
     depends_on: [approved-tool, not-approved]
 
   - name: view
+    label: Live view
+    about: A read-only page that updates as you work. It shows what your lab is doing right now.
     # Small stdlib, read-only page -- under the house no-login rule, this
     # is the ui:true tab; egress-proxy and both tool services stay
     # ui:false (same shape as every other gateway-family lab's `view`).

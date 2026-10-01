@@ -72,6 +72,10 @@ const serviceSchema = z.object({
   healthcheck: healthcheckSchema.optional(),
   /** Whether this service has a browsable UI to proxy at /sessions/{id}/services/{name}/. */
   ui: z.boolean().default(false),
+  /** What the console calls this service's tab, when its name means nothing to a learner ("view"). */
+  label: z.string().min(1).max(30).optional(),
+  /** One plain sentence under that tab: what the page shows and whether it is worth opening. */
+  about: z.string().min(1).max(200).optional(),
   depends_on: z.array(z.string()).default([]),
 });
 
