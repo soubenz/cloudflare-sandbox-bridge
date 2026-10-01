@@ -1,45 +1,67 @@
-title: Do the checklist yourself
+title: Be the new team for an hour
 panels:
+  # Hook: the onboarding "documentation" is one person.
   - scene: desk
     cast: [maren]
     bg: sand
     caption: Wednesday, a little after ten.
+    voiceover: I opened our onboarding page for the team that starts on Monday. Nine bullet points. Bullet seven just says, ask Tomasz.
     bubbles:
-      - { who: maren, text: "A new team starts Monday. Their onboarding is a wiki page with nine bullets, and last time it took most of a week." }
-    lines: ["wiki: Team onboarding", "9 bullets", "last edited: before the gateway moved"]
-    sfx: TAP TAP
+      - { who: maren, text: "Tomasz? You're a bullet point." }
+    lines: ["Team onboarding (wiki)", "9 bullets", "7. Ask Tomasz."]
+    sfx: HUH?
   - scene: message
     cast: [tomasz]
     bg: ice
     prop: laptop
-    sfx: HMM.
+    sfx: AHEM.
+    voiceover: In fairness, Tomasz built most of this, so he sort of is the documentation. He also wrote that page before we moved the gateway, and two people have edited it since.
     bubbles:
-      - { who: tomasz, text: "The script in the workspace runs the whole path for real. It is not a mock. Sorry about the comments." }
+      - { who: tomasz, text: "In my defence, I was very easy to find." }
+  # Trouble: it is slow, and nobody can say what a new team ends up with.
   - scene: portrait
     cast: [maren]
-    bg: navy
-    prop: key
-    caption: Maren hands you the task.
+    bg: rose
+    prop: chart
+    caption: Last time, most of a week.
+    voiceover: Here's why it hurts. The last team waited most of a week for their first real call, and they spent it building workarounds we had to clean up afterwards.
     bubbles:
-      - { who: maren, text: "Be that new team for an hour. Get them fast-draft and their own tool, then make one real call that uses both." }
+      - { who: maren, text: "A whole week. For one call." }
   - scene: screen
+    caption: The live view, before anything runs.
+    voiceover: Worse, none of us could say exactly what a new team ends up with. Today our platform has one older team, a spare model name nobody holds, and a weather tool nobody has plugged in.
     lines:
-      - "$ python3 -B onboard.py --status"
-      - "fast-draft       granted to nobody"
-      - "weather-tools    not registered"
-      - "systems touched ................ ?"
+      - "team platform-core ...... legacy-writer"
+      - "alias fast-draft ........ granted to nobody"
+      - "tools legacy-tools ...... calculator-tools"
+      - "tool weather-tools ...... not registered"
+  # Turn: a script that walks the real path and times it.
+  - scene: desk
+    cast: [tomasz]
+    bg: mint
+    caption: Not a mock.
+    voiceover: Then Tomasz remembered the script he'd left in your workspace. It walks the whole path for real. A key for the team, their tool plugged in, one real call, and a time on every step.
+    bubbles:
+      - { who: tomasz, text: "Sorry about the comments. I wrote them at midnight." }
+    lines: ["$ python3 -B onboard.py", "step 1 of 5 ...", "step 2 of 5 ..."]
+  # Task.
+  - scene: duo
+    cast: [maren, you]
+    bg: navy
+    voiceover: So here's the plan. For one hour, you are the new team. Get them their model and their own tool, then make the one real call their first service will make.
+    bubbles:
+      - { who: maren, text: "Open the live view before you run anything. And again after." }
+      - { who: you, text: "Be the new team. Got it." }
+  - scene: screen
+    caption: Three blanks to fill in.
+    voiceover: Write down three things as you go. How many separate systems you had to talk to. Whether the new key can reach the older team's model. And whether that real call worked.
+    lines:
+      - "systems touched end to end ..... ?"
       - "new key on legacy-writer ....... ?"
       - "real end-to-end call ........... ?"
-    caption: Three blanks to fill in as you go.
-  - scene: duo
-    cast: [maren, tomasz]
-    bg: mint
-    caption: Nothing is broken. Walk the path for real.
-    bubbles:
-      - { who: maren, text: "I will ask you again on Friday, so do not answer from the wiki." }
-      - { who: tomasz, text: "Two people have edited it since the gateway moved." }
   - scene: you
     caption: Your turn.
+    voiceover: I'll ask you again on Friday, so don't answer from the wiki. Answer from what you saw. Off you go.
     lines:
       - "$ python3 -B onboard.py --status"
       - "ready."

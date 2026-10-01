@@ -1,39 +1,63 @@
 title: One slow request, no explanation
 panels:
+  # Hook: a customer left waiting, in their own words.
   - scene: desk
-    cast: [priya]
+    cast: [maren]
     bg: sand
     caption: Tuesday afternoon.
+    voiceover: Tuesday afternoon, Priya in Support sent us a screenshot. A customer had waited so long for our assistant to reply that they'd started talking to themselves.
     bubbles:
-      - { who: priya, text: "This one took ages. Why?" }
-    lines: ["agent: waiting on a reply...", "waiting...", "still waiting..."]
+      - { who: maren, text: "Oh no. Three hellos." }
+    lines: ["customer: hello?", "customer: hello??", "customer: HELLO???", "assistant: typing..."]
   - scene: message
-    cast: [jonas]
+    cast: [maren]
     bg: lilac
     prop: envelope
     sfx: PING!
+    caption: From Jonas, Finance.
+    voiceover: Ten minutes later, Jonas in Finance replied on the same thread. He didn't care why it was slow. He wanted to know what it cost, per request, so he can split our bill by team.
     bubbles:
-      - { who: jonas, text: "And what did it cost? I need a number per request." }
+      - { who: maren, text: "Two questions. Zero answers." }
+  # The trouble: four services, four stories, no culprit.
+  - scene: desk
+    cast: [tomasz]
+    bg: rose
+    voiceover: That one request went through our gateway, out to a model, into the vector store and into a cache. Four services, four sets of logs, and Tomasz spent an hour scrolling through them.
+    bubbles:
+      - { who: tomasz, text: "Everyone says ok. Nobody says slow." }
+    lines: ["gateway   ok", "worker    ok", "vector    ok", "cache     ok"]
   - scene: portrait
     cast: [maren]
     bg: ice
     prop: chart
+    voiceover: And guessing won't do. If we blame the wrong part, someone spends a week speeding up the wrong thing. If we hand Finance a hunch, it ends up in a budget.
     bubbles:
-      - { who: maren, text: "That request was traced end to end. One request, four services, six spans. Nothing to fix. Read it." }
-  - scene: screen
-    lines:
-      - "$ open jaeger, click Find Traces"
-      - "200 1 trace, 4 services, 6 spans"
-      - "slowest span, not the top one: ?"
-      - "tokens used by the model calls: ?"
-      - "cache.get sits under: ?"
+      - { who: maren, text: "We are not guessing on this one." }
+  # The turn: the request was traced, and the trace is waiting.
   - scene: duo
-    cast: [maren, jonas]
-    bg: cobalt
+    cast: [tomasz, maren]
+    bg: mint
+    voiceover: Here's the good news. That request was traced from start to finish, so every step it took was written down on one timeline, with how long it ran and notes about what it did.
     bubbles:
-      - { who: maren, text: "Do not tell me it looks like the model. Read the numbers off the trace." }
-      - { who: jonas, text: "A hunch cannot go in my report. A number can." }
+      - { who: tomasz, text: "It's already in Jaeger. Six spans. Nothing to send, nothing to fix." }
+      - { who: maren, text: "Then let's read it." }
+  - scene: screen
+    voiceover: You see it as a waterfall. One bar per step, each step tucked under the one that called it, every bar with its own clock and its own notes. Everything we need is in there.
+    lines:
+      - "$ open jaeger, Find Traces"
+      - "200 1 trace, 4 services, 6 spans"
+      - "slowest, not counting the top: ?"
+      - "tokens used by model calls: ?"
+      - "cache.get sits directly under: ?"
+  # The task.
+  - scene: desk
+    cast: [you]
+    bg: cobalt
+    voiceover: Here's your part. Find the step that took longest, not counting the whole request. Work out how many tokens the model calls used in total. And find what the cache lookup sits under.
+    bubbles:
+      - { who: you, text: "Slowest step, total tokens, one parent. Got it." }
   - scene: you
     bg: navy
     caption: Your turn.
-    lines: ["$ cat /workspace/answers.json", "ready."]
+    voiceover: And please don't tell me what it looks like. Read it off the trace, write the numbers down, and we'll give Priya and Jonas a proper answer.
+    lines: ["open the jaeger tab", "Find Traces", "longest span: ?", "model tokens: ?", "parent of cache.get: ?", "ready."]

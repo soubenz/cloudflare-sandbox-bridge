@@ -1,56 +1,60 @@
 title: Four teams, four keys
-pages:
-  - title: Life without a gateway
-    panels:
-      - scene: message
-        cast: [maren]
-        bg: rose
-        prop: key
-        sfx: OOPS!
-        caption: Four teams, four providers, four keys.
-        bubbles:
-          - { who: maren, text: "Welcome to the museum. Key two is in a chat screenshot. Thumbs up, nobody saw the key." }
-      - scene: portrait
-        cast: [priya]
-        bg: navy
-        prop: laptop
-        sfx: DOWN!
-        bubbles:
-          - { who: priya, text: "Three in the morning, the provider is down. Search's assistant works. Can't we switch?" }
-      - scene: duo
-        cast: [tomasz, you]
-        bg: lilac
-        bubbles:
-          - { who: tomasz, text: "They renamed a model. Three apps had the old name in their code." }
-          - { who: you, text: "Before breakfast?" }
-      - scene: message
-        cast: [jonas]
-        bg: mint
-        prop: envelope
-        sfx: INVOICE!
-        bubbles:
-          - { who: jonas, text: "One bill a month. Which team spent it? Which provider answered? A shrug." }
-      - scene: screen
-        caption: One loop, one weekend.
-        lines: ["$ retry forever", "error: try again", "budget left: 0"]
-  - title: One front door
-    panels:
-      - scene: portrait
-        cast: [tomasz]
-        bg: ice
-        prop: key
-        sfx: ONE DOOR!
-        bubbles:
-          - { who: tomasz, text: "My prototype. One front door. It holds the keys and logs every call." }
-      - scene: screen
-        lines: ["$ ask: support", "ok key accepted", "ok provider chosen", "ok cost logged"]
-      - scene: duo
-        cast: [tomasz, maren]
-        bg: sand
-        bubbles:
-          - { who: tomasz, text: "It is meant to switch providers if one fails. Meant to." }
-          - { who: maren, text: "So find out what it really does." }
-      - scene: you
-        bg: navy
-        caption: Your turn.
-        lines: ["$ send_calls.py support \"hello gateway\"", "ready."]
+panels:
+  - scene: message
+    cast: [maren]
+    bg: rose
+    prop: key
+    sfx: OOPS!
+    caption: Monday. The museum tour.
+    voiceover: Welcome to the platform team at Larkfield. Here's how we used to call models. Four teams, four providers, four keys, and one key sat in a chat screenshot with a lot of thumbs up.
+    bubbles:
+      - { who: maren, text: "Everybody liked it. Nobody noticed the key." }
+  - scene: desk
+    cast: [tomasz]
+    bg: navy
+    sfx: DOWN!
+    caption: Saturday, three in the morning.
+    voiceover: Then one Saturday night, Support's provider went down. Priya's assistant stopped answering customers, and we couldn't point it anywhere else, because the provider's name was written into its code.
+    bubbles:
+      - { who: tomasz, text: "Search is fine. Support is dark. And I'm reading their code at three a.m." }
+    lines: ["support assistant: down", "search assistant: fine", "switch provider? edit the code"]
+  - scene: duo
+    cast: [tomasz, you]
+    bg: lilac
+    voiceover: A week later a provider renamed one of its models. Three of our apps had the old name typed in by hand, and all three broke before breakfast.
+    bubbles:
+      - { who: tomasz, text: "They renamed it. On a Sunday." }
+      - { who: you, text: "Who renames things on a Sunday?" }
+  - scene: message
+    cast: [maren]
+    bg: mint
+    prop: envelope
+    sfx: INVOICE!
+    caption: From Jonas, Finance.
+    voiceover: And every month Jonas in Finance gets one invoice. He asks which team spent it and which provider answered. All we can give him is a shrug.
+    bubbles:
+      - { who: maren, text: "I've practised the shrug. It's very good now." }
+  - scene: screen
+    caption: Friday evening to Monday morning.
+    voiceover: My favourite exhibit. A research script retried one failing call all weekend. By Monday it had spent the month's budget, and it was still asking, very politely.
+    lines: ["$ retry", "error: try again", "$ retry", "error: try again", "budget left: 0"]
+  - scene: portrait
+    cast: [tomasz]
+    bg: ice
+    prop: key
+    sfx: ONE DOOR!
+    voiceover: So Tomasz built a gateway, one front door for every model call. A team asks for a plain name like support. The gateway holds the keys, picks the provider and writes down every call.
+    bubbles:
+      - { who: tomasz, text: "Nobody pastes a key into a chat again. Ever." }
+  - scene: duo
+    cast: [tomasz, maren]
+    bg: sand
+    voiceover: Three more teams want to move in next month. Before they do, I want someone who has never seen it to tell us what it really does, not what Tomasz's notes say it does.
+    bubbles:
+      - { who: tomasz, text: "My notes are mostly right." }
+      - { who: maren, text: "Mostly." }
+  - scene: you
+    bg: cobalt
+    caption: Your turn.
+    voiceover: That's you. We've built you a small copy with a pretend provider, so there's no real bill. Send it a call, then find out where it went, what it counted, and how it complains.
+    lines: ["$ send_calls.py support \"hello gateway\"", "answered by: ?", "total tokens: ?", "unknown alias: ?"]

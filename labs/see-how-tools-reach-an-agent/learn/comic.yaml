@@ -1,41 +1,49 @@
 title: One door for the tools
 panels:
-  - scene: desk
-    cast: [priya]
-    bg: sand
-    caption: Thursday morning, by the coffee machine.
-    bubbles:
-      - { who: priya, text: "My assistant has to explain why a parcel is late. That starts with the weather in the depot's city." }
-    lines: ["parcel: late", "depot city weather: ?", "reply to customer: ?"]
   - scene: message
-    cast: [priya]
+    cast: [maren]
     bg: rose
-    prop: document
-    sfx: HMM.
+    prop: envelope
+    sfx: PING!
+    caption: Thursday, from Priya in Support.
+    voiceover: Thursday morning, a note from Priya in Support. A customer asked why their parcel was late, and her assistant answered with a very confident little poem about rain.
     bubbles:
-      - { who: priya, text: "Search wrote a weather lookup, Billing a calculator. I do not want a fifth way." }
+      - { who: maren, text: "A poem. About rain. In a delivery update." }
+  - scene: desk
+    cast: [tomasz]
+    bg: sand
+    voiceover: To answer properly, her assistant needs the real weather in the depot's city. Search wrote a weather lookup and Billing a calculator, but each one is wired into its own agent, its own way.
+    bubbles:
+      - { who: tomasz, text: "That's two kinds of glue already. Priya would make it three." }
+    lines: ["search agent: weather, own glue", "billing agent: calculator, own glue", "support agent: ?"]
   - scene: portrait
     cast: [maren]
     bg: lilac
     prop: key
+    sfx: KNOCK KNOCK
+    voiceover: Then security came to me with one request. Agents should reach tools through one door, and that door should know exactly what was called. Fair enough. Today nobody could tell them.
     bubbles:
-      - { who: maren, text: "Security wants one door. Agents ask a server what tools it has, then call them by name. See it from the agent's side." }
+      - { who: maren, text: "One door. I promised them one door." }
   - scene: screen
-    caption: A tool gateway, with a weather server and a calculator behind it.
-    lines:
-      - "$ call_tool.py --list"
-      - "tools an agent can see: ?"
-      - "$ call_tool.py calculator-tools-add"
-      - "result: ?"
-      - "$ call_tool.py does-not-exist"
-      - "marked as an error: ?"
+    caption: A tool gateway.
+    voiceover: We've set up a tool gateway. Tool servers sign up with it, it gathers the tools we pick in one place, and an agent connects there, asks what's on offer and calls one by name.
+    lines: ["weather server: joins the gateway", "calculator server: joins the gateway", "gateway: one door for agents", "agent: what tools do you have?", "agent: call this one, please"]
   - scene: duo
-    cast: [maren, priya]
+    cast: [tomasz, you]
     bg: mint
+    voiceover: Tomasz put two toy servers behind it, a weather one and a calculator. Nothing real is connected, so nothing you try in there can reach a customer.
     bubbles:
-      - { who: maren, text: "Look at the request bodies, and at what comes back when a call goes right and when it does not." }
-      - { who: priya, text: "My assistant will read those answers. The shape of a failure matters to me." }
-  - scene: you
+      - { who: tomasz, text: "They're toys. Please still be nice to them." }
+      - { who: you, text: "No promises." }
+  - scene: portrait
+    cast: [maren]
     bg: navy
+    prop: document
+    voiceover: Here's what I care about most. Priya's assistant reads whatever comes back, so a failure's shape matters as much as a success. And the status code alone won't tell you which you got.
+    bubbles:
+      - { who: maren, text: "Read the bodies. People skip them and regret it." }
+  - scene: you
+    bg: cobalt
     caption: Your turn.
-    lines: ["$ call_tool.py --list", "ready."]
+    voiceover: So look at it from the agent's side. See which tools it's offered, ask for a small sum, then call something that doesn't exist. Come and tell me what you saw.
+    lines: ["$ call_tool.py --list", "tools an agent can see: ?", "$ call_tool.py calculator-tools-add", "result: ?", "$ call_tool.py does-not-exist", "marked as an error: ?"]

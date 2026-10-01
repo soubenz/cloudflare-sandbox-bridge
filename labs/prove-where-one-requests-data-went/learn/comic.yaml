@@ -1,44 +1,65 @@
 title: Where did it go?
 panels:
-  - scene: desk
-    cast: [anneke]
-    bg: lilac
-    caption: Ten past nine.
-    bubbles:
-      - { who: anneke, text: "A customer asked, in writing, where the data in their ticket was processed. Their contract names a region." }
-    lines: ["support queue: one ticket", "contract: region named", "reply due: this week"]
-    sfx: HMM.
+  # Hook: a very calm note from data protection.
   - scene: message
     cast: [maren]
-    bg: sand
+    bg: lilac
     prop: envelope
     sfx: PING!
+    caption: Ten past nine.
+    voiceover: Anneke in data protection wrote to our channel this morning. No greeting, no exclamation marks. When Anneke skips the exclamation marks, I put my coffee down.
     bubbles:
-      - { who: maren, text: "Anneke needs proof for a customer. I pointed her at you." }
+      - { who: maren, text: "Oh no. Full stops." }
+  - scene: screen
+    caption: From Anneke, data protection.
+    voiceover: A customer has asked us, in writing, where the data in one support ticket was processed. Their contract names a region, and Anneke has to sign the reply this week.
+    lines:
+      - "Customer asks: where was my ticket"
+      - "data processed?"
+      - "Contract: names a region."
+      - "Reply due: this week."
+  # Trouble: rules say what was meant, not what happened.
+  - scene: duo
+    cast: [maren, tomasz]
+    bg: sand
+    voiceover: Our first instinct was to send her the routing rules. But a rule only says what we meant to happen. Anneke wants to see what actually happened to one real request.
+    bubbles:
+      - { who: tomasz, text: "We could just send her the config file?" }
+      - { who: maren, text: "She's read it. Twice. With a pen." }
   - scene: portrait
-    cast: [anneke]
+    cast: [tomasz]
     bg: cobalt
     prop: map
-    caption: Calm, exact, no exclamation marks.
+    sfx: UH-OH.
+    voiceover: Then Tomasz remembered something awkward. Our EU route isn't a straight line to its provider. Something sits in the middle, and he never wrote down what.
     bubbles:
-      - { who: anneke, text: "I do not doubt the routing rules. I would like to see the request itself. Then I can sign my name under it." }
+      - { who: tomasz, text: "In my defence, it worked." }
+  # Turn: the request leaves its own evidence.
   - scene: screen
-    lines:
-      - "$ python3 -B send_request.py support-us"
-      - "200  response id returned"
-      - "region the data reached ........ ?"
-      - "services on a support-eu trace . ?"
-      - "every region tag agrees ........ ?"
-    caption: Three things to pin down.
-  - scene: duo
-    cast: [tomasz, anneke]
-    bg: ice
-    caption: Three aliases, each declared to sit in its own region.
-    bubbles:
-      - { who: tomasz, text: "The EU one is not a straight line to its provider. There is something in the middle. I never wrote down what." }
-      - { who: anneke, text: "Answer from what happened, not from what was meant to happen. I will ask how you know." }
-  - scene: you
-    caption: Your turn.
+    caption: Evidence, written while it ran.
+    voiceover: Here's the good news. Every request through our gateway leaves a trace, a record from each service that touched it. And the gateway keeps its own log of every call it sends.
     lines:
       - "$ python3 -B send_request.py support-eu"
+      - "200  response id returned"
+      - "Find Traces: opalix-litellm"
+      - "span ......... region ?"
+  - scene: duo
+    cast: [maren, you]
+    bg: mint
+    voiceover: So that's your job today. Send real requests through our regional aliases, open their traces, and read what each hop says about itself. Then hold it up against what we declared.
+    bubbles:
+      - { who: you, text: "Evidence, not config. Got it." }
+  # Task.
+  - scene: screen
+    caption: Three things to pin down.
+    voiceover: Pin down three things. Where a request through the US alias really ended up. How many services touched one through the EU alias, gateway included. And whether every region tag matches what we declared.
+    lines:
+      - "support-us: region reached ....... ?"
+      - "support-eu: services on trace .... ?"
+      - "support-eu: every tag agrees ..... ?"
+  - scene: you
+    caption: Your turn.
+    voiceover: Anneke will ask how you know. So answer from what happened, not from what was meant to happen. Over to you.
+    lines:
+      - "$ python3 -B send_request.py support-us"
       - "ready."

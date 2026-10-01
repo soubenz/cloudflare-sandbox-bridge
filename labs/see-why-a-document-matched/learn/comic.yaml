@@ -1,39 +1,64 @@
 title: The answer that sounded right
 panels:
+  # Hook: something concrete, slightly funny, slightly alarming.
   - scene: desk
-    cast: [priya]
+    cast: [maren]
     bg: sand
     caption: Thursday, a little after eleven.
+    voiceover: Thursday, just after eleven, Priya in Support forwarded us a ticket. I read the first line and laughed. Then I read the second one and stopped laughing.
     bubbles:
-      - { who: priya, text: "The assistant cited the wrong article again. It read fine. That is the problem." }
-    lines: ["ticket: wrong article cited", "logs: all quiet", "reply: sounds right"]
+      - { who: maren, text: "We told them how to upgrade?" }
+    lines: ["Q: How do I pause my plan?", "A: Great news! Here's how to upgrade.", "customer: ..."]
   - scene: message
-    cast: [priya]
+    cast: [maren]
     bg: rose
     prop: document
     sfx: PING!
+    caption: From Priya, Support.
+    voiceover: A customer asked how to pause their plan, and our assistant answered warmly, fluently and completely wrong, straight from the article about upgrading. Priya's note on top was one line.
     bubbles:
-      - { who: priya, text: "A customer asked one thing. It answered from a document next door." }
+      - { who: maren, text: "\"It read fine. That's the problem.\" She's right." }
+  # The trouble: nothing looks broken, and nobody can say why.
+  - scene: desk
+    cast: [tomasz]
+    bg: lilac
+    voiceover: Nothing crashed. Every part of our platform said it was fine, and nobody on the team could tell you how well the articles behind that answer actually matched the question.
+    bubbles:
+      - { who: tomasz, text: "Every light is green. I hate it." }
+    lines: ["search          ok", "model           ok", "how good a match?   ?"]
   - scene: portrait
     cast: [maren]
     bg: ice
-    prop: map
+    prop: chart
+    voiceover: That's what worries me. A wrong answer that sounds right is the worst kind. The customer believes it, and Support spends the afternoon apologising for something that read perfectly.
     bubbles:
-      - { who: maren, text: "Before you touch Support's real index, learn to read what a retrieval service is telling you." }
-  - scene: screen
-    lines:
-      - '$ python3 -B query.py "succulent water?"'
-      - "200 24 houseplant documents, pgvector"
-      - "rank  distance  id"
-      - "1     ?         ?"
-      - "close enough? Support draws the line at 0.72"
+      - { who: maren, text: "So which is it, the model or the search?" }
+  # The turn: a sandbox that shows how close every result really is.
   - scene: duo
     cast: [tomasz, maren]
     bg: mint
+    voiceover: Luckily, Tomasz had already built a little sandbox for exactly this. A houseplant care library, twenty-four short articles, behind a real search service just like ours.
     bubbles:
-      - { who: tomasz, text: "The embedding is tiny on purpose, so the same text gives the same numbers. Not a real model. Sorry." }
-      - { who: maren, text: "Three answers, written down. Priya wants to know: is it the model, or the search?" }
+      - { who: tomasz, text: "Same question in, same numbers out. Every single time." }
+      - { who: maren, text: "Plants. Of course it's plants." }
+  - scene: screen
+    voiceover: Ask it anything and it ranks every article against your question, with a number for how far away each one sits. And every search leaves a trace you can open and read.
+    lines:
+      - '$ query.py "water my succulents?"'
+      - "rank  distance  id"
+      - "1     ?         ?"
+      - "2     ?         ?"
+      - "trace saved: retrieve_documents"
+  # The task.
+  - scene: desk
+    cast: [you]
+    bg: cobalt
+    voiceover: Here's your part. Ask about watering succulents and see which article comes first. Then count how many sit inside the line Support uses for close enough to cite.
+    bubbles:
+      - { who: you, text: "First place, then a head count." }
+    lines: ["close enough to cite: under 0.72"]
   - scene: you
     bg: navy
     caption: Your turn.
-    lines: ['$ python3 -B query.py "succulent"', "ready."]
+    voiceover: Last, ask it something the library knows nothing about, like the boiling point of tungsten, and see whether anything comes back really close. Write it all down, and we'll give Priya a real answer.
+    lines: ["$ python3 -B query.py", "top match: ?", "under 0.72: ?", "tungsten under 0.65: ?", "ready."]

@@ -2,16 +2,15 @@
 title: Where did it go?
 minutes: 2
 ---
-Dr. Anneke de Vries writes to the platform channel at ten past nine, and she does not use exclamation marks.
+At ten past nine, Anneke in data protection wrote to our platform channel. No greeting, no exclamation marks. When Anneke skips the exclamation marks, I put my coffee down.
 
-A customer in the Support team's queue has asked Larkfield, in writing, where the data in one of their tickets was processed. The customer's contract names a region. Anneke has to reply this week, and she wants the reply to rest on something better than a sentence in a config file.
+A customer has asked us, in writing, where the data in one of their support tickets was processed. Their contract names a region, and Anneke has to sign the reply this week.
+Our first instinct was to send her the routing rules. But Anneke has already read them, twice, with a pen, and a rule only says what we meant to happen. She wants to see what actually happened to one real request.
 
-"I do not doubt the routing rules," she says when you call. "I have read them. I would like to see the request itself. If you can show me where one went, I can sign my name under it."
+Then Tomasz remembered something awkward. Our gateway serves three regional aliases, one each for the US, Asia-Pacific and the EU, and each is declared to sit in its own region. The EU one isn't a straight line to its provider. Something sits in the middle, and he never wrote down what. "In my defence," he said, "it worked."
 
-Maren Osei has already pointed her at you. Tomasz Wieland sends a short note with the lab details: the gateway serves three regional aliases, `support-us`, `support-apac` and `support-eu`, each declared to sit in its own region. He adds a warning. "I remember the EU one is not a straight line to its provider. There is something in the middle. I never wrote down what."
+Here's the good news. Every request through our gateway leaves a trace: a record written while it runs by each service that touches it. The gateway also keeps its own log of every call it sends, and a small script sends a real request through any alias.
 
-You have the gateway, a tracing backend, and the gateway's own log of every call it has served. There is a small script to send a real request through any alias.
+So that's your job today. Send real requests, open their traces, read what each hop says about itself, and hold it up against what we declared. Pin down three things: where a request through the US alias really ended up, how many services touched one through the EU alias, counting the gateway itself, and whether every region tag on that EU request agrees with the region we declared for it.
 
-Anneke wants three things pinned down. Where a request sent through the US alias actually ended up. How many separate services touched a request sent through the EU alias, counting the gateway itself. And whether every region marker on the EU request agrees with the region the EU alias is declared to be in.
-
-"Answer from what happened," she says, "not from what was meant to happen. I will ask how you know."
+Anneke will ask how you know. Answer from what happened, not from what was meant to happen.

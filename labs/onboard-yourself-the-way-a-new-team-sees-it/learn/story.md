@@ -1,17 +1,17 @@
 ---
-title: Do the checklist yourself
+title: Be the new team for an hour
 minutes: 2
 ---
-It is Wednesday, a little after ten. Maren Osei pins a link in the platform channel and then walks over to your desk anyway.
+On Wednesday, a little after ten, I opened our onboarding page for the team that starts on Monday. Nine bullet points. Bullet seven just says: ask Tomasz.
 
-"A new team starts on Monday. Their onboarding is a wiki page with nine bullet points, and last time it took a team most of a week. I would like to know why before they find out for us."
+In fairness, Tomasz built most of this, so he sort of is the documentation. But he wrote that page before we moved the gateway, and two people have edited it since. Nobody on our team is sure which bullets still apply.
 
-She has a point about the wiki. Two people have edited it since the gateway moved, and nobody is sure which bullets still apply. Tomasz Wieland, who wrote most of the original setup, leans over from the next desk. "The script I left in the workspace runs the whole path for real," he says. "It is not a mock. Sorry about the comments. I wrote them at midnight."
+Here's why it hurts. The last team waited most of a week for their first real call, and they spent that week building workarounds we had to clean up afterwards. Worse, none of us could say exactly what a new team ends up with once we're done. Today our platform has one older team with one model name, a second model name that nobody holds yet, a calculator tool that's already plugged in, and the new team's weather tool, which isn't plugged in anywhere.
 
-Here is what exists today. The gateway already serves one team, `platform-core`, and that team holds one alias, `legacy-writer`. A second alias, `fast-draft`, is configured but nobody has been given it. The tool side already has a calculator tool server registered and exposed to callers. The new team's own tool server, a small weather one, has not been registered anywhere.
+Then Tomasz remembered the script he'd left in your workspace. It walks the whole path for real, not as a mock: it gives the team its own key, plugs in its tool, makes one real call that uses both, and times every step. "Sorry about the comments," he said. "I wrote them at midnight."
 
-Maren wants you to be that new team for an hour. Get `fast-draft` to them and get their tool reachable. Then make one real call that uses both, the way their first service will.
+So here's the plan. For one hour, you are the new team. Open the live view before you run anything, and again after. Get the team its model and its own tool, then make the one real call their first service will make.
 
-"Write down three things as you go," she says. "How many separate systems you had to talk to before anything worked. Whether the key you hand them can reach the alias that platform-core already has. And whether the real call worked. I will ask you again on Friday, so do not answer from the wiki."
+Write down three things as you go: how many separate systems you had to talk to, whether the new key can reach the older team's model, and whether that real call worked.
 
-She goes back to her desk. The view tab is already open on your screen, showing what the platform looks like before you touch it.
+I'll ask you again on Friday, so don't answer from the wiki. Answer from what you saw.

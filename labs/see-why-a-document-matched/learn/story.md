@@ -2,14 +2,14 @@
 title: The answer that sounded right
 minutes: 2
 ---
-It is Thursday, a little after eleven. Priya Nair from Support forwards you a ticket with one line of her own on top: "The assistant cited the wrong article again. It read fine. That is the problem."
+Thursday, just after eleven, Priya in Support forwarded us a ticket. A customer had asked how to pause their plan, and our assistant answered warmly, fluently and completely wrong, straight from the article about upgrading it. I laughed at the first line. Then I stopped laughing. Priya's note on top said it all: "It read fine. That's the problem."
 
-A customer had asked one thing and the assistant answered from a document about something next door. Nothing crashed and nothing looked odd in the logs. The retrieval step returned documents, the model wrote a fluent reply from them, and nobody could say how close those documents had really been.
+Nothing had crashed. Every part of our platform said it was fine. Tomasz looked at the dashboards and said every light was green, and that he hated it. And nobody on the team could tell you how well the articles behind that answer had actually matched the question.
 
-Maren Osei stops by your desk. "Before you touch Support's real index, learn to read what a retrieval service is telling you. Tomasz set up a small sandbox for exactly this. It is a houseplant-care FAQ, 24 short documents, stored in Postgres with pgvector. The query service in front of it sends every search to Phoenix as a trace, so you can see what came back and with what score."
+That's what worries me. A wrong answer that sounds right is the worst kind. The customer believes it, and Support spends the afternoon apologising for something that read perfectly. So Priya's question is fair: is it the model, or the search?
 
-Tomasz Wieland leans in from the next desk. "I kept the embedding function tiny and deterministic on purpose. It is not a real language model, so do not judge quality by it. It is there so the same text gives the same numbers every time. Sorry about that. It was the only way to make a lesson repeatable."
+Luckily, Tomasz had already built a little sandbox for exactly this. It's a houseplant care library, twenty-four short articles, behind a real search service just like ours. Same question in, same numbers out, every single time. Yes, it's plants. Ask it anything and it ranks every article against your question, with a number for how far away each one sits, and every search leaves a trace you can open and read.
 
-Maren gives you the shape of the task. Ask the service one question and find out which document it puts first. Count how many documents sit close enough to that question to be worth citing, using the 0.72 line Support has been using. Then ask it something the FAQ has nothing about, and find out whether anything comes back closer than 0.65, or whether the service just hands over the least bad option.
+Here's your part. Ask it about watering succulents and see which article comes first. Count how many sit inside the line Support uses for close enough to cite. Then ask it something the library knows nothing about, like the boiling point of tungsten, and see whether anything comes back really close.
 
-"Three answers, written down," she says. "Priya wants to know whether her problem is the model or the search. You will need the numbers to say."
+Write it all down, with the numbers to back it, and we'll give Priya a real answer instead of a shrug.
