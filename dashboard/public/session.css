@@ -244,7 +244,9 @@
   font: 600 12.5px/1 var(--sans); cursor: pointer;
 }
 .svc-btn:hover, .svc-btn[aria-expanded="true"] { background: var(--win-hover); color: var(--on-accent); }
-.svc-btn .svc-count { font-weight: 500; font-size: 12px; }
+.svc-btn[data-restartable="0"] { cursor: default; pointer-events: none; }
+.svc-list .svc-health { display: none; }
+.wtab .svc-dot { display: none; }
 .svc-btn[aria-expanded="true"] svg:last-child { transform: rotate(180deg); }
 .svc-pop {
   position: absolute; right: 0; top: calc(100% + 8px); z-index: 20;
@@ -256,7 +258,6 @@
 .svc-list li { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 12.5px; }
 .svc-list li + li { border-top: 1px solid var(--border); }
 .svc-list .svc-name { font-family: var(--mono); font-weight: 600; color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.svc-list .svc-health { color: var(--ink-muted); font-size: 12px; }
 .svc-list .svc-health::before { content: "●"; margin-right: 5px; }
 .svc-list .svc-health[data-health="healthy"] { color: var(--good); }
 .svc-list .svc-health[data-health="unhealthy"] { color: var(--bad); }

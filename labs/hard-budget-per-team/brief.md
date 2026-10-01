@@ -37,7 +37,7 @@ Whatever it takes to answer "has this team already committed to spending
 more than its budget allows" quickly and correctly is yours to build.
 
 After you change `gateway/hooks/budget_guard.py`, restart the `litellm`
-service from the Services panel for the change to take effect (this takes
+service from the status chip above the workspace for the change to take effect (this takes
 about 30 seconds).
 
 ## Checking your work

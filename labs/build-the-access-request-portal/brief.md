@@ -65,7 +65,7 @@ What gets granted and who may approve already work correctly. You're looking
 for the part of the flow that isn't safe to call twice.
 
 After you edit `portal/app.py`, restart the `portal` service from the
-Services panel (or `POST /sessions/{id}/services/portal/restart`) to pick
+status chip above the workspace (or `POST /sessions/{id}/services/portal/restart`) to pick
 up your change.
 
 ## Checking your work

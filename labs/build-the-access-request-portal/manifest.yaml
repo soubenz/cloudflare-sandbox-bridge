@@ -44,6 +44,7 @@ slug: build-the-access-request-portal
 version: 1.0.0
 title: "Build the page where teams request access"
 type: build
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 6

@@ -29,6 +29,7 @@ slug: keep-answering-when-a-provider-fails
 version: 1.0.0
 title: "Keep answering when a provider fails"
 type: build
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 1

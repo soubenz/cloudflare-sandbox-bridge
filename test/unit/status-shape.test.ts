@@ -96,6 +96,7 @@ describe('status() completeness (B-15)', () => {
       checks: [{ name: 'c1', weight: 3 }, { name: 'c2', weight: 1 }],
       services: [{ name: 'api', ui: true, port: 8000 }, { name: 'worker', ui: false }],
       hints_schedule: [5, 15],
+      learner_restart: false,
     });
     expect(status.checks_history).toHaveLength(1);
     expect(status.server_time).toBeGreaterThanOrEqual(before);

@@ -35,7 +35,7 @@ python3 -B reindex/reindex.py data/documents_v2.json
 Then run `python3 -B tools/watch_alias.py` in one terminal and the reindex
 in another, and watch for `<-- GAP` lines. For a clean starting point
 (once run, the shipped version leaves `live` broken for good), restart the
-`qdrant` service from the console's Services panel; it reseeds the
+`qdrant` service from the status chip above the workspace; it reseeds the
 original content on boot whenever `live` doesn't exist.
 
 Change `reindex/reindex.py` so that:

@@ -42,6 +42,7 @@ slug: control-what-can-leave-the-platform
 version: 1.0.0
 title: "Control what can leave the platform"
 type: build
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 7

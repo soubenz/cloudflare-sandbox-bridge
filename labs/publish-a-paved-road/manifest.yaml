@@ -81,6 +81,7 @@ slug: publish-a-paved-road
 version: 1.0.0
 title: "Publish a paved road for a new AI feature"
 type: build
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 6

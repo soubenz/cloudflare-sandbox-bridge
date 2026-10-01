@@ -45,7 +45,7 @@ starts.)
   you send.
 
 After you change `workspace/gateway/config.yaml`, restart `litellm` from
-the **Services panel** (left side) so it picks up your edit -- editing the
+the **status chip** above the workspace (it opens a restart list) so it picks up your edit -- editing the
 file alone doesn't restart the running process.
 
 ## See the problem yourself

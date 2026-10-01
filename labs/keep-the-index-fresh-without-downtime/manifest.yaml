@@ -68,6 +68,7 @@ slug: keep-the-index-fresh-without-downtime
 version: 1.0.0
 title: "Keep the index fresh without downtime"
 type: build
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 3

@@ -41,7 +41,7 @@ same way turning the gateway off would: technically true, useless in
 practice, and it fails this lab's own checks.
 
 After you change `gateway/hooks/pii_guard.py`, restart the `litellm`
-service from the Services panel for the change to take effect (it's
+service from the status chip above the workspace for the change to take effect (it's
 imported once at boot, and this takes about 30 seconds).
 
 ## Checking your work

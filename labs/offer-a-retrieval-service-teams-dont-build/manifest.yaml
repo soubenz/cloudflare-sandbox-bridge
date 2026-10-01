@@ -83,6 +83,7 @@ slug: offer-a-retrieval-service-teams-dont-build
 version: 1.0.0
 title: "Offer teams a retrieval service they do not have to build"
 type: build
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 3

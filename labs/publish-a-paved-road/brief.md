@@ -27,7 +27,7 @@ defaults for free, without rediscovering any of them itself.
 
 (Paths above are relative to `/workspace`, which is where your terminal
 starts. After editing `template/app.py`, restart the **template** service
-from the Services panel to pick up your change -- editing the file alone
+from the status chip above the workspace to pick up your change -- editing the file alone
 doesn't restart the running process.)
 
 ## What "fixed" looks like

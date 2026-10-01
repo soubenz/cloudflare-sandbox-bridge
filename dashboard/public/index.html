@@ -371,16 +371,15 @@
         <span class="pill pill-stream" id="streamPill" role="status" title="Live updates are interrupted; the console keeps checking on its own" hidden>reconnecting…</span>
         <span class="window-meta">
           <span class="window-idle mono" id="idleClock" hidden></span>
-          <!-- Every service the lab runs, including the ones with no tab, so a
-               learner who changed a service's config can restart it. -->
+          <!-- One word on whether the lab is up. Only a lab whose task has the learner restart something
+               (manifest `learner_restart`) turns it into a button that opens the restart list. -->
           <span class="services" id="servicesBlock" hidden>
             <button type="button" class="svc-btn" id="btnServices" aria-expanded="false" aria-controls="servicesPop">
               <span class="svc-dot" id="servicesDot" data-health="unknown" aria-hidden="true"></span>
-              <span>Services</span>
-              <span class="mono svc-count" id="servicesCount"></span>
-              <svg width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg>
+              <span id="servicesLabel">Starting…</span>
+              <svg id="servicesChevron" width="12" height="12" aria-hidden="true" focusable="false" hidden><use href="#i-chevron"/></svg>
             </button>
-            <div class="svc-pop" id="servicesPop" role="group" aria-label="Services" hidden>
+            <div class="svc-pop" id="servicesPop" role="group" aria-label="Restart" hidden>
               <ul class="svc-list" id="serviceList" aria-live="polite"></ul>
             </div>
           </span>

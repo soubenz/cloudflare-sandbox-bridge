@@ -81,6 +81,7 @@ slug: add-a-model-without-touching-app-code
 version: 1.0.0
 title: "Add a model to the catalogue without touching app code"
 type: build
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 1

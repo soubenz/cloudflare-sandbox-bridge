@@ -21,7 +21,7 @@ look at when.
 
 You can talk to Postgres directly too (`psql "$POSTGRES_URL"`) to see the
 corpus for yourself, and to your own `/search` endpoint with `curl` once
-you restart `platform` from the console's Services panel.
+you restart `platform` from the status chip above the workspace.
 
 ## Your task
 

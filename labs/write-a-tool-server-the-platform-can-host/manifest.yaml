@@ -110,6 +110,7 @@ slug: write-a-tool-server-the-platform-can-host
 version: 1.0.0
 title: "Write a tool server the platform can host"
 type: build
+learner_restart: true
 family: agent
 path: ai-platform
 module: 2

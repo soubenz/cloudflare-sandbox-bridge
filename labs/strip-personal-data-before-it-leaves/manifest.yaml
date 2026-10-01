@@ -56,6 +56,7 @@ slug: strip-personal-data-before-it-leaves
 version: 1.0.0
 title: "Strip personal data before it reaches a model or a log"
 type: build
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 7

@@ -148,6 +148,11 @@ export const labManifestSchema = z.object({
    * and suggestions. Use it for test fixtures and retired labs.
    */
   archived: z.boolean().default(false),
+  /**
+   * Whether the task has the learner restart a service (edit a config, restart, watch it change). Only such
+   * labs give the console's status chip a restart list; the others show one word on whether the lab is up.
+   */
+  learner_restart: z.boolean().default(false),
   /** Whether the free plan may start this lab. */
   tier: z.enum(['free', 'pro']).default('pro'),
   /** Honest time to finish, for the card; distinct from the session cap `timeout_minutes`. */

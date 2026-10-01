@@ -72,6 +72,7 @@ slug: tell-finance-who-spent-the-money
 version: 1.0.0
 title: "Tell finance who spent the money"
 type: build
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 4

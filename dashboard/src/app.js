@@ -3264,6 +3264,7 @@ function absorbStatus(status, { celebrate = false } = {}) {
   if (status?.manifest_summary) {
     state.summary = status.manifest_summary;
     relabelServiceTabs();
+    updateServicesSummary();
   }
   if (Array.isArray(status?.checks_history)) state.history = status.checks_history;
   if (status?.hints) {
@@ -4351,7 +4352,7 @@ function renderServiceList(services) {
     li.dataset.service = name;
     const label = document.createElement('span');
     label.className = 'svc-name';
-    label.textContent = name;
+    label.textContent = serviceLabel(name);
     const health = document.createElement('span');
     health.className = 'svc-health';
     const button = document.createElement('button');
@@ -4366,27 +4367,39 @@ function renderServiceList(services) {
   updateServicesSummary();
 }
 
-/** The Services button: how many are healthy, and one dot for the worst of them. */
+/**
+ * The status chip: one word on whether the lab is up, never which part is. It is a button only in a lab
+ * whose task has the learner restart something (manifest `learner_restart`), where it opens the restart list.
+ */
 function updateServicesSummary() {
   const rows = [...$('serviceList').children].map((li) => li.querySelector('.svc-health')?.dataset.health ?? 'unknown');
   const healthy = rows.filter((h) => h === 'healthy').length;
-  $('servicesCount').textContent = rows.length ? `${healthy}/${rows.length}` : '';
   const worst = rows.includes('unhealthy') ? 'unhealthy' : rows.includes('restarting') ? 'restarting' : rows.length && healthy === rows.length ? 'healthy' : 'unknown';
   $('servicesDot').dataset.health = worst;
-  $('btnServices').title = rows.length ? `${healthy} of ${rows.length} services healthy` : '';
+  $('servicesLabel').textContent = { healthy: 'Operational', unhealthy: 'Needs attention', restarting: 'Restarting…', unknown: 'Starting…' }[worst];
+  const restartable = Boolean(state.summary?.learner_restart);
+  const button = $('btnServices');
+  button.dataset.restartable = restartable ? '1' : '0';
+  button.setAttribute('aria-haspopup', restartable ? 'true' : 'false');
+  if (restartable) button.setAttribute('aria-controls', 'servicesPop');
+  else {
+    button.removeAttribute('aria-controls');
+    button.removeAttribute('aria-expanded');
+    setServicesOpen(false);
+  }
+  $('servicesChevron').hidden = !restartable;
 }
 
 /** The Services popover: every service the lab runs, with its health and a Restart. */
 function setServicesOpen(open) {
   $('servicesPop').hidden = !open;
-  $('btnServices').setAttribute('aria-expanded', String(open));
+  if ($('btnServices').dataset.restartable === '1') $('btnServices').setAttribute('aria-expanded', String(open));
 }
 
 function setServiceHealth(name, health) {
   const tab = [...$('serviceTabs').children].find((el) => el.dataset.service === name);
   if (tab) {
     tab.dataset.health = health;
-    tab.title = `${serviceAbout(name)} (${health})`;
     const dot = tab.querySelector('.svc-dot');
     if (dot) dot.dataset.health = health;
   }
@@ -4777,7 +4790,9 @@ $('btnGuideShow').addEventListener('click', () => {
 });
 
 // The Services popover: Escape closes it (and the keyboard returns to its button); so does a click elsewhere.
-$('btnServices').addEventListener('click', () => setServicesOpen($('servicesPop').hidden));
+$('btnServices').addEventListener('click', () => {
+  if ($('btnServices').dataset.restartable === '1') setServicesOpen($('servicesPop').hidden);
+});
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape' || $('servicesPop').hidden) return;
   setServicesOpen(false);

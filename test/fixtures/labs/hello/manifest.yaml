@@ -6,6 +6,7 @@ archived: true
 version: 1.0.0
 title: "Hello, sandbox"
 type: build
+learner_restart: true
 summary: "A five-minute smoke test: open a shell, write one file, run the grader. Start here to see how a lab works before one has stakes."
 difficulty: intro
 objectives:

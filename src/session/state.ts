@@ -147,6 +147,8 @@ export interface ManifestSummary {
   checks: Array<{ name: string; weight: number }>;
   services: Array<{ name: string; ui: boolean; port?: number; label?: string; about?: string }>;
   hints_schedule: number[];
+  /** The lab's task has the learner restart a service, so the console offers the restart list. */
+  learner_restart: boolean;
 }
 
 /** What `GET /sessions/:id` (the Session DO's `status()`) returns. Documented in docs/api.md. */
@@ -184,6 +186,7 @@ export function summarizeManifest(manifest: LabManifest): ManifestSummary {
       ...(s.about ? { about: s.about } : {}),
     })),
     hints_schedule: manifest.hints.map((h) => h.after_minutes),
+    learner_restart: manifest.learner_restart,
   };
 }
 

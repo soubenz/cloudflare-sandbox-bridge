@@ -52,6 +52,7 @@ slug: keep-eu-data-on-eu-routes
 version: 1.0.0
 title: "Keep EU data on EU routes"
 type: build
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 7

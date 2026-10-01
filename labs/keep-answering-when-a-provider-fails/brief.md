@@ -10,7 +10,7 @@ request just fails.
 
 - `gateway/config.yaml` -- the `support` alias's config, exactly as it's
   configured this morning. After you change it, restart `litellm` from
-  the **Services panel** (left side) so it picks up your edit -- editing
+  the **status chip** above the workspace (it opens a restart list) so it picks up your edit -- editing
   the file alone doesn't restart the running process.
 - `outage.py` -- a way to see the failure yourself, on demand:
   `python3 outage.py on` starts an outage of the primary deployment,

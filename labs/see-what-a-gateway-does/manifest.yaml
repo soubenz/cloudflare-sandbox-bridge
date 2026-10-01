@@ -31,6 +31,7 @@ slug: see-what-a-gateway-does
 version: 1.0.0
 title: "See what a gateway actually does"
 type: explore
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 1

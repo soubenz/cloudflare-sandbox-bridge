@@ -102,6 +102,8 @@ const LABS = [
 // ------------------------------------------------------------- a fake console
 
 interface Stub {
+  /** Whether the lab's manifest says the learner restarts a service (the status chip then opens a restart list). */
+  restartable: { value: boolean };
   /** Every terminal socket the page has opened, with the frames it sent; the server can close one. */
   terminals: Array<{ close: () => void; frames: string[]; opened: number }>;
   /** What the next status says: `expires_at` in ms from now, and the lab's state and end reason. */
@@ -145,6 +147,7 @@ async function stub(page: Page): Promise<Stub> {
       while (waiting.length) waiting.shift()!();
     },
     terminals: [],
+    restartable: { value: true },
     resumes: 0,
     touches: 0,
     starts: [],
@@ -200,7 +203,7 @@ async function stub(page: Page): Promise<Stub> {
         snapshots: [],
         cost: { usd: 0.03 },
         hints: { total: 3, schedule: [0, 12, 30], delivered: [{ index: 0, after_minutes: 0, text: 'Read the provider log first.' }] },
-        manifest_summary: { title: 'A lab', checks: [{ name: 'support answered by a' }, { name: 'token count matches' }] },
+        manifest_summary: { title: 'A lab', learner_restart: s.restartable.value, checks: [{ name: 'support answered by a' }, { name: 'token count matches' }] },
         checks: lastRun ?? undefined,
         checks_history: lastRun ? [lastRun] : [],
         solution: slug === SOLVED ? s.solution.value : undefined,
@@ -836,20 +839,37 @@ test.describe('the workspace window', () => {
     await expect(page.locator('#serviceFrame')).toBeHidden();
   });
 
-  test('the Services popover lists every service with its health and a Restart, and closes with Escape', async ({ page }) => {
+  test('a lab with nothing to restart shows one word on whether it is up, and no list of parts', async ({ page }) => {
+    const s = await stub(page);
+    s.restartable.value = false;
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, {});
+    await startLab(page, BUILD);
+    await expect(page.locator('#servicesLabel')).toHaveText('Operational');
+    await expect(page.locator('#btnServices')).toHaveAttribute('data-restartable', '0');
+    await expect(page.locator('#servicesChevron')).toBeHidden();
+    await page.locator('#btnServices').click({ force: true });
+    await expect(page.locator('#servicesPop')).toBeHidden();
+    // No component is named or shown healthy anywhere on the bar or the tabs.
+    await expect(page.locator('#serviceTabs .svc-dot').first()).toBeHidden();
+    const visible = await page.evaluate(() => (document.getElementById('workspace') as HTMLElement).innerText);
+    expect(visible).not.toMatch(/healthy/i);
+  });
+
+  test('a lab that has the learner restart something opens a restart list from the status chip, and closes with Escape', async ({ page }) => {
     const s = await session(page, BUILD);
     const button = page.locator('#btnServices');
     await expect(button).toBeVisible();
     await expect(button).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('#servicesPop')).toBeHidden();
-    await expect(page.locator('#servicesCount')).toHaveText('1/1');
+    await expect(page.locator('#servicesLabel')).toHaveText('Operational');
     await expect(page.locator('#servicesDot')).toHaveAttribute('data-health', 'healthy');
 
     await button.click();
     await expect(button).toHaveAttribute('aria-expanded', 'true');
     const row = page.locator('#serviceList li[data-service="echo"]');
     await expect(row).toBeVisible();
-    await expect(row.locator('.svc-health')).toHaveText('healthy');
+    await expect(row.locator('.svc-health')).toBeHidden();
     await row.getByRole('button', { name: 'Restart' }).click();
     await expect.poll(() => s.restarts.length).toBe(1);
     await expect(row.getByRole('button')).toHaveText('Restart');

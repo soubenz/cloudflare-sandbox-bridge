@@ -37,6 +37,7 @@ slug: worse-after-the-prompt-change
 version: 1.0.0
 title: "A worse prompt shipped and nothing caught it"
 type: build
+learner_restart: true
 family: agent
 path: evals-releases
 module: 1

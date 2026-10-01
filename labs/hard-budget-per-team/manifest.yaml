@@ -64,6 +64,7 @@ slug: hard-budget-per-team
 version: 1.0.0
 title: "Put a hard budget on every team"
 type: build
+learner_restart: true
 family: gateway
 path: ai-platform
 module: 1

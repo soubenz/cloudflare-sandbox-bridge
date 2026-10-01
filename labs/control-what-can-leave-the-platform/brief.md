@@ -23,7 +23,7 @@ starts.)
   actually gets back from the egress proxy for each.
 - `egress/proxy.py` -- the egress proxy the agent's calls all go through.
   Calls the agent makes can currently reach destinations they should not.
-  After you change it, restart `egress-proxy` from the **Services panel** (left side) to pick up your
+  After you change it, restart `egress-proxy` from the **status chip** above the workspace (it opens a restart list) to pick up your
   edit -- editing the file alone doesn't restart the running process.
 - `egress/allowlist.txt` -- the list of destinations the proxy is allowed
   to forward a call to. It already lists the one tool the agent is
