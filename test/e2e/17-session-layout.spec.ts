@@ -235,7 +235,7 @@ async function stub(page: Page): Promise<Stub> {
     }
     const file = p.startsWith(`${base}/files/`) ? decodeURIComponent(p.slice(`${base}/files/`.length)) : null;
     if (file !== null && method === 'GET') {
-      if (file === 'brief.md') return json(route, { content: '# The brief\n\nSend a few calls and compare what the gateway says with what the provider says.\n\n## What to do\n\n- Send `support` a call.\n- Open the view tab.\n' });
+      if (file === 'brief.md') return json(route, { content: '# The brief\n\nSend a few calls and compare what the gateway says with what the provider says.\n\n## What to do\n\n- Send `support` a call.\n- Open the view tab.\n\n## Start here\n\n```\npython3 -B send_calls.py support "hello gateway"\npython3 -B send_calls.py fast "hello gateway"\n```\n' });
       const text = s.files.get(file);
       return text === undefined ? json(route, { error: { code: 'not_found', message: `${file} does not exist` } }, 404) : json(route, { content: text });
     }
@@ -1091,6 +1091,36 @@ test.describe('banners and the activity strip', () => {
 // =========================================================================
 // the keyboard and assistive technology
 // =========================================================================
+
+test.describe('code blocks', () => {
+  test('a code block in the brief has a Copy button that puts exactly the code on the clipboard', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await session(page, BUILD);
+    const block = page.locator('#briefBody pre').first();
+    await expect(block).toBeVisible();
+    await block.hover();
+    const copy = block.getByRole('button', { name: 'Copy this code' });
+    await expect(copy).toBeVisible();
+    await copy.click();
+    await expect(block.getByRole('button', { name: 'Code copied' })).toBeVisible();
+    await expect(block.locator('.code-copy-label')).toHaveText('Copied');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      'python3 -B send_calls.py support "hello gateway"\npython3 -B send_calls.py fast "hello gateway"'
+    );
+    // The label returns, and the button is never part of what a learner selects as code.
+    await expect(block.locator('.code-copy-label')).toHaveText('Copy', { timeout: 5_000 });
+  });
+
+  test('the button can be reached and used from the keyboard', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await session(page, BUILD);
+    const copy = page.locator('#briefBody pre').first().getByRole('button', { name: 'Copy this code' });
+    await copy.focus();
+    await expect(copy).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#briefBody pre .code-copy-label').first()).toHaveText('Copied');
+  });
+});
 
 test.describe('keyboard and accessibility', () => {
   test('the guide is a tablist with arrow-key roving, Home and End, and one tab stop', async ({ page }) => {

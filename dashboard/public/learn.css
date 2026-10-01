@@ -399,3 +399,25 @@
   .qfield .qfield-input { font-size: 16px; }
   .level-chip { margin-left: 0; }
 }
+
+/* ---------- code blocks: a Copy button in the corner ---------- */
+pre.has-copy { position: relative; }
+.code-copy {
+  position: absolute; top: 8px; right: 8px; z-index: 1;
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 28px; padding: 0 10px;
+  font: 600 12px/1 inherit; letter-spacing: 0;
+  color: var(--win-text, #e8ebf7); background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--navy-line, rgba(255, 255, 255, 0.18)); border-radius: 999px;
+  cursor: pointer; opacity: 0; transition: opacity 120ms ease, background 120ms ease;
+}
+pre.has-copy:hover .code-copy, .code-copy:focus-visible, .code-copy[data-state] { opacity: 1; }
+.code-copy:hover { background: rgba(255, 255, 255, 0.16); }
+.code-copy:focus-visible { outline: 2px solid var(--accent-on-dark, #9aabff); outline-offset: 2px; }
+.code-copy[data-state="copied"] { color: #5cc48f; border-color: currentColor; }
+.code-copy[data-state="failed"] { color: #ffb86b; border-color: currentColor; }
+/* A touch screen has no hover: keep the button visible there. */
+@media (hover: none) { .code-copy { opacity: 1; } }
+/* Leave room so the button never covers the first line of a short block. */
+pre.has-copy code { padding-right: 84px; }
+@media (prefers-reduced-motion: reduce) { .code-copy { transition: none; } }

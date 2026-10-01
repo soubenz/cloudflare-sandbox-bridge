@@ -14,6 +14,7 @@ import {
 } from './launcher-model.js';
 import { isPhoneLike, readDevice } from './device.js';
 import { createRouter } from './router.js';
+import { installCodeCopy } from './code-copy.js';
 import { GUIDE_TAB_NAMES, buildRoute, routeTitle } from './routes.js';
 import { icon, spriteIcon, uiIcon } from './icons.js';
 import { createMasteryStore, normalizeLearn, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
@@ -4903,6 +4904,7 @@ $('saveShortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? 'âŒ
 $('apiLabel').textContent = apiBase();
 router.onRoute((route) => applyRoute(route));
 router.start();
+installCodeCopy();
 boot();
 
 /**
