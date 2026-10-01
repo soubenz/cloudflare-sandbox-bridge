@@ -34,9 +34,13 @@ import { uiIcon } from './icons.js';
  *   post    (body) => Promise, analytics; errors swallowed
  *   onStart ()  => Promise, starts the session; resolves when that attempt is over
  *   onBack  ()  => void, back to the launcher
- * Returns { destroy }.
+ *   initial 'story' | 'questions' | 'lessons', the step to open on (a deep link); a step this lab does not
+ *           have opens the first one it does. Omitted, the first step.
+ *   onStep  (name) => void, told every time a step comes on screen ('story', 'questions' or 'lessons'; the
+ *           questions once, however many there are), so the address bar can follow
+ * Returns { destroy, goto(name), stages }: goto shows a step the way `initial` does (the browser's Back and Forward).
  */
-export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBack }) {
+export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBack, initial, onStep }) {
   const learn = entry.learn;
   const hasStory = Boolean(learn.story || learn.comic);
   const lessonsAhead = hasLessons(learn);
@@ -142,6 +146,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     );
     announce('story', s.title);
     focusHeading(host);
+    onStep?.('story');
   }
 
   // --- diagnostic -----------------------------------------------------------
@@ -173,7 +178,10 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
         screen.root,
         actionBar([skipAll(), back()], { label: 'Screen options' })
       );
-      if (i === 0) announce('questions', 'A few quick questions');
+      if (i === 0) {
+        announce('questions', 'A few quick questions');
+        onStep?.('questions');
+      }
       focusHeading(host);
     };
     step(0);
@@ -235,14 +243,28 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     );
     announce('lessons', 'Lessons');
     focusHeading(host);
+    onStep?.('lessons');
   }
 
   // --- go -------------------------------------------------------------------
 
-  if (hasStory) story();
-  else questions();
+  /** Shows a step by name; one this lab does not have is replaced by the first it does. */
+  function enter(name) {
+    if (gone) return;
+    if (name === 'story' && hasStory) return story();
+    if (name === 'questions' && stages.includes('questions')) return questions();
+    if (name === 'lessons' && stages.includes('lessons')) return lessonsStep();
+    // The questions are only asked when something is due: without them the lessons are next.
+    if (name === 'questions' && stages.includes('lessons')) return lessonsStep();
+    if (hasStory) return story();
+    return questions();
+  }
+
+  enter(initial);
 
   return {
+    stages,
+    goto: enter,
     destroy() {
       gone = true;
       cleanup();

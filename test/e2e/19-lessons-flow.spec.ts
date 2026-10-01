@@ -1,9 +1,9 @@
-import { createServer, type Server } from 'node:http';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, extname, join, normalize, resolve } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import { parse as parseYaml } from 'yaml';
+import { serveConsole } from './console-server';
 
 /**
  * The flow before a lab starts, and what the session screen no longer has.
@@ -231,33 +231,8 @@ async function stub(page: Page, { lab: rejoined = EXPLORE }: { lab?: string } = 
 
 // ----------------------------------------------------------------- the server
 
-const MIME: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json',
-  '.map': 'application/json',
-  '.svg': 'image/svg+xml',
-  '.woff2': 'font/woff2',
-};
-
-/** The CSP the deployed console sends (public/_headers), so a violation is seen here. */
-const CSP = /Content-Security-Policy:\s*(.+)/.exec(readFileSync(join(PUBLIC, '_headers'), 'utf8'))?.[1]?.trim();
-
-function serve(): Promise<{ url: string; server: Server }> {
-  const server = createServer((req, res) => {
-    const pathname = decodeURIComponent((req.url ?? '/').split('?')[0]!);
-    const rel = normalize(pathname === '/' ? '/index.html' : pathname).replace(/^(\.\.[/\\])+/, '');
-    const file = join(PUBLIC, rel);
-    if (!file.startsWith(PUBLIC) || !existsSync(file) || !statSync(file).isFile()) {
-      res.writeHead(404, { 'content-type': 'text/plain' });
-      return res.end('not found');
-    }
-    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-store', ...(CSP ? { 'content-security-policy': CSP } : {}) });
-    res.end(readFileSync(file));
-  });
-  return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok({ url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, server })));
-}
+// The local stand-in for the Worker (static files, the CSP, and the SPA fallback for deep links) is shared: see console-server.ts.
+const serve = serveConsole;
 
 const test = base.extend<object, { staticServer: string }>({
   staticServer: [

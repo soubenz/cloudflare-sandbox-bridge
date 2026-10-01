@@ -6,18 +6,21 @@
 <title>Opalix lab console</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▣</text></svg>">
 <!-- Applies a saved theme before first paint; a module script would flash the other one. -->
-<script src="./theme-init.js"></script>
+<script src="/theme-init.js"></script>
 <!-- The two faces the first paint uses; styles.css declares all three (self-hosted, see build.mjs). -->
-<link rel="preload" href="./dist/fonts/funnel-display-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="./dist/fonts/funnel-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="./dist/xterm.css">
-<link rel="stylesheet" href="./styles.css">
-<link rel="stylesheet" href="./diagram.css">
-<link rel="stylesheet" href="./learn.css">
-<link rel="stylesheet" href="./session.css">
-<link rel="stylesheet" href="./comic.css">
+<link rel="preload" href="/dist/fonts/funnel-display-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/dist/fonts/funnel-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/dist/xterm.css">
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/diagram.css">
+<link rel="stylesheet" href="/learn.css">
+<link rel="stylesheet" href="/session.css">
+<link rel="stylesheet" href="/comic.css">
 </head>
 <body>
+
+<!-- Said to screen readers when the URL moves the learner to another screen (the screen's own heading takes focus too). -->
+<p class="sr-only" id="routeLive" role="status" aria-live="polite"></p>
 
 <!-- The session screen's glyphs, drawn once; tabs, rail and buttons point at them with <use>. -->
 <svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
@@ -68,13 +71,13 @@
 <header class="site-header">
   <!-- The landing page's floating pill. `bar` stays as the hook the session bar is styled and tested by. -->
   <div class="bar nav" id="nav">
-    <a class="brand" href="#" id="brandLink" aria-label="Opalix labs home">
+    <a class="brand" href="/" id="brandLink" aria-label="Opalix labs home">
       <svg class="brand-mark" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="6"/><circle cx="12" cy="12" r="4.5"/></svg>
       <span>opalix</span><span class="beta-tag">LABS</span>
     </a>
 
     <nav class="nav-links" id="navLinks" aria-label="Console">
-      <a class="nav-launcher" href="#" id="navLabs" aria-current="page">Labs</a>
+      <a class="nav-launcher" href="/" id="navLabs" aria-current="page">Labs</a>
       <a class="nav-launcher" href="#paths" id="navPaths">Paths</a>
       <button id="btnHelp" type="button" aria-haspopup="dialog" title="How this console works">Help</button>
     </nav>
@@ -196,6 +199,19 @@
     <div class="notice-foot">
       <button class="btn btn-quiet" id="dnBrowse" type="button">Browse the labs anyway</button>
       <p class="mono">You can read the paths and lessons here. Starting a lab needs a desktop.</p>
+    </div>
+  </div>
+</section>
+
+<!-- An address this console has no screen for (or a lab it does not have). The page itself is served with 200 by the Worker. -->
+<section class="notice-screen" id="notFound" aria-labelledby="nfTitle" hidden>
+  <div class="notice-wrap">
+    <div class="step-card notice-card">
+      <h1 id="nfTitle" tabindex="-1">Page not <span class="mark">found.</span></h1>
+      <p class="notice-lede" id="nfDetail">There is nothing at this address.</p>
+      <div class="notice-actions">
+        <a class="btn btn-accent" id="nfBack" href="/">Back to the labs</a>
+      </div>
     </div>
   </div>
 </section>
@@ -580,6 +596,6 @@
   <button class="btn btn-tiny btn-ghost btn-icon" id="btnToastClose" aria-label="Dismiss">×</button>
 </div>
 
-<script type="module" src="./dist/app.js"></script>
+<script type="module" src="/dist/app.js"></script>
 </body>
 </html>

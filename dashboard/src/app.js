@@ -12,6 +12,8 @@ import {
   summaryLine,
 } from './launcher-model.js';
 import { isPhoneLike, readDevice } from './device.js';
+import { createRouter } from './router.js';
+import { GUIDE_TAB_NAMES, buildRoute, routeTitle } from './routes.js';
 import { icon, spriteIcon, uiIcon } from './icons.js';
 import { createMasteryStore, normalizeLearn, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
 import { runOnboarding } from './onboarding.js';
@@ -180,6 +182,355 @@ function lsSet(key, value) {
 /** What this browser knows about the learner's learning (learn-model.js); never sent anywhere. */
 const mastery = createMasteryStore();
 
+// ------------------------------------------------------------------ routes
+
+/*
+ * Every screen has an address (routes.js has the table, docs/console-routes.md the story). The URL
+ * decides what shows: on load, on Back and Forward and on a link click `applyRoute` shows the route's
+ * screen; the screens a learner moves between themselves (a step, a tab, Start) keep the address in
+ * step through `setRoute`, which never re-renders. An address names a lab and a place in it, never a
+ * session: no id and no token is ever put in one.
+ */
+const router = createRouter();
+/** Above zero while a route is being shown: a step or tab that comes on screen then only corrects the address. */
+let applying = 0;
+/** Bumped per applyRoute, so a slow one (a fetch) cannot show over a newer one. */
+let routeToken = 0;
+/** The first catalogue load: a route that names a lab waits for it. */
+let labsReady = Promise.resolve();
+/** The tab a session URL asked for, applied once the lab is up and its guide is built. */
+let pendingTab = null;
+/**
+ * Set (per browser tab) when the learner leaves a running lab for the launcher, so a refresh of the
+ * launcher does not walk them straight back in. A fresh tab has none, and "/" then rejoins as it always did.
+ */
+const LEFT_SESSION = 'opalix.leftSession';
+
+function leftSession(value) {
+  try {
+    if (value === undefined) return sessionStorage.getItem(LEFT_SESSION) === '1';
+    if (value) sessionStorage.setItem(LEFT_SESSION, '1');
+    else sessionStorage.removeItem(LEFT_SESSION);
+  } catch {
+    /* blocked storage: "/" rejoins, as before */
+  }
+  return false;
+}
+
+/** Moves the address to a route without showing anything (the screen is already up). Replaces while a route is being shown. */
+function setRoute(name, params = {}, { replace = false } = {}) {
+  try {
+    router.navigate(name, params, { replace: replace || applying > 0, silent: true });
+  } catch {
+    /* an address this console cannot spell: the bar stays as it is */
+  }
+  updateTitle();
+}
+
+/** The browser tab's title for the screen the address names. */
+function updateTitle() {
+  if (!$('notFound').hidden) {
+    document.title = routeTitle({ name: 'not-found' });
+    return;
+  }
+  const route = router.current();
+  document.title = routeTitle(route, route.slug ? (labsBySlug.get(route.slug)?.title ?? null) : null);
+}
+
+/** Said to screen readers when the URL, not a click on the page, changed the screen. */
+function announceRoute(text) {
+  const live = $('routeLive');
+  live.textContent = '';
+  // Set on the next turn so the same words said twice are still said.
+  setTimeout(() => (live.textContent = text), 50);
+}
+
+/** A quiet screen while a route's data loads, instead of the launcher flashing past. */
+function showTransient(text) {
+  showLearnScreen();
+  const note = node('p', 'learn-lede', text);
+  note.setAttribute('role', 'status');
+  $('learnHost').replaceChildren(note);
+}
+
+/** After a refused navigation (unsaved edits kept), the address goes back to the session. */
+function restoreSessionUrl() {
+  if (state.session) setRoute('session', { slug: state.session.lab });
+}
+
+/**
+ * Takes down whatever screen is up so a route's own can show. A running lab is left running (its
+ * record stays, so the launcher offers Rejoin). Returns false when the learner chose to stay
+ * because of unsaved edits.
+ */
+function clearScreens() {
+  if (state.session) {
+    if (state.dirty && state.openFile && !confirm(`Leave the lab? Your unsaved changes to ${state.openFile} will be lost. The lab keeps running.`)) return false;
+    leaveSessionScreen(false);
+  }
+  $('notFound').hidden = true;
+  hideLearnScreen();
+  closeNotice();
+  return true;
+}
+
+/** Shows the screen a route names. */
+async function applyRoute(route, { initial = false } = {}) {
+  const mine = ++routeToken;
+  const stale = () => mine !== routeToken;
+  await labsReady;
+  if (stale()) return;
+  try {
+    switch (route.name) {
+      case 'launcher':
+      case 'path':
+        showLauncherRoute(route, initial);
+        break;
+      case 'onboarding':
+        await openOnboardingRoute(stale, initial);
+        break;
+      case 'lab':
+      case 'lab-step':
+        await openLabRoute(route, stale, initial);
+        break;
+      case 'session':
+        await openSessionRoute(route, stale);
+        break;
+      default:
+        showNotFound('page');
+    }
+  } catch (err) {
+    console.error('Could not show this address', err);
+  }
+  if (!stale()) updateTitle();
+}
+
+function showLauncherRoute(route, initial) {
+  if (!clearScreens()) return restoreSessionUrl();
+  $('launcher').hidden = false;
+  syncQuizButtons();
+  if (route.name === 'path' && labsBySlug.size) {
+    if (!scrollToPathRoute(route)) showNotFound('path');
+    return;
+  }
+  if (initial) return;
+  renderResumeCard();
+  $('heroTitle').focus({ preventScroll: true });
+  announceRoute('Labs');
+}
+
+/** Scrolls the launcher to a path (or one of its modules); false when the catalogue has no such thing. */
+function scrollToPathRoute(route) {
+  const id = route.path === 'other' ? 'path-other' : `path-${safeId(route.path)}`;
+  const section = document.getElementById(id);
+  if (!section || !section.classList.contains('lab-group')) return false;
+  // A filter the learner saved earlier may be hiding exactly what the link is about.
+  if (section.hidden) clearFilters();
+  if (route.module === undefined) {
+    goToPath(id);
+    return true;
+  }
+  const card = document.getElementById(`${id}-module-${route.module}`);
+  if (!card) return false;
+  openedModules.add(`${section.dataset.path}#${route.module}`);
+  delete card.dataset.collapsed;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  card.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  card.querySelector('.module-title')?.focus({ preventScroll: true });
+  return true;
+}
+
+function showNotFound(kind) {
+  clearScreens();
+  $('launcher').hidden = true;
+  $('nfDetail').textContent =
+    kind === 'lab' ? 'This console has no lab at this address.' : kind === 'path' ? 'This console has no learning path at this address.' : 'There is nothing at this address.';
+  $('notFound').hidden = false;
+  $('notFound').scrollTop = 0;
+  window.scrollTo(0, 0);
+  syncQuizButtons();
+  updateTitle();
+  $('nfTitle').focus();
+  announceRoute('Page not found');
+}
+
+async function openOnboardingRoute(stale, initial) {
+  await ensureOnboardingOffer();
+  if (stale()) return;
+  if (!onboardingOffer) {
+    // No quiz is published: the address has nothing to show, so it becomes the launcher's.
+    setRoute('launcher', {}, { replace: true });
+    return showLauncherRoute({ name: 'launcher' }, initial);
+  }
+  if (!clearScreens()) return restoreSessionUrl();
+  showQuiz();
+}
+
+async function openLabRoute(route, stale) {
+  const lab = labsBySlug.get(route.slug);
+  if (!lab) {
+    // No catalogue at all (it failed to load) is the launcher's error to show, not a missing lab.
+    return labsBySlug.size ? showNotFound('lab') : showLauncherRoute({ name: 'launcher' }, true);
+  }
+  // Already reading this lab's steps: Back and Forward only move between them.
+  if (learnFlow?.goto && learnFlowLab === lab.slug && !$('learnScreen').hidden) {
+    applying++;
+    try {
+      learnFlow.goto(route.step);
+    } finally {
+      applying--;
+    }
+    return;
+  }
+  if (!clearScreens()) return restoreSessionUrl();
+  showTransient('Opening the lab…');
+  const entry = lab.has_learn ? await fetchLearn(lab.slug) : null;
+  if (stale()) return;
+  const hasScreen = entry && (entry.learn.story || entry.learn.concepts.length > 0);
+  if (!hasScreen) return showLabLanding(lab, route);
+  openLearnFlow(lab, entry, route.step, { fromRoute: true });
+}
+
+/**
+ * A lab with nothing to read before it starts has no steps to show: its address lands on the
+ * launcher at its card (Start is one press away) rather than starting a container for a link.
+ */
+function showLabLanding(lab, route) {
+  hideLearnScreen();
+  $('launcher').hidden = false;
+  syncQuizButtons();
+  if (route.name !== 'lab') setRoute('lab', { slug: lab.slug }, { replace: true });
+  const row = [...$('labList').querySelectorAll('.lab')].find((el) => el.dataset.slug === lab.slug);
+  if (row?.hidden) clearFilters();
+  const module = row?.closest('.module');
+  if (module?.dataset.collapsed) delete module.dataset.collapsed;
+  row?.scrollIntoView({ block: 'center' });
+  row?.querySelector('.lab-start')?.focus({ preventScroll: true });
+  updateTitle();
+  announceRoute(lab.title || lab.slug);
+}
+
+/** The lab's address: starts it, or rejoins it when it is running. */
+async function openSessionRoute(route, stale) {
+  const { slug } = route;
+  if (labsBySlug.size && !labsBySlug.has(slug)) return showNotFound('lab');
+  if (route.invalidTab) {
+    // /session/whatever: the session itself, not a dead end.
+    setRoute('session', { slug }, { replace: true });
+    route = { name: 'session', slug };
+  }
+  if (state.session && state.session.lab === slug) {
+    // Back and Forward only moved between this lab's tabs.
+    applySessionTab(route);
+    return;
+  }
+  if (!clearScreens()) return restoreSessionUrl();
+  // A phone cannot run a lab: the notice says so, with this lab's own link.
+  if (guardDesktop(slug)) return;
+  showTransient('Opening your lab…');
+  const lab = labsBySlug.get(slug) ?? { slug, title: slug };
+
+  const saved = rememberedSession();
+  if (saved?.id && saved?.token) {
+    let status = null;
+    try {
+      status = await api.status(saved.id, saved.token, { recover: false });
+    } catch {
+      /* gone: the record is dropped below */
+    }
+    if (stale()) return;
+    const live = status?.meta?.state;
+    if (live === 'running' || live === 'starting') return rejoinRemembered(saved, status, route);
+    forgetSession();
+    if (live === 'ended') {
+      // A refresh at the end of a session must not buy a new container: the lab is one press away.
+      toast('That lab has ended. Start it again when you are ready.');
+      return showLabLanding(lab, route);
+    }
+  }
+
+  const row = [...$('labList').querySelectorAll('.lab')].find((el) => el.dataset.slug === slug);
+  if (row?.classList.contains('lab-locked')) {
+    toast(row.querySelector('.lab-start')?.title || 'This lab is locked.');
+    return showLabLanding(lab, route);
+  }
+
+  pendingTab = route.tab ? route : null;
+  if (await startSession(slug)) return;
+  // It could not start (the reason is on screen as a toast): the launcher, where Start can be tried again.
+  pendingTab = null;
+  hideLearnScreen();
+  $('launcher').hidden = false;
+  syncQuizButtons();
+  setRoute('launcher', {}, { replace: true });
+}
+
+/** Takes the lab this browser remembers (the API says it is up) as the session. */
+function rejoinRemembered(saved, status, route) {
+  const actual = status.meta.lab_slug ?? saved.lab;
+  const same = actual === route.slug;
+  state.session = saved;
+  state.lab = labsBySlug.get(actual) ?? null;
+  setRoute('session', same ? { slug: actual, tab: route.tab, service: route.service } : { slug: actual }, { replace: true });
+  pendingTab = same && route.tab ? route : null;
+  enterSession();
+  if (!same) toast('You already had a lab running, so you are back in it. End it to start another.');
+}
+
+/** A session URL's tab, now (the guide is built) or once it is. */
+function applySessionTab(route) {
+  if (!route.tab) return;
+  if (!guide.ready) {
+    pendingTab = route;
+    return;
+  }
+  showRouteTab(route);
+}
+
+function applyPendingTab() {
+  const route = pendingTab;
+  pendingTab = null;
+  if (route && state.session?.lab === route.slug) showRouteTab(route);
+}
+
+/** Shows the tab of a session URL; one this lab does not have makes the URL the session's own. */
+function showRouteTab(route) {
+  const { tab } = route;
+  let shown = false;
+  if (GUIDE_TAB_NAMES.includes(tab)) {
+    if (guide.tabs.includes(tab)) {
+      showGuideTab(tab, { reveal: true });
+      shown = true;
+    }
+  } else if (tab === 'terminal' || tab === 'editor') {
+    state.landed = true;
+    showView(tab, undefined, { focus: false });
+    shown = true;
+  } else if (tab === 'service') {
+    const el = [...$('serviceTabs').querySelectorAll('.tab')].find((t) => t.dataset.service === route.service);
+    if (el) {
+      state.landed = true;
+      openService(route.service, el);
+      shown = true;
+    }
+  }
+  if (!shown) setRoute('session', { slug: route.slug }, { replace: true });
+}
+
+/** A tab the learner chose: the address follows, in place (Back does not step through every tab). */
+function syncTabUrl(tab, service) {
+  const slug = state.session?.lab;
+  if (!slug || router.current().name !== 'session') return;
+  setRoute('session', { slug, tab, service }, { replace: true });
+}
+
+/** The session's address, for a session that came on screen some other way (Start, a rejoin from the launcher). */
+function ensureSessionUrl(slug) {
+  const route = router.current();
+  if (route.name === 'session' && route.slug === slug) return;
+  setRoute('session', { slug });
+}
+
 // ---------------------------------------------------------------- launcher
 
 /** The catalogue, kept so a running session can show its lab's context. */
@@ -229,6 +580,7 @@ async function loadLabs() {
     // Every lab is known before any card is drawn: a card names its
     // prerequisite by title, and that lab may sit in a later group.
     for (const lab of labs) labsBySlug.set(lab.slug, lab);
+    updateTitle();
     renderLauncher(buildLauncherModel(labs, pathMeta, { passed: passedSlugs(labs) }));
     renderFilters(labs);
     applyFilters();
@@ -637,6 +989,8 @@ function renderPathNav(model) {
     link.addEventListener('click', (event) => {
       event.preventDefault();
       goToPath(id);
+      // The address names the path in view (in place: the pills are not steps).
+      setRoute('path', { path: path.other ? 'other' : path.slug }, { replace: true });
     });
     li.append(link);
     items.append(li);
@@ -961,7 +1315,7 @@ async function renderResumeCard() {
   startCountdown(status, (text) => (left.textContent = text));
   rejoin.addEventListener('click', () => {
     // A phone cannot run a lab: say so instead of starting (or rejoining) one.
-    if (guardDesktop()) return;
+    if (guardDesktop(slug)) return;
     startSession(slug, host);
   });
   discard.addEventListener('click', () => discardRemembered(saved, host));
@@ -1006,17 +1360,32 @@ async function discardRemembered(saved, host) {
  * to a desktop size brings the launcher back.
  */
 
-/** Shows the notice and returns true when this screen is too small to start a lab. */
-function guardDesktop() {
+/**
+ * Shows the notice and returns true when this screen is too small to start a lab. `slug` is the lab
+ * that was about to start: the notice's link is that lab's own address (the console's, with none).
+ */
+function guardDesktop(slug) {
   if (!isPhoneLike(readDevice())) return false;
-  showDesktopNotice();
+  showDesktopNotice(slug);
   return true;
 }
 
-async function showDesktopNotice() {
+/** The link the notice offers: the lab's own address when a lab is open, else the console's. */
+let noticeSlug = null;
+function noticeUrl() {
+  try {
+    return `${location.origin}${noticeSlug ? buildRoute('lab', { slug: noticeSlug }) : '/'}`;
+  } catch {
+    return `${location.origin}/`;
+  }
+}
+
+async function showDesktopNotice(slug) {
   hideLearnScreen();
+  $('notFound').hidden = true;
   $('launcher').hidden = true;
-  const url = `${location.origin}/`;
+  noticeSlug = slug || null;
+  const url = noticeUrl();
   $('dnEmail').href = `mailto:?subject=${encodeURIComponent('Opalix labs: open this on a desktop')}&body=${encodeURIComponent(`Open this link on a laptop or desktop to start a lab: ${url}`)}`;
   $('dnUrl').value = url;
   $('dnManual').hidden = true;
@@ -1038,11 +1407,17 @@ async function showDesktopNotice() {
 }
 let noticeToken = 0;
 
-function hideDesktopNotice({ focus = true } = {}) {
+/** Puts the notice away without showing anything in its place (the route that follows does). */
+function closeNotice() {
   noticeToken++;
+  noticeSlug = null;
   $('desktopNotice').hidden = true;
-  $('launcher').hidden = false;
   clearInterval(state.resumeTimer);
+}
+
+function hideDesktopNotice({ focus = true } = {}) {
+  closeNotice();
+  $('launcher').hidden = false;
   // The launcher's own card ticks again.
   renderResumeCard();
   syncQuizButtons();
@@ -1052,11 +1427,15 @@ function hideDesktopNotice({ focus = true } = {}) {
   }
 }
 
-$('dnBrowse').addEventListener('click', () => hideDesktopNotice());
+$('dnBrowse').addEventListener('click', () => {
+  hideDesktopNotice();
+  // From a lab's own address (a phone opened a link to /labs/x/session) the way out is the launcher's.
+  if (!['launcher', 'path'].includes(router.current().name)) setRoute('launcher', {}, { replace: true });
+});
 
 /** Copies the link; where the clipboard cannot be written, shows it selected instead. */
 $('dnCopy').addEventListener('click', async () => {
-  const url = `${location.origin}/`;
+  const url = noticeUrl();
   try {
     if (!navigator.clipboard?.writeText) throw new Error('no clipboard');
     await navigator.clipboard.writeText(url);
@@ -1076,7 +1455,11 @@ $('dnCopy').addEventListener('click', async () => {
 
 // A window widened to a desktop size (or a phone turned sideways into one) has no use for the notice.
 function reevaluateDevice() {
-  if (!$('desktopNotice').hidden && !isPhoneLike(readDevice())) hideDesktopNotice({ focus: false });
+  if ($('desktopNotice').hidden || isPhoneLike(readDevice())) return;
+  hideDesktopNotice({ focus: false });
+  // An address that was waiting for a wide screen (a lab's session, its lessons) now has one.
+  const route = router.current();
+  if (!['launcher', 'path'].includes(route.name)) applyRoute(route);
 }
 window.addEventListener('resize', reevaluateDevice);
 window.addEventListener('orientationchange', reevaluateDevice);
@@ -1111,8 +1494,12 @@ function maybeShowOnboarding() {
 /** The screen that stands in for the launcher while a quiz or "Before you begin" is up. */
 let learnFlow = null;
 
+/** The lab whose "Before you begin" `learnFlow` is (null for the platform quiz). */
+let learnFlowLab = null;
+
 function showLearnScreen() {
   $('launcher').hidden = true;
+  $('notFound').hidden = true;
   $('learnScreen').hidden = false;
   $('learnScreen').scrollTop = 0;
   syncQuizButtons();
@@ -1121,6 +1508,7 @@ function showLearnScreen() {
 function hideLearnScreen() {
   learnFlow?.destroy();
   learnFlow = null;
+  learnFlowLab = null;
   $('learnScreen').hidden = true;
   $('learnHost').replaceChildren();
   syncQuizButtons();
@@ -1163,7 +1551,7 @@ let beginning = false;
 async function beginLab(lab, card) {
   if (beginning) return;
   // Start, Open again and Rejoin all come through here: on a phone they show the desktop notice.
-  if (guardDesktop()) return;
+  if (guardDesktop(lab.slug)) return;
   // A running lab is rejoined by Start, whatever was clicked: nothing to prepare for.
   const resuming = !$('resumeCard').hidden;
   if (!lab.has_learn || resuming) return startSession(lab.slug, card);
@@ -1189,17 +1577,45 @@ async function beginLab(lab, card) {
   }
   const hasScreen = entry && (entry.learn.story || entry.learn.concepts.length > 0);
   if (!hasScreen) return startSession(lab.slug, card);
+  openLearnFlow(lab, entry);
+}
+
+/**
+ * "Before you begin" for a lab, on its step (the first when none is named). From a card, each step
+ * pushes its address (/labs/x/story ...); from an address, the steps only correct it.
+ */
+function openLearnFlow(lab, entry, initial, { fromRoute = false } = {}) {
+  hideLearnScreen();
   showLearnScreen();
-  learnFlow = runBeforeYouBegin({
-    host: $('learnHost'),
-    lab: { slug: lab.slug, title: lab.title },
-    entry,
-    store: mastery,
-    post: (body) => api.postAnswers(body),
-    // The screen may have shrunk since Start was pressed: ask again before a container is claimed.
-    onStart: () => (guardDesktop() ? undefined : startSession(lab.slug)),
-    onBack: leaveLearnScreen,
-  });
+  learnFlowLab = lab.slug;
+  if (fromRoute) applying++;
+  try {
+    learnFlow = runBeforeYouBegin({
+      host: $('learnHost'),
+      lab: { slug: lab.slug, title: lab.title },
+      entry,
+      store: mastery,
+      post: (body) => api.postAnswers(body),
+      initial,
+      onStep: (step) => onLabStep(lab.slug, step),
+      // The screen may have shrunk since Start was pressed: ask again before a container is claimed.
+      onStart: () => (guardDesktop(lab.slug) ? undefined : startSession(lab.slug)),
+      onBack: () => {
+        leaveLearnScreen();
+        setRoute('launcher');
+      },
+    });
+  } finally {
+    if (fromRoute) applying--;
+  }
+}
+
+/** A step of "Before you begin" is on screen: the address says so. Answering the questions replaces theirs with the lessons'. */
+function onLabStep(slug, step) {
+  const route = router.current();
+  if (route.name === 'lab-step' && route.slug === slug && route.step === step) return updateTitle();
+  const answered = route.name === 'lab-step' && route.slug === slug && route.step === 'questions' && step === 'lessons';
+  setRoute('lab-step', { slug, step }, { replace: answered });
 }
 
 // --- the platform quiz
@@ -1215,9 +1631,16 @@ async function loadOnboardingOffer() {
   }
 }
 
+/** Asks once; a route to /onboarding and the launcher's own offer share the answer. */
+let onboardingLoad = null;
+function ensureOnboardingOffer() {
+  onboardingLoad ??= loadOnboardingOffer().then((offer) => (onboardingOffer = offer));
+  return onboardingLoad;
+}
+
 /** The two "Retake the quiz" controls show only when a quiz exists and the learner is at the launcher. */
 function syncQuizButtons() {
-  const atLauncher = !state.session && $('learnScreen').hidden && $('desktopNotice').hidden;
+  const atLauncher = !state.session && $('learnScreen').hidden && $('desktopNotice').hidden && $('notFound').hidden;
   $('btnRetakeQuiz').hidden = !(onboardingOffer && atLauncher);
   $('btnOnboardingRetake').hidden = !(onboardingOffer && atLauncher);
 }
@@ -1227,6 +1650,8 @@ function showQuiz() {
   if ($('onboarding').open) $('onboarding').close();
   hideLearnScreen();
   showLearnScreen();
+  // From a button the quiz pushes its address; from the address (or Back) it is already there.
+  setRoute('onboarding');
   learnFlow = runOnboarding({
     host: $('learnHost'),
     onboarding: onboardingOffer,
@@ -1234,6 +1659,8 @@ function showQuiz() {
     post: (body) => api.postAnswers(body),
     onExit: ({ completed }) => {
       leaveLearnScreen();
+      // Done or skipped, the quiz is not somewhere Back should return to.
+      setRoute('launcher', {}, { replace: true });
       // The launcher's "Suggested start" follows the new levels.
       if (completed) loadLabs();
     },
@@ -1246,7 +1673,7 @@ function showQuiz() {
  * "How this console works" dialog has been read, if that is showing).
  */
 async function initLearning() {
-  onboardingOffer = await loadOnboardingOffer();
+  await ensureOnboardingOffer();
   syncQuizButtons();
   if (!onboardingOffer || state.session || onboardingFinished(mastery.get())) return;
   const dialog = $('onboarding');
@@ -1458,7 +1885,7 @@ function renderRail() {
     chip.setAttribute('aria-hidden', 'true');
     button.append(chip);
     // Reopens the guide on this tab, and the keyboard goes with it.
-    button.addEventListener('click', () => showGuideTab(id, { reveal: true, focus: true }));
+    button.addEventListener('click', () => { showGuideTab(id, { reveal: true, focus: true }); syncTabUrl(id); });
     host.append(button);
   }
 }
@@ -1602,6 +2029,7 @@ function renderChecksButtons() {
 function dockPressed() {
   if ($('btnDockAction').dataset.action === 'questions') {
     showGuideTab('questions', { reveal: true });
+    syncTabUrl('questions');
     learnSession.form?.focusFirstUnanswered();
     return;
   }
@@ -1644,15 +2072,20 @@ async function startSession(slug, card) {
     // than refusing, which may be a different lab from the one clicked.
     // Say so; the header will show the real lab once the status arrives.
     if (started.rejoined) toast('You already had a lab running, so you are back in it. End it to start another.');
+    return true;
   } catch (err) {
     // Next to the card that was clicked, not at the foot of a long list
     // where it scrolled out of sight and the click looked like it did nothing.
     error.className = 'notice notice-bad';
-    if ($('launcher').hidden) return toast(`Could not start this lab — ${err.message}`, 'bad');
+    if ($('launcher').hidden) {
+      toast(`Could not start this lab — ${err.message}`, 'bad');
+      return false;
+    }
     error.textContent = `Could not start this lab — ${err.message}`;
     (card ?? $('launcher')).append(error);
     error.hidden = false;
     error.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    return false;
   } finally {
     buttons.forEach((b) => (b.disabled = false));
     if (button) {
@@ -1731,9 +2164,14 @@ function enterSession() {
   resetLearnSession();
   resetGuide();
   hideLearnScreen();
+  $('notFound').hidden = true;
   // The task, not an empty terminal: the guide opens on the brief, and the workspace on the files.
   showView('editor');
   showBoot('Claiming a container…');
+  // The address names the lab; a session that came on screen by a button gets it now.
+  leftSession(false);
+  ensureSessionUrl(state.session.lab);
+  announceRoute(`Lab session: ${labsBySlug.get(state.session.lab)?.title ?? state.session.lab}`);
 
   $('launcher').hidden = true;
   $('workspace').hidden = false;
@@ -2084,6 +2522,8 @@ async function onRunning(status) {
       .catch((err) => console.error('The guide could not be built', err))
       .finally(() => {
         buildGuide();
+        // A tab the address asked for wins over landing on the first service.
+        applyPendingTab();
         landOnService();
       })
   );
@@ -2096,6 +2536,9 @@ function setSessionLab(slug) {
   if (state.session && state.session.lab !== slug) {
     state.session.lab = slug;
     rememberSession(state.session);
+    // The start route may have rejoined another lab than the one asked for: the address names the one that is open.
+    const route = router.current();
+    if (route.name === 'session' && route.slug !== slug) setRoute('session', { slug }, { replace: true });
   }
   const lab = labsBySlug.get(slug) ?? null;
   if (state.lab?.slug !== slug) state.lab = lab;
@@ -2516,12 +2959,24 @@ function teardownSession() {
   setServicesOpen(false);
 }
 
-/** An ended session leaves a dead workspace on screen; this is the way out. */
+/** An ended session leaves a dead workspace on screen; this is the way out. The address becomes the launcher's. */
 function backToLabs() {
+  leaveSessionScreen(true);
+  // Replaced, not pushed: Back must not lead to the address of a lab that is gone (it would start another).
+  setRoute('launcher', {}, { replace: true });
+}
+
+/**
+ * The session screen taken down. `forget` ends the console's claim on the lab (the record is dropped);
+ * without it the lab keeps running and the launcher offers Rejoin, which is what Back out of a lab does.
+ */
+function leaveSessionScreen(forget) {
   resetSolution();
-  forgetSession();
+  if (forget) forgetSession();
+  else leftSession(true);
   state.session = null;
   state.dirty = false;
+  pendingTab = null;
   teardownSession();
   $('resultCard').hidden = true;
   $('btnBackToLabs').hidden = true;
@@ -2835,7 +3290,10 @@ async function runChecks() {
   renderChecksButtons();
   // Where the results will land is where the learner is taken: the Checks tab, or (graded by questions) the Questions tab.
   const home = guide.tabs.includes('checks') ? 'checks' : guide.tabs.includes('questions') ? 'questions' : null;
-  if (home) showGuideTab(home);
+  if (home) {
+    showGuideTab(home);
+    syncTabUrl(home);
+  }
   const previous = panel.querySelector('.check') ? panel.innerHTML : '';
   panel.innerHTML = `
     <div class="inline-status">
@@ -3842,7 +4300,10 @@ function renderServiceTabs() {
     dot.dataset.health = 'unknown';
     dot.setAttribute('aria-hidden', 'true');
     tab.append(dot, name);
-    tab.addEventListener('click', () => openService(name, tab));
+    tab.addEventListener('click', () => {
+      syncTabUrl('service', name);
+      openService(name, tab);
+    });
     host.append(tab);
     // The dot is the tab's own mark of health; "Open the echo service (healthy)" is what the tooltip says.
   }
@@ -4075,6 +4536,9 @@ function updateWindowTitle() {
 
 /** A workspace tab pressed (focus: true) or reached with the arrow keys (focus: false). */
 function activateWorkspaceTab(tab, { focus }) {
+  // The address follows the tab the learner chose (in place: Back does not step through tabs).
+  if (tab.dataset.service) syncTabUrl('service', tab.dataset.service);
+  else syncTabUrl(tab.dataset.view);
   if (tab.dataset.service) return openService(tab.dataset.service, tab);
   showView(tab.dataset.view, tab, { focus });
   if (focus && tab.dataset.view === 'editor' && state.openFile) state.editor?.focus();
@@ -4106,12 +4570,15 @@ function goHome(event) {
   event.preventDefault();
   setMenu(false);
   if (state.session) return;
-  if (!$('desktopNotice').hidden) hideDesktopNotice();
-  else if (!$('learnScreen').hidden) leaveLearnScreen();
-  else {
+  if (!$('launcher').hidden) {
     $('launcher').scrollTo({ top: 0, behavior: 'auto' });
     window.scrollTo(0, 0);
+    // From a path's address, the top of the launcher is "/".
+    if (router.current().name !== 'launcher') setRoute('launcher', {}, { replace: true });
+    return;
   }
+  // From a learning, notice or not-found screen: the launcher, as a step forward in history.
+  router.navigate('launcher');
 }
 $('brandLink').addEventListener('click', goHome);
 $('navLabs').addEventListener('click', goHome);
@@ -4264,9 +4731,12 @@ const workspaceTabs = () => [...$('workspaceTabs').querySelectorAll('.tab:not([h
 wireTablist($('workspaceTabs'), workspaceTabs, (tab) => activateWorkspaceTab(tab, { focus: false }));
 
 for (const tab of document.querySelectorAll('#guideTabs .tab[data-guide-tab]')) {
-  tab.addEventListener('click', () => showGuideTab(tab.dataset.guideTab));
+  tab.addEventListener('click', () => { showGuideTab(tab.dataset.guideTab); syncTabUrl(tab.dataset.guideTab); });
 }
-wireTablist($('guideTabs'), () => [...$('guideTabs').querySelectorAll('.tab:not([hidden])')], (tab) => showGuideTab(tab.dataset.guideTab));
+wireTablist($('guideTabs'), () => [...$('guideTabs').querySelectorAll('.tab:not([hidden])')], (tab) => {
+  showGuideTab(tab.dataset.guideTab);
+  syncTabUrl(tab.dataset.guideTab);
+});
 
 // Hiding the guide: the keyboard goes to the rail's Show button, and Show takes it back to the tab.
 $('btnGuideToggle').addEventListener('click', () => setGuideOpen(!guide.open));
@@ -4406,7 +4876,9 @@ function showSignedOut() {
   error.className = 'notice notice-warn';
   error.textContent = 'Signed out — sign in to return to your running lab. ';
   const link = document.createElement('a');
-  link.href = '/';
+  // A full page load of this very address: the Worker answers it with the sign-in form, and signing in comes back here.
+  link.href = location.pathname + location.search;
+  link.setAttribute('data-native', '');
   link.textContent = 'Sign in';
   error.append(link);
   error.hidden = false;
@@ -4416,42 +4888,64 @@ function showSignedOut() {
 showIdentity();
 $('saveShortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘S' : 'Ctrl+S';
 $('apiLabel').textContent = apiBase();
-resumeOrShowLabs();
+router.onRoute((route) => applyRoute(route));
+router.start();
+boot();
 
 /**
- * On load, try the session this browser was last in. A session that has
- * ended (or whose token has expired) falls back to the picker rather than
- * leaving a dead workspace on screen.
+ * On load: the catalogue (every screen that names a lab needs it), then the screen the address
+ * names. The bare "/" first tries the session this browser was last in, as it always did.
  */
-async function resumeOrShowLabs() {
+async function boot() {
+  const route = router.current();
+  // An address that is not the launcher's should not flash the launcher while the catalogue loads.
+  if (route.name !== 'launcher' && route.name !== 'path') showTransient('Opening…');
   try {
-    const saved = rememberedSession();
-    if (!saved?.id || !saved?.token) return await loadLabs();
-    // A phone cannot run a lab, so it does not walk back into one: the launcher shows it
-    // as the lab in progress, and Rejoin explains. The record stays for the computer.
-    if (isPhoneLike(readDevice())) return await loadLabs();
+    labsReady = loadLabs();
+    await labsReady;
+    if (!(await resumeOnLoad(route))) await applyRoute(route, { initial: true });
+  } catch (err) {
+    console.error('The console could not start', err);
+  } finally {
+    // Says the console has finished deciding which screen to show.
+    // Anything that races that decision — a test, or a person clicking
+    // straight away — can wait for it.
+    document.body.dataset.booted = '1';
+    // Only over the picker: someone already inside a lab, or reading one, has found their way.
+    if (!state.session && !$('launcher').hidden) maybeShowOnboarding();
+    initLearning();
+  }
+}
 
+/**
+ * The bare "/" walks back into the lab this browser was in (its address becomes the lab's, one step
+ * on from "/", so Back is the launcher). A session that has ended (or whose token has expired) falls
+ * back to the picker rather than leaving a dead workspace on screen; a learner who just left the lab
+ * with Back (this tab remembers) stays on the launcher, where Rejoin is one press; a phone does not
+ * walk back into a lab at all.
+ */
+async function resumeOnLoad(route) {
+  if (route.name !== 'launcher' || leftSession()) return false;
+  const saved = rememberedSession();
+  if (!saved?.id || !saved?.token) return false;
+  // A phone cannot run a lab, so it does not walk back into one: the launcher shows it
+  // as the lab in progress, and Rejoin explains. The record stays for the computer.
+  if (isPhoneLike(readDevice())) return false;
+  try {
     // No recovery here: a refused token means the remembered session is
     // gone, and rejoining to find out could start a new container.
     const status = await api.status(saved.id, saved.token, { recover: false });
     if (status.meta.state === 'ended') {
       forgetSession();
-      return await loadLabs();
+      return false;
     }
-    state.session = saved;
-    enterSession();
   } catch {
     forgetSession();
-    await loadLabs();
-  } finally {
-    // Says the console has finished deciding between resuming a session
-    // and showing the picker. Anything that races that decision — a test,
-    // or a person clicking straight away — can wait for it.
-    document.body.dataset.booted = '1';
-    // Only over the picker: someone already inside a lab has found their way.
-    if (!state.session) maybeShowOnboarding();
-    initLearning();
+    return false;
   }
+  state.session = saved;
+  enterSession();
+  return true;
 }
 
 function parse(text) {

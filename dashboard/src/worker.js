@@ -15,6 +15,8 @@
  * Putting Access in front later changes this file and nothing else.
  */
 
+import { returnPathFor } from './return-path.js';
+
 // `__Host-` makes the browser refuse the cookie unless it is Secure, has
 // Path=/ and no Domain -- which is exactly how it is set below -- so a
 // sibling subdomain cannot plant or overwrite it. The bare name is still
@@ -305,6 +307,7 @@ const LOGIN_PAGE = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Opalix lab console</title>
+<meta name="return-to" content="__NEXT__">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▣</text></svg>">
 <style>
   :root { color-scheme: dark; }
@@ -332,8 +335,16 @@ const LOGIN_PAGE = `<!doctype html>
 <script src="/login.js" defer></script>
 </body></html>`;
 
-const loginPage = (status = 200, message = '', extra = {}) =>
-  new Response(LOGIN_PAGE.replace('__ERR__', message), {
+/** A value safe inside a double-quoted HTML attribute. */
+const attr = (value) => value.replace(/[&"'<>]/g, (c) => ({ '&': '&amp;', '"': '&quot;', "'": '&#39;', '<': '&lt;', '>': '&gt;' })[c]);
+
+/**
+ * `next` is where the form sends the browser after a successful sign-in (it
+ * reads it from <meta name="return-to">): a path of this console, already
+ * validated by return-path.js, never a URL.
+ */
+const loginPage = (status = 200, message = '', extra = {}, next = '/') =>
+  new Response(LOGIN_PAGE.replace('__NEXT__', () => attr(next)).replace('__ERR__', () => message), {
     status,
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', ...extra },
   });
@@ -412,7 +423,7 @@ async function route(request, env) {
     // An expired tab must fail loudly rather than render a login page into
     // a JSON parser, so /api/* answers 401 instead of serving HTML.
     if (!subject) {
-      return url.pathname.startsWith('/api/') ? json({ error: 'not signed in' }, 401) : loginPage();
+      return url.pathname.startsWith('/api/') ? json({ error: 'not signed in' }, 401) : loginPage(200, '', {}, returnPathFor(url));
     }
 
     // Who the console thinks you are: the cookie's subject, so the header

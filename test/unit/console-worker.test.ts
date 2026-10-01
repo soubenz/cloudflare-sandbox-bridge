@@ -340,3 +340,63 @@ describe('GET /api/labs', () => {
     expect(labs.every((l) => l.progress === null)).toBe(true);
   });
 });
+
+describe('deep links and signing in', () => {
+  /** The path the login form will send the browser to, from its <meta name="return-to">. */
+  const returnTo = async (res: Response) => /<meta name="return-to" content="([^"]*)">/.exec(await res.text())?.[1];
+
+  it('serves the sign-in form (200) at the address that was asked for, naming that page to return to', async () => {
+    for (const path of ['/labs/x1/session', '/labs/x1/lessons', '/paths/ai-platform', '/onboarding', '/labs/x1/session/service/echo']) {
+      const res = await call(path);
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get('content-type')).toMatch(/text\/html/);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect(await returnTo(res), path).toBe(path);
+    }
+  });
+
+  it('keeps the query of the page that was asked for', async () => {
+    expect(await returnTo(await call('/labs/x1/session?comicTest=1'))).toBe('/labs/x1/session?comicTest=1');
+  });
+
+  it('honours ?next= when it is a path of the console, and nothing else', async () => {
+    expect(await returnTo(await call('/?next=/labs/x1/lessons'))).toBe('/labs/x1/lessons');
+    for (const next of ['//evil.example', 'https://evil.example', '/\\evil.example', '%2F%2Fevil.example', '/.//evil.example', '/auth/logout', '/api/me', 'labs/x1', '%5C%5Cevil.example']) {
+      const res = await call(`/?next=${next.startsWith('%') ? next : encodeURIComponent(next)}`);
+      expect(res.status, next).toBe(200);
+      expect(await returnTo(res), next).toBe('/');
+    }
+  });
+
+  it("does not offer the Worker's own paths as somewhere to return to", async () => {
+    expect(await returnTo(await call('/auth/elsewhere'))).toBe('/');
+    expect(await returnTo(await call('/dist/app.js'))).toBe('/');
+  });
+
+  it('cannot be made to inject markup through the address', async () => {
+    const res = await call(`/labs/x1?q=${encodeURIComponent('"><script>alert(1)</script>')}`);
+    const html = await res.text();
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(/<meta name="return-to" content="([^"]*)">/.exec(html)?.[1]).not.toMatch(/[<>']/);
+  });
+
+  it('answers /api/* with 401 JSON, not the form, when signed out', async () => {
+    const res = await call('/api/labs');
+    expect(res.status).toBe(401);
+    expect(res.headers.get('content-type')).toMatch(/json/);
+  });
+
+  it('serves the app (not the form) at a deep link once signed in, with the same security headers', async () => {
+    const res = await call('/labs/x1/session', { cookie });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('asset');
+    expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+  });
+
+  it('keeps the login script reachable without a cookie', async () => {
+    const res = await call('/login.js');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('asset');
+  });
+});
