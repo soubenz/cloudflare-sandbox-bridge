@@ -2,27 +2,30 @@
  * "Before you begin": the screen between pressing Start on a lab that has
  * learning content and the session booting.
  *
- *   story  ->  diagnostic questions (only for concepts not already known)
- *          ->  the lessons, full screen: each open in full or folded to its recap
- *          ->  Start the lab
+ *   story  ->  Round 1 (up to 5 questions)  ->  lessons, part A  ->  Round 2  ->  lessons, part B ... ->  Start the lab
  *
- * This is the only place the story and the lessons are read: the session
- * screen has neither. A lab with no lessons goes from its story straight to
- * Start; one with no story begins at its questions or its lessons.
+ * The questions and the lessons alternate (the order and the rules are `planLearningFlow` in
+ * learn-flow.js, which is pure and unit tested; this file draws the steps it returns). The story
+ * is read here and the lessons are read here: the session screen has neither. A lab with no
+ * questions goes story, lessons, Start; one with no lessons goes story, rounds, Start; one with no
+ * story begins at its first round or its lessons.
  *
- * The check decides, the learner overrides: the questions only set the
- * default. A folded lesson has "Show me the lesson anyway", an open one "I
- * know this, skip", and both are remembered. The session starts only when
- * "Start the lab" is pressed (a container costs money), and "Skip all, just
- * start the lab" is on every step.
+ * The check decides, the learner overrides: Round 1's diagnostic answers only set the default
+ * (a concept answered fully right folds its lesson to a recap, a miss leaves it open). A folded
+ * lesson has "Show me the lesson anyway", an open one "I know this, skip", and both are
+ * remembered. The session starts only when the lab is started on purpose (a container costs
+ * money): "Start the lab" at the end, or "Skip all, just start the lab", which is on every step.
  *
- * Builds into `host`, focusing each step's heading and saying the step in a
- * polite live region. Diagnostic outcomes go to the analytics call best
- * effort and are also saved in the mastery record.
+ * Every question gives its feedback at once and is posted to the analytics call best effort, once,
+ * the moment it is answered. Going Back never asks a question again: answers are kept (in the
+ * flow's own record, `createFlowStore`, so that a refresh comes back to the same step as well).
+ *
+ * Builds into `host`, focusing each step's heading and saying the step in a polite live region.
  */
 
-import { answersBody, diagnosticQuestions, readingTime, recordDiagnostic } from './learn-model.js';
-import { buildLessons, hasLessons, planSummary } from './learn-lessons.js';
+import { answersBody, readingTime, recordDiagnostic, isDiagnostic } from './learn-model.js';
+import { buildLessons, planSummary } from './learn-lessons.js';
+import { createFlowStore, planLearningFlow, questionHeading, restoreSteps, stepIndexFor, stepKindWord, stepLabel, stepNumberFor } from './learn-flow.js';
 import { actionBar, button, focusHeading, make, questionScreen, screenHead, show, storyContent } from './learn-ui.js';
 import { uiIcon } from './icons.js';
 
@@ -34,28 +37,37 @@ import { uiIcon } from './icons.js';
  *   post    (body) => Promise, analytics; errors swallowed
  *   onStart ()  => Promise, starts the session; resolves when that attempt is over
  *   onBack  ()  => void, back to the launcher
- *   initial 'story' | 'questions' | 'lessons', the step to open on (a deep link); a step this lab does not
- *           have opens the first one it does. Omitted, the first step.
- *   onStep  (name) => void, told every time a step comes on screen ('story', 'questions' or 'lessons'; the
- *           questions once, however many there are), so the address bar can follow
- * Returns { destroy, goto(name), stages }: goto shows a step the way `initial` does (the browser's Back and Forward).
+ *   initial 'story' | 'questions' | 'lessons', the kind of step to open on (a deep link), and
+ *   step    its 1-based place in the whole flow (`?step=N`), which wins when it is in range; one out of
+ *           range opens the first step, and a kind this lab does not have the closest it does.
+ *           Both omitted, the first step.
+ *   resume  true when this is a page that was loaded on a step (a refresh or a link): the plan and the
+ *           answers of this tab's earlier visit to the lab are then picked up where they were left
+ *   onStep  (kind, n) => void, told every time a step comes on screen (kind is the path's word: 'story',
+ *           'questions' or 'lessons'; n the step's number, null when the word alone names it), so the
+ *           address bar can follow
+ *   flowStore  where the visit is kept (default: createFlowStore, sessionStorage)
+ * Returns { steps, goto(kind, n), destroy }: goto shows a step the way `initial` and `step` do (the browser's Back and Forward).
  */
-export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBack, initial, onStep }) {
+export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBack, initial, step: initialStep, onStep, resume = false, flowStore }) {
   const learn = entry.learn;
-  const hasStory = Boolean(learn.story || learn.comic);
-  const lessonsAhead = hasLessons(learn);
-  // The steps of this lab's screen, fixed now so the bar does not change length part-way:
-  // the story (if it has one), the questions (if any are due), and the lessons (if it has any).
-  const questionsDue = diagnosticQuestions(learn, store.get()).length > 0;
-  const stages = [
-    ...(hasStory ? ['story'] : []),
-    ...(questionsDue ? ['questions'] : []),
-    ...(lessonsAhead || questionsDue || !hasStory ? ['lessons'] : []),
-  ];
-  const steps = (name) => ({ current: stages.indexOf(name) + 1, total: stages.length });
+  const flow = flowStore ?? createFlowStore({ slug: lab.slug, version: entry.version });
+  const questionById = new Map(learn.questions.map((q) => [q.id, q]));
+
+  // The plan is fixed now so the dots do not change length part-way: a refresh picks up the saved one.
+  const saved = resume ? flow.load() : null;
+  const restored = saved ? restoreSteps(learn, saved.steps) : null;
+  const steps = restored ?? planLearningFlow(learn, store.get());
+  const answers = new Map(restored ? Object.entries(saved.answers).filter(([id]) => questionById.has(id)) : []);
+  const persist = () => flow.save(steps, Object.fromEntries(answers));
+  persist();
+
+  const kinds = steps.map((s) => s.kind);
+  const dots = (i) => ({ current: i + 1, kinds });
+  const masteryRound = steps.find((s) => s.kind === 'round') ?? null;
+  let index = 0;
   let lessons = null;
   let prose = null;
-  let diagnosed = false;
   let starting = false;
   let gone = false;
 
@@ -64,11 +76,11 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
   live.setAttribute('role', 'status');
   live.setAttribute('aria-live', 'polite');
   host.before(live);
-  const announce = (name, label) => {
+  const announce = (i) => {
     live.textContent = '';
     // Set on the next turn so the same words said twice are still said.
     setTimeout(() => {
-      if (!gone) live.textContent = `Step ${steps(name).current} of ${stages.length}: ${label}`;
+      if (!gone) live.textContent = `Step ${i + 1} of ${steps.length}: ${stepLabel(steps[i], learn)}`;
     }, 50);
   };
 
@@ -77,7 +89,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     lessons = null;
     prose?.destroy();
     prose = null;
-    host.classList.remove('learn-wrap-comic', 'learn-wrap-lessons');
+    host.classList.remove('learn-wrap-comic', 'learn-wrap-lessons', 'learn-wrap-round');
   };
 
   async function start() {
@@ -106,24 +118,41 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
   }
 
   const skipAll = () => button('Skip all, just start the lab', { kind: 'quiet', onClick: start, id: 'btnSkipAll' });
-  const back = () =>
+  const backToLabs = () =>
     button('← Back to labs', {
       kind: 'quiet',
       onClick: () => {
         cleanup();
         gone = true;
+        flow.clear();
         onBack();
       },
       id: 'btnBeforeBack',
     });
   const eyebrow = () => `Before you begin · ${lab.title || lab.slug}`;
 
+  /** The button back to step `i - 1`, named for what is there; null on the first step. */
+  const backStep = () => {
+    const prev = steps[index - 1];
+    if (!prev) return null;
+    const to = index - 1;
+    if (prev.kind === 'story') return button('← Back to the story', { kind: 'quiet', onClick: () => enterStep(to, 'back'), id: 'btnBackStory' });
+    if (prev.kind === 'round') return button('← Back to the questions', { kind: 'quiet', onClick: () => enterStep(to, 'back'), id: 'btnBackQuestions' });
+    return button('← Back to the lessons', { kind: 'quiet', onClick: () => enterStep(to, 'back'), id: 'btnBackLessons' });
+  };
+
+  /** Tells the page a step is on screen: the live region, and the address bar through `onStep`. */
+  const arrived = (i) => {
+    announce(i);
+    onStep?.(stepKindWord(steps[i]), stepNumberFor(steps, i));
+  };
+
   // --- story ----------------------------------------------------------------
 
-  function story() {
+  function story(i) {
     cleanup();
     const s = learn.story ?? { title: learn.comic.title, minutes: 0 };
-    const more = diagnosticQuestions(learn, store.get()).length > 0 || lessonsAhead;
+    const more = i + 1 < steps.length;
     // The motion comic when the lab has one, with the text story folded under it; the text alone otherwise.
     prose = storyContent(learn, { headingLevel: 2 });
     const body = prose.node;
@@ -132,7 +161,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     // the story is not taken away from them (nor from a learner who asked for reduced motion, for whom it starts finished).
     const next = button(more ? 'Continue' : 'Start the lab', {
       kind: 'accent',
-      onClick: more ? questions : start,
+      onClick: more ? () => enterStep(i + 1, 'forward') : start,
       id: 'btnStoryNext',
     });
     next.classList.add('btn-lg');
@@ -140,80 +169,93 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     if (!more) next.dataset.start = 'primary';
     show(
       host,
-      screenHead({ eyebrow: eyebrow(), title: s.title, meta: readingTime(s.minutes), badge: 'Case file', steps: steps('story') }),
+      screenHead({ eyebrow: eyebrow(), title: s.title, meta: readingTime(s.minutes), badge: 'Case file', steps: dots(i) }),
       body,
-      actionBar([next, skipAll(), back()])
+      actionBar([next, skipAll(), backToLabs()])
     );
-    announce('story', s.title);
+    arrived(i);
     focusHeading(host);
-    onStep?.('story');
   }
 
-  // --- diagnostic -----------------------------------------------------------
+  // --- a round of questions ---------------------------------------------------
 
-  function questions() {
-    cleanup();
-    // Asked once per visit to this screen: coming back from the lessons to the story does not ask them again.
-    const asked = diagnosed ? [] : diagnosticQuestions(learn, store.get());
-    if (asked.length === 0) return lessonsStep();
-    const results = [];
-    const step = (i) => {
-      cleanup();
-      const q = asked[i];
-      if (!q) return finishQuestions(asked, results);
-      const screen = questionScreen({
-        question: q,
-        index: i,
-        total: asked.length,
-        lastLabel: 'See the lessons',
-        steps: steps('questions'),
-        onNext: (r) => {
-          results.push(r);
-          step(i + 1);
-        },
-      });
-      show(
-        host,
-        make('p', 'learn-eyebrow learn-eyebrow-top', `${eyebrow()} · A few quick questions set where the lessons start`),
-        screen.root,
-        actionBar([skipAll(), back()], { label: 'Screen options' })
-      );
-      if (i === 0) {
-        announce('questions', 'A few quick questions');
-        onStep?.('questions');
-      }
-      focusHeading(host);
-    };
-    step(0);
-  }
-
-  function finishQuestions(asked, results) {
-    diagnosed = true;
-    store.update((m) => recordDiagnostic(m, results));
+  /** Records one answer: kept for Back and a refresh, posted once, and (Round 1) it sets mastery as the old block did. */
+  function answered(step, result) {
+    if (answers.has(result.question_id)) return;
+    answers.set(result.question_id, result);
+    persist();
     try {
-      Promise.resolve(post?.(answersBody(results, { phase: 'diagnostic', slug: lab.slug, version: entry.version }))).catch(() => {});
+      Promise.resolve(post?.(answersBody([result], { phase: 'diagnostic', slug: lab.slug, version: entry.version }))).catch(() => {});
     } catch {
-      /* analytics never blocks the lessons */
+      /* analytics never blocks the questions */
     }
-    lessonsStep();
+    if (step === masteryRound) {
+      // Every diagnostic answer of the round so far, as one block: a concept is known when all of them were right.
+      const given = step.questions.filter((id) => isDiagnostic(questionById.get(id)) && answers.has(id)).map((id) => answers.get(id));
+      store.update((m) => recordDiagnostic(m, given));
+    }
+  }
+
+  /** Round step `i`, on question `at` (a number), 'open' (the first unanswered, else the last) or 'last'. */
+  function round(i, at, entering = true) {
+    cleanup();
+    host.classList.add('learn-wrap-round');
+    const step = steps[i];
+    const total = step.questions.length;
+    let qi = at;
+    if (at === 'last') qi = total - 1;
+    else if (at === 'open') {
+      qi = step.questions.findIndex((id) => !answers.has(id));
+      if (qi < 0) qi = total - 1;
+    }
+    const q = questionById.get(step.questions[qi]);
+    const lastQuestion = qi === total - 1;
+    const after = steps[i + 1];
+    const screen = questionScreen({
+      question: q,
+      index: qi,
+      total,
+      title: questionHeading(step, qi),
+      lastLabel: !after ? 'Start the lab' : after.kind === 'lessons' ? 'See the lessons' : 'Next questions',
+      steps: dots(i),
+      answered: answers.get(q.id),
+      onAnswer: (result) => answered(step, result),
+      onNext: () => {
+        if (!lastQuestion) return round(i, qi + 1, false);
+        if (after) return enterStep(i + 1, 'forward');
+        return start();
+      },
+    });
+    if (lastQuestion && !after) screen.next.dataset.start = 'primary';
+    const back = qi > 0 ? button('← Previous question', { kind: 'quiet', onClick: () => round(i, qi - 1, false), id: 'btnPrevQuestion' }) : backStep();
+    const lead = step.round === 1 && masteryRound === step ? 'A few quick questions set where the lessons start' : 'A few questions on what you just read';
+    show(host, make('p', 'learn-eyebrow learn-eyebrow-top', `${eyebrow()} · ${lead}`), screen.root, actionBar([skipAll(), ...(back ? [back] : []), backToLabs()], { label: 'Screen options' }));
+    if (entering) arrived(i);
+    focusHeading(host);
   }
 
   // --- lessons --------------------------------------------------------------
 
-  /** The lessons, full screen: the whole width of the console, then Start the lab. */
-  function lessonsStep() {
+  /** One chunk of the lessons, full screen: the whole width of the console, then on to the next step or Start the lab. */
+  function lessonsStep(i) {
     cleanup();
     host.classList.add('learn-wrap-lessons');
+    const step = steps[i];
+    const after = steps[i + 1];
+    // The numbering of the lessons carries on from the chunks before this one.
+    const offset = steps.slice(0, i).reduce((n, s) => n + (s.kind === 'lessons' ? s.concepts.length : 0), 0);
 
     const summary = make('p', 'learn-lede plan-summary');
     summary.setAttribute('role', 'status');
     summary.setAttribute('aria-live', 'polite');
     const tally = make('p', 'lessons-tally');
     const list = make('section', 'learn-lessons');
-    list.setAttribute('aria-label', 'Lessons');
+    list.setAttribute('aria-label', step.parts > 1 ? `Lessons, part ${step.part} of ${step.parts}` : 'Lessons');
     lessons = buildLessons(list, {
       learn,
       store,
+      only: step.concepts,
+      offset,
       onPlan: (plan) => {
         summary.textContent = planSummary(plan);
       },
@@ -222,53 +264,55 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       },
     });
 
-    const go = button('Start the lab', { kind: 'accent', onClick: start, id: 'btnStartLab' });
-    go.dataset.start = 'primary';
+    const go = after
+      ? button('Continue to the questions', { kind: 'accent', onClick: () => enterStep(i + 1, 'forward'), id: 'btnNextStep' })
+      : button('Start the lab', { kind: 'accent', onClick: start, id: 'btnStartLab' });
+    if (!after) go.dataset.start = 'primary';
     go.classList.add('learn-start', 'btn-lg');
     go.append(uiIcon('arrow', 16));
-    const toStory = hasStory ? [button('← Back to the story', { kind: 'quiet', onClick: story, id: 'btnBackStory' })] : [];
+    const back = backStep();
 
+    const several = step.parts > 1;
     show(
       host,
       screenHead({
         eyebrow: eyebrow(),
-        title: 'Lessons for this lab',
-        mark: 'this lab',
-        meta: 'The questions set where each lesson starts. You decide what to read.',
-        steps: steps('lessons'),
+        title: several ? `Lessons, part ${step.part} of ${step.parts}` : 'Lessons for this lab',
+        mark: several ? undefined : 'this lab',
+        meta: several ? 'A few lessons, then a few more questions. You decide what to read.' : 'The questions set where each lesson starts. You decide what to read.',
+        steps: dots(i),
       }),
       summary,
       list,
-      actionBar([go, ...toStory, skipAll(), back(), tally], { sticky: true, label: 'Start' })
+      actionBar([go, ...(back ? [back] : []), skipAll(), backToLabs(), tally], { sticky: true, label: after ? 'Next' : 'Start' })
     );
-    announce('lessons', 'Lessons');
+    arrived(i);
     focusHeading(host);
-    onStep?.('lessons');
   }
 
   // --- go -------------------------------------------------------------------
 
-  /** Shows a step by name; one this lab does not have is replaced by the first it does. */
-  function enter(name) {
+  /** Shows step `i`. `how` is 'forward', 'back' (a round then opens on its last question) or 'route'. */
+  function enterStep(i, how) {
     if (gone) return;
-    if (name === 'story' && hasStory) return story();
-    if (name === 'questions' && stages.includes('questions')) return questions();
-    if (name === 'lessons' && stages.includes('lessons')) return lessonsStep();
-    // The questions are only asked when something is due: without them the lessons are next.
-    if (name === 'questions' && stages.includes('lessons')) return lessonsStep();
-    if (hasStory) return story();
-    return questions();
+    index = Math.max(0, Math.min(i, steps.length - 1));
+    const step = steps[index];
+    if (step.kind === 'story') return story(index);
+    if (step.kind === 'round') return round(index, how === 'back' ? 'last' : 'open');
+    return lessonsStep(index);
   }
 
-  enter(initial);
+  enterStep(stepIndexFor(steps, initial, initialStep), 'route');
 
   return {
-    stages,
-    goto: enter,
+    steps,
+    goto: (kind, n) => enterStep(stepIndexFor(steps, kind, n), 'route'),
     destroy() {
       gone = true;
       cleanup();
       live.remove();
+      // The visit is over (the lab started, or the learner left): the next one plans afresh.
+      flow.clear();
     },
   };
 }

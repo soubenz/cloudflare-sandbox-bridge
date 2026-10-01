@@ -99,16 +99,36 @@ export function stepBar(current, total) {
 }
 
 /**
+ * The quiet progress dots of the pre-lab flow: one small dot per step (the story a page, a round
+ * of questions a dot, a chunk of lessons a rounded square) and a flag at the end for Start the lab.
+ * The ones before `current` (1-based) are filled, `current` has a ring. Decoration only: the
+ * heading, the eyebrow and the live region say where the learner is.
+ */
+export function stepDots(kinds, current) {
+  const bar = make('div', 'steps steps-dots');
+  bar.setAttribute('aria-hidden', 'true');
+  kinds.forEach((kind, i) => {
+    const dot = make('i', i + 1 < current ? 'done' : i + 1 === current ? 'now' : '');
+    dot.dataset.kind = kind;
+    bar.append(dot);
+  });
+  const end = make('i', 'end');
+  end.dataset.kind = 'start';
+  bar.append(end);
+  return bar;
+}
+
+/**
  * A screen's head: the steps bar, an eyebrow line, the h1 that takes focus and an
  * optional meta line.
  *
- *   steps   { current, total } for the bar
+ *   steps   { current, total } for the bar, or { current, kinds } for the pre-lab flow's dots (see stepDots)
  *   mark    the end of `title` to set on the accent highlighter, as the landing page does
  *   badge   a small navy badge beside the meta line ("Case file")
  */
 export function screenHead({ eyebrow, title, meta, id, steps, mark, badge }) {
   const head = make('header', 'learn-head');
-  if (steps) head.append(stepBar(steps.current, steps.total));
+  if (steps) head.append(steps.kinds ? stepDots(steps.kinds, steps.current) : stepBar(steps.current, steps.total));
   if (eyebrow) head.append(make('p', 'learn-eyebrow', eyebrow));
   const h1 = make('h1', 'learn-title');
   if (mark && title.endsWith(mark)) h1.append(document.createTextNode(title.slice(0, -mark.length)), make('span', 'mark', mark));
@@ -161,12 +181,16 @@ let uid = 0;
  *              unsure: true }; nothing about it says the learner failed
  *   nextLabelFor  (result) => what Next says once this one is answered
  *   steps      { current, total } for the screen's progress-steps bar
+ *   onAnswer   called once with the result the moment the answer is revealed (not when it is restored)
+ *   answered   a result given before ({ selected, correct, unsure? }): the question then shows
+ *              as answered, with its feedback and Next, and nothing is reported again
  *
  * Single choice is radios, multiple is checkboxes. "Check" reveals whether the
  * answer was right with the explanation, in a live region; nothing is
- * revealed before. Returns { root } (the heading inside it takes focus).
+ * revealed before. Returns { root, next } (the heading inside it takes focus; `next` is the button
+ * that moves on, for a screen that has to name it).
  */
-export function questionScreen({ question, index, total, onNext, lastLabel = 'Finish', title, eyebrow, allowUnsure = false, nextLabelFor, steps }) {
+export function questionScreen({ question, index, total, onNext, lastLabel = 'Finish', title, eyebrow, allowUnsure = false, nextLabelFor, steps, onAnswer, answered }) {
   const id = `q${++uid}`;
   const multi = question.type === 'multi';
   const root = make('div', 'quiz');
@@ -234,8 +258,8 @@ export function questionScreen({ question, index, total, onNext, lastLabel = 'Fi
     if (!result) reveal([], false, true);
   });
 
-  /** Marks the right options, explains, and swaps Check for Next. */
-  function reveal(chosen, correct, notSure) {
+  /** Marks the right options, explains, and swaps Check for Next. `restored` is a result shown again, not a new answer. */
+  function reveal(chosen, correct, notSure, restored = false) {
     result = { question_id: question.id, concept: question.concept, correct, selected: chosen, ...(notSure ? { unsure: true } : {}) };
     for (const label of options.children) {
       const optId = label.dataset.option;
@@ -260,13 +284,19 @@ export function questionScreen({ question, index, total, onNext, lastLabel = 'Fi
     if (nextLabelFor) next.textContent = nextLabelFor(result);
     next.hidden = false;
     feedback.focus();
+    if (!restored) onAnswer?.(result);
   }
 
   next.addEventListener('click', () => {
     if (result) onNext(result);
   });
 
-  return { root };
+  if (answered && Array.isArray(answered.selected)) {
+    for (const input of inputs) input.checked = answered.selected.includes(input.value);
+    reveal(answered.selected, answered.correct === true, answered.unsure === true, true);
+  }
+
+  return { root, next };
 }
 
 /**

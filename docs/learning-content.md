@@ -72,12 +72,14 @@ questions:
       - { id: c, text: A cheaper price per token }
     answer: [a]
     explanation: Callers keep one name while the model behind it changes.
-    diagnostic: true        # default; false = shown only inside the lesson
+    diagnostic: true        # default; false = never asked up front: it is asked in a later round, after its lesson
 ```
 
 Rules the checker enforces:
 
 - Every lesson needs at least one `diagnostic: true` question, otherwise it can never be skipped.
+- Write **at least two questions per concept** (three is the model). The flow asks one question per concept up front (Round 1) and the rest after the lesson, so a concept with a single question is asked once and never again, and the rounds after the lessons have nothing to ask. Keep one or two of them `diagnostic: false` when they only make sense once the lesson has been read (a "what happens next" or "why does it do that" question).
+- Keep the whole quiz to about three questions per lesson. Rounds hold five questions (never more than six), so a quiz much longer than that is cut short: whatever does not fit in the last round is not asked.
 - Every question's `concept` must have a lesson in the same lab.
 - 2 to 6 options with unique ids; option text up to 160 characters; prompt up to 300; explanation up to 420.
 - `single` has exactly one answer. `multi` has two or more and never every option.
@@ -233,7 +235,7 @@ Once the lesson teaches a concept, the brief stops explaining it. The brief keep
 ## What the learner sees
 
 1. The platform onboarding quiz (once, branching, a few questions at most) sets a starting level per module.
-2. Before a lab starts, "Before you begin" shows the story (the motion comic, or the text story), then the diagnostic questions for the lab's concepts, then the lessons full screen: the whole width of the console, the text on the left and its diagram large on the right from 1280px wide. "Start the lab" is the last step. A lab with a story and no lessons goes from the story to Start; one with lessons and no story begins at its questions or its lessons.
+2. Before a lab starts, "Before you begin" shows the story (the motion comic, or the text story), then **alternates rounds of questions and lessons**: Round 1 (up to five questions), the first lessons full screen (the whole width of the console, the text on the left and its diagram large on the right from 1280px wide), Round 2, the next lessons, and so on. "Start the lab" is the last step. See [How the pre-lab flow alternates](#how-the-pre-lab-flow-alternates). A lab with a story and no lessons goes from the story to Start; one with lessons and no story begins at its first round or its lessons; one with no questions is story, lessons, Start.
 3. Concepts answered correctly collapse to their recap. The others expand as lessons. The learner can press "I know this, skip" on any lesson, or "Show me the lesson anyway" on a collapsed one. The quiz decides the default; the learner decides the outcome.
 4. Mastery is stored in the learner's browser. Nothing is graded on it.
 5. The story and the lessons are read there and nowhere else: the session's guide, a reading pane beside the workspace window, has no Story or Lessons tab (an explore lab's tabs are Brief, Questions, Hints; any other lab's Brief, Checks, Hints). A learner who rejoins a running lab goes straight to it.
@@ -251,10 +253,25 @@ The learner console (`dashboard/`) renders all of the above in the browser. The 
 All three need the console cookie like the other `/api` routes. The launcher's `has_learn` flag comes through `GET /api/labs` unchanged; a lab without it never asks for a bundle.
 
 - **Platform quiz** (`onboarding.js`). Shown once after the first sign-in when the quiz exists; "Skip for now" is on every screen and is remembered; "Retake the quiz" sits next to the help control in the header and in the "?" dialog. It branches (see [The platform onboarding quiz](#the-platform-onboarding-quiz)): a checklist of the areas the learner has worked with, then at most two questions per ticked area. Its outcome is a level per module (strong, familiar or new, from the areas in `concepts.json`), and the launcher puts a "Suggested start" chip on the first module that is new.
-- **Before you begin** (`before-you-begin.js`). Between Start and the boot: the story, the diagnostic questions for concepts not already known, then the lessons (`learn-lessons.js`), full screen, with a count of the lessons read. A lesson for a known or skipped concept folds to its `recap` with "Show me the lesson anyway"; the others show in full with "I know this, skip". "Back to the story" and "Back to labs" are on the lessons step. The session starts only when "Start the lab" is pressed; "Skip all, just start the lab" is on every step. Any failure to fetch the bundle goes straight to the boot.
+- **Before you begin** (`before-you-begin.js`, with the order in `learn-flow.js`). Between Start and the boot: the story, then rounds of questions alternating with chunks of the lessons (`learn-lessons.js`, full screen, with a count of the lessons read in the chunk). A lesson for a known or skipped concept folds to its `recap` with "Show me the lesson anyway"; the others show in full with "I know this, skip". Every step has a Back button (to the story, the questions or the lessons before it; inside a round, to the previous question) and "Back to labs"; answers are kept, so Back never asks a question again and never posts one twice. The session starts only when "Start the lab" is pressed (the last lessons' button, or the last question's when the flow ends on a round); "Skip all, just start the lab" is on every step. Any failure to fetch the bundle goes straight to the boot.
 - **In the session** (`questions-form.js`, `session-layout.js`). The guide has no Story or Lessons; for a lab with `fields` it has a Questions tab, one card per question with a Not answered / Answered / Saved badge: a form that writes `workspace/<answers_file>` as JSON after 600 ms of quiet and on Save. A write re-reads the file first and merges by key: a key the learner changed in the form wins, a key they did not touch keeps what the file holds now, and keys the form does not know are kept. Number fields store a JSON number (or `null` when empty), text a string (or `null`), choice the chosen choice string.
 - **Mastery** (`learn-model.js`) lives in the browser under `localStorage['opalixLearn']`: onboarding levels, per-concept `known` (true only when every diagnostic question about the concept was answered correctly), and the learner's own `skipped` / `forced` overrides, which always win. Nothing is sent and nothing is graded; the anonymous outcomes that do go to `POST /learn/answers` carry no identity.
 - **Lesson and story text** (`markdown.js`) is drawn straight into DOM nodes (no HTML is ever parsed): paragraphs, `##` and `###` headings, bold, italic, code, fenced code, lists, `http(s)` links and `::diagram[id]` lines. A diagram id that is not in the library becomes a short notice.
+
+## How the pre-lab flow alternates
+
+`planLearningFlow(learn, mastery)` (`dashboard/src/learn-flow.js`, pure and unit tested in `test/unit/console-learn-flow.test.ts`) returns the ordered steps; `before-you-begin.js` only draws them.
+
+```
+story -> Round 1 -> lessons part 1 -> Round 2 -> lessons part 2 -> Round 3 -> Start the lab
+```
+
+- **Rounds.** A round holds at most 5 questions. The questions are cut into fives; when the last round would hold only 1 or 2 questions they are folded into the others and the rounds are evened out (11 is 6 and 5, 12 is 6 and 6; no round ever holds more than 6). A round with no questions is skipped, and no question is asked twice. A lab with 5 questions or fewer has one round before its lessons, and the lessons are then one chunk: story, Round 1, all the lessons, Start.
+- **Round 1** draws diagnostic questions one concept after another in lesson order (the foundation lesson's concept first) and round again, so each concept is asked about once before any is asked about twice. Its answers set the mastery record as before: a concept whose Round 1 questions were all answered right is known and its lesson folds to the recap; a miss leaves it open. (Only Round 1 sets mastery. Later rounds are practice: they are posted to the same analytics call and do not change what is folded.)
+- **Lessons** are cut, in lesson order (the `order: 1` foundation lesson first), into min(lessons, rounds - 1) chunks as even as possible (5 lessons in 2 chunks is 3 and 2). Each chunk is followed by a round of questions about its own concepts that were not asked yet, `diagnostic: false` ones included; whatever the earlier rounds left over goes into the last round. A concept the learner already knows (from an earlier visit) is not asked about again, and a chunk whose questions are all gone has no round after it (its lessons join the next chunk's).
+- **What a learner sees.** Every question gives its feedback and explanation at once and is headed "Round 2 of 3 · question 3 of 5" (just "Question 3 of 5" when there is a single round). Quiet dots across the top show the whole flow (story, rounds, lessons, a ring for Start); "Step N of M: ..." is said to screen readers at each step. Rounds are a centred column about 760px wide; the lessons stay full width.
+- **Writing for it.** For a 5-lesson lab, 15 questions (three per concept) make three rounds of five with two lesson chunks. Two questions per concept is the least that works: one for Round 1, one after the lesson. A lesson with a single question has it asked up front and nothing to ask about it afterwards.
+- **Back, refresh and links.** Back keeps the answers; a refresh returns to the same step with the same plan and answers (kept in this tab's `sessionStorage` under `opalix.flow.<slug>`, dropped when the lab starts or the learner leaves). The address is `/labs/<slug>/story`, `/questions` or `/lessons`, with `?step=N` (the step's place in the flow, from 1) for any step that is not the first of its kind; see [console routes](console-routes.md). A step number out of range opens the first step.
 
 ## The platform onboarding quiz
 

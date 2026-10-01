@@ -422,7 +422,7 @@ test.describe('the steps before a lab have addresses', () => {
     await expect(page.locator('#workspace')).toBeHidden();
   });
 
-  test('answering the quick questions replaces their address with the lessons\' (Back goes to the story)', async ({ page }) => {
+  test('every step of the flow has its own address (rounds and lessons carry ?step=N past the first), and Back walks the steps', async ({ page }) => {
     await stub(page);
     await wide(page);
     await visit(page, `/labs/${EXPLORE}/story`, { mastery: SKIPPED });
@@ -430,17 +430,58 @@ test.describe('the steps before a lab have addresses', () => {
     expect(here_(page)).toBe(`/labs/${EXPLORE}/questions`);
     await expect(page).toHaveTitle(`Quick questions · ${EXPLORE_TITLE} · Opalix labs`);
     const length = await historyLength(page);
-    for (let i = 0; i < 20 && (await heading(page).innerText()) !== LESSONS; i++) {
-      await host(page).locator('.quiz-option input').first().check();
-      await page.getByRole('button', { name: 'Check', exact: true }).click();
-      await host(page).locator('.quiz-form .learn-actions button').filter({ hasNotText: 'Check' }).click();
-    }
-    await expect(heading(page)).toHaveText(LESSONS);
+    const answerRound = async () => {
+      // The first option of every question: right or wrong does not matter to the address.
+      while (await host(page).locator('.quiz-prompt').count()) {
+        await host(page).locator('.quiz-option input').first().check();
+        await page.getByRole('button', { name: 'Check', exact: true }).click();
+        await host(page).locator('.quiz-form .learn-actions button').filter({ hasNotText: 'Check' }).click();
+      }
+    };
+    await answerRound();
+    // Round 1 -> lessons, part 1: one more entry, and the first lessons keep the plain /lessons.
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
-    expect(await historyLength(page)).toBe(length);
+    expect(await historyLength(page)).toBe(length + 1);
+    await expect(page).toHaveTitle(`Lessons · ${EXPLORE_TITLE} · Opalix labs`);
+    // On to Round 2 (the fourth step of six) and the second lessons (the fifth).
+    await page.getByRole('button', { name: 'Continue to the questions' }).click();
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/questions?step=4`);
+    await answerRound();
+    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons?step=5`);
+    await expect(page).toHaveTitle(`Lessons · ${EXPLORE_TITLE} · Opalix labs`);
+    expect(await historyLength(page)).toBe(length + 3);
+
+    // Back walks the steps, one at a time; the address is the step's.
+    await page.goBack();
+    await expect(heading(page)).toHaveText('Round 2 of 3 · question 5 of 5');
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/questions?step=4`);
+    await page.goBack();
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
+    await page.goBack();
+    await expect(heading(page)).toHaveText('Round 1 of 3 · question 5 of 5');
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/questions`);
     await page.goBack();
     await expect(heading(page)).toHaveText(full.story!.title);
     expect(here_(page)).toBe(`/labs/${EXPLORE}/story`);
+    // Nothing was asked again: going Forward lands on answered questions.
+    await page.goForward();
+    await expect(heading(page)).toHaveText('Round 1 of 3 · question 5 of 5');
+    await expect(page.getByRole('button', { name: 'Check', exact: true })).toHaveCount(0);
+  });
+
+  test('leaving the flow (to the launcher) drops its step number from the address', async ({ page }) => {
+    await stub(page);
+    await wide(page);
+    await visit(page, `/labs/${EXPLORE}/lessons?step=5&keep=1`, { mastery: SKIPPED });
+    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons?keep=1&step=5`);
+    await page.getByRole('button', { name: '← Back to labs' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    // Another query parameter is kept from screen to screen; the flow's own step is not.
+    expect(here_(page)).toBe('/?keep=1');
   });
 });
 
@@ -936,7 +977,8 @@ gated.describe('the password gate', () => {
 
     await page.fill('#pw', 'pw');
     await page.getByRole('button', { name: 'Sign in' }).click();
-    await expect(heading(page)).toHaveText(LESSONS);
+    // Nothing is known here, so the lab's first lessons are part 1 of 2 (the questions come between).
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
     expect(new URL(page.url()).pathname).toBe(`/labs/${EXPLORE}/lessons`);
     await expect(page).toHaveTitle(`Lessons · ${EXPLORE_TITLE} · Opalix labs`);
   });

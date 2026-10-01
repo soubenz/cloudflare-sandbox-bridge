@@ -8,7 +8,10 @@ import { serveConsole } from './console-server';
 /**
  * The flow before a lab starts, and what the session screen no longer has.
  *
- *   story  ->  (the quick questions)  ->  the lessons, FULL SCREEN  ->  Start the lab
+ *   story  ->  Round 1 (up to 5 questions)  ->  lessons, part 1, FULL SCREEN  ->  Round 2  ->  lessons, part 2 ... ->  Start the lab
+ *
+ * (The order and its rules are unit tested in test/unit/console-learn-flow.test.ts; here they are
+ * seen in a browser: the alternation, "Round n of m", the feedback, Back, refresh, deep links.)
  *
  * The lessons take the whole content area of the console (not the 360 to 520px guide pane),
  * with the text on the left and its diagram large on the right from 1280px; a lab with a story
@@ -101,9 +104,12 @@ const TEXT_STORY = 'a-text-story-and-lessons';
 const LESSONS_ONLY = 'lessons-and-no-story';
 /** Lessons and no story, with quick questions. */
 const LESSONS_ASKING = 'lessons-and-no-story-with-questions';
+/** A story, the lessons and four questions: one round, then all the lessons as one chunk. */
+const FEW_QUESTIONS = 'a-lab-with-four-questions';
 const PLAIN = 'a-lab-with-nothing-to-read';
 
 const BUNDLES: Record<string, Bundle> = {
+  [FEW_QUESTIONS]: { ...full, comic: undefined, questions: full.questions.filter((q) => q.diagnostic !== false).slice(0, 4), fields: [] },
   [EXPLORE]: full,
   [BUILD]: { ...full, questions: [], fields: [] },
   [STORY_ONLY]: { story: full.story, comic: full.comic, concepts: [], questions: [], answers_file: full.answers_file, fields: [] },
@@ -137,6 +143,7 @@ const LABS = [
   lab({ slug: LESSONS_ONLY, title: 'Lessons and no story', order: 5 }),
   lab({ slug: LESSONS_ASKING, title: 'Lessons and no story, with questions', order: 6 }),
   lab({ slug: PLAIN, title: 'A lab with nothing to read', order: 7, has_learn: false }),
+  lab({ slug: FEW_QUESTIONS, title: 'A lab with four questions', order: 8 }),
 ];
 
 // ------------------------------------------------------------- a fake console
@@ -259,10 +266,12 @@ interface OpenOptions {
   comicTest?: boolean;
   /** A session this browser remembers, as it would after a reload. */
   remembered?: string;
+  /** The address to open instead of the launcher (a deep link). */
+  url?: string;
 }
 
 /** Opens the console on the launcher, past the things that are other specs' business. */
-async function open(page: Page, { theme, mastery = SKIPPED, comicTest = false, remembered }: OpenOptions = {}) {
+async function open(page: Page, { theme, mastery = SKIPPED, comicTest = false, remembered, url }: OpenOptions = {}) {
   await page.addInitScript(
     ([t, m, r]) => {
       localStorage.setItem('opalixOnboarded', '1');
@@ -276,7 +285,7 @@ async function open(page: Page, { theme, mastery = SKIPPED, comicTest = false, r
     },
     [theme ?? null, JSON.stringify({ v: 1, ...mastery }), remembered ? { id: SESSION_ID, lab: remembered } : null] as const
   );
-  await page.goto(comicTest ? '/?comicTest=1' : '/', { waitUntil: 'domcontentloaded' });
+  await page.goto(url ?? (comicTest ? '/?comicTest=1' : '/'), { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('body[data-booted="1"]');
 }
 
@@ -307,24 +316,64 @@ async function toLessons(page: Page, slug: string, size?: { width: number; heigh
   return s;
 }
 
-/** Answers the quick question on screen, right or deliberately wrong, then moves on. */
-async function answerNext(page: Page, right: (q: Question) => boolean) {
+/** The question on screen. */
+async function onScreen(page: Page): Promise<Question> {
   const prompt = (await page.locator('.quiz-prompt').innerText()).trim();
-  const q = full.questions.find((x) => x.prompt === prompt)!;
+  return full.questions.find((x) => x.prompt === prompt)!;
+}
+
+/** Answers the question on screen, right or deliberately wrong, and waits for its feedback (does not move on). */
+async function answerOnly(page: Page, right: (q: Question) => boolean): Promise<Question> {
+  const q = await onScreen(page);
   const pick = right(q) ? q.answer : [q.options.find((o) => !q.answer.includes(o.id))!.id];
   for (const id of pick) await page.locator(`.quiz-option[data-option="${id}"] input`).check();
   await page.getByRole('button', { name: 'Check', exact: true }).click();
-  await expect(page.locator('.quiz-feedback')).not.toBeEmpty();
-  await page.locator('.quiz-form .learn-actions button').filter({ hasNotText: 'Check' }).click();
+  await expect(page.locator('.quiz-feedback')).toContainText(q.explanation);
+  return q;
 }
-async function runQuiz(page: Page, right: (q: Question) => boolean) {
-  let n = 0;
-  while (await page.locator('.quiz-prompt').count()) {
-    await answerNext(page, right);
-    n++;
+const nextButton = (page: Page) => page.locator('.quiz-form .learn-actions button').filter({ hasNotText: 'Check' });
+
+/** Answers the question on screen, then moves on. */
+async function answerNext(page: Page, right: (q: Question) => boolean) {
+  const q = await answerOnly(page, right);
+  await nextButton(page).click();
+  return q;
+}
+
+/** Answers every question of the round on screen, then moves on past it; returns the questions, in the order asked. Never use it on the last round (it would start the lab). */
+async function runRound(page: Page, right: (q: Question) => boolean): Promise<Question[]> {
+  const asked: Question[] = [];
+  while (await page.locator('.quiz-prompt').count()) asked.push(await answerNext(page, right));
+  return asked;
+}
+/** The old name: Round 1 is the quick questions. */
+const runQuiz = runRound;
+
+/**
+ * Goes through the whole flow from wherever it is, answering with `right`, until the last step's own
+ * Start the lab is on screen (the button of the last lessons, or of the last question once it is answered).
+ * Returns every question asked, in order.
+ */
+async function toTheEnd(page: Page, right: (q: Question) => boolean = () => true): Promise<Question[]> {
+  const asked: Question[] = [];
+  for (let guard = 0; guard < 60; guard++) {
+    if (await page.locator('.quiz-prompt').count()) {
+      asked.push(await answerOnly(page, right));
+      const next = nextButton(page);
+      if ((await next.innerText()).trim() === 'Start the lab') return asked;
+      await next.click();
+    } else if (await page.locator('#btnNextStep').count()) {
+      await page.locator('#btnNextStep').click();
+    } else if (await page.locator('#btnStoryNext').count()) {
+      await page.locator('#btnStoryNext').click();
+    } else {
+      return asked;
+    }
   }
-  return n;
+  throw new Error('the flow did not end');
 }
+/** The Start the lab of the last step: the lessons' button, or the answered last question's. */
+const startButton = (page: Page) => page.locator('[data-start="primary"]');
 
 async function enterSession(page: Page) {
   await expect(page.locator('#workspace')).toBeVisible();
@@ -401,25 +450,30 @@ test.describe('the flow before the lab', () => {
   test('the quick questions sit between the story and the lessons, and the lessons then follow the answers', async ({ page }) => {
     const s = await begin(page, EXPLORE);
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(page)).toHaveText(`Question 1 of ${DIAGNOSTIC_COUNT}`);
-    expect(await runQuiz(page, (q) => q.concept === ALIASES)).toBe(DIAGNOSTIC_COUNT);
-    await expect(heading(page)).toHaveText(LESSONS);
+    await expect(heading(page)).toHaveText('Round 1 of 3 · question 1 of 5');
+    // Round 1 is five questions, one about each concept; the aliases ones are all answered right.
+    expect(await runQuiz(page, (q) => q.concept === ALIASES)).toHaveLength(5);
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
     await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
     await expect(host(page).locator('.plan-summary')).toContainText('1 folded to a recap');
     expect(s.starts).toEqual([]);
   });
 
-  test('says each step to a screen reader, moves focus to its heading, and counts the steps', async ({ page }) => {
+  test('says each step to a screen reader, moves focus to its heading, and shows the steps as quiet dots', async ({ page }) => {
     await begin(page, TEXT_STORY);
     const live = page.locator('#learnScreen > p.sr-only[role="status"]');
     await expect(live).toHaveAttribute('aria-live', 'polite');
     await expect(live).toHaveText(`Step 1 of 2: ${full.story!.title}`);
-    await expect(host(page).locator('.steps i.on')).toHaveCount(1);
-    await expect(host(page).locator('.steps i')).toHaveCount(2);
+    // One dot per step and a ring for Start the lab; the first is the current one.
+    await expect(host(page).locator('.steps-dots i')).toHaveCount(3);
+    await expect(host(page).locator('.steps-dots i.now')).toHaveCount(1);
+    await expect(host(page).locator('.steps-dots i[data-kind="story"].now')).toHaveCount(1);
+    await expect(host(page).locator('.steps-dots')).toHaveAttribute('aria-hidden', 'true');
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(live).toHaveText('Step 2 of 2: Lessons');
     await expect(heading(page)).toBeFocused();
-    await expect(host(page).locator('.steps i.on')).toHaveCount(2);
+    await expect(host(page).locator('.steps-dots i.done')).toHaveCount(1);
+    await expect(host(page).locator('.steps-dots i[data-kind="lessons"].now')).toHaveCount(1);
     // The live region goes with the screen.
     await page.getByRole('button', { name: '← Back to labs' }).click();
     await expect(page.locator('#learnScreen > p.sr-only')).toHaveCount(0);
@@ -463,7 +517,7 @@ test.describe('the flow before the lab', () => {
     const s = await begin(page, STORY_ONLY);
     await expect(heading(page)).toHaveText(full.story!.title);
     await expect(page.getByRole('button', { name: 'Continue' })).toHaveCount(0);
-    await expect(host(page).locator('.steps i')).toHaveCount(1);
+    await expect(host(page).locator('.steps-dots i')).toHaveCount(2);
     expect(s.starts).toEqual([]);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await enterSession(page);
@@ -476,7 +530,7 @@ test.describe('the flow before the lab', () => {
     await expect(heading(page)).toHaveText(LESSONS);
     await expect(heading(page)).toBeFocused();
     await expect(host(page).locator('.lesson')).toHaveCount(full.concepts.length);
-    await expect(host(page).locator('.steps i')).toHaveCount(1);
+    await expect(host(page).locator('.steps-dots i')).toHaveCount(2);
     // No story to go back to.
     await expect(page.getByRole('button', { name: '← Back to the story' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: '← Back to labs' })).toBeVisible();
@@ -487,9 +541,12 @@ test.describe('the flow before the lab', () => {
 
   test('a lab with lessons, no story and quick questions begins at the questions, then the lessons', async ({ page }) => {
     await begin(page, LESSONS_ASKING);
-    await expect(heading(page)).toHaveText(`Question 1 of ${DIAGNOSTIC_COUNT}`);
+    await expect(heading(page)).toHaveText('Round 1 of 3 · question 1 of 5');
+    // No story: Round 1 is the first step.
+    await expect(page.getByRole('button', { name: '← Back to the story' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^← (Back to the questions|Previous question)$/ })).toHaveCount(0);
     await runQuiz(page, () => false);
-    await expect(heading(page)).toHaveText(LESSONS);
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
   });
 
   test('a lab with nothing to read starts as it always did', async ({ page }) => {
@@ -517,22 +574,50 @@ test.describe('the flow before the lab', () => {
 // =========================================================================
 
 test.describe('going back', () => {
-  test('Back to the story shows the story again, and Continue returns to the lessons without asking the questions twice', async ({ page }) => {
+  test('Back keeps the answers: a question already answered is shown answered, nothing is asked or posted twice', async ({ page }) => {
     const s = await begin(page, EXPLORE, { width: 1440, height: 900 }, { comicTest: true });
     await page.getByRole('button', { name: 'Continue' }).click();
-    await runQuiz(page, () => false);
-    await expect(heading(page)).toHaveText(LESSONS);
+    const first = await answerNext(page, () => false);
+    await expect.poll(() => s.posted.length).toBe(1);
+    await expect(heading(page)).toHaveText('Round 1 of 3 · question 2 of 5');
+
+    // Previous question: the first one again, answered (wrong, as it was), with its feedback and Next, and nothing to Check.
+    await page.getByRole('button', { name: '← Previous question' }).click();
+    await expect(heading(page)).toHaveText('Round 1 of 3 · question 1 of 5');
+    await expect(heading(page)).toBeFocused();
+    expect(await onScreen(page)).toEqual(first);
+    await expect(page.locator('.quiz-feedback')).toContainText(first.explanation);
+    await expect(page.locator('.quiz-feedback')).toHaveAttribute('data-result', 'incorrect');
+    await expect(page.getByRole('button', { name: 'Check', exact: true })).toHaveCount(0);
+    await expect(page.locator('.quiz-option input:disabled')).toHaveCount(first.options.length);
+    await expect(page.locator('.quiz-option[data-state="incorrect"]')).toHaveCount(1);
     expect(s.posted).toHaveLength(1);
 
+    // From the first question, Back goes to the story; Continue comes back to the first question not yet answered.
     await page.getByRole('button', { name: '← Back to the story' }).click();
     await expect(heading(page)).toHaveText(full.story!.title);
     await expect(heading(page)).toBeFocused();
     await expect(host(page).locator('.cm')).toBeVisible();
-    await expect(host(page).locator('.lesson')).toHaveCount(0);
+    await expect(host(page).locator('.quiz')).toHaveCount(0);
     await page.getByRole('button', { name: 'Continue' }).click();
-    // The lessons, not Question 1 again; and nothing more was posted.
-    await expect(heading(page)).toHaveText(LESSONS);
-    expect(s.posted).toHaveLength(1);
+    await expect(heading(page)).toHaveText('Round 1 of 3 · question 2 of 5');
+    await expect(page.getByRole('button', { name: 'Check', exact: true })).toBeVisible();
+
+    // Finish the round: five answers, five posts, one each.
+    await runRound(page, () => false);
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await expect.poll(() => s.posted.length).toBe(5);
+
+    // Back from the lessons: the round's last question, answered. Its Next goes to the lessons again.
+    await page.getByRole('button', { name: '← Back to the questions' }).click();
+    await expect(heading(page)).toHaveText('Round 1 of 3 · question 5 of 5');
+    await expect(page.locator('.quiz-feedback')).not.toBeEmpty();
+    await expect(page.getByRole('button', { name: 'Check', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'See the lessons' }).click();
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    expect(s.posted).toHaveLength(5);
+    expect(s.posted.flatMap((b) => b.answers)).toHaveLength(5);
+    expect(new Set(s.posted.flatMap((b) => b.answers.map((a: any) => a.question_id))).size).toBe(5);
     expect(s.starts).toEqual([]);
   });
 
@@ -676,28 +761,33 @@ test.describe('the lessons screen', () => {
 // =========================================================================
 
 test.describe('the quick questions still record and report', () => {
-  test('answers are stored per concept and posted as one anonymous diagnostic of the lab', async ({ page }) => {
+  test('answers are stored per concept (Round 1) and posted anonymously, one post per answered question', async ({ page }) => {
     const s = await begin(page, EXPLORE);
     await page.getByRole('button', { name: 'Continue' }).click();
     await runQuiz(page, (q) => q.concept === ALIASES);
-    await expect(heading(page)).toHaveText(LESSONS);
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
     const m = await page.evaluate(() => JSON.parse(localStorage.getItem('opalixLearn')!));
     expect(m.concepts[ALIASES]).toEqual({ known: true });
     expect(Object.values(m.concepts).filter((c: any) => c.known === false).length).toBe(full.concepts.length - 1);
-    await expect.poll(() => s.posted.length).toBe(1);
-    const body = s.posted[0]!;
-    expect(body.lab_slug).toBe(EXPLORE);
-    expect(body.lab_version).toBe('1.0.0');
-    expect(body.answers).toHaveLength(DIAGNOSTIC_COUNT);
-    expect(new Set(body.answers.map((a: any) => a.phase))).toEqual(new Set(['diagnostic']));
-    expect(Object.keys(body).sort()).toEqual(['answers', 'lab_slug', 'lab_version']);
+    await expect.poll(() => s.posted.length).toBe(5);
+    for (const body of s.posted) {
+      expect(body.lab_slug).toBe(EXPLORE);
+      expect(body.lab_version).toBe('1.0.0');
+      expect(body.answers).toHaveLength(1);
+      expect(new Set(body.answers.map((a: any) => a.phase))).toEqual(new Set(['diagnostic']));
+      expect(Object.keys(body).sort()).toEqual(['answers', 'lab_slug', 'lab_version']);
+      expect(Object.keys(body.answers[0]).sort()).toEqual(['concept', 'correct', 'phase', 'question_id']);
+    }
+    // Five different questions, one about each concept.
+    expect(new Set(s.posted.map((b) => b.answers[0].concept)).size).toBe(5);
+    expect(new Set(s.posted.map((b) => b.answers[0].question_id)).size).toBe(5);
   });
 
   test('the Questions tab of the running session is unaffected: it renders its fields and counts the answers', async ({ page }) => {
     const s = await begin(page, EXPLORE);
     await page.getByRole('button', { name: 'Continue' }).click();
-    await runQuiz(page, () => true);
-    await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+    await toTheEnd(page, () => true);
+    await startButton(page).click();
     await enterSession(page);
     expect(s.starts).toEqual([EXPLORE]);
     await page.getByRole('tab', { name: 'Questions' }).click();
@@ -715,8 +805,8 @@ test.describe('the session screen', () => {
   test('an explore lab at 1440px: Brief, Questions, Hints, with no Story and no Lessons', async ({ page }) => {
     const s = await begin(page, EXPLORE, { width: 1440, height: 900 });
     await page.getByRole('button', { name: 'Continue' }).click();
-    await runQuiz(page, () => false);
-    await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+    await toTheEnd(page, () => false);
+    await startButton(page).click();
     await enterSession(page);
     expect(await tabIds(page)).toEqual(['brief', 'questions', 'hints']);
     await expect(page.locator('#guideTabs .tab-active')).toHaveText('Brief');
@@ -846,22 +936,31 @@ test.describe('screenshots', () => {
       await expect(host(page).locator('.cm')).toHaveAttribute('data-state', 'done');
       await shot('story');
 
-      // The quick questions, one of them.
+      // Round 1: a question, then the same one answered (feedback at once).
       await page.getByRole('button', { name: 'Continue' }).click();
-      await shot('questions');
-      await runQuiz(page, (q) => q.concept === ALIASES);
+      await shot('round-1-question');
+      await answerOnly(page, () => true);
+      await shot('round-1-answered');
+      await nextButton(page).click();
+      await runRound(page, (q) => q.concept === ALIASES);
 
-      // The lessons, full screen: the top, then a lesson with its diagram, then the foot.
-      await expect(heading(page)).toHaveText(LESSONS);
-      await shot('lessons-top');
-      const open = host(page).locator('.lesson[data-state="expanded"]').nth(1);
+      // The lessons, part 1, full screen: the top, then a lesson with its diagram, then the foot.
+      await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+      await shot('lessons-a-top');
+      const open = host(page).locator('.lesson[data-state="expanded"]').last();
       await open.scrollIntoViewIfNeeded();
-      await shot('lessons-diagram');
+      await shot('lessons-a-diagram');
       await host(page).locator('.learn-actions-sticky').scrollIntoViewIfNeeded();
-      await shot('lessons-foot');
+      await shot('lessons-a-foot');
+
+      // Round 2, a wrong answer for its feedback, then on to the session through Skip all.
+      await page.getByRole('button', { name: 'Continue to the questions' }).click();
+      await expect(heading(page)).toHaveText('Round 2 of 3 · question 1 of 5');
+      await answerOnly(page, () => false);
+      await shot('round-2-wrong');
+      await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
 
       // The session screen's guide: an explore lab, then a build lab.
-      await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
       await enterSession(page);
       await shot('session-explore-tabs');
       await page.locator('#btnEnd').click();
@@ -874,4 +973,456 @@ test.describe('screenshots', () => {
       expect(s.errors).toEqual([]);
     });
   }
+});
+
+// =========================================================================
+// rounds of questions, alternating with the lessons
+// =========================================================================
+
+/** Opens the console on a deep link (the address, not the card), past the launcher. */
+async function deepLink(page: Page, path: string, opts: OpenOptions = {}) {
+  const s = await stub(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, { ...opts, url: path });
+  await expect(heading(page)).toBeVisible();
+  return s;
+}
+const here_ = (page: Page) => new URL(page.url()).pathname + new URL(page.url()).search;
+const live = (page: Page) => page.locator('#learnScreen > p.sr-only[role="status"]');
+const roundHeading = (r: number, of: number, q: number, n = 5) => `Round ${r} of ${of} · question ${q} of ${n}`;
+const conceptIds = full.concepts.map((c) => c.id);
+const CHUNK_A = conceptIds.slice(0, 3);
+const CHUNK_B = conceptIds.slice(3);
+
+/** To Round `r` (1 to 3) of the explore lab, answering everything before it right. Returns the questions asked on the way. */
+async function toRound(page: Page, r: number, right: (q: Question) => boolean = () => true): Promise<Question[]> {
+  await page.getByRole('button', { name: 'Continue' }).click();
+  const asked: Question[] = [];
+  for (let i = 1; i < r; i++) {
+    asked.push(...(await runRound(page, right)));
+    await page.getByRole('button', { name: 'Continue to the questions' }).click();
+  }
+  return asked;
+}
+
+test.describe('rounds of questions and lessons', () => {
+  test('15 questions and 5 lessons: story, Round 1, lessons A, Round 2, lessons B, Round 3, then Start the lab', async ({ page }) => {
+    const s = await begin(page, EXPLORE);
+    await expect(live(page)).toHaveText(`Step 1 of 6: ${full.story!.title}`);
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    const askedIn: Question[][] = [];
+    const titlesIn: string[][] = [];
+    // Where each step lives in the address: the first of its kind has the plain path, the others ?step=N.
+    const address = ['/questions', '/lessons', '/questions?step=4', '/lessons?step=5', '/questions?step=6'];
+    for (let r = 1; r <= 3; r++) {
+      const step = 2 * r;
+      await expect(live(page)).toHaveText(`Step ${step} of 6: Questions, round ${r} of 3`);
+      expect(here_(page)).toBe(`/labs/${EXPLORE}${address[2 * r - 2]}`);
+      await expect(host(page).locator('.steps-dots i')).toHaveCount(7);
+      await expect(host(page).locator('.steps-dots i.now')).toHaveCount(1);
+      expect(await host(page).locator('.steps-dots i').evaluateAll((els) => els.findIndex((e) => e.classList.contains('now')))).toBe(step - 1);
+      expect(await host(page).locator('.steps-dots i[data-kind="round"]').count()).toBe(3);
+      expect(await host(page).locator('.steps-dots i[data-kind="lessons"]').count()).toBe(2);
+      const asked: Question[] = [];
+      for (let k = 1; k <= 5; k++) {
+        await expect(heading(page)).toHaveText(roundHeading(r, 3, k));
+        await expect(heading(page)).toBeFocused();
+        // Immediate feedback with the explanation, before moving on.
+        const q = await answerOnly(page, () => true);
+        await expect(page.locator('.quiz-feedback')).toHaveAttribute('data-result', 'correct');
+        asked.push(q);
+        const label = (await nextButton(page).innerText()).trim();
+        if (k < 5) {
+          expect(label).toBe('Next');
+          await nextButton(page).click();
+        } else if (r < 3) {
+          expect(label).toBe('See the lessons');
+          await nextButton(page).click();
+        } else {
+          // The flow ends on a round: the last question's button is Start the lab.
+          expect(label).toBe('Start the lab');
+        }
+      }
+      askedIn.push(asked);
+      if (r === 3) break;
+      const part = r;
+      await expect(heading(page)).toHaveText(`Lessons, part ${part} of 2`);
+      await expect(heading(page)).toBeFocused();
+      await expect(live(page)).toHaveText(`Step ${step + 1} of 6: Lessons, part ${part} of 2`);
+      expect(here_(page)).toBe(`/labs/${EXPLORE}${address[2 * r - 1]}`);
+      titlesIn.push(await host(page).locator('.lesson-title').allInnerTexts());
+      await page.getByRole('button', { name: 'Continue to the questions' }).click();
+    }
+
+    // The lessons are the lab's, in order: three, then two (the foundation lesson first).
+    expect(titlesIn[0]).toEqual(full.concepts.slice(0, 3).map((c) => c.title));
+    expect(titlesIn[1]).toEqual(full.concepts.slice(3).map((c) => c.title));
+    // Round 1: one question about each concept, the foundation's first.
+    expect(askedIn[0]!.map((q) => q.concept)).toEqual(conceptIds);
+    // Round 2 is about the lessons just read, Round 3 about the last ones (plus the leftover of the first).
+    expect(askedIn[1]!.every((q) => CHUNK_A.includes(q.concept))).toBe(true);
+    expect(askedIn[2]!.filter((q) => CHUNK_B.includes(q.concept))).toHaveLength(4);
+    expect(askedIn[2]!.filter((q) => CHUNK_A.includes(q.concept))).toHaveLength(1);
+    // Nothing twice, nothing missing.
+    const all = askedIn.flat().map((q) => q.id);
+    expect(new Set(all).size).toBe(15);
+    expect([...all].sort()).toEqual(full.questions.map((q) => q.id).sort());
+    // The question that is not diagnostic has a home too (not in Round 1).
+    const notDiagnostic = full.questions.filter((q) => q.diagnostic === false).map((q) => q.id);
+    expect(askedIn[0]!.some((q) => notDiagnostic.includes(q.id))).toBe(false);
+    expect(all.filter((id) => notDiagnostic.includes(id))).toHaveLength(notDiagnostic.length);
+
+    // One post per answered question, nothing else.
+    expect(s.posted).toHaveLength(15);
+    expect(s.posted.every((b) => b.answers.length === 1)).toBe(true);
+    expect(new Set(s.posted.map((b) => b.answers[0].question_id)).size).toBe(15);
+    expect(s.starts).toEqual([]);
+
+    // The session starts only when the last question's Start the lab is pressed.
+    await startButton(page).click();
+    await enterSession(page);
+    expect(s.starts).toEqual([EXPLORE]);
+    expect(s.errors).toEqual([]);
+  });
+
+  test('only Round 1 sets what is folded: a later round does not change the lessons', async ({ page }) => {
+    await begin(page, EXPLORE);
+    // Round 1 all wrong: every lesson of part 1 is open.
+    await toRound(page, 2, () => false);
+    await expect(heading(page)).toHaveText(roundHeading(2, 3, 1));
+    const before = await page.evaluate(() => JSON.parse(localStorage.getItem('opalixLearn')!).concepts);
+    expect(Object.values(before).every((c: any) => c.known === false)).toBe(true);
+    // Round 2 all right changes nothing in the record.
+    await runRound(page, () => true);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('opalixLearn')!).concepts)).toEqual(before);
+    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    await expect(host(page).locator('.lesson[data-state="expanded"]')).toHaveCount(CHUNK_B.length);
+  });
+
+  test('the lessons of a later chunk are numbered on from the first', async ({ page }) => {
+    await begin(page, EXPLORE);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await runRound(page, () => false);
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    // The list's counter starts after the lessons before it: none, then the three of part 1 (the circles read 4 and 5).
+    const startsAfter = () => host(page).locator('.lesson-list').evaluate((el) => getComputedStyle(el).counterReset);
+    expect(await startsAfter()).toBe('lesson 0');
+    await page.getByRole('button', { name: 'Continue to the questions' }).click();
+    await runRound(page, () => false);
+    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    expect(await startsAfter()).toBe('lesson 3');
+  });
+
+  test('a lab with four questions has one round, then all its lessons as one chunk, then Start', async ({ page }) => {
+    const s = await begin(page, FEW_QUESTIONS);
+    await expect(live(page)).toHaveText(`Step 1 of 3: ${full.story!.title}`);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    // One round: no "Round 1 of 1".
+    await expect(heading(page)).toHaveText('Question 1 of 4');
+    await expect(live(page)).toHaveText('Step 2 of 3: Questions');
+    expect(await runRound(page, () => true)).toHaveLength(4);
+    await expect(heading(page)).toHaveText(LESSONS);
+    await expect(live(page)).toHaveText('Step 3 of 3: Lessons');
+    await expect(host(page).locator('.lesson')).toHaveCount(full.concepts.length);
+    await expect(host(page).locator('.steps-dots i')).toHaveCount(4);
+    await expect(page.getByRole('button', { name: 'Continue to the questions' })).toHaveCount(0);
+    expect(s.posted).toHaveLength(4);
+    await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+    await enterSession(page);
+    expect(s.starts).toEqual([FEW_QUESTIONS]);
+  });
+
+  test('a concept asked twice in Round 1 is known only when both answers were right', async ({ page }) => {
+    await begin(page, FEW_QUESTIONS);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    const foundation = full.concepts[0]!.id;
+    const asked = await runRound(page, (q) => q.concept === ALIASES || q.id === 'q-gateway-what');
+    expect(asked.map((q) => q.id)).toEqual(['q-gateway-what', 'q-alias-caller-sends', 'q-gateway-problems', 'q-alias-where-defined']);
+    const m = await page.evaluate(() => JSON.parse(localStorage.getItem('opalixLearn')!).concepts);
+    // The foundation concept: right once, wrong once. Aliases: right twice.
+    expect(m[foundation]).toEqual({ known: false });
+    expect(m[ALIASES]).toEqual({ known: true });
+    await expect(page.locator(`.lesson[data-concept="${foundation}"]`)).toHaveAttribute('data-state', 'expanded');
+    await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
+  });
+
+  test('a lab with no questions goes story, lessons, Start, with no round anywhere', async ({ page }) => {
+    const s = await begin(page, BUILD);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(heading(page)).toHaveText(LESSONS);
+    await expect(host(page).locator('.quiz, .quiz-option')).toHaveCount(0);
+    await expect(live(page)).toHaveText('Step 2 of 2: Lessons');
+    expect(s.posted).toEqual([]);
+    expect(here_(page)).toBe(`/labs/${BUILD}/lessons`);
+  });
+
+  test('a question round is a centred column, narrower than the lessons, and moves nothing at all with reduced motion', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await begin(page, EXPLORE, { width: 1440, height: 900 });
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(heading(page)).toHaveText(roundHeading(1, 3, 1));
+    const h = await box(host(page));
+    expect(h.width).toBeLessThanOrEqual(762);
+    expect(h.width).toBeGreaterThan(600);
+    const screenBox = await box(screen(page));
+    expect(Math.abs(h.x - screenBox.x - (screenBox.x + screenBox.width - (h.x + h.width)))).toBeLessThan(24);
+    await answerOnly(page, () => true);
+    const animated = await page.evaluate(() => [...document.querySelectorAll('#learnScreen *')].filter((el) => getComputedStyle(el).animationName !== 'none').length);
+    expect(animated).toBe(0);
+    await nextButton(page).click();
+    await runRound(page, () => true);
+    // The lessons that follow are as wide as the screen.
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    expect((await box(host(page))).width).toBeGreaterThan(1100);
+  });
+
+  test('can be done with the keyboard alone: options, Check (Enter), Next, and the lessons buttons', async ({ page }) => {
+    await begin(page, EXPLORE);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(heading(page)).toBeFocused();
+    // From the heading, Tab reaches the first option; Space picks it, Enter checks the form.
+    await page.keyboard.press('Tab');
+    await expect(page.locator('.quiz-option input').first()).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(page.locator('.quiz-option input').first()).toBeChecked();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.quiz-feedback')).not.toBeEmpty();
+    await expect(page.locator('.quiz-feedback')).toBeFocused();
+    // The feedback is announced and Next is the next stop; Enter moves on and the new heading takes focus.
+    await page.keyboard.press('Tab');
+    await expect(nextButton(page)).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(heading(page)).toHaveText(roundHeading(1, 3, 2));
+    await expect(heading(page)).toBeFocused();
+    // Every button of the screen can be reached by Tab.
+    const reachable = new Set<string>();
+    await page.locator('.quiz-prompt').focus();
+    for (let i = 0; i < 14; i++) {
+      await page.keyboard.press('Tab');
+      reachable.add(await page.evaluate(() => (document.activeElement as HTMLElement)?.id || (document.activeElement as HTMLElement)?.textContent?.trim() || ''));
+    }
+    for (const name of ['btnSkipAll', 'btnBeforeBack', 'btnPrevQuestion', 'Check']) expect([...reachable].some((x) => x === name || x.startsWith(name)), `${name} is reachable: ${[...reachable].join(' | ')}`).toBe(true);
+    // The rest of Round 1 by keyboard, then the lessons' "Continue" with Enter.
+    for (let q = 2; q <= 5; q++) {
+      await expect(heading(page)).toHaveText(roundHeading(1, 3, q));
+      const cur = await onScreen(page);
+      for (const id of cur.answer) await page.locator(`.quiz-option[data-option="${id}"] input`).focus().then(() => page.keyboard.press('Space'));
+      await page.getByRole('button', { name: 'Check', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.locator('.quiz-feedback')).toHaveAttribute('data-result', 'correct');
+      await nextButton(page).focus();
+      await page.keyboard.press('Enter');
+    }
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await page.locator('#btnNextStep').focus();
+    await page.keyboard.press('Enter');
+    await expect(heading(page)).toHaveText(roundHeading(2, 3, 1));
+  });
+});
+
+test.describe('going back and forward through the flow', () => {
+  test("the browser's Back and Forward walk the steps and nothing is asked again", async ({ page }) => {
+    const s = await begin(page, EXPLORE);
+    await toRound(page, 2, () => true);
+    await expect(heading(page)).toHaveText(roundHeading(2, 3, 1));
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/questions?step=4`);
+    await answerNext(page, () => true);
+    expect(s.posted).toHaveLength(6);
+
+    await page.goBack();
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
+    await page.goBack();
+    // Round 1, every question answered: it opens on the last, answered; nothing to Check.
+    await expect(heading(page)).toHaveText(roundHeading(1, 3, 5));
+    await expect(page.getByRole('button', { name: 'Check', exact: true })).toHaveCount(0);
+    await expect(page.locator('.quiz-feedback')).not.toBeEmpty();
+    await page.goBack();
+    await expect(heading(page)).toHaveText(full.story!.title);
+    await page.goForward();
+    await expect(heading(page)).toHaveText(roundHeading(1, 3, 5));
+    await page.goForward();
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await page.goForward();
+    // Round 2 on its first question not yet answered: the second.
+    await expect(heading(page)).toHaveText(roundHeading(2, 3, 2));
+    expect(s.posted).toHaveLength(6);
+    expect(s.starts).toEqual([]);
+  });
+
+  test('Back from Round 2 goes to the lessons, from the second lessons to Round 2, with answers kept', async ({ page }) => {
+    const s = await begin(page, EXPLORE);
+    await toRound(page, 2, () => true);
+    await expect(page.getByRole('button', { name: '← Back to the lessons' })).toBeVisible();
+    await page.getByRole('button', { name: '← Back to the lessons' }).click();
+    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await expect(page.getByRole('button', { name: '← Back to the questions' })).toBeVisible();
+    await page.getByRole('button', { name: '← Back to the questions' }).click();
+    await expect(heading(page)).toHaveText(roundHeading(1, 3, 5));
+    expect(s.posted).toHaveLength(5);
+  });
+});
+
+test.describe('Skip all, just start the lab, at every step', () => {
+  test('on a question of a later round', async ({ page }) => {
+    const s = await begin(page, EXPLORE);
+    await toRound(page, 2, () => true);
+    await expect(heading(page)).toHaveText(roundHeading(2, 3, 1));
+    await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
+    await enterSession(page);
+    expect(s.starts).toEqual([EXPLORE]);
+    // What was answered was kept (and posted); nothing else was.
+    expect(s.posted).toHaveLength(5);
+  });
+
+  test('on the lessons of part 2, and on the first question', async ({ page }) => {
+    const s = await begin(page, EXPLORE);
+    await toRound(page, 3, () => true);
+    await page.getByRole('button', { name: '← Back to the lessons' }).click();
+    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
+    await enterSession(page);
+    expect(s.starts).toEqual([EXPLORE]);
+  });
+
+  test('a skipped question leaves its answer unrecorded: nothing is decided for the learner', async ({ page }) => {
+    const s = await begin(page, EXPLORE);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
+    await enterSession(page);
+    expect(s.posted).toEqual([]);
+    expect(((await page.evaluate(() => JSON.parse(localStorage.getItem('opalixLearn')!))).concepts ?? {})).toEqual({});
+  });
+});
+
+test.describe('a refresh and a link come back to the step', () => {
+  test('a refresh in the middle of Round 2 and on the second lessons returns to the same step with the answers kept', async ({ page }) => {
+    const s = await begin(page, EXPLORE);
+    await toRound(page, 2, () => false);
+    await answerNext(page, () => true);
+    await answerNext(page, () => true);
+    await expect(heading(page)).toHaveText(roundHeading(2, 3, 3));
+    expect(s.posted).toHaveLength(7);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(heading(page)).toHaveText(roundHeading(2, 3, 3));
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/questions?step=4`);
+    await expect(live(page)).toHaveText('Step 4 of 6: Questions, round 2 of 3');
+    // The two answered questions are still answered (not asked again) and nothing more was posted.
+    await page.getByRole('button', { name: '← Previous question' }).click();
+    await expect(heading(page)).toHaveText(roundHeading(2, 3, 2));
+    await expect(page.locator('.quiz-feedback')).toHaveAttribute('data-result', 'correct');
+    await expect(page.getByRole('button', { name: 'Check', exact: true })).toHaveCount(0);
+    expect(s.posted).toHaveLength(7);
+    // Round 1's results are in the record too: the plan was not made again, so the same rounds follow.
+    await nextButton(page).click();
+    await runRound(page, () => true);
+    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons?step=5`);
+    expect(s.posted).toHaveLength(10);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    await expect(host(page).locator('.lesson-title')).toHaveText(full.concepts.slice(3).map((c) => c.title));
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons?step=5`);
+    await expect(live(page)).toHaveText('Step 5 of 6: Lessons, part 2 of 2');
+    await page.getByRole('button', { name: 'Continue to the questions' }).click();
+    await expect(heading(page)).toHaveText(roundHeading(3, 3, 1));
+    expect(s.posted).toHaveLength(10);
+  });
+
+  test('a refresh on Round 1 and on the story is the same step', async ({ page }) => {
+    await begin(page, EXPLORE);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(heading(page)).toHaveText(full.story!.title);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await answerNext(page, () => true);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(heading(page)).toHaveText(roundHeading(1, 3, 2));
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/questions`);
+  });
+
+  test('a deep link to a later step opens it, one with a step number out of range opens the first step', async ({ page }) => {
+    await deepLink(page, `/labs/${EXPLORE}/lessons?step=5`);
+    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons?step=5`);
+    await expect(live(page)).toHaveText('Step 5 of 6: Lessons, part 2 of 2');
+  });
+
+  for (const [what, link, startsAt] of [
+    ['a step number past the end', `/lessons?step=99`, 'story'],
+    ['a step number just past the end', `/questions?step=7`, 'story'],
+    ['a step of 0', `/questions?step=0`, 'round 1'],
+    ['a step that is not a number', `/lessons?step=abc`, 'lessons 1'],
+    ['a negative step', `/lessons?step=-3`, 'lessons 1'],
+    ['an empty step', `/questions?step=`, 'round 1'],
+  ] as const) {
+    test(`${what} (${link}) falls back to a first step and the address is corrected`, async ({ page }) => {
+      const s = await deepLink(page, `/labs/${EXPLORE}${link}`);
+      const expected: Record<string, [string, string]> = {
+        story: [full.story!.title, 'story'],
+        'round 1': [roundHeading(1, 3, 1), 'questions'],
+        'lessons 1': ['Lessons, part 1 of 2', 'lessons'],
+      };
+      await expect(heading(page)).toHaveText(expected[startsAt]![0]);
+      await expect.poll(() => here_(page)).toBe(`/labs/${EXPLORE}/${expected[startsAt]![1]}`);
+      expect(s.errors).toEqual([]);
+    });
+  }
+
+  test('the step number wins over the word: /story?step=4 is Round 2, and the address says so', async ({ page }) => {
+    await deepLink(page, `/labs/${EXPLORE}/story?step=4`);
+    await expect(heading(page)).toHaveText(roundHeading(2, 3, 1));
+    await expect.poll(() => here_(page)).toBe(`/labs/${EXPLORE}/questions?step=4`);
+  });
+
+  for (const [word, text] of [
+    ['story', full.story!.title],
+    ['questions', roundHeading(1, 3, 1)],
+    ['lessons', 'Lessons, part 1 of 2'],
+  ] as const) {
+    test(`the old address /labs/<slug>/${word} is still valid`, async ({ page }) => {
+      await deepLink(page, `/labs/${EXPLORE}/${word}`);
+      await expect(heading(page)).toHaveText(text);
+      expect(here_(page)).toBe(`/labs/${EXPLORE}/${word}`);
+    });
+  }
+});
+
+test.describe('rounds and lessons: no horizontal scroll', () => {
+  for (const width of [1000, 1280, 1440, 2000]) {
+    test(`a round (asked and answered) and a lessons chunk at ${width}px`, async ({ page }) => {
+      await begin(page, EXPLORE, { width, height: 900 });
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await noHorizontalScroll(page);
+      await answerOnly(page, () => false);
+      await noHorizontalScroll(page);
+      await nextButton(page).click();
+      await runRound(page, () => false);
+      await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+      for (const card of await host(page).locator('.lesson').all()) {
+        await card.scrollIntoViewIfNeeded();
+        await noHorizontalScroll(page);
+      }
+      const available = await contentWidth(page);
+      for (const card of await host(page).locator('.lesson').all()) expect((await box(card)).width).toBeGreaterThanOrEqual(available * 0.95);
+      await page.getByRole('button', { name: 'Continue to the questions' }).click();
+      await noHorizontalScroll(page);
+    });
+  }
+
+  test('a round on a window narrowed to a phone', async ({ page }) => {
+    await begin(page, EXPLORE);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await noHorizontalScroll(page);
+    await answerOnly(page, () => true);
+    await noHorizontalScroll(page);
+    for (const el of await host(page).locator('.quiz-option, .steps-dots, .learn-actions .btn').all()) {
+      // (The Next button is hidden until a question is answered.)
+      const r = await el.boundingBox();
+      if (r) expect(r.x + r.width).toBeLessThanOrEqual(390.5);
+    }
+  });
 });

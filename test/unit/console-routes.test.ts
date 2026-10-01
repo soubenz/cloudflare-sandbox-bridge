@@ -164,6 +164,26 @@ describe('parseRoute', () => {
   });
 });
 
+describe('parseRoute: the step of the flow', () => {
+  it('reads ?step=N as the 1-based place in the flow, and leaves it out when there is none or it is not a plain number', () => {
+    expect(without(parse('/labs/x1/questions', '?step=4'))).toEqual({ name: 'lab-step', slug: 'x1', step: 'questions', n: 4 });
+    expect(without(parse('/labs/x1/lessons', '?a=b&step=12'))).toEqual({ name: 'lab-step', slug: 'x1', step: 'lessons', n: 12 });
+    for (const bad of ['?step=0', '?step=-1', '?step=abc', '?step=', '?step=1.5', '?step=0003', '?step=99999', '?step=4x']) {
+      expect(without(parse('/labs/x1/lessons', bad)), bad).toEqual({ name: 'lab-step', slug: 'x1', step: 'lessons' });
+    }
+    // The raw search stays as it was, for the rest of the console.
+    expect(parse('/labs/x1/lessons', '?step=4').search).toBe('?step=4');
+    // Only the three step addresses take it; anything else about them is still not found.
+    expect(parse('/labs/x1/nope', '?step=4').name).toBe('not-found');
+    expect(without(parse('/labs/x1/session', '?step=4'))).toEqual({ name: 'session', slug: 'x1' });
+  });
+
+  it('round-trips an address with a step', () => {
+    const route = parse('/labs/x1/questions', '?step=4') as unknown as { name: string; slug: string; step: string; n: number };
+    expect(r.buildRoute(route.name, route)).toBe('/labs/x1/questions?step=4');
+  });
+});
+
 describe('buildRoute', () => {
   it('builds each route', () => {
     expect(r.buildRoute('launcher')).toBe('/');
@@ -176,6 +196,20 @@ describe('buildRoute', () => {
     expect(r.buildRoute('session', { slug: 'x1', tab: 'hints' })).toBe('/labs/x1/session/hints');
     expect(r.buildRoute('session', { slug: 'x1', tab: 'service', service: 'echo' })).toBe('/labs/x1/session/service/echo');
     expect(r.buildRoute('launcher', { search: '?a=1' })).toBe('/?a=1');
+  });
+
+  it('puts the step of the flow in ?step=N, keeping other parameters, and carries it to no other route', () => {
+    expect(r.buildRoute('lab-step', { slug: 'x1', step: 'questions', n: 4 })).toBe('/labs/x1/questions?step=4');
+    expect(r.buildRoute('lab-step', { slug: 'x1', step: 'lessons', n: 5, search: '?comicTest=1' })).toBe('/labs/x1/lessons?comicTest=1&step=5');
+    // A step already in the search is replaced, and dropped when the route has none.
+    expect(r.buildRoute('lab-step', { slug: 'x1', step: 'lessons', n: 5, search: '?step=3&a=b' })).toBe('/labs/x1/lessons?a=b&step=5');
+    expect(r.buildRoute('lab-step', { slug: 'x1', step: 'story', search: '?step=3&a=b' })).toBe('/labs/x1/story?a=b');
+    expect(r.buildRoute('lab-step', { slug: 'x1', step: 'story', search: '?step=3' })).toBe('/labs/x1/story');
+    expect(r.buildRoute('session', { slug: 'x1', search: '?step=3&a=b' })).toBe('/labs/x1/session?a=b');
+    expect(r.buildRoute('launcher', { search: '?step=3' })).toBe('/');
+    expect(() => r.buildRoute('lab-step', { slug: 'x1', step: 'lessons', n: 0 })).toThrow(RangeError);
+    expect(() => r.buildRoute('lab-step', { slug: 'x1', step: 'lessons', n: 1.5 })).toThrow(RangeError);
+    expect(() => r.buildRoute('lab-step', { slug: 'x1', step: 'lessons', n: 1000 })).toThrow(RangeError);
   });
 
   it('ignores params that do not belong to the route (a session id cannot ride along)', () => {

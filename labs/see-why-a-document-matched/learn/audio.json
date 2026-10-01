@@ -1,0 +1,95 @@
+{
+  "model": "@cf/deepgram/aura-2-en",
+  "clips": {
+    "8b4ac02f77d53dd5": {
+      "voice": "thalia",
+      "text": "Thursday, just after eleven, Priya in Support forwarded us a ticket. I read the first line and laughed. Then I read the second one and stopped laughing.",
+      "seconds": 9.65,
+      "bytes": 57888
+    },
+    "ffff5c3c8ae119f8": {
+      "voice": "thalia",
+      "text": "A customer asked how to pause their plan, and our assistant answered warmly, fluently and completely wrong, straight from the article about upgrading. Priya's note on top was one line.",
+      "seconds": 11.81,
+      "bytes": 70848
+    },
+    "5c1958cd5938206a": {
+      "voice": "thalia",
+      "text": "Nothing crashed. Every part of our platform said it was fine, and nobody on the team could tell you how well the articles behind that answer actually matched the question.",
+      "seconds": 9.82,
+      "bytes": 58896
+    },
+    "da8b0f2cb9683bf6": {
+      "voice": "thalia",
+      "text": "That's what worries me. A wrong answer that sounds right is the worst kind. The customer believes it, and Support spends the afternoon apologising for something that read perfectly.",
+      "seconds": 10.58,
+      "bytes": 63504
+    },
+    "acb4c495efe243f1": {
+      "voice": "thalia",
+      "text": "Luckily, Tomasz had already built a little sandbox for exactly this. A houseplant care library, twenty-four short articles, behind a real search service just like ours.",
+      "seconds": 10.37,
+      "bytes": 62208
+    },
+    "c862b2faa29de110": {
+      "voice": "thalia",
+      "text": "Ask it anything and it ranks every article against your question, with a number for how far away each one sits. And every search leaves a trace you can open and read.",
+      "seconds": 10.25,
+      "bytes": 61488
+    },
+    "f410fec886d241df": {
+      "voice": "thalia",
+      "text": "Here's your part. Ask about watering succulents and see which article comes first. Then count how many sit inside the line Support uses for close enough to cite.",
+      "seconds": 10.06,
+      "bytes": 60336
+    },
+    "4cbb920993f44cf5": {
+      "voice": "thalia",
+      "text": "Last, ask it something the library knows nothing about, like the boiling point of tungsten, and see whether anything comes back really close. Write it all down, and we'll give Priya a real answer.",
+      "seconds": 11.45,
+      "bytes": 68688
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "voiceover",
+      "clip": "8b4ac02f77d53dd5"
+    },
+    {
+      "panel": 1,
+      "kind": "voiceover",
+      "clip": "ffff5c3c8ae119f8"
+    },
+    {
+      "panel": 2,
+      "kind": "voiceover",
+      "clip": "5c1958cd5938206a"
+    },
+    {
+      "panel": 3,
+      "kind": "voiceover",
+      "clip": "da8b0f2cb9683bf6"
+    },
+    {
+      "panel": 4,
+      "kind": "voiceover",
+      "clip": "acb4c495efe243f1"
+    },
+    {
+      "panel": 5,
+      "kind": "voiceover",
+      "clip": "c862b2faa29de110"
+    },
+    {
+      "panel": 6,
+      "kind": "voiceover",
+      "clip": "f410fec886d241df"
+    },
+    {
+      "panel": 7,
+      "kind": "voiceover",
+      "clip": "4cbb920993f44cf5"
+    }
+  ]
+}

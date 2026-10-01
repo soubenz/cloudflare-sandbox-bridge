@@ -1,0 +1,84 @@
+{
+  "model": "@cf/deepgram/aura-2-en",
+  "clips": {
+    "aced9f6455798f0e": {
+      "voice": "thalia",
+      "text": "Thursday morning, a note from Priya in Support. A customer asked why their parcel was late, and her assistant answered with a very confident little poem about rain.",
+      "seconds": 10.13,
+      "bytes": 60768
+    },
+    "07089d637929c9e7": {
+      "voice": "thalia",
+      "text": "To answer properly, her assistant needs the real weather in the depot's city. Search wrote a weather lookup and Billing a calculator, but each one is wired into its own agent, its own way.",
+      "seconds": 11.38,
+      "bytes": 68256
+    },
+    "b6cc45ba632aaadc": {
+      "voice": "thalia",
+      "text": "Then security came to me with one request. Agents should reach tools through one door, and that door should know exactly what was called. Fair enough. Today nobody could tell them.",
+      "seconds": 10.49,
+      "bytes": 62928
+    },
+    "eaf2a617b36e9367": {
+      "voice": "thalia",
+      "text": "We've set up a tool gateway. Tool servers sign up with it, it gathers the tools we pick in one place, and an agent connects there, asks what's on offer and calls one by name.",
+      "seconds": 11.21,
+      "bytes": 67248
+    },
+    "e6d5abdf87be9fa3": {
+      "voice": "thalia",
+      "text": "Tomasz put two toy servers behind it, a weather one and a calculator. Nothing real is connected, so nothing you try in there can reach a customer.",
+      "seconds": 9.1,
+      "bytes": 54576
+    },
+    "b1978e3d3d9a0817": {
+      "voice": "thalia",
+      "text": "Here's what I care about most. Priya's assistant reads whatever comes back, so a failure's shape matters as much as a success. And the status code alone won't tell you which you got.",
+      "seconds": 10.97,
+      "bytes": 65808
+    },
+    "1d9c323adfba96b0": {
+      "voice": "thalia",
+      "text": "So look at it from the agent's side. See which tools it's offered, ask for a small sum, then call something that doesn't exist. Come and tell me what you saw.",
+      "seconds": 9.58,
+      "bytes": 57456
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "voiceover",
+      "clip": "aced9f6455798f0e"
+    },
+    {
+      "panel": 1,
+      "kind": "voiceover",
+      "clip": "07089d637929c9e7"
+    },
+    {
+      "panel": 2,
+      "kind": "voiceover",
+      "clip": "b6cc45ba632aaadc"
+    },
+    {
+      "panel": 3,
+      "kind": "voiceover",
+      "clip": "eaf2a617b36e9367"
+    },
+    {
+      "panel": 4,
+      "kind": "voiceover",
+      "clip": "e6d5abdf87be9fa3"
+    },
+    {
+      "panel": 5,
+      "kind": "voiceover",
+      "clip": "b1978e3d3d9a0817"
+    },
+    {
+      "panel": 6,
+      "kind": "voiceover",
+      "clip": "1d9c323adfba96b0"
+    }
+  ]
+}

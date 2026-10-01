@@ -1,0 +1,95 @@
+{
+  "model": "@cf/deepgram/aura-2-en",
+  "clips": {
+    "31a8210014d49944": {
+      "voice": "thalia",
+      "text": "Welcome to the platform team at Larkfield. Here's how we used to call models. Four teams, four providers, four keys, and one key sat in a chat screenshot with a lot of thumbs up.",
+      "seconds": 13.13,
+      "bytes": 78768
+    },
+    "914f5787ebeeef0c": {
+      "voice": "thalia",
+      "text": "Then one Saturday night, Support's provider went down. Priya's assistant stopped answering customers, and we couldn't point it anywhere else, because the provider's name was written into its code.",
+      "seconds": 10.58,
+      "bytes": 63504
+    },
+    "43119ad575448983": {
+      "voice": "thalia",
+      "text": "A week later a provider renamed one of its models. Three of our apps had the old name typed in by hand, and all three broke before breakfast.",
+      "seconds": 8.93,
+      "bytes": 53568
+    },
+    "2e767ce636aa9157": {
+      "voice": "thalia",
+      "text": "And every month Jonas in Finance gets one invoice. He asks which team spent it and which provider answered. All we can give him is a shrug.",
+      "seconds": 8.69,
+      "bytes": 52128
+    },
+    "df5f47b3e0325864": {
+      "voice": "thalia",
+      "text": "My favourite exhibit. A research script retried one failing call all weekend. By Monday it had spent the month's budget, and it was still asking, very politely.",
+      "seconds": 9.82,
+      "bytes": 58896
+    },
+    "24fbf854b6356430": {
+      "voice": "thalia",
+      "text": "So Tomasz built a gateway, one front door for every model call. A team asks for a plain name like support. The gateway holds the keys, picks the provider and writes down every call.",
+      "seconds": 12.46,
+      "bytes": 74736
+    },
+    "69012d0f766f9967": {
+      "voice": "thalia",
+      "text": "Three more teams want to move in next month. Before they do, I want someone who has never seen it to tell us what it really does, not what Tomasz's notes say it does.",
+      "seconds": 9.53,
+      "bytes": 57168
+    },
+    "fe22fd6c65e6cb37": {
+      "voice": "thalia",
+      "text": "That's you. We've built you a small copy with a pretend provider, so there's no real bill. Send it a call, then find out where it went, what it counted, and how it complains.",
+      "seconds": 10.58,
+      "bytes": 63504
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "voiceover",
+      "clip": "31a8210014d49944"
+    },
+    {
+      "panel": 1,
+      "kind": "voiceover",
+      "clip": "914f5787ebeeef0c"
+    },
+    {
+      "panel": 2,
+      "kind": "voiceover",
+      "clip": "43119ad575448983"
+    },
+    {
+      "panel": 3,
+      "kind": "voiceover",
+      "clip": "2e767ce636aa9157"
+    },
+    {
+      "panel": 4,
+      "kind": "voiceover",
+      "clip": "df5f47b3e0325864"
+    },
+    {
+      "panel": 5,
+      "kind": "voiceover",
+      "clip": "24fbf854b6356430"
+    },
+    {
+      "panel": 6,
+      "kind": "voiceover",
+      "clip": "69012d0f766f9967"
+    },
+    {
+      "panel": 7,
+      "kind": "voiceover",
+      "clip": "fe22fd6c65e6cb37"
+    }
+  ]
+}

@@ -94,8 +94,10 @@ function compileLearn(slug: string): Bundle {
     .sort()
     .map((f) => {
       const { data, body } = split(readFileSync(join(dir, 'concepts', f), 'utf8'));
-      return { id: data.id, title: data.title, minutes: data.minutes, recap: data.recap, body } as Concept;
-    });
+      return { order: typeof data.order === 'number' ? data.order : 100, id: data.id, title: data.title, minutes: data.minutes, recap: data.recap, body };
+    })
+    .sort((a, b) => a.order - b.order) // as the compiler: lower `order` first (the foundation lesson), then file name
+    .map(({ order: _order, ...c }) => c as Concept);
   const quiz = parseYaml(readFileSync(join(dir, 'quiz.yaml'), 'utf8')) as { questions: Question[] };
   const qs = parseYaml(readFileSync(join(dir, 'questions.yaml'), 'utf8')) as { answers_file: string; fields: Field[] };
   return {
@@ -125,6 +127,15 @@ const diagnosticsOf = (id: string) => bundle.questions.filter((q) => q.concept =
 const ALIASES = 'gateway.routing-aliases';
 const SPEND = 'gateway.usage-and-spend';
 const DIAGNOSTIC_COUNT = bundle.questions.filter((q) => q.diagnostic !== false).length;
+/**
+ * The flow of this lab: 15 questions and 5 lessons are three rounds of five and two chunks of
+ * lessons (3 and 2, in lesson order: what-is, aliases, spend, then errors, reload). Round 1 asks one
+ * question about each concept; the rest follow their lessons (the order itself is unit tested:
+ * console-learn-flow.test.ts, and seen end to end in 19-lessons-flow.spec.ts).
+ */
+const CHUNK_A = bundle.concepts.slice(0, 3).map((c) => c.id);
+const ROUND_1 = 'Round 1 of 3 · question 1 of 5';
+const LESSONS_A = 'Lessons, part 1 of 2';
 
 const lab = (o: Record<string, unknown>) => ({
   version: '1.0.0',
@@ -369,6 +380,26 @@ async function runQuiz(page: Page, questions: Question[], right: (q: Question) =
     await next(page);
   }
   return asked;
+}
+
+/**
+ * Goes on through the rest of the flow (the next rounds and lessons), answering with `right`, until
+ * the last step's own Start the lab is on screen (the last lessons', or the last question's once answered).
+ */
+async function toTheEnd(page: Page, questions: Question[], right: (q: Question) => boolean): Promise<void> {
+  for (let guard = 0; guard < 60; guard++) {
+    if (await page.locator('.quiz-prompt').count()) {
+      await answer(page, questions, right(await currentQuestion(page, questions)));
+      const label = (await page.locator('.quiz-form .learn-actions button').filter({ hasNotText: 'Check' }).innerText()).trim();
+      if (label === 'Start the lab') return;
+      await next(page);
+    } else if (await page.locator('#btnNextStep').count()) {
+      await page.locator('#btnNextStep').click();
+    } else {
+      return;
+    }
+  }
+  throw new Error('the flow did not end');
 }
 
 async function currentQuestion(page: Page, questions: Question[]): Promise<Question> {
@@ -928,29 +959,30 @@ test.describe('Before you begin', () => {
     await expect(screen(page).locator('.learn-meta')).toHaveText(`${bundle.story!.minutes} min read`);
     // Rendered markdown, not its source.
     await expect(screen(page).locator('.learn-prose p').first()).toBeVisible();
-    await expect(screen(page).locator('.learn-prose code').first()).toBeVisible();
     expect(await screen(page).locator('.learn-prose').innerText()).not.toMatch(/\*\*|`/);
     expect(s.learnFetches).toEqual([GATEWAY]);
     expect(s.starts).toEqual([]);
 
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(page)).toHaveText(`Question 1 of ${DIAGNOSTIC_COUNT}`);
+    await expect(heading(page)).toHaveText(ROUND_1);
     expect(s.starts).toEqual([]);
     await expect(page.getByRole('button', { name: 'Skip all, just start the lab' })).toBeVisible();
     expect(s.errors).toEqual([]);
   });
 
-  test('asks the diagnostic questions one per screen and collapses the concept that was answered fully right', async ({ page }) => {
+  test('asks Round 1 one question per screen, one about each concept, and collapses the concept that was answered fully right', async ({ page }) => {
     const s = await stub(page);
     await open(page, { mastery: SKIPPED });
     await startCard(page);
     await page.getByRole('button', { name: 'Continue' }).click();
 
-    // Know aliases completely, miss everything else.
+    // Know aliases, miss everything else.
     const asked = await runQuiz(page, bundle.questions, (q) => q.concept === ALIASES);
-    expect(asked.map((q) => q.id).sort()).toEqual(bundle.questions.filter((q) => q.diagnostic !== false).map((q) => q.id).sort());
+    expect(asked).toHaveLength(5);
+    expect(asked.map((q) => q.concept)).toEqual(bundle.concepts.map((c) => c.id));
+    expect(asked.every((q) => q.diagnostic !== false)).toBe(true);
 
-    await expect(heading(page)).toHaveText('Lessons for this lab');
+    await expect(heading(page)).toHaveText(LESSONS_A);
     await expect(heading(page)).toBeFocused();
     const aliases = page.locator(`.lesson[data-concept="${ALIASES}"]`);
     await expect(aliases).toHaveAttribute('data-state', 'collapsed');
@@ -958,25 +990,29 @@ test.describe('Before you begin', () => {
     await expect(aliases.locator('.lesson-body')).toHaveCount(0);
     await expect(aliases.locator('.lesson-chip')).toHaveText('You know this');
     await expect(aliases.getByRole('button', { name: 'Show me the lesson anyway' })).toBeVisible();
-    for (const c of bundle.concepts.filter((c) => c.id !== ALIASES)) {
-      const card = page.locator(`.lesson[data-concept="${c.id}"]`);
+    // The first chunk holds three of the five lessons: the rest are for after Round 2.
+    await expect(page.locator('.lesson')).toHaveCount(CHUNK_A.length);
+    for (const id of CHUNK_A.filter((id) => id !== ALIASES)) {
+      const card = page.locator(`.lesson[data-concept="${id}"]`);
       await expect(card).toHaveAttribute('data-state', 'expanded');
       await expect(card.locator('.lesson-body')).toBeVisible();
       await expect(card.getByRole('button', { name: 'I know this, skip' })).toBeVisible();
     }
     await expect(page.locator('.plan-summary')).toContainText('1 folded to a recap');
 
-    // The outcome is stored per concept, and posted anonymously as a diagnostic of this lab.
+    // The outcome is stored per concept, and each answer is posted anonymously as a diagnostic of this lab, once.
     const m = await stored(page);
     expect(m.concepts[ALIASES]).toEqual({ known: true });
     expect(m.concepts[SPEND]).toEqual({ known: false });
-    await expect.poll(() => s.posted.length).toBe(1);
-    const body = s.posted[0]!;
-    expect(body.lab_slug).toBe(GATEWAY);
-    expect(body.lab_version).toBe('1.0.0');
-    expect(body.answers).toHaveLength(DIAGNOSTIC_COUNT);
-    expect(new Set(body.answers.map((a: any) => a.phase))).toEqual(new Set(['diagnostic']));
-    expect(Object.keys(body).sort()).toEqual(['answers', 'lab_slug', 'lab_version']);
+    await expect.poll(() => s.posted.length).toBe(5);
+    for (const body of s.posted) {
+      expect(body.lab_slug).toBe(GATEWAY);
+      expect(body.lab_version).toBe('1.0.0');
+      expect(body.answers).toHaveLength(1);
+      expect(new Set(body.answers.map((a: any) => a.phase))).toEqual(new Set(['diagnostic']));
+      expect(Object.keys(body).sort()).toEqual(['answers', 'lab_slug', 'lab_version']);
+    }
+    expect(new Set(s.posted.map((b) => b.answers[0].question_id)).size).toBe(5);
     expect(s.starts).toEqual([]);
   });
 
@@ -985,12 +1021,12 @@ test.describe('Before you begin', () => {
     await open(page, { mastery: SKIPPED });
     await startCard(page);
     await page.getByRole('button', { name: 'Continue' }).click();
-    // Every aliases question right except the first.
-    const aliasQs = diagnosticsOf(ALIASES);
-    expect(aliasQs.length).toBeGreaterThan(1);
-    await runQuiz(page, bundle.questions, (q) => q.concept === ALIASES && q.id !== aliasQs[0]!.id);
+    // Everything right except the aliases question.
+    await runQuiz(page, bundle.questions, (q) => q.concept !== ALIASES);
     await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'expanded');
+    await expect(page.locator(`.lesson[data-concept="${SPEND}"]`)).toHaveAttribute('data-state', 'collapsed');
     expect((await stored(page)).concepts[ALIASES]).toEqual({ known: false });
+    expect((await stored(page)).concepts[SPEND]).toEqual({ known: true });
   });
 
   test('only asks about concepts that are not already known', async ({ page }) => {
@@ -998,11 +1034,13 @@ test.describe('Before you begin', () => {
     await open(page, { mastery: { ...SKIPPED, concepts: { [ALIASES]: { known: true } } } });
     await startCard(page);
     await page.getByRole('button', { name: 'Continue' }).click();
-    const expected = DIAGNOSTIC_COUNT - diagnosticsOf(ALIASES).length;
-    await expect(heading(page)).toHaveText(`Question 1 of ${expected}`);
+    // 12 questions are left: two rounds of 6 with all the lessons between them.
+    await expect(heading(page)).toHaveText('Round 1 of 2 · question 1 of 6');
     const asked = await runQuiz(page, bundle.questions, () => false);
     expect(asked.some((q) => q.concept === ALIASES)).toBe(false);
-    expect(asked).toHaveLength(expected);
+    expect(asked).toHaveLength(6);
+    await expect(heading(page)).toHaveText('Lessons for this lab');
+    await expect(page.locator('.lesson')).toHaveCount(bundle.concepts.length);
     // Still known, so still folded.
     await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
   });
@@ -1078,10 +1116,13 @@ test.describe('Before you begin', () => {
     await startCard(page);
     await page.getByRole('button', { name: 'Continue' }).click();
     await runQuiz(page, bundle.questions, () => true);
-    await expect(heading(page)).toHaveText('Lessons for this lab');
-    await expect(page.locator('.lesson[data-state="collapsed"]')).toHaveCount(bundle.concepts.length);
+    await expect(heading(page)).toHaveText(LESSONS_A);
+    await expect(page.locator('.lesson[data-state="collapsed"]')).toHaveCount(CHUNK_A.length);
     expect(s.starts).toEqual([]);
-    await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+    // Nothing starts the session on the way: it is the last step's Start the lab that does.
+    await toTheEnd(page, bundle.questions, () => true);
+    expect(s.starts).toEqual([]);
+    await page.locator('[data-start="primary"]').click();
     await enterSession(page);
     expect(s.starts).toEqual([GATEWAY]);
     await expect(screen(page)).toBeHidden();
@@ -1153,6 +1194,7 @@ test.describe('Before you begin', () => {
     await startCard(page);
     await page.getByRole('button', { name: 'Continue' }).click();
     await runQuiz(page, bundle.questions, (q) => q.concept !== SPEND);
+    await expect(heading(page)).toHaveText(LESSONS_A);
     await expect(page.locator(`.lesson[data-concept="${SPEND}"]`)).toHaveAttribute('data-state', 'expanded');
     await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
   });
@@ -1169,7 +1211,7 @@ test.describe('Before you begin', () => {
     await page.getByRole('button', { name: 'Continue' }).click();
     await noHorizontalScroll(page);
     await runQuiz(page, bundle.questions, () => false);
-    await expect(heading(page)).toHaveText('Lessons for this lab');
+    await expect(heading(page)).toHaveText(LESSONS_A);
     await noHorizontalScroll(page);
     for (const box of await page.locator('#learnScreen .lesson, #learnScreen .quiz-option, #learnScreen .diagram').all()) {
       const r = await box.boundingBox();
@@ -1728,15 +1770,16 @@ test.describe('screenshots', () => {
       await expect(heading(page)).toHaveText(bundle.story!.title);
       await shot('before-story');
       await page.getByRole('button', { name: 'Continue' }).click();
+      await shot('before-question');
       await runQuiz(page, bundle.questions, (x) => x.concept === ALIASES);
-      await expect(heading(page)).toHaveText('Lessons for this lab');
+      await expect(heading(page)).toHaveText(LESSONS_A);
       await shot('before-lessons');
       await page.locator(`.lesson[data-concept="${SPEND}"] .diagram`).first().scrollIntoViewIfNeeded();
       await shot('before-lessons-diagram');
 
       // In the session: the questions form.
       await wide(async () => {
-        await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+        await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
         await enterSession(page);
       });
       await page.getByRole('tab', { name: 'Questions' }).click();

@@ -9,8 +9,10 @@
  *   /paths/<path>/modules/<n>          ... or to one of its modules
  *   /onboarding                        the platform quiz
  *   /labs/<slug>                       the lab's entry: its first "before you begin" step
- *   /labs/<slug>/story|questions|lessons
- *                                      the steps before the lab starts
+ *   /labs/<slug>/story|questions|lessons[?step=N]
+ *                                      the steps before the lab starts: N is the step's place in the
+ *                                      flow (story, round 1, lessons, round 2 ...); without it, the first
+ *                                      step of that kind
  *   /labs/<slug>/session               starts the lab, or rejoins it when it is running
  *   /labs/<slug>/session/brief|questions|hints|checks|solution
  *                                      the guide's tabs
@@ -52,6 +54,27 @@ function cleanSearch(search) {
   return s.length > 1 && s.length <= MAX_SEARCH && s.startsWith('?') ? s : '';
 }
 
+const STEP_NUMBER = /^[1-9][0-9]{0,2}$/;
+
+/** The `step` of a search ('?a=b&step=3'): its number, or null when there is none or it is not a plain 1-999. */
+function stepParam(search) {
+  for (const part of search.slice(1).split('&')) {
+    const [key, value = ''] = part.split('=');
+    if (key === 'step') return STEP_NUMBER.test(value) ? Number(value) : null;
+  }
+  return null;
+}
+
+/**
+ * A search with its `step` replaced by `n` (or dropped, for null), every other parameter as it was.
+ * `step` belongs to the flow's own address: it must not be carried to the lab's other screens.
+ */
+function withStep(search, n) {
+  const kept = search.length > 1 ? search.slice(1).split('&').filter((part) => part.split('=')[0] !== 'step') : [];
+  if (n !== null) kept.push(`step=${n}`);
+  return kept.length ? `?${kept.join('&')}` : '';
+}
+
 /** One path segment decoded, or null when it is not valid percent-encoding or hides a separator. */
 function decodeSegment(raw) {
   let s;
@@ -77,7 +100,7 @@ const notFound = (pathname, search) => ({
  *   { name: 'path', path, module? }
  *   { name: 'onboarding' }
  *   { name: 'lab', slug }
- *   { name: 'lab-step', slug, step }
+ *   { name: 'lab-step', slug, step, n? }   n: the `?step=N` place in the flow (1-based), when the address has a valid one
  *   { name: 'session', slug, tab?, service?, invalidTab? }
  *   { name: 'not-found', path }
  *
@@ -120,7 +143,10 @@ export function parseRoute(pathname, search = '') {
     const tail = rest.slice(1);
     if (tail.length === 0) return { name: 'lab', slug, search: q };
     if (tail[0] !== 'session') {
-      return tail.length === 1 && LAB_STEPS.includes(tail[0]) ? { name: 'lab-step', slug, step: tail[0], search: q } : notFound(trimmed, q);
+      if (!(tail.length === 1 && LAB_STEPS.includes(tail[0]))) return notFound(trimmed, q);
+      // `?step=N` is the step's place in the whole flow (1-based): rounds and lesson chunks share /questions and /lessons.
+      const n = stepParam(q);
+      return { name: 'lab-step', slug, step: tail[0], ...(n === null ? {} : { n }), search: q };
     }
     const sub = tail.slice(1);
     const base = { name: 'session', slug, search: q };
@@ -144,6 +170,7 @@ export function buildRoute(name, params = {}) {
   };
   const seg = encodeURIComponent;
   let path;
+  let stepNumber = null;
   switch (name) {
     case 'launcher':
       path = '/';
@@ -167,6 +194,10 @@ export function buildRoute(name, params = {}) {
       need(isSlug(params.slug), 'slug is not a slug');
       need(LAB_STEPS.includes(params.step), 'unknown step');
       path = `/labs/${seg(params.slug)}/${params.step}`;
+      if (params.n !== undefined && params.n !== null) {
+        need(Number.isInteger(params.n) && STEP_NUMBER.test(String(params.n)), 'step number is not a number');
+        stepNumber = params.n;
+      }
       break;
     case 'session': {
       need(isSlug(params.slug), 'slug is not a slug');
@@ -185,7 +216,7 @@ export function buildRoute(name, params = {}) {
     default:
       throw new RangeError(`buildRoute: unknown route "${name}"`);
   }
-  return path + cleanSearch(params.search);
+  return path + withStep(cleanSearch(params.search), stepNumber);
 }
 
 /**

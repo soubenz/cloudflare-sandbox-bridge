@@ -18,7 +18,8 @@ unit tested), the History API glue in `dashboard/src/router.js`, and what each r
 | `/paths/<path>/modules/<n>` | ... or to module `n` of it (opened, if it was condensed). |
 | `/onboarding` | The platform quiz. With no quiz published it becomes `/`. |
 | `/labs/<slug>` | The lab's entry: its first "Before you begin" step. A lab with nothing to read lands on the launcher at its card (nothing is started). |
-| `/labs/<slug>/story` `/questions` `/lessons` | The steps before the lab starts. Only the steps the lab has: opening another replaces the address with the first step it does have. The questions are a step only while some are due. |
+| `/labs/<slug>/story` `/questions` `/lessons` | The steps before the lab starts: the story, then rounds of questions (`/questions`) alternating with chunks of lessons (`/lessons`). Without `?step=` each is the first step of its kind. A kind the lab does not have falls to the closest one it does. |
+| `/labs/<slug>/questions?step=N` `/lessons?step=N` | The N-th step of the whole flow (1-based, as in "Step N of M"; the story is step 1 when there is one): a later round or lesson chunk. A number in range wins over the path word; one that is not a plain number from 1 to 999, or is past the last step, opens the first step. The address is corrected to the step actually shown. The first step of a kind has no `?step=` (so the simple labs keep `/story`, `/questions`, `/lessons`). `step` is the flow's own parameter: it is never carried to another screen, and other query parameters are kept. |
 | `/labs/<slug>/session` | Starts the lab, or rejoins it when it is running (same as Start / Rejoin). Boot and ended states live here too. |
 | `/labs/<slug>/session/brief` `questions` `hints` `checks` `solution` | The guide's tabs. |
 | `/labs/<slug>/session/terminal` `editor` | The workspace window's tabs. |
@@ -42,7 +43,7 @@ and a toast saying so; that is what Start has always done.)
 - Entering a step, the session, or the launcher from a button **pushes** an address.
 - Tabs inside the session **replace** it in place, so Back does not step through every tab. Only a
   tab the learner chose is written; the guide's first tab and the explore lab's landing service are not.
-- Answering the quick questions replaces `/questions` with `/lessons`, so Back goes to the story.
+- Every step of the flow pushes its own address, so the browser's Back walks the flow back one step (a round at its first unanswered question, or at its last when everything is answered) and Forward walks on; the answers are kept, so nothing is asked twice. A refresh on a step comes back to that step with the plan and answers this tab had (`sessionStorage`, `opalix.flow.<slug>`); with none (a new tab, a link sent to someone else) the flow is planned afresh and the step number is read against the new plan.
 - Back out of a running lab goes to wherever the learner came from (the lessons, or the launcher).
   The lab is **not** ended: the launcher shows its "Pick up where you left off" card with Rejoin.
   Forward rejoins it without starting another.
@@ -82,8 +83,8 @@ cases (`test/unit/console-return-path.test.ts`, `test/unit/console-worker.test.t
 | --- | --- |
 | launcher, paths | `Opalix labs` |
 | lab entry, story | `<Lab title> · Opalix labs` |
-| questions | `Quick questions · <Lab title> · Opalix labs` |
-| lessons | `Lessons · <Lab title> · Opalix labs` |
+| questions (every round) | `Quick questions · <Lab title> · Opalix labs` |
+| lessons (every chunk) | `Lessons · <Lab title> · Opalix labs` |
 | session | `Session · <Lab title> · Opalix labs` |
 | not found | `Not found · Opalix labs` |
 

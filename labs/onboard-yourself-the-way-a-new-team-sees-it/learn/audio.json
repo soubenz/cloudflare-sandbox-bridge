@@ -1,0 +1,95 @@
+{
+  "model": "@cf/deepgram/aura-2-en",
+  "clips": {
+    "f0819ab3076be033": {
+      "voice": "thalia",
+      "text": "I opened our onboarding page for the team that starts on Monday. Nine bullet points. Bullet seven just says, ask Tomasz.",
+      "seconds": 7.73,
+      "bytes": 46368
+    },
+    "446c91dd2dcf3af0": {
+      "voice": "thalia",
+      "text": "In fairness, Tomasz built most of this, so he sort of is the documentation. He also wrote that page before we moved the gateway, and two people have edited it since.",
+      "seconds": 10.46,
+      "bytes": 62784
+    },
+    "2f93f2eb93400665": {
+      "voice": "thalia",
+      "text": "Here's why it hurts. The last team waited most of a week for their first real call, and they spent it building workarounds we had to clean up afterwards.",
+      "seconds": 8.78,
+      "bytes": 52704
+    },
+    "9c3b2007ab5193af": {
+      "voice": "thalia",
+      "text": "Worse, none of us could say exactly what a new team ends up with. Today our platform has one older team, a spare model name nobody holds, and a weather tool nobody has plugged in.",
+      "seconds": 11.69,
+      "bytes": 70128
+    },
+    "5bca2d615c1185ae": {
+      "voice": "thalia",
+      "text": "Then Tomasz remembered the script he'd left in your workspace. It walks the whole path for real. A key for the team, their tool plugged in, one real call, and a time on every step.",
+      "seconds": 12.58,
+      "bytes": 75456
+    },
+    "d4948be4ce63f4ab": {
+      "voice": "thalia",
+      "text": "So here's the plan. For one hour, you are the new team. Get them their model and their own tool, then make the one real call their first service will make.",
+      "seconds": 9.74,
+      "bytes": 58464
+    },
+    "2dcf465d42c52d75": {
+      "voice": "thalia",
+      "text": "Write down three things as you go. How many separate systems you had to talk to. Whether the new key can reach the older team's model. And whether that real call worked.",
+      "seconds": 9.7,
+      "bytes": 58176
+    },
+    "5265370403b76554": {
+      "voice": "thalia",
+      "text": "I'll ask you again on Friday, so don't answer from the wiki. Answer from what you saw. Off you go.",
+      "seconds": 5.98,
+      "bytes": 35856
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "voiceover",
+      "clip": "f0819ab3076be033"
+    },
+    {
+      "panel": 1,
+      "kind": "voiceover",
+      "clip": "446c91dd2dcf3af0"
+    },
+    {
+      "panel": 2,
+      "kind": "voiceover",
+      "clip": "2f93f2eb93400665"
+    },
+    {
+      "panel": 3,
+      "kind": "voiceover",
+      "clip": "9c3b2007ab5193af"
+    },
+    {
+      "panel": 4,
+      "kind": "voiceover",
+      "clip": "5bca2d615c1185ae"
+    },
+    {
+      "panel": 5,
+      "kind": "voiceover",
+      "clip": "d4948be4ce63f4ab"
+    },
+    {
+      "panel": 6,
+      "kind": "voiceover",
+      "clip": "2dcf465d42c52d75"
+    },
+    {
+      "panel": 7,
+      "kind": "voiceover",
+      "clip": "5265370403b76554"
+    }
+  ]
+}

@@ -378,7 +378,7 @@ async function openLabRoute(route, stale) {
   if (learnFlow?.goto && learnFlowLab === lab.slug && !$('learnScreen').hidden) {
     applying++;
     try {
-      learnFlow.goto(route.step);
+      learnFlow.goto(route.step, route.n);
     } finally {
       applying--;
     }
@@ -390,7 +390,7 @@ async function openLabRoute(route, stale) {
   if (stale()) return;
   const hasScreen = entry && (entry.learn.story || entry.learn.concepts.length > 0);
   if (!hasScreen) return showLabLanding(lab, route);
-  openLearnFlow(lab, entry, route.step, { fromRoute: true });
+  openLearnFlow(lab, entry, route.step, { fromRoute: true, n: route.n });
 }
 
 /**
@@ -1587,10 +1587,12 @@ async function beginLab(lab, card) {
 }
 
 /**
- * "Before you begin" for a lab, on its step (the first when none is named). From a card, each step
- * pushes its address (/labs/x/story ...); from an address, the steps only correct it.
+ * "Before you begin" for a lab, on its step (the first when none is named): `initial` is the path's
+ * word and `n` the `?step=N` number. From a card, each step pushes its address (/labs/x/story,
+ * /labs/x/questions, /labs/x/lessons?step=4 ...); from an address, the steps only correct it, and a
+ * refresh picks up the plan and the answers this tab already had.
  */
-function openLearnFlow(lab, entry, initial, { fromRoute = false } = {}) {
+function openLearnFlow(lab, entry, initial, { fromRoute = false, n } = {}) {
   hideLearnScreen();
   showLearnScreen();
   learnFlowLab = lab.slug;
@@ -1603,7 +1605,9 @@ function openLearnFlow(lab, entry, initial, { fromRoute = false } = {}) {
       store: mastery,
       post: (body) => api.postAnswers(body),
       initial,
-      onStep: (step) => onLabStep(lab.slug, step),
+      step: n,
+      resume: fromRoute,
+      onStep: (step, number) => onLabStep(lab.slug, step, number),
       // The screen may have shrunk since Start was pressed: ask again before a container is claimed.
       onStart: () => (guardDesktop(lab.slug) ? undefined : startSession(lab.slug)),
       onBack: () => {
@@ -1616,12 +1620,21 @@ function openLearnFlow(lab, entry, initial, { fromRoute = false } = {}) {
   }
 }
 
-/** A step of "Before you begin" is on screen: the address says so. Answering the questions replaces theirs with the lessons'. */
-function onLabStep(slug, step) {
-  const route = router.current();
-  if (route.name === 'lab-step' && route.slug === slug && route.step === step) return updateTitle();
-  const answered = route.name === 'lab-step' && route.slug === slug && route.step === 'questions' && step === 'lessons';
-  setRoute('lab-step', { slug, step }, { replace: answered });
+/**
+ * A step of "Before you begin" is on screen: the address says so (its word, and `?step=N` for a step
+ * that is not the first of its kind). Each step pushes an address, so the browser's Back walks the
+ * flow back one step; the flow keeps the answers, so nothing is asked twice.
+ */
+function onLabStep(slug, step, n) {
+  // Already the address of this step, exactly (a junk ?step= a link carried is not): nothing to move.
+  let wanted = null;
+  try {
+    wanted = buildRoute('lab-step', { slug, step, n: n ?? undefined, search: location.search });
+  } catch {
+    /* an address this console cannot spell: the bar stays as it is */
+  }
+  if (wanted === null || wanted === location.pathname + location.search) return updateTitle();
+  setRoute('lab-step', { slug, step, n: n ?? undefined });
 }
 
 // --- the platform quiz

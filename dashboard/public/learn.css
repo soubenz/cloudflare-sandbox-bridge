@@ -421,3 +421,28 @@ pre.has-copy:hover .code-copy, .code-copy:focus-visible, .code-copy[data-state] 
 /* Leave room so the button never covers the first line of a short block. */
 pre.has-copy code { padding-right: 84px; }
 @media (prefers-reduced-motion: reduce) { .code-copy { transition: none; } }
+
+/* ---------- the pre-lab flow: alternating rounds of questions and lessons ---------- */
+/* A round is a centred column, narrower than the card of the story. */
+.learn-wrap.learn-wrap-round { max-width: 760px; }
+
+/*
+ * The quiet progress dots: one per step. A round of questions is a circle, a chunk of lessons a
+ * rounded square, the story a small bar, and a hollow ring at the end stands for Start the lab.
+ * Done steps are filled with the accent, the current one is larger with a ring, the rest are muted.
+ * Decoration only (aria-hidden): the heading and the live region say "Step N of M".
+ */
+.steps.steps-dots { align-items: center; gap: 10px; flex-wrap: wrap; }
+.steps-dots i {
+  flex: none; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--border-strong); box-sizing: border-box;
+}
+.steps-dots i[data-kind="lessons"] { border-radius: 3px; }
+.steps-dots i[data-kind="story"] { width: 14px; border-radius: 999px; }
+.steps-dots i.done { background: var(--accent); }
+.steps-dots i.now { background: var(--surface); border: 2.5px solid var(--accent); width: 14px; height: 14px; }
+.steps-dots i[data-kind="story"].now { width: 20px; }
+.steps-dots i.end { background: none; border: 1.5px dashed var(--border-strong); }
+
+/* The lessons of a later chunk are numbered on from the ones before. */
+.lesson-list { counter-reset: lesson var(--lesson-offset, 0); }

@@ -48,11 +48,16 @@ export function planSummary(plan) {
  *   onPlan      called with [{ concept, state }] now and whenever a lesson is
  *               opened or folded (the screen's summary line is built from it)
  *   onProgress  called with { read, total } now and whenever the count changes
+ *   only        the concept ids this screen shows (one chunk of the lessons: the flow
+ *               alternates lessons and questions), in the bundle's order; omitted, all
+ *   offset      how many lessons came before (the numbering carries on from it)
  *
  * A lesson counts as read once the learner has had it on screen, open; one
  * that is folded (they know it, or skipped it) counts as read.
  */
-export function buildLessons(host, { learn, store, onPlan, onProgress }) {
+export function buildLessons(host, { learn, store, onPlan, onProgress, only, offset = 0 }) {
+  const shown = only ? new Set(only) : null;
+  const chunk = (plan) => (shown ? plan.filter((p) => shown.has(p.concept)) : plan);
   const byConcept = new Map((learn.concepts || []).map((c) => [c.id, c]));
   const cards = new Map();
   const states = new Map();
@@ -60,8 +65,9 @@ export function buildLessons(host, { learn, store, onPlan, onProgress }) {
   host.replaceChildren();
 
   const list = make('div', 'lesson-list');
+  if (offset > 0) list.style.setProperty('--lesson-offset', String(offset));
   const mastery = store.get();
-  for (const p of planLessons(learn, mastery)) {
+  for (const p of chunk(planLessons(learn, mastery))) {
     const concept = byConcept.get(p.concept);
     if (!concept) continue;
     const card = lessonCard({
@@ -112,7 +118,7 @@ export function buildLessons(host, { learn, store, onPlan, onProgress }) {
   function decide(id, action) {
     store.update((m) => setOverride(m, id, action));
     const m = store.get();
-    const plan = planLessons(learn, m);
+    const plan = chunk(planLessons(learn, m));
     const now = plan.find((p) => p.concept === id);
     states.set(id, now.state);
     cards.get(id).update({ state: now.state, chip: reasonChip(lessonReason(id, m)) }, { focus: true });
@@ -126,7 +132,7 @@ export function buildLessons(host, { learn, store, onPlan, onProgress }) {
     report();
   }
 
-  onPlan?.(planLessons(learn, store.get()));
+  onPlan?.(chunk(planLessons(learn, store.get())));
   report();
 
   return {

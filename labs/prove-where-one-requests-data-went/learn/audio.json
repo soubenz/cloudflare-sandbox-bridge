@@ -1,0 +1,95 @@
+{
+  "model": "@cf/deepgram/aura-2-en",
+  "clips": {
+    "d4d7b83174cbe702": {
+      "voice": "thalia",
+      "text": "Anneke in data protection wrote to our channel this morning. No greeting, no exclamation marks. When Anneke skips the exclamation marks, I put my coffee down.",
+      "seconds": 10.18,
+      "bytes": 61056
+    },
+    "3ca82ca83be14b38": {
+      "voice": "thalia",
+      "text": "A customer has asked us, in writing, where the data in one support ticket was processed. Their contract names a region, and Anneke has to sign the reply this week.",
+      "seconds": 9.38,
+      "bytes": 56304
+    },
+    "52f9ebc0dbb6b9dc": {
+      "voice": "thalia",
+      "text": "Our first instinct was to send her the routing rules. But a rule only says what we meant to happen. Anneke wants to see what actually happened to one real request.",
+      "seconds": 9.29,
+      "bytes": 55728
+    },
+    "0ee038759cedb2e2": {
+      "voice": "thalia",
+      "text": "Then Tomasz remembered something awkward. Our EU route isn't a straight line to its provider. Something sits in the middle, and he never wrote down what.",
+      "seconds": 8.18,
+      "bytes": 49104
+    },
+    "1b3e01c003cd38e9": {
+      "voice": "thalia",
+      "text": "Here's the good news. Every request through our gateway leaves a trace, a record from each service that touched it. And the gateway keeps its own log of every call it sends.",
+      "seconds": 10.01,
+      "bytes": 60048
+    },
+    "227aed034ad9336c": {
+      "voice": "thalia",
+      "text": "So that's your job today. Send real requests through our regional aliases, open their traces, and read what each hop says about itself. Then hold it up against what we declared.",
+      "seconds": 10.97,
+      "bytes": 65808
+    },
+    "e7555751f3c6241f": {
+      "voice": "thalia",
+      "text": "Pin down three things. Where a request through the US alias really ended up. How many services touched one through the EU alias, gateway included. And whether every region tag matches what we declared.",
+      "seconds": 13.25,
+      "bytes": 79488
+    },
+    "5d99d0766af563f4": {
+      "voice": "thalia",
+      "text": "Anneke will ask how you know. So answer from what happened, not from what was meant to happen. Over to you.",
+      "seconds": 6.05,
+      "bytes": 36288
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "voiceover",
+      "clip": "d4d7b83174cbe702"
+    },
+    {
+      "panel": 1,
+      "kind": "voiceover",
+      "clip": "3ca82ca83be14b38"
+    },
+    {
+      "panel": 2,
+      "kind": "voiceover",
+      "clip": "52f9ebc0dbb6b9dc"
+    },
+    {
+      "panel": 3,
+      "kind": "voiceover",
+      "clip": "0ee038759cedb2e2"
+    },
+    {
+      "panel": 4,
+      "kind": "voiceover",
+      "clip": "1b3e01c003cd38e9"
+    },
+    {
+      "panel": 5,
+      "kind": "voiceover",
+      "clip": "227aed034ad9336c"
+    },
+    {
+      "panel": 6,
+      "kind": "voiceover",
+      "clip": "e7555751f3c6241f"
+    },
+    {
+      "panel": 7,
+      "kind": "voiceover",
+      "clip": "5d99d0766af563f4"
+    }
+  ]
+}
