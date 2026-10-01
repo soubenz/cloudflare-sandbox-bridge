@@ -109,9 +109,13 @@ export function layoutComic(panels: readonly PanelLike[]): { placements: Placeme
   return { placements, rows: usedRows, height: usedRows * PAGE.rowH + (usedRows - 1) * PAGE.gap, problems: [] };
 }
 
-/** Seconds a panel stays on screen: a base beat plus reading time for its words. */
+/**
+ * Seconds a panel stays on screen: a base beat to take in the picture plus reading
+ * time for its words (about 0.3 s a word, a relaxed 200 words a minute), so nobody
+ * is hurried; the typing finishes well before the panel moves on.
+ */
 export function panelSeconds(words: number): number {
-  return Math.min(7.5, Math.max(3.6, 2.6 + words * 0.14));
+  return Math.min(18, Math.max(5, 4.4 + words * 0.3));
 }
 
 export interface TranscriptPanel {

@@ -124,9 +124,9 @@ describe('page layout', () => {
   });
 
   it('gives a panel a few seconds, more for more words, never unbounded', () => {
-    expect(panelSeconds(0)).toBeGreaterThanOrEqual(3.6);
+    expect(panelSeconds(0)).toBeGreaterThanOrEqual(5);
     expect(panelSeconds(20)).toBeGreaterThan(panelSeconds(5));
-    expect(panelSeconds(500)).toBeLessThanOrEqual(7.5);
+    expect(panelSeconds(500)).toBeLessThanOrEqual(18);
   });
 });
 

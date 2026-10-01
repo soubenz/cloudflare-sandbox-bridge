@@ -1244,6 +1244,22 @@ test.describe('no horizontal scroll', () => {
     }
   }
 
+  for (const width of [1920, 2560]) {
+    test(`on a ${width}px screen the two columns fill the window: no empty margins either side`, async ({ page }) => {
+      await session(page, EXPLORE, { width, height: 1100 });
+      const ws = (await page.locator('.workspace').boundingBox())!;
+      const guide = (await page.locator('.guide').boundingBox())!;
+      const win = (await page.locator('#window').first().boundingBox())!;
+      // The workspace spans the window (a little padding is fine) ...
+      expect(ws.x).toBeLessThanOrEqual(1);
+      expect(ws.width).toBeGreaterThanOrEqual(width - 2);
+      // ... and the guide hugs the left padding while the navy window reaches the right one.
+      expect(guide.x).toBeLessThanOrEqual(32);
+      expect(width - (win.x + win.width)).toBeLessThanOrEqual(32);
+      await noHorizontalScroll(page);
+    });
+  }
+
   test('a window narrowed to a phone’s width after the start still holds together', async ({ page }) => {
     await session(page, EXPLORE);
     await page.setViewportSize({ width: 390, height: 844 });

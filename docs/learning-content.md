@@ -138,7 +138,7 @@ pages:
 Rules `labs learn-check` enforces:
 
 - 1 to 6 pages, 1 to 9 panels on a page, at least 4 and at most 36 panels in all. Panels flow in reading order into rows of three columns (wide counts 2, square 1). Any count works: a wide panel that does not fit the rest of a row starts the next row, and a row that is not full sits in the middle of the page, so there is nothing to balance by hand.
-- Speakers must be in the panel's cast. At most two bubbles per panel, 150 characters each, plain text. Under 130 spoken words on a page and under 520 in all, so a page plays in about a minute. The camera turns the page (with its optional title) between pages.
+- Speakers must be in the panel's cast. At most two bubbles per panel, 150 characters each, plain text. Under 130 spoken words on a page and under 520 in all, so a page plays in about a minute and a half. The camera turns the page (with its optional title) between pages.
 - Every panel says something (a caption, a bubble or screen lines). `sfx` is for `message`, `portrait` and `desk` panels.
 - The comic follows the story bible: Larkfield, the five recurring people, second person for "you", no answer to a graded question.
 

@@ -83,7 +83,7 @@
 .workspace {
   --guide-w: clamp(360px, 40vw, 520px);
   flex: 1; min-height: 0;
-  width: 100%; max-width: 1680px; margin-inline: auto;
+  width: 100%; /* the whole window: no max-width, so a wide screen is all workspace */
   display: grid;
   grid-template-columns: var(--guide-w) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
@@ -91,6 +91,8 @@
   padding: 14px clamp(12px, 1.6vw, 24px) 10px;
 }
 .workspace[data-guide="closed"] { grid-template-columns: 64px minmax(0, 1fr); }
+/* a very wide screen: the guide gets a little more room to read in, the window still takes the rest */
+@media (min-width: 1800px) { .workspace { --guide-w: 600px; } }
 
 /* ---------- the guide ---------- */
 .guide {

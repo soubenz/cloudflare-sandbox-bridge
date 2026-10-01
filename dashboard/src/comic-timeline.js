@@ -38,11 +38,11 @@ import {
 
 export const TIMING = {
   /** A beat on the first page before the camera moves in. */
-  lead: 0.8,
+  lead: 1.2,
   /** The camera travelling to the next page. */
-  turn: 1.4,
+  turn: 1.6,
   /** A page's title card, held after the camera has flown to it. */
-  title: 1.6,
+  title: 2.4,
   /** The camera travelling to a panel as it pops in. */
   move: 0.9,
   /** The panel pops in this long after the camera starts moving, so it lands as the camera arrives. */
@@ -56,11 +56,11 @@ export const TIMING = {
   /** Pause between one speaker and the next. */
   bubbleGap: 0.25,
   /** Seconds per word when typing a bubble (the pace panelSeconds() budgets for). */
-  word: 0.14,
+  word: 0.2,
   /** The panel stays this long after its last word, so it can be read. */
-  hold: 1.0,
+  hold: 2.0,
   /** Slowest a screen line may type, and the shortest. */
-  line: 0.75,
+  line: 1.0,
   /** Pulling back to the whole comic at the end. */
   outro: 1.8,
   /** The shake that goes with a sound effect. */

@@ -735,7 +735,7 @@ test.describe('one clock', () => {
     const tl = await timeline(page);
     const sum = tl.parts.lead + tl.parts.turns + tl.parts.titles + tl.parts.panels + tl.parts.outro;
     expect(sum).toBeCloseTo(tl.total, 6);
-    const mm = (n: number) => `${Math.floor(Math.round(n) / 60)}:${String(Math.round(n) % 60).padStart(2, '0')}`;
+    const mm = (n: number) => `${Math.floor(Math.floor(n) / 60)}:${String(Math.floor(n) % 60).padStart(2, '0')}`; // the clock floors, as mmss() does
     await expect(timecode(page, '#learnHost')).toHaveText(new RegExp(`/ ${mm(tl.total)}$`));
     expect(tl.pages).toHaveLength(3);
   });

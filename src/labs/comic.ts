@@ -108,6 +108,6 @@ export function checkComic(comic: Comic): string[] {
     if (words(pg) > 130) problems.push(`page ${i + 1} has ${words(pg)} spoken words; keep a page under 130 so it reads in about a minute`);
   });
   const all = comic.pages.reduce((n, pg) => n + words(pg), 0);
-  if (all > 520) problems.push(`the comic has ${all} spoken words in all; keep it under 520 so the whole thing plays in under five minutes`);
+  if (all > 520) problems.push(`the comic has ${all} spoken words in all; keep it under 520 so the whole thing plays in under six minutes`);
   return problems;
 }

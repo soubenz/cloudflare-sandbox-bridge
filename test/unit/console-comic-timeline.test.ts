@@ -107,8 +107,8 @@ describe('how long a comic takes', () => {
     expect(T.panelWords(panel({ bubbles: [], caption: 'x' }))).toBe(1);
     const dur = (p: Panel) => T.buildTimeline({ title: 't', pages: [{ panels: [p] }] }).pages[0]!.panels[0]!.dur;
     expect(dur(screen())).toBe(panelSeconds(7));
-    expect(dur(panel({ bubbles: [], caption: 'x' }))).toBe(3.6); // never under the floor
-    expect(dur(panel({ bubbles: [{ text: Array(80).fill('word').join(' ') }] }))).toBe(7.5); // never over the ceiling
+    expect(dur(panel({ bubbles: [], caption: 'x' }))).toBe(5); // never under the floor
+    expect(dur(panel({ bubbles: [{ text: Array(80).fill('word').join(' ') }] }))).toBe(18); // never over the ceiling
   });
 
   it('adds a turn per page after the first, and a title card for each titled page', () => {
@@ -190,8 +190,8 @@ describe('what is typed when', () => {
   });
 
   it('slows the typing rather than overrun a long panel, but never past the pace it started at', () => {
-    const long = T.buildTimeline({ title: 't', pages: [{ panels: [panel({ bubbles: [{ text: Array(30).fill('w').join(' ') }, { text: Array(30).fill('w').join(' ') }] })] }] }).pages[0]!.panels[0]!;
-    expect(long.dur).toBe(7.5);
+    const long = T.buildTimeline({ title: 't', pages: [{ panels: [panel({ bubbles: [{ text: Array(60).fill('w').join(' ') }, { text: Array(60).fill('w').join(' ') }] })] }] }).pages[0]!.panels[0]!;
+    expect(long.dur).toBe(18);
     const [a, b] = long.bubbles;
     expect(a!.step).toBeLessThan(T.TIMING.word);
     expect(b!.end + T.TIMING.hold).toBeLessThanOrEqual(long.end + 1e-9);
