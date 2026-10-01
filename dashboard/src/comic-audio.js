@@ -7,7 +7,8 @@
  * and hands the answer to audioReduce, which says what to do about it: stop this, start
  * that. Skip, Replay, a seek, a hidden tab, the Sound toggle and destroy all work the same
  * way: the answer becomes "nothing", or a different clip, and the old one is stopped.
- * Because there is one `current` clip, two never play at once.
+ * Because there is one `current` clip (and the timeline schedules one narrator clip per voiced
+ * panel, never overlapping), two never play at once.
  *
  *   state    { current, blocked, finished, failed }
  *   events   { type: 'sync', wanted }          every frame, and whenever anything above changes

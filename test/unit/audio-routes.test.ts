@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../src/env';
 import { audioKey, currentKey } from '../../src/labs/bundle';
-import { TTS_MODEL, clipKey, narrationLines } from '../../src/labs/comic-kit';
+import { TTS_MODEL, clipKey, legacyNarrationLines, narrationLines } from '../../src/labs/comic-kit';
 import { parseByteRange } from '../../src/lib/range';
 
 /**
@@ -65,10 +65,10 @@ const COMIC = {
   pages: [
     {
       panels: [
-        panel({ cast: ['jonas'], caption: 'Tuesday.', bubbles: [{ who: 'jonas', text: 'Which provider answered?' }], lines: ['x'] }),
-        panel({ scene: 'portrait', cast: ['maren'], bubbles: [{ who: 'maren', text: 'Find out.' }] }),
-        panel({ scene: 'screen', caption: 'A copy.', lines: ['$ run', 'ok'] }),
-        panel({ scene: 'you', caption: 'Your turn.', lines: ['$ go'] }),
+        panel({ cast: ['maren'], caption: 'Tuesday.', voiceover: 'On Tuesday finance had a question.', bubbles: [{ who: 'maren', text: 'Which provider answered?' }], lines: ['x'] }),
+        panel({ scene: 'portrait', cast: ['tomasz'], voiceover: 'Tomasz knew where to look.', bubbles: [{ who: 'tomasz', text: 'Find out.' }] }),
+        panel({ scene: 'screen', caption: 'A copy.', voiceover: 'We made a small copy of it.', lines: ['$ run', 'ok'] }),
+        panel({ scene: 'you', caption: 'Your turn.', voiceover: 'Now it is your turn.', lines: ['$ go'] }),
       ],
     },
   ],
@@ -80,7 +80,7 @@ function learn(opts: { bytes?: number } = {}) {
   const lines = narrationLines(COMIC as any).map((l) => {
     const key = clipKey(TTS_MODEL, l.voice, l.text, sha);
     clips[key] = { voice: l.voice, text: l.text, seconds: 2, bytes: opts.bytes ?? MP3.length };
-    return { panel: l.panel, kind: l.kind, ...(l.bubble !== undefined ? { bubble: l.bubble } : {}), clip: key };
+    return { panel: l.panel, kind: l.kind, clip: key };
   });
   return {
     version: 1,
@@ -133,6 +133,40 @@ describe('POST /labs/publish with narration clips', () => {
     const body = (await learnRes.json()) as any;
     expect(body.slug).toBe('gw-lab');
     expect(Object.keys(body.learn.audio.clips).sort()).toEqual(keysOf(b).sort());
+  });
+
+  it('refuses old-shape narration (caption and bubble lines) for a comic with voiceovers: 400 invalid_learn_bundle, run labs narrate, nothing stored', async () => {
+    const { env, store } = makeEnv();
+    const clips: Record<string, unknown> = {};
+    const lines = legacyNarrationLines(COMIC as any).map((l) => {
+      const key = clipKey(TTS_MODEL, l.voice, l.text, sha);
+      clips[key] = { voice: l.voice, text: l.text, seconds: 2, bytes: MP3.length };
+      return { panel: l.panel, kind: l.kind, ...(l.bubble !== undefined ? { bubble: l.bubble } : {}), clip: key };
+    });
+    const old = { ...learn(), audio: { model: TTS_MODEL, clips, lines } };
+    const res = await publish(env, 'gw-lab', old, Object.keys(clips).map((k) => ({ name: `${k}.mp3` })));
+    expect(res.status).toBe(400);
+    const e = await err(res);
+    expect(e.code).toBe('invalid_learn_bundle');
+    expect(e.message).toMatch(/old caption-and-bubble format.*labs narrate/);
+    expect([...store.keys()].filter((k) => k.includes('/audio/'))).toEqual([]);
+  });
+
+  it('still publishes an old comic (no voiceover) with its own old narration, until its lab is rewritten', async () => {
+    const { env, store } = makeEnv();
+    const oldComic = {
+      title: 'Old',
+      pages: [{ panels: [panel({ cast: ['jonas'], caption: 'Tuesday.', bubbles: [{ who: 'jonas', text: 'Which provider answered?' }], lines: ['x'] }), panel({ scene: 'portrait', cast: ['maren'], bubbles: [{ who: 'maren', text: 'Find out.' }] }), panel({ scene: 'screen', caption: 'A copy.', lines: ['$ run', 'ok'] }), panel({ scene: 'you', caption: 'Your turn.', lines: ['$ go'] })] }],
+    };
+    const clips: Record<string, unknown> = {};
+    const lines = legacyNarrationLines(oldComic as any).map((l) => {
+      const key = clipKey(TTS_MODEL, l.voice, l.text, sha);
+      clips[key] = { voice: l.voice, text: l.text, seconds: 2, bytes: MP3.length };
+      return { panel: l.panel, kind: l.kind, ...(l.bubble !== undefined ? { bubble: l.bubble } : {}), clip: key };
+    });
+    const res = await publish(env, 'old-lab', { ...learn(), comic: oldComic, audio: { model: TTS_MODEL, clips, lines } }, Object.keys(clips).map((k) => ({ name: `${k}.mp3` })));
+    expect(res.status).toBe(201);
+    expect([...store.keys()].filter((k) => k.includes('/audio/'))).toHaveLength(Object.keys(clips).length);
   });
 
   it('refuses a file name that is not <16 hex>.mp3 (traversal included), storing nothing', async () => {

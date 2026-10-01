@@ -189,7 +189,7 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
   labs
     .command('narrate <dir...>')
     .description(
-      "Give each lab's motion comic its voices: synthesise the lines that have no clip yet into learn/audio/ and write learn/audio.json (needs CLOUDFLARE_API_TOKEN; the files are committed, publishing never calls the model)"
+      "Give each lab's motion comic its storyteller voice: synthesise the panel voiceovers that have no clip yet into learn/audio/ and write learn/audio.json (needs CLOUDFLARE_API_TOKEN; the files are committed, publishing never calls the model)"
     )
     .option('--dry-run', 'list what would be synthesised and how many characters it is, change nothing, call nothing')
     .action(async (dirs: string[], opts: { dryRun?: boolean }) => {
@@ -208,7 +208,7 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
         characters += r.characters;
         made += r.made;
         console.log(
-          `  ${r.lines} spoken lines, ${r.clips} clips: ${r.made} ${opts.dryRun ? 'to make' : 'made'} (${r.characters} characters), ${r.reused} reused, ${r.removed} ${opts.dryRun ? 'to remove' : 'removed'}` +
+          `  ${r.lines} voiceover${r.lines === 1 ? '' : 's'}, ${r.clips} clip${r.clips === 1 ? '' : 's'}: ${r.made} ${opts.dryRun ? 'to make' : 'made'} (${r.characters} characters), ${r.reused} reused, ${r.removed} ${opts.dryRun ? 'to remove' : 'removed'}` +
             (opts.dryRun ? '' : `; ${r.seconds.toFixed(1)} s of audio, ${Math.round(r.bytes / 1024)} KB`)
         );
       }

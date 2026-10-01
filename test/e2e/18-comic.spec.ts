@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
-import { parse as parseYaml } from 'yaml';
 import { serveConsole } from './console-server';
+import { MULTI as MULTI_PAGE, SINGLE, bundleOf, type FixtureBundle, type FixtureComic, type FixturePanel } from './comic-fixture';
 
 /**
  * The motion comic in the console: it plays in "Before you begin" (the story step) and nowhere
@@ -15,9 +15,10 @@ import { serveConsole } from './console-server';
  * Like 16-learning.spec.ts and 17-session-layout.spec.ts this needs no password,
  * no API and no container: a static server serves dashboard/public (the built
  * bundle, with the CSP from public/_headers) and every call the console makes is
- * answered by a route stub. The content is real: the learn bundle and the comic
- * are compiled from labs/see-what-a-gateway-does/learn, and a three-page comic with
- * the whole cast is written here.
+ * answered by a route stub. The content is a small inline learn bundle, a two-page
+ * comic and a three-page one (comic-fixture.ts), written to the current contract
+ * (a voiceover per panel, Maren, Tomasz and You on stage, bubbles as text); no lab's
+ * own comic is read.
  *
  * Screenshots are deterministic: with ?comicTest=1 the comic's clock does not run by
  * itself and window.__comicClock steps it, so "7 seconds in" is the same picture
@@ -37,100 +38,23 @@ const SESSION_ID = '01J9ZZZZZZZZZZZZZZZZZZZZZZ';
 
 // --------------------------------------------------------------- the content
 
-interface Panel {
-  scene: string;
-  cast: string[];
-  bg?: string;
-  prop: string;
-  caption?: string;
-  bubbles: Array<{ who?: string; text: string; pos?: string }>;
-  sfx?: string;
-  lines?: string[];
-}
-interface Comic {
-  title: string;
-  pages: Array<{ title?: string; panels: Panel[] }>;
-}
-interface Bundle {
-  story?: { title: string; minutes: number; body: string };
-  comic?: Comic;
-  concepts: Array<{ id: string; title: string; minutes: number; recap: string; body: string }>;
-  questions: unknown[];
-  answers_file: string;
-  fields: Array<{ key: string; prompt: string; kind: string; choices?: string[]; help?: string }>;
-}
-
-const panelOf = (p: Record<string, any>): Panel => ({ cast: [], prop: 'none', bubbles: [], ...p }) as unknown as Panel;
-
-/** The lab's learn/ folder as the bundle the API would serve (the CLI's compiler cannot be imported here), comic included. */
-function compileLearn(slug: string): Bundle {
-  const dir = join(ROOT, 'labs', slug, 'learn');
-  const split = (text: string) => {
-    const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)!;
-    return { data: parseYaml(m[1]!) as Record<string, any>, body: m[2]!.trim() };
-  };
-  const story = split(readFileSync(join(dir, 'story.md'), 'utf8'));
-  const concepts = readdirSync(join(dir, 'concepts'))
-    .filter((f) => f.endsWith('.md'))
-    .sort()
-    .map((f) => {
-      const { data, body } = split(readFileSync(join(dir, 'concepts', f), 'utf8'));
-      return { id: data.id, title: data.title, minutes: data.minutes, recap: data.recap, body };
-    });
-  const quiz = parseYaml(readFileSync(join(dir, 'quiz.yaml'), 'utf8')) as { questions: Array<Record<string, unknown>> };
-  const qs = parseYaml(readFileSync(join(dir, 'questions.yaml'), 'utf8')) as { answers_file: string; fields: Bundle['fields'] };
-  const out: Bundle = {
-    story: { title: story.data.title, minutes: story.data.minutes, body: story.body },
-    concepts,
-    questions: quiz.questions.map((q) => ({ diagnostic: true, ...q })),
-    answers_file: qs.answers_file,
-    fields: qs.fields,
-  };
-  const comicFile = join(dir, 'comic.yaml');
-  if (existsSync(comicFile)) {
-    const raw = parseYaml(readFileSync(comicFile, 'utf8')) as { title: string; panels?: Array<Record<string, any>>; pages?: Array<{ title?: string; panels: Array<Record<string, any>> }> };
-    out.comic = { title: raw.title, pages: (raw.pages ?? [{ panels: raw.panels ?? [] }]).map((pg) => ({ ...(pg.title ? { title: pg.title } : {}), panels: pg.panels.map(panelOf) })) };
-  }
-  return out;
-}
+// The comics are written to the current contract (a voiceover per panel, Maren, Tomasz and You on stage,
+// bubbles as text) and live in comic-fixture.ts; no lab's own story or comic is read, so this spec does not
+// change when a lab's content does.
+type Panel = FixturePanel;
+type Comic = FixtureComic;
+type Bundle = FixtureBundle;
 
 const EXPLORE = 'see-what-a-gateway-does';
 const MULTI = 'follow-one-request-through-the-stack';
 const NO_COMIC = 'see-how-requests-are-routed';
 const BROKEN = 'prove-where-one-requests-data-went';
 const PLAIN = 'see-how-tools-reach-an-agent';
-const bundle = compileLearn(EXPLORE);
-const single = bundle.comic!;
+const single = SINGLE;
+const multi = MULTI_PAGE;
+const bundle = bundleOf(single);
 
-/** Three pages with the whole cast: a titled page of four, an untitled page of four, a closing titled page. */
-const multi: Comic = {
-  title: 'One slow request, no explanation',
-  pages: [
-    {
-      title: 'Tuesday afternoon',
-      panels: [
-        panelOf({ scene: 'desk', cast: ['priya'], bg: 'sand', caption: 'Support, a little after two.', bubbles: [{ who: 'priya', text: 'This one took ages. Why did the assistant take so long to answer?' }], lines: ['agent: waiting on a reply...', 'waiting...', 'still waiting...'] }),
-        panelOf({ scene: 'message', cast: ['jonas'], bg: 'lilac', prop: 'envelope', sfx: 'PING!', bubbles: [{ who: 'jonas', text: 'And what did it cost? I need a number per request.' }] }),
-        panelOf({ scene: 'portrait', cast: ['maren'], bg: 'ice', prop: 'chart', sfx: 'HMM.', bubbles: [{ who: 'maren', text: 'That request was traced end to end. One request, four services, six spans. Read it.' }] }),
-        panelOf({ scene: 'duo', cast: ['tomasz', 'anneke'], bg: 'mint', bubbles: [{ who: 'tomasz', text: 'The trace is in the lab.' }, { who: 'anneke', text: 'And nothing in it leaves the region.' }] }),
-      ],
-    },
-    {
-      panels: [
-        panelOf({ scene: 'screen', caption: 'A small copy of the stack, and a trace to read.', lines: ['$ open jaeger, click Find Traces', '200 1 trace, 4 services, 6 spans', 'slowest span, not the top one: ?', '4xx cache.get missed'] }),
-        panelOf({ scene: 'duo', cast: ['priya', 'anneke'], bg: 'rose', bubbles: [{ who: 'priya', text: 'Can customers see any of this?' }, { who: 'anneke', text: 'Only what we decide to show them.' }] }),
-        panelOf({ scene: 'portrait', cast: ['anneke'], bg: 'navy', prop: 'document', bubbles: [{ who: 'anneke', text: 'Write down what you find, in numbers.' }] }),
-        panelOf({ scene: 'desk', cast: ['tomasz'], bg: 'ice', prop: 'laptop', bubbles: [{ who: 'tomasz', text: 'I will keep the gateway up while you look.' }], lines: ['$ gateway --status', 'ready.'] }),
-      ],
-    },
-    {
-      title: 'Your turn',
-      panels: [panelOf({ scene: 'you', bg: 'navy', caption: 'Your turn.', lines: ['$ cat /workspace/answers.json', 'ready.'] }), panelOf({ scene: 'message', cast: ['maren'], bg: 'sand', prop: 'key', sfx: 'GO!', bubbles: [{ who: 'maren', text: 'The lab is open.' }] })],
-    },
-  ],
-};
-
-const lab = (o: Record<string, unknown>): Record<string, any> => ({
+const lab =(o: Record<string, unknown>): Record<string, any> => ({
   version: '1.0.0',
   type: 'explore',
   family: 'gateway',
@@ -488,13 +412,15 @@ test.describe('in Before you begin', () => {
     await text.locator('summary').click();
     const items = text.locator('ol > li');
     await expect(items).toHaveCount(panelCount(single) + single.pages.length);
-    await expect(items.nth(0)).toContainText('Page 1: Life without a gateway.');
-    await expect(items.nth(1)).toContainText('Panel 1. Four teams, four providers, four keys.');
-    await expect(items.nth(1)).toContainText('Maren: Welcome to the museum.');
-    await expect(items.nth(2)).toContainText('Priya: Three in the morning');
-    await expect(items.nth(6)).toContainText('Page 2: One front door.');
-    await expect(items.nth(8)).toContainText('On screen: $ ask: support');
-    await expect(items.nth(10)).toContainText('Panel 9. Your turn.');
+    await expect(items.nth(0)).toContainText('Page 1: Tuesday morning.');
+    // The story is told by the voiceover, so the transcript carries it after the caption; bubbles name their speaker.
+    await expect(items.nth(1)).toContainText('Panel 1. Tuesday, a little after ten. On Tuesday morning finance asked us which provider had answered a call');
+    await expect(items.nth(1)).toContainText('Maren: Which provider answered, and what did it cost?');
+    await expect(items.nth(2)).toContainText('Tomasz: The gateway should know.');
+    await expect(items.nth(3)).toContainText('You: I will start with the log.');
+    await expect(items.nth(4)).toContainText('On screen: $ gateway --log / 200 ok support-a / 4xx key expired');
+    await expect(items.nth(5)).toContainText('Page 2: Your turn.');
+    await expect(items.nth(7)).toContainText('Panel 6. Your turn. So now it is your turn');
     // The animated parts are out of the accessibility tree: the stage is one image.
     await expect(page.locator('#learnHost .cm-view')).toHaveAttribute('aria-hidden', 'true');
     await expect(page.locator('#learnHost .cm-bar')).toHaveAttribute('aria-hidden', 'true');
@@ -510,7 +436,7 @@ test.describe('in Before you begin', () => {
     await expect(items.nth(1)).toContainText('Panel 1.');
     await expect(items.nth(5)).toHaveText('Page 2.');
     await expect(items.nth(6)).toContainText('Panel 5.');
-    await expect(items.nth(10)).toHaveText('Page 3: Your turn.');
+    await expect(items.nth(9)).toHaveText('Page 3: Your turn.');
     await expect(items.last()).toContainText(`Panel ${panelCount(multi)}.`);
     await expect(page.locator('#learnHost .cm-stage')).toHaveAttribute('aria-label', /over 3 pages/);
   });

@@ -1,18 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { TTS_MODEL, clipKey, narrationLines, panelSeconds } from '../../src/labs/comic-kit';
+import { TTS_MODEL, clipKey, legacyNarrationLines, narrationLines, panelSeconds } from '../../src/labs/comic-kit';
 
 /**
- * The comic's voices as logic with no browser: the timeline when the lab is narrated (every line's start
- * and end from its clip, typing spread over the clip, panels as long as the voice needs, no change at all
- * without audio) and the scheduling state machine (dashboard/src/comic-audio.js) that turns the one clock
- * into play and stop. The player that runs it, with real Audio elements, is test/e2e/18-comic.spec.ts.
+ * The comic's storyteller as logic with no browser: the timeline when the lab is narrated (one voiceover
+ * clip per voiced panel, started 0.6 s into the panel, the panel as long as the voice needs, bubbles typed
+ * as text within the clip, no change at all without audio) and the scheduling state machine
+ * (dashboard/src/comic-audio.js) that turns the one clock into play and stop. The player that runs it, with
+ * real Audio elements, is test/e2e/19-comic-audio.spec.ts.
  */
-type Panel = { scene: string; cast: string[]; bg?: string; prop: string; caption?: string; bubbles: Array<{ who?: string; text: string; pos?: string }>; sfx?: string; lines?: string[] };
+type Panel = { scene: string; cast: string[]; bg?: string; prop: string; caption?: string; voiceover?: string; bubbles: Array<{ who?: string; text: string; pos?: string }>; sfx?: string; lines?: string[] };
 type Comic = { title: string; pages: Array<{ title?: string; panels: Panel[] }> };
-type Clip = { key: string; kind: 'caption' | 'bubble'; bubble: number | null; panel: number; start: number; end: number; seconds: number };
+type Clip = { key: string; kind: 'voiceover'; bubble: null; panel: number; start: number; end: number; seconds: number };
 type TBubble = { start: number; end: number; step: number; wordTimes: number[] };
-type TPanel = { start: number; end: number; dur: number; captionAt: number | null; bubbles: TBubble[]; lines: Array<{ start: number; end: number }> };
+type TPanel = { number: number; start: number; end: number; dur: number; captionAt: number | null; bubbles: TBubble[]; lines: Array<{ start: number; end: number }> };
 type Timeline = { total: number; pages: Array<{ index: number; start: number; panels: TPanel[] }>; audio: Clip[] };
 type AudioIn = { slug: string; clips: Record<string, { seconds: number; text: string; voice?: string }>; lines: Array<{ panel: number; kind: string; bubble?: number; clip: string }> };
 type AState = { current: string | null; blocked: boolean; finished: string | null; failed: string[] };
@@ -20,8 +21,7 @@ type Cmd = { type: 'play' | 'stop'; key: string; offset?: number };
 type Wanted = { clip: Clip; offset: number } | null;
 
 const T = (await import('../../dashboard/src/comic-timeline.js' as string)) as {
-  TIMING: { content: number; bubblePop: number; hold: number; word: number };
-  VOICE_GAP: number;
+  TIMING: { content: number; bubblePop: number; bubbleGap: number; hold: number; word: number; caption: number; voice: number; bubbleLag: number; bubbleTail: number; breath: number };
   buildTimeline: (c: Comic, o?: { audio?: unknown }) => Timeline;
   cleanAudio: (raw: unknown) => AudioIn | null;
   cleanComic: (raw: unknown) => Comic | null;
@@ -43,28 +43,29 @@ const COMIC: Comic = {
   pages: [
     {
       panels: [
-        panel({ scene: 'desk', cast: ['jonas'], caption: 'Tuesday, a little after ten.', bubbles: [{ who: 'jonas', text: 'Which provider answered, and what did that one reply cost?' }], lines: ['$ one', 'two'] }),
-        panel({ scene: 'duo', cast: ['priya', 'anneke'], bubbles: [{ who: 'priya', text: 'One two three four five.' }, { who: 'anneke', text: 'Six seven eight nine ten eleven.' }] }),
+        panel({ scene: 'desk', cast: ['maren'], caption: 'Tuesday, a little after ten.', voiceover: 'On Tuesday finance asked us a question we could not answer.', bubbles: [{ who: 'maren', text: 'Which provider answered, and what did that one reply cost?' }], lines: ['$ one', 'two'] }),
+        panel({ scene: 'duo', cast: ['maren', 'tomasz'], voiceover: 'Tomasz and I looked at it together.', bubbles: [{ who: 'maren', text: 'One two three four five.' }, { who: 'tomasz', text: 'Six seven eight nine ten eleven.' }] }),
         panel({ scene: 'screen', cast: [], bubbles: [], lines: ['$ run it', '200 ok'] }), // nothing spoken
-        panel({ scene: 'you', cast: [], bubbles: [], caption: 'Your turn.', lines: ['$ go', 'ready.'] }),
+        panel({ scene: 'you', cast: [], bubbles: [], caption: 'Your turn.', voiceover: 'Now it is your turn.', lines: ['$ go', 'ready.'] }),
       ],
     },
-    { title: 'Later', panels: [panel({ bubbles: [{ text: 'Somebody said it.' }] }), panel()] },
+    { title: 'Later', panels: [panel({ voiceover: 'It took us all afternoon.', bubbles: [{ text: 'Somebody said it.' }] }), panel({ voiceover: 'And that was the end of it.' })] },
   ],
 };
 
-/** The narration a CLI run would write, with each clip given a length of 2 s plus a fifth of its characters per ten. */
+/** The narration a CLI run would write: one clip per voiceover, each 1.5 s plus a twelfth of a second per character. */
 function narration(comic: Comic = COMIC, secondsOf = (text: string) => 1.5 + text.length / 12): AudioIn {
   const clips: AudioIn['clips'] = {};
   const lines = narrationLines(comic as any).map((l) => {
     const clip = clipKey(TTS_MODEL, l.voice, l.text, sha);
     clips[clip] = { seconds: secondsOf(l.text), text: l.text, voice: l.voice };
-    return { panel: l.panel, kind: l.kind, ...(l.bubble !== undefined ? { bubble: l.bubble } : {}), clip };
+    return { panel: l.panel, kind: l.kind, clip };
   });
   return { slug: 'a-lab', clips, lines };
 }
 
 const panelsOf = (tl: Timeline) => tl.pages.flatMap((p) => p.panels);
+const allPanels = (c: Comic) => c.pages.flatMap((p) => p.panels);
 
 describe('without narration the timeline is exactly what it was', () => {
   const plain = T.buildTimeline(COMIC);
@@ -77,122 +78,165 @@ describe('without narration the timeline is exactly what it was', () => {
     expect(T.buildTimeline(COMIC, { audio: 'nonsense' })).toEqual(plain);
   });
 
-  it('keeps every panel at its reading time', () => {
-    panelsOf(plain).forEach((p, i) => expect(p.dur).toBe(panelSeconds(T.panelWords(COMIC.pages.flatMap((g) => g.panels)[i]!))));
+  it('keeps every panel at its reading time (the voiceover is heard, not read, so it adds no words)', () => {
+    panelsOf(plain).forEach((p, i) => expect(p.dur).toBe(panelSeconds(T.panelWords(allPanels(COMIC)[i]!))));
   });
 
-  it('turns the narration off whole when any line does not match the comic (a voice never says other words)', () => {
+  it('turns the narration off whole when anything does not match the comic (a voice never says other words, a story is never half voiced)', () => {
     const a = narration();
     const wrongText = structuredClone(a);
     wrongText.clips[wrongText.lines[1]!.clip]!.text = 'Some other words entirely.';
     expect(T.buildTimeline(COMIC, { audio: wrongText })).toEqual(plain);
+    const noVoiceover = structuredClone(a);
+    noVoiceover.lines.push({ panel: 2, kind: 'voiceover', clip: a.lines[0]!.clip }); // the screen panel has none
+    expect(T.buildTimeline(COMIC, { audio: noVoiceover })).toEqual(plain);
     const missingPanel = structuredClone(a);
-    missingPanel.lines.push({ panel: 99, kind: 'caption', clip: a.lines[0]!.clip });
+    missingPanel.lines.push({ panel: 99, kind: 'voiceover', clip: a.lines[0]!.clip });
     expect(T.buildTimeline(COMIC, { audio: missingPanel })).toEqual(plain);
-    const missingBubble = structuredClone(a);
-    missingBubble.lines.push({ panel: 0, kind: 'bubble', bubble: 1, clip: a.lines[1]!.clip });
-    expect(T.buildTimeline(COMIC, { audio: missingBubble })).toEqual(plain);
     const twice = structuredClone(a);
     twice.lines.push(a.lines[0]!);
     expect(T.buildTimeline(COMIC, { audio: twice })).toEqual(plain);
+    const incomplete = structuredClone(a);
+    incomplete.lines.pop(); // the last voiceover has no clip
+    expect(T.buildTimeline(COMIC, { audio: incomplete })).toEqual(plain);
+  });
+
+  it('plays old-shape narration (caption and bubble lines, several voices) silent, whole, whether the comic is old or new', () => {
+    const old = (comic: Comic): AudioIn => {
+      const clips: AudioIn['clips'] = {};
+      const lines = legacyNarrationLines(comic as any).map((l) => {
+        const clip = clipKey(TTS_MODEL, l.voice, l.text, sha);
+        clips[clip] = { seconds: 2, text: l.text, voice: l.voice };
+        return { panel: l.panel, kind: l.kind, ...(l.bubble !== undefined ? { bubble: l.bubble } : {}), clip };
+      });
+      return { slug: 'a-lab', clips, lines };
+    };
+    expect(old(COMIC).lines.length).toBeGreaterThan(5);
+    expect(T.cleanAudio(old(COMIC))).toBeNull();
+    expect(T.buildTimeline(COMIC, { audio: old(COMIC) })).toEqual(plain);
+    // an old comic (no voiceover anywhere) with its own old narration
+    const oldComic: Comic = { title: 'Old', pages: [{ panels: allPanels(COMIC).map(({ voiceover: _v, ...p }) => p) }] };
+    const oldPlain = T.buildTimeline(oldComic);
+    expect(T.buildTimeline(oldComic, { audio: old(oldComic) })).toEqual(oldPlain);
+    expect(oldPlain.audio).toEqual([]);
+    // old lines mixed into a new narration turn all of it off
+    const mixed = narration();
+    const k = old(COMIC).lines[0]!;
+    mixed.clips[k.clip] = { seconds: 2, text: 'Tuesday, a little after ten.' };
+    mixed.lines.push(k);
+    expect(T.buildTimeline(COMIC, { audio: mixed })).toEqual(plain);
   });
 });
 
-describe('with narration the voice sets the pace', () => {
+describe('with narration the storyteller sets the pace', () => {
   const audio = narration();
   const tl = T.buildTimeline(COMIC, { audio });
   const plain = T.buildTimeline(COMIC);
   const secondsOf = (key: string) => audio.clips[key]!.seconds;
+  const voicedPanels = [1, 2, 4, 5, 6]; // panel numbers with a voiceover
 
-  it('lists every clip once, in time order, none overlapping, one gap apart within a panel', () => {
-    expect(tl.audio).toHaveLength(audio.lines.length);
+  it('has one voiceover clip per voiced panel, in time order, none overlapping, each as long as its file', () => {
+    expect(tl.audio).toHaveLength(5);
+    expect(tl.audio.map((c) => c.panel)).toEqual(voicedPanels);
+    expect(tl.audio.every((c) => c.kind === 'voiceover' && c.bubble === null)).toBe(true);
     expect(tl.audio.map((c) => c.key).sort()).toEqual(audio.lines.map((l) => l.clip).sort());
     for (let i = 1; i < tl.audio.length; i++) expect(tl.audio[i]!.start).toBeGreaterThanOrEqual(tl.audio[i - 1]!.end - 1e-9);
     for (const c of tl.audio) expect(c.end - c.start).toBeCloseTo(secondsOf(c.key), 9);
-    const first = tl.audio.filter((c) => c.panel === 2); // panel number 2: the duo
-    expect(first).toHaveLength(2);
-    expect(first[1]!.start - first[0]!.end).toBeCloseTo(T.VOICE_GAP, 9);
+    expect(tl.audio.some((c) => c.panel === 3)).toBe(false); // the screen panel is silent
   });
 
-  it('starts the caption clip when the caption appears, and the bubbles after it', () => {
-    const p0 = panelsOf(tl)[0]!;
-    const [cap, bub] = tl.audio.filter((c) => c.panel === 1);
-    expect(cap!.kind).toBe('caption');
-    expect(cap!.start).toBeCloseTo(p0.captionAt!, 9);
-    expect(bub!.kind).toBe('bubble');
-    expect(bub!.start).toBeCloseTo(cap!.end + T.VOICE_GAP, 9);
-    // The bubble pops as its voice starts and is done when the voice is.
-    expect(p0.bubbles[0]!.start).toBeCloseTo(bub!.start - T.TIMING.bubblePop, 9);
-    expect(p0.bubbles[0]!.end).toBeCloseTo(bub!.end, 9);
+  it('starts each clip 0.6 s into its panel', () => {
+    expect(T.TIMING.voice).toBe(0.6);
+    for (const c of tl.audio) expect(c.start).toBeCloseTo(panelsOf(tl)[c.panel - 1]!.start + 0.6, 9);
   });
 
-  it('starts a panel with no caption on its first bubble, after the usual beat', () => {
-    const p = panelsOf(tl)[4]!; // "Somebody said it."
-    const clip = tl.audio.find((c) => c.panel === 5)!;
-    expect(clip.start).toBeCloseTo(p.start + T.TIMING.content + T.TIMING.bubblePop, 9);
-  });
-
-  it('types the words across the clip, longer words taking longer, finishing before the voice does', () => {
-    const p1 = panelsOf(tl)[1]!;
-    const b = p1.bubbles[1]!; // "Six seven eight nine ten eleven."
-    const clip = tl.audio.find((c) => c.panel === 2 && c.bubble === 1)!;
-    const words = 'Six seven eight nine ten eleven.'.split(' ');
-    expect(b.wordTimes).toHaveLength(words.length);
-    expect(b.wordTimes[0]).toBeCloseTo(clip.start, 9);
-    expect(b.wordTimes.every((t, i) => i === 0 || t > b.wordTimes[i - 1]!)).toBe(true);
-    expect(b.wordTimes[words.length - 1]!).toBeLessThan(clip.end);
-    const total = words.reduce((n, w) => n + w.length + 1, 0);
-    words.forEach((w, i) => {
-      const next = i + 1 < words.length ? b.wordTimes[i + 1]! : clip.end;
-      expect(next - b.wordTimes[i]!).toBeCloseTo(((w.length + 1) / total) * (clip.end - clip.start), 9);
-    });
-  });
-
-  it('shows the speaker as speaking while their clip plays', () => {
-    const p1 = panelsOf(tl)[1]!;
-    const first = tl.audio.find((c) => c.panel === 2 && c.bubble === 0)!;
-    const second = tl.audio.find((c) => c.panel === 2 && c.bubble === 1)!;
-    const mid = (c: Clip) => (c.start + c.end) / 2;
-    expect(T.panelState(p1, mid(first)).bubbles.map((b) => b.speaking)).toEqual([true, false]);
-    expect(T.panelState(p1, mid(second)).bubbles.map((b) => b.speaking)).toEqual([false, true]);
-    expect(T.panelState(p1, mid(second)).bubbles[0]!.words).toBe(5); // the first has typed out fully by then
-  });
-
-  it('keeps each panel on screen until its last clip is done plus the usual hold, never shorter than reading takes', () => {
-    panelsOf(tl).forEach((p, i) => {
-      const clips = tl.audio.filter((c) => c.panel === i + 1);
-      const reading = panelsOf(plain)[i]!.dur;
-      if (clips.length === 0) {
-        expect(p.dur).toBe(reading);
-        return;
-      }
-      const lastEnd = Math.max(...clips.map((c) => c.end));
-      expect(p.dur).toBeCloseTo(Math.max(reading, lastEnd - p.start + T.TIMING.hold), 9);
-      expect(p.end).toBeGreaterThanOrEqual(lastEnd + T.TIMING.hold - 1e-9);
-    });
+  it('keeps each voiced panel on screen for the larger of its reading time and the clip end plus the hold, so no clip is cut', () => {
+    for (const c of tl.audio) {
+      const p = panelsOf(tl)[c.panel - 1]!;
+      const reading = panelsOf(plain)[c.panel - 1]!.dur;
+      expect(p.dur).toBeCloseTo(Math.max(reading, c.end - p.start + T.TIMING.hold), 9);
+      expect(p.end).toBeGreaterThanOrEqual(c.end + T.TIMING.hold - 1e-9);
+    }
     expect(tl.total).toBeGreaterThan(plain.total);
   });
 
-  it('leaves a panel with nothing spoken exactly as it was', () => {
+  it('leaves a panel with no voiceover exactly as long as it was', () => {
     const screen = panelsOf(tl)[2]!;
     expect(screen.dur).toBe(panelsOf(plain)[2]!.dur);
-    expect(tl.audio.some((c) => c.panel === 3)).toBe(false);
+  });
+
+  it('leaves silence of at least a breath between one voiceover and the next', () => {
+    expect(T.TIMING.breath).toBe(0.5);
+    for (let i = 1; i < tl.audio.length; i++) {
+      const gap = tl.audio[i]!.start - tl.audio[i - 1]!.end;
+      expect(gap).toBeGreaterThanOrEqual(T.TIMING.breath);
+      // within a page it is at least the panel hold plus the 0.6 s the next one waits (a panel that takes longer to read adds more)
+      if (tl.audio[i]!.panel === tl.audio[i - 1]!.panel + 1 && panelsOf(tl)[tl.audio[i]!.panel - 1]!.start === panelsOf(tl)[tl.audio[i - 1]!.panel - 1]!.end) {
+        expect(gap).toBeGreaterThanOrEqual(T.TIMING.hold + T.TIMING.voice - 1e-9);
+      }
+    }
+  });
+
+  it('fades the caption in at the panel start, voiced or not', () => {
+    const p0 = panelsOf(tl)[0]!;
+    expect(p0.captionAt).toBeCloseTo(p0.start + T.TIMING.caption, 9);
+    expect(p0.captionAt!).toBeLessThan(tl.audio[0]!.start);
+  });
+
+  it('types a panel\'s bubbles as text, the first 0.8 s after the clip starts, one after the other at the reading pace', () => {
+    const duo = panelsOf(tl)[1]!;
+    const clip = tl.audio.find((c) => c.panel === 2)!;
+    const [a, b] = duo.bubbles as [TBubble, TBubble];
+    expect(a.start).toBeCloseTo(clip.start + T.TIMING.bubbleLag, 9);
+    expect(a.wordTimes).toHaveLength(5);
+    expect(a.wordTimes[0]).toBeCloseTo(a.start + T.TIMING.bubblePop, 9);
+    for (const x of [a, b]) {
+      expect(x.step).toBeCloseTo(T.TIMING.word, 9);
+      for (let i = 1; i < x.wordTimes.length; i++) expect(x.wordTimes[i]! - x.wordTimes[i - 1]!).toBeCloseTo(T.TIMING.word, 9);
+    }
+    expect(b.start).toBeCloseTo(a.end + T.TIMING.bubbleGap, 9);
+    // all within the voiceover (plus its tail), nothing typed after the panel
+    expect(b.end).toBeLessThanOrEqual(clip.end + T.TIMING.bubbleTail + 1e-9);
+    expect(b.end + T.TIMING.hold).toBeLessThanOrEqual(duo.end + 1 + 1e-9);
+  });
+
+  it('types faster, never slower, when there are more bubble words than the voiceover leaves room for', () => {
+    const comic: Comic = { title: 't', pages: [{ panels: [panel({ voiceover: 'Short.', bubbles: [{ text: Array(12).fill('word').join(' ') }, { text: Array(12).fill('word').join(' ') }] })] }] };
+    const out = T.buildTimeline(comic, { audio: narration(comic, () => 2) });
+    const clip = out.audio[0]!;
+    const [a, b] = panelsOf(out)[0]!.bubbles as [TBubble, TBubble];
+    expect(a.step).toBeLessThan(T.TIMING.word);
+    expect(a.step).toBeGreaterThanOrEqual(0.03);
+    expect(b.step).toBe(a.step);
+    expect(b.end).toBeLessThanOrEqual(clip.end + T.TIMING.bubbleTail + 1e-9);
+    // a roomy clip keeps the reading pace and finishes early
+    const roomy = T.buildTimeline(comic, { audio: narration(comic, () => 40) });
+    expect((panelsOf(roomy)[0]!.bubbles[0] as TBubble).step).toBeCloseTo(T.TIMING.word, 9);
+    expect((panelsOf(roomy)[0]!.bubbles[1] as TBubble).end).toBeLessThan(roomy.audio[0]!.end);
+  });
+
+  it('never cuts a panel before its bubbles are typed, even when they cannot all fit the voiceover', () => {
+    const comic: Comic = { title: 't', pages: [{ panels: [panel({ voiceover: 'Short.', bubbles: [{ text: Array(70).fill('word').join(' ') }, { text: Array(70).fill('word').join(' ') }] })] }] };
+    const out = T.buildTimeline(comic, { audio: narration(comic, () => 1) });
+    const p = panelsOf(out)[0]!;
+    for (const b of p.bubbles) expect(b.end + T.TIMING.hold).toBeLessThanOrEqual(p.end + 1e-9);
+    expect(p.end).toBeGreaterThanOrEqual(out.audio[0]!.end + T.TIMING.hold - 1e-9);
+  });
+
+  it('shows the speaker as speaking while their bubble is typed', () => {
+    const p1 = panelsOf(tl)[1]!;
+    const [a, b] = p1.bubbles as [TBubble, TBubble];
+    const mid = (x: TBubble) => (x.start + T.TIMING.bubblePop + x.end) / 2;
+    expect(T.panelState(p1, mid(a)).bubbles.map((x) => x.speaking)).toEqual([true, false]);
+    expect(T.panelState(p1, mid(b)).bubbles.map((x) => x.speaking)).toEqual([false, true]);
+    expect(T.panelState(p1, mid(b)).bubbles[0]!.words).toBe(5);
   });
 
   it('keeps a long clip from being cut off, and a short one from shortening a panel', () => {
     const long = T.buildTimeline(COMIC, { audio: narration(COMIC, () => 30) });
-    for (const c of long.audio) expect(long.pages.flatMap((p) => p.panels)[c.panel - 1]!.end).toBeGreaterThan(c.end);
+    for (const c of long.audio) expect(panelsOf(long)[c.panel - 1]!.end).toBeGreaterThan(c.end);
     const tiny = T.buildTimeline(COMIC, { audio: narration(COMIC, () => 0.2) });
-    tiny.pages.flatMap((p) => p.panels).forEach((p, i) => expect(p.dur).toBeGreaterThanOrEqual(panelsOf(plain)[i]!.dur));
-  });
-
-  it('types a bubble that has no clip (the learner\'s) at the usual pace in its turn', () => {
-    const comic: Comic = { title: 't', pages: [{ panels: [panel({ scene: 'desk', cast: ['you', 'tomasz'], bubbles: [{ who: 'tomasz', text: 'Good luck.' }, { who: 'you', text: 'I will look now.' }], lines: ['x'] })] }] };
-    const out = T.buildTimeline(comic, { audio: narration(comic) });
-    const [said, mine] = panelsOf(out)[0]!.bubbles;
-    expect(out.audio).toHaveLength(1);
-    expect(mine!.start).toBeGreaterThan(said!.end);
-    expect(mine!.wordTimes[1]! - mine!.wordTimes[0]!).toBeCloseTo(T.TIMING.word, 9);
+    panelsOf(tiny).forEach((p, i) => expect(p.dur).toBeGreaterThanOrEqual(panelsOf(plain)[i]!.dur));
   });
 });
 
@@ -202,6 +246,7 @@ describe('cleanAudio', () => {
     const c = T.cleanAudio(good)!;
     expect(c.slug).toBe('a-lab');
     expect(c.lines).toHaveLength(good.lines.length);
+    expect(c.lines.every((l) => l.kind === 'voiceover')).toBe(true);
     expect(T.cleanAudio({ ...good, slug: '../x' })).toBeNull();
     expect(T.cleanAudio({ ...good, slug: undefined })).toBeNull();
     expect(T.cleanAudio({ ...good, lines: 'x' })).toBeNull();
@@ -211,6 +256,10 @@ describe('cleanAudio', () => {
     expect(Object.keys(bad.clips)).not.toContain(k);
     expect(Object.keys(bad.clips)).not.toContain('not-hex');
     expect(bad.lines.some((l) => l.clip === k)).toBe(false);
+  });
+  it('refuses a line of any other kind (the old caption and bubble narration) as a whole', () => {
+    expect(T.cleanAudio({ ...good, lines: [...good.lines, { panel: 0, kind: 'caption', clip: good.lines[0]!.clip }] })).toBeNull();
+    expect(T.cleanAudio({ ...good, lines: [{ panel: 0, kind: 'bubble', bubble: 0, clip: good.lines[0]!.clip }] })).toBeNull();
   });
   it('builds clip URLs from the slug and key only', () => {
     expect(A.clipUrl('a-lab', '82111213e8173703')).toBe('/api/audio/a-lab/82111213e8173703.mp3');
@@ -228,7 +277,7 @@ describe('which clip should be sounding', () => {
     expect(w.offset).toBeCloseTo(0.5, 9);
     expect(A.audioWanted(tl.audio, c0.start - 0.01, { running: true, sound: true })).toBeNull();
     expect(A.audioWanted(tl.audio, c0.end, { running: true, sound: true })?.clip.key).not.toBe(c0.key); // the end is exclusive
-    expect(A.audioWanted(tl.audio, (c0.end + c1.start) / 2 - 1e-9 + (c1.start - c0.end) / 2 - 1e-6, { running: true, sound: true })).toBeNull();
+    expect(A.audioWanted(tl.audio, (c0.end + c1.start) / 2, { running: true, sound: true })).toBeNull();
   });
   it('is nothing while the clock waits or the sound is off', () => {
     expect(A.audioWanted(tl.audio, c0.start + 0.5, { running: false, sound: true })).toBeNull();
@@ -434,24 +483,40 @@ describe('the audio state machine', () => {
   });
 
   it('LATE_START is shorter than a clip gap, so a late frame never skips into the next clip', () => {
-    expect(A.LATE_START).toBeLessThan(T.VOICE_GAP);
+    expect(A.LATE_START).toBeLessThan(T.TIMING.breath);
   });
 });
 
-describe('the real comic and its real narration', () => {
-  it('schedules the committed narration of see-what-a-gateway-does without a mismatch', async () => {
-    const { readFileSync } = await import('node:fs');
+describe('the real comics and their real narration', () => {
+  // The labs move to the voiceover contract one rewrite at a time: a comic with at least one voiceover must
+  // schedule its committed narration without a mismatch; a comic that still has the old narration plays silent
+  // (any old-shape line turns it off whole), exactly like a lab with none.
+  it('schedules the committed narration of every lab whose comic has a voiceover, and plays an old one silent', async () => {
+    const { existsSync, readdirSync, readFileSync } = await import('node:fs');
     const { join } = await import('node:path');
     const { parse } = await import('yaml');
     const { ComicSchema } = await import('../../src/labs/comic');
-    const dir = join(__dirname, '..', '..', 'labs', 'see-what-a-gateway-does', 'learn');
-    const comic = ComicSchema.parse(parse(readFileSync(join(dir, 'comic.yaml'), 'utf8')));
-    const audio = JSON.parse(readFileSync(join(dir, 'audio.json'), 'utf8'));
-    const cleaned = T.cleanComic(comic)!;
-    const tl = T.buildTimeline(cleaned, { audio: { ...audio, slug: 'see-what-a-gateway-does' } });
-    expect(tl.audio).toHaveLength(audio.lines.length);
-    expect(tl.audio.length).toBeGreaterThanOrEqual(6);
-    const plain = T.buildTimeline(cleaned);
-    expect(tl.total).toBeGreaterThanOrEqual(plain.total);
+    const root = join(__dirname, '..', '..', 'labs');
+    let voiced = 0;
+    let silent = 0;
+    for (const slug of readdirSync(root)) {
+      const dir = join(root, slug, 'learn');
+      if (!existsSync(join(dir, 'comic.yaml')) || !existsSync(join(dir, 'audio.json'))) continue;
+      const comic = ComicSchema.parse(parse(readFileSync(join(dir, 'comic.yaml'), 'utf8')));
+      const audio = JSON.parse(readFileSync(join(dir, 'audio.json'), 'utf8'));
+      const cleaned = T.cleanComic(comic)!;
+      const plain = T.buildTimeline(cleaned);
+      const tl = T.buildTimeline(cleaned, { audio: { ...audio, slug } });
+      if (allPanels(cleaned as Comic).some((p) => p.voiceover)) {
+        voiced += 1;
+        expect(tl.audio, slug).toHaveLength(audio.lines.length);
+        expect(tl.total, slug).toBeGreaterThanOrEqual(plain.total);
+        expect(tl.total, slug).toBeLessThan(300);
+      } else {
+        silent += 1;
+        expect(tl, `${slug} (old narration plays silent)`).toEqual(plain);
+      }
+    }
+    expect(voiced + silent).toBeGreaterThanOrEqual(6);
   });
 });

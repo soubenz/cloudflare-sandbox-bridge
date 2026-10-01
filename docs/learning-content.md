@@ -103,23 +103,44 @@ fields:
 
 ## The motion comic (optional): `learn/comic.yaml`
 
-The story can also be told as a motion comic that plays like a video: a camera moves across a comic page and zooms into each panel as it pops in, speech bubbles type out word by word, and the learner sees Replay and Skip. The art is drawn by the console from code, so a comic is a few lines of data per panel, never an image. It can have one page or several, and any number of panels on each. `learn/story.md` stays required: it is the fallback for screen readers, for a skipped comic and for older consoles.
+The story can also be told as a motion comic that plays like a short audio story with pictures: a camera moves across a comic page and zooms into each panel as it pops in, **one storyteller** tells the story over it, speech bubbles type out on screen, and the learner sees Replay, Skip and a Sound toggle. The art is drawn by the console from code, so a comic is a few lines of data per panel, never an image. `learn/story.md` stays required: it is the fallback for screen readers, for a skipped comic and for older consoles.
+
+### Who tells it
+
+The story is a team's, and Maren tells it.
+
+- **The storyteller is Maren**, the platform lead, speaking to you as a member of her team: first person, and "we", "our platform", "your team". She is warm and direct. Her words are the `voiceover` of each panel, and one voice (`thalia`, set once in `src/labs/comic-kit.ts` as `NARRATOR_VOICE`) reads all of them.
+- **Three people are drawn:** Maren, Tomasz (the engineer who built things) and You (the learner). Only `maren`, `tomasz` and `you` may appear in `cast` or as a bubble speaker.
+- **Finance (Jonas), Support (Priya) and data protection (Anneke) are retired from the cast.** They are never drawn and never speak. The story still has them: Maren mentions them in the voiceover ("Jonas in Finance asked us...") or a caption names them, and a `message` panel can show their note arriving while the voiceover says who it is from. `labs learn-check` refuses `priya`, `jonas` and `anneke` in `cast` or as a bubble speaker, with the message "retired: use maren, tomasz or you; mention them in the voiceover or caption instead". (The names still parse so that a comic that has no voiceover yet keeps working until it is rewritten; see [Moving an old comic over](#moving-an-old-comic-over).)
+
+### The panel
 
 ```yaml
 title: Which provider answered?
 panels:                         # one page; for several pages write `pages:` (below)
   - scene: desk                 # desk, message, portrait, screen, duo or you
-    cast: [jonas]               # who is in it: maren, tomasz, priya, jonas, anneke, you
+    cast: [tomasz]              # who is drawn: maren, tomasz or you (none for screen and you scenes)
     caption: Tuesday, a little after ten.
+    voiceover: On Tuesday morning Jonas in Finance asked us a question that nobody on the team could answer.
     bubbles:
-      - { who: jonas, text: "Which provider answered, and what did that reply cost?" }
+      - { who: tomasz, text: "Which provider answered, and what did that reply cost?" }
     lines: ["$ $ $", "?"]      # what the screen shows
   - scene: message
     cast: [maren]
     prop: envelope              # none, envelope, laptop, chart, map, key, document
     sfx: PING!
+    voiceover: Then a note from Priya arrived. Support could not say either, and I did not like that.
     bubbles: [{ who: maren, text: "Nobody can answer this." }]
 ```
+
+Each panel has up to four things to say, and they differ:
+
+| Field | What it is | How it is shown | Limits |
+| --- | --- | --- | --- |
+| `voiceover` | What the storyteller **says** over the panel. This is how the story is told. | **Spoken** by the one narrator voice (and part of "Read as text"). Not drawn on the panel. | Optional, plain single-line text, up to 240 characters |
+| `caption` | A short **label** on the picture: a time, a place, the call to action. | Fades in at the panel start. **Never spoken.** | Optional, up to 100 characters |
+| `bubbles` | A short quoted line of someone in the panel. | **Text only**, typed out word by word. **Never spoken.** At most two a panel. | `who` (maren, tomasz or you, in the panel's `cast`; optional), `text` up to 150 characters |
+| `lines` / `sfx` | What a screen shows, one line per entry; a sound-effect word slammed onto the panel. | Typed on the screen; slammed in with a shake. Never spoken. | up to 6 lines of 44 characters; `sfx` up to 14 |
 
 More than one page:
 
@@ -134,35 +155,55 @@ pages:
 
 | Scene | Panel size | Cast | Needs |
 | --- | --- | --- | --- |
-| `desk` | wide (2 of 3 columns) | 1 | optional `lines` for the screen |
-| `message` | square (1 column) | 1 | optional `prop`, `sfx` |
+| `desk` | wide (2 of 3 columns) | 1 (maren, tomasz or you) | optional `lines` for the screen |
+| `message` | square (1 column) | 1 | optional `prop`, `sfx`; the sender is named in the voiceover |
 | `portrait` | square | 1 | optional `prop`, `sfx` |
 | `screen` | wide | none | `lines` (typed out one by one) |
 | `duo` | square | 2 | |
 | `you` | wide | none | `lines`; the last panel shows the call to action |
 
-Rules `labs learn-check` enforces:
+A `screen` or `you` scene draws nobody, so it needs no cast. A `message` scene still has one of the three in the room with the envelope: the person who wrote the note is spoken about in the voiceover (bubbles need a speaker who is in the cast).
 
-- 1 to 6 pages, 1 to 9 panels on a page, at least 4 and at most 36 panels in all. Panels flow in reading order into rows of three columns (wide counts 2, square 1). Any count works: a wide panel that does not fit the rest of a row starts the next row, and a row that is not full sits in the middle of the page, so there is nothing to balance by hand.
-- Speakers must be in the panel's cast. At most two bubbles per panel, 150 characters each, plain text. Under 130 spoken words on a page and under 520 in all, so a page plays in about a minute and a half. The camera turns the page (with its optional title) between pages.
-- Every panel says something (a caption, a bubble or screen lines). `sfx` is for `message`, `portrait` and `desk` panels.
-- The comic follows the story bible: Larkfield, the five recurring people, second person for "you", no answer to a graded question.
+### Writing the voiceover
+
+Write it the way Maren would say it to her team across a desk, so that it sounds right read aloud by a text-to-speech voice.
+
+- **First person and plural.** "I", "we", "our platform", "your team", "you". "We had a problem on Tuesday." not "The team had a problem."
+- **Short and natural.** One or two sentences, about 35 words at most (the hard limit is 240 characters). One idea a panel; the next panel carries the next.
+- **Spell numbers and sizes** the way you would say them: "three in the morning", "four teams", "two hundred". No digits for amounts of money, counts or times that you want read out.
+- **No code, symbols or file names.** Say "the gateway log", not `gateway.log`; no slashes, underscores, backticks, `$` or `%`. Put the exact text on a screen `line` instead and let the voiceover say what it means.
+- **No hard acronyms.** Say "the model provider" when you can. If you need one the learner knows ("API", "EU"), use it sparingly.
+- **Do not repeat the caption or the bubble.** The caption is the label, the bubble is a quote, the voiceover is the telling. A bubble is a line someone says out loud in the picture ("Which provider answered?"); the voiceover is Maren saying what is going on.
+- **No answers to a graded question** and the story bible: Larkfield, second person for "you".
+
+A comic is **5 to 9 panels** and **one page**, unless the story really turns (a page with a title card for "The call", say), in which case two. A comic with a voiceover may have at most 9 panels in all.
+
+### Rules `labs learn-check` enforces
+
+- 1 to 6 pages, 1 to 9 panels on a page, at least 4 panels in all, and **at most 9 in all once any panel has a `voiceover`**. Panels flow in reading order into rows of three columns (wide counts 2, square 1). Any count works: a wide panel that does not fit the rest of a row starts the next row, and a row that is not full sits in the middle of the page, so there is nothing to balance by hand.
+- A voiceover is at most 240 characters. Speakers must be in the panel's cast, and cast and speakers are only `maren`, `tomasz` and `you` (see above). At most two bubbles per panel, 150 characters each, plain text. Under 130 bubble words on a page and under 520 in all.
+- Every panel says something (a voiceover, a caption, a bubble or screen lines). `sfx` is for `message`, `portrait` and `desk` panels. A `screen` or `you` panel needs `lines`.
+- Narration is optional: a comic with no `voiceover` anywhere is valid and plays without sound.
 
 Lines on a screen are coloured by how they start: `$` is a command, `200` or `ok` is green, `4xx`, `5xx` or `error` is orange or red. Use `?` where the lab wants the learner to find the value.
+
+### Moving an old comic over
+
+The comic used to be read by several voices (a narrator for captions, each person for their bubbles). That contract is retired for new work but still validates, so a lab keeps working until it is rewritten: a comic with **no `voiceover`** keeps the old rules (any of the five people may be in it, up to 36 panels) and its old `learn/audio.json` is still accepted by `labs learn-check` and `labs publish`. The console does not play that old narration (it plays such a comic silent, with no Sound toggle). To move a lab over: write a `voiceover` on each panel in Maren's voice, drop the retired people from `cast` and the bubbles (mention them in the voiceover instead), then run `labs narrate`. As soon as one panel has a `voiceover`, the comic is held to the new rules and the old-shape `audio.json` is refused ("out of date ... run `labs narrate`"); `labs narrate` writes the new one and deletes the old clips.
 
 ### How it plays
 
 The console (`dashboard/src/comic.js`) lays the whole comic out as one reel (every page a sheet of paper, one under the other) and plays it on a single clock; the schedule is a pure function in `comic-timeline.js`, so a panel's start, each word of a bubble and the camera at any second are the same every time.
 
-- **Camera.** It starts on the first page, flies to each panel as it pops in, and zooms to fit it. Between pages it flies down to the next sheet (and to its title card, held a moment, when the page has a `title`). After the last panel it pulls back until the whole comic is in frame, and the frame grows to fit it. A panel stays up for `panelSeconds(words)` of every word it shows: what is said, the caption and the screen lines. Bubbles type word by word, speaker after speaker; screen lines type one after another; the caption fades in; a `sfx` word slams in with a shake.
-- **Replay and Skip** are the only playback controls. Skip goes straight to the finished comic (every page drawn, every bubble typed). Replay starts again from page 1. A thin progress bar and a timecode (`m:ss / m:ss`) show where it is; they are not controls. The comic plays by itself when it first shows, waits while its tab or the page is hidden, and stops its clock when it is finished or when the learner leaves the screen. One more button exists only on a narrated comic (see [Narration](#narration-voices)): the **Sound on / Sound off** toggle, a documented exception because browsers need a way to turn sound off.
-- **Read as text.** Under the stage, a disclosure lists the transcript of every panel (the same text `labs learn-check` reads: `Panel 3. Maren: ...`, with a `Page 2: Title.` line per page when there are several). The stage itself is one image with the comic's title; the animation is hidden from screen readers, and the transcript is its equivalent. The text story from `story.md` sits under that, folded under "Read the story as text", and is the whole story when a lab has no comic or the comic cannot be drawn.
-- **Reduced motion.** With `prefers-reduced-motion: reduce` the comic starts finished: every page drawn, no camera, nothing typing, the same two buttons (Skip is then off; Replay plays it as cuts from panel to panel, still without travelling or typing).
+- **Camera.** It starts on the first page, flies to each panel as it pops in, and zooms to fit it. Between pages it flies down to the next sheet (and to its title card, held a moment, when the page has a `title`). After the last panel it pulls back until the whole comic is in frame, and the frame grows to fit it. Without narration a panel stays up for `panelSeconds(words)` of every word it shows (bubbles, caption and screen lines; a voiceover is heard, not read, so it adds none). Bubbles type word by word, speaker after speaker; screen lines type one after another; the caption fades in at the panel start; a `sfx` word slams in with a shake.
+- **Replay and Skip** are the playback controls. Skip goes straight to the finished comic (every page drawn, every bubble typed). Replay starts again from page 1. A thin progress bar and a timecode (`m:ss / m:ss`) show where it is; they are not controls. The comic plays by itself when it first shows, waits while its tab or the page is hidden, and stops its clock when it is finished or when the learner leaves the screen. One more button exists only on a narrated comic (see [Narration](#narration-the-storyteller)): the **Sound on / Sound off** toggle, a documented exception because browsers need a way to turn sound off.
+- **Read as text.** Under the stage, a disclosure lists the transcript of every panel (the same text `labs learn-check` reads: `Panel 3. <caption> <voiceover> Maren: <bubble> On screen: ...`, with a `Page 2: Title.` line per page when there are several), so the whole story, including what the storyteller says, can be read. The stage itself is one image with the comic's title; the animation is hidden from screen readers, and the transcript is its equivalent. The text story from `story.md` sits under that, folded under "Read the story as text", and is the whole story when a lab has no comic or the comic cannot be drawn.
+- **Reduced motion.** With `prefers-reduced-motion: reduce` the comic starts finished: every page drawn, no camera, nothing typing, the same buttons (Skip is then off; Replay plays it as cuts from panel to panel, still without travelling or typing).
 - **Narrow places.** The stage is as wide as its container. In a narrow container (the story step in a window narrowed to a few hundred pixels) the frame is squarer, the words of a wide panel are drawn larger so that bubbles stay about 13px on screen and captions 11px or more, and the camera pushes in on a screen once what is said has been said.
 
-### Narration (voices)
+### Narration (the storyteller)
 
-A comic can be read aloud. The voices are made once, by an author, with `labs narrate`, and committed; nothing calls a model when a lab is published or played.
+A comic can be read aloud by one voice. The voice is made once, by an author, with `labs narrate`, and committed; nothing calls a model when a lab is published or played.
 
 ```
 export CLOUDFLARE_API_TOKEN=...      # a token that may run Workers AI; never commit it
@@ -172,17 +213,18 @@ npm run opalix -- labs narrate labs/<slug>                   # make it
 git add labs/<slug>/learn/audio.json labs/<slug>/learn/audio
 ```
 
-- **Who says what.** The narrator reads every `caption`. Each `bubble` is read by its speaker's voice; a bubble with no `who` is the narrator's. The learner (`you`) is never spoken, and neither are `lines` (what a screen shows) or `sfx`. The voices are set in one place, `src/labs/comic-kit.ts`: `CAST[].voice` for each person and the exported `NARRATOR_VOICE`, with `TTS_MODEL` for the model (Workers AI `@cf/deepgram/aura-2-en`: Atlas narrates, Jonas is Arcas, Maren Thalia, Priya Luna, Tomasz Orion, Anneke Andromeda). `narrationLines(comic)` there is the one definition of what is spoken.
-- **What it writes.** `learn/audio/<key>.mp3`, one file per distinct (model, voice, text), where `<key>` is the first 16 hex digits of the SHA-256 of `model\nvoice\ntext`; and `learn/audio.json`: `{ model, clips: { <key>: { voice, text, seconds, bytes } }, lines: [{ panel, kind, bubble?, clip }] }`, where `lines` has one entry per spoken line in reading order (`panel` counts across pages from 0). Identical words in the same voice share a file.
-- **When to run it again.** Whenever a caption or a bubble changes, a speaker changes, or a voice or the model is changed in comic-kit. It only makes the clips that are missing (a second run with nothing changed makes no network call and rewrites nothing) and deletes the clips nothing uses any more. `labs learn-check` and `labs publish` refuse a lab whose `audio.json` no longer matches `comic.yaml` word for word, or whose clip files are missing, and say to run `labs narrate`, so a voice can never say words the panel does not show.
-- **Cost.** About 3,000 characters narrated all six explore comics (a lab's comic is 300 to 600 characters; Workers AI bills text-to-speech by the character, on the order of $0.03 per 1,000 characters, so a lab costs a cent or two). Only changed lines are paid for again. `--dry-run` prints the character count first. Each clip is limited to 400 KB and a lab to 80 clips.
+- **Who says what.** One storyteller reads the `voiceover` of every panel that has one, and nothing else: not a `caption`, not a `bubble` (bubbles are text only, whoever speaks them), not `lines` or `sfx`. A panel with no voiceover has no clip and is silent. The voice is set in one place, `src/labs/comic-kit.ts`: `NARRATOR_VOICE` (a Workers AI `@cf/deepgram/aura-2-en` speaker, `thalia`, a female voice) with `TTS_MODEL` for the model. Other female Aura-2 voices to try: `athena`, `luna`, `helena`, `andromeda`, `juno`, `vesta`. `narrationLines(comic)` there is the one definition of what is spoken.
+- **What it writes.** `learn/audio/<key>.mp3`, one file per distinct (model, voice, text), where `<key>` is the first 16 hex digits of the SHA-256 of `model\nvoice\ntext`; and `learn/audio.json`: `{ model, clips: { <key>: { voice, text, seconds, bytes } }, lines: [{ panel, kind: "voiceover", clip }] }`, where `lines` has one entry per voiced panel in reading order (`panel` counts across pages from 0). Identical words share a file.
+- **When to run it again.** Whenever a `voiceover` changes, or the voice or the model is changed in comic-kit (changing the voice makes every clip anew). Changing a caption or a bubble needs no new narration. It only makes the clips that are missing (a second run with nothing changed makes no network call and rewrites nothing) and deletes the clips nothing uses any more. `labs learn-check` and `labs publish` refuse a lab whose `audio.json` no longer matches the comic's voiceovers word for word, or whose clip files are missing, and say to run `labs narrate`, so a voice can never say words the story does not have.
+- **Cost.** Workers AI bills text-to-speech by the character. A comic of 5 to 9 voiceovers of up to 240 characters is a few hundred to about two thousand characters, so a lab costs a cent or so; only changed voiceovers are paid for again. `--dry-run` prints the character count first. Each clip is limited to 400 KB and a lab to 80 clips.
 - **Where the files go.** `labs publish` uploads the clips beside the bundle (the bundle carries `audio.json` as `learn.audio`); the Worker validates them (names, sizes, MP3 content, exactly the set `audio` names) and stores them at `labs/{slug}/{version}/audio/<key>.mp3`. See [the API](api.md#narration-clips). The console plays them from `/api/audio/<slug>/<key>.mp3`.
-- **How it plays.** The voices run on the comic's own clock (`dashboard/src/comic-timeline.js` and `comic-audio.js`): with narration, each spoken line starts and ends where its clip does (a caption's clip as the caption appears, then each bubble's clip, 0.35 s apart), a bubble's words type across its clip in proportion to their length so the typing keeps pace with the voice, and a panel stays up until its last clip is done plus the usual hold (never less than reading time). Skip, Replay, a hidden tab and the toggle stop the clip, and two never play at once. A clip that cannot load is skipped in silence. A lab without narration plays exactly as before.
-- **The Sound toggle** sits beside Replay and Skip, only on a narrated comic. It is named for its state (**Sound on** or **Sound off**), is pressed when on, is on by default and is remembered (`localStorage` `opalix.comicSound`). Replay and Skip stay the only playback controls.
+- **How it plays.** The storyteller runs on the comic's own clock (`dashboard/src/comic-timeline.js` and `comic-audio.js`). A voiced panel's clip starts **0.6 s into the panel**, once the picture has landed. The panel stays up for the larger of what it takes to read everything it shows and the clip's end plus the usual hold (`TIMING.hold`, 2 s), so no panel is ever cut before its clip ends, and the silence between one voiceover and the next is never less than `TIMING.breath` (0.5 s; in practice the hold plus the 0.6 s lead, so the storyteller pauses between panels like a person turning a page). The panel's bubbles appear as text and type out starting **0.8 s after the clip starts**, one after the other, at the reading pace (`TIMING.word`, 0.2 s a word), clamped so the last bubble is done by the clip's end plus one second; if there are more bubble words than fit, they type faster, never slower than the voice allows. The caption fades in at the panel start. Skip, Replay, a seek, a hidden tab, Sound off and leaving the screen stop the clip, and exactly one narrator clip plays at a time. A clip that cannot load is skipped in silence. A lab without narration plays exactly as before.
+- **If the narration cannot be trusted the console plays the comic silent, whole.** If the narration is not of the voiceovers in the comic (other words, a panel without a voiceover, a voiceover without a clip, or any line of the old caption-and-bubble shape), the console turns all of it off rather than play part of it: no sound, no Sound toggle, the ordinary silent schedule.
+- **The Sound toggle** sits beside Replay and Skip, only on a narrated comic. It is named for its state (**Sound on** or **Sound off**), is pressed when on, is on by default and is remembered (`localStorage` `opalix.comicSound`).
 - **Autoplay.** The comic tries to start sound by itself. If the browser refuses (it wants a tap first), a small non-modal **Tap to turn the sound on** button appears in the frame; tapping it, or Replay, or the toggle, starts the clip where the clock is. With `prefers-reduced-motion: reduce` no audio plays by itself (the comic starts finished); Replay plays it hard-cut, with its audio.
-- **Always text too.** Captions, bubbles and "Read as text" are all still there, so nothing depends on hearing.
+- **Always text too.** Captions, bubbles and "Read as text" (which includes the voiceovers) are all still there, so nothing depends on hearing.
 
-Tests drive the voices without sound: with `?comicTest=1` the player never calls `play()`, and `window.__comicClock.audio` lists the scheduled clips (key, start, end), `audioLog()` what it decided to play and stop, and `?comicAudio=blocked` makes play() refuse as a browser does (`test/e2e/19-comic-audio.spec.ts`).
+Tests drive the voice without sound: with `?comicTest=1` the player never calls `play()`, and `window.__comicClock.audio` lists the scheduled clips (key, start, end), `audioLog()` what it decided to play and stop, and `?comicAudio=blocked` makes play() refuse as a browser does (`test/e2e/19-comic-audio.spec.ts`, which carries its own small comic and narration in `test/e2e/comic-fixture.ts`).
 
 ## Trimming the brief
 

@@ -2,40 +2,44 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { accountIdFrom, narrateLab, planNarration } from '../../cli/src/narrate';
+import { accountIdFrom, narrateLab, planNarration, sha256Hex } from '../../cli/src/narrate';
 import { buildLearnUpload } from '../../cli/src/commands/labs';
 import { compileLearnDir, readComic } from '../../cli/src/learn-compile';
 import { AudioSchema } from '../../src/labs/learn';
 import { mp3Seconds } from '../../src/labs/mp3';
-import { TTS_MODEL } from '../../src/labs/comic-kit';
+import { NARRATOR_VOICE, TTS_MODEL, clipKey, legacyNarrationLines, usesVoiceover } from '../../src/labs/comic-kit';
 
 /**
- * `labs narrate`, against a stubbed fetch (no network): which clips it makes, that a second run
- * makes none, that clips nothing uses are removed, that it retries, and that the audio.json it
- * writes is what `labs learn-check` and `labs publish` accept. Plus: the narration committed for
- * the real labs is in step with their comics.
+ * `labs narrate`, against a stubbed fetch (no network): which clips it makes (one per panel voiceover, all
+ * in the one narrator voice), that a second run makes none, that clips nothing uses are removed, that it
+ * retries, and that the audio.json it writes is what `labs learn-check` and `labs publish` accept. Plus: the
+ * narration committed for the real labs is in step with their comics.
  */
 
 const ROOT = join(__dirname, '..', '..');
 const CLIP = readFileSync(join(__dirname, '..', 'fixtures', 'audio', 'maren-thalia.mp3'));
 
-const COMIC = (maren = 'Find out what it really does.') => `title: Which provider answered?
+const COMIC = (voice = 'Find out what it really does.') => `title: Which provider answered?
 panels:
   - scene: desk
-    cast: [jonas]
+    cast: [maren]
     caption: Tuesday, a little after ten.
+    voiceover: On Tuesday finance asked us a question nobody could answer.
     bubbles:
-      - { who: jonas, text: "Which provider answered?" }
+      - { who: maren, text: "Which provider answered?" }
     lines: ["invoice: one line"]
   - scene: portrait
-    cast: [maren]
+    cast: [tomasz]
+    voiceover: ${voice}
     bubbles:
-      - { who: maren, text: "${maren}" }
+      - { who: tomasz, text: "I built it, I can tell you." }
   - scene: screen
     caption: A small copy of it.
+    voiceover: We made a small copy for you to look at.
     lines: ["$ send_calls.py", "ready."]
   - scene: you
     caption: Your turn.
+    voiceover: Your turn.
     lines: ["$ go", "ready."]
 `;
 
@@ -75,12 +79,13 @@ const opts = (s: ReturnType<typeof stub>, extra: Record<string, unknown> = {}) =
 const clipFiles = (dir: string) => (existsSync(join(dir, 'learn', 'audio')) ? readdirSync(join(dir, 'learn', 'audio')).sort() : []);
 
 describe('labs narrate', () => {
-  it('plans one clip per distinct (voice, words): caption first, learner and screen lines left out', () => {
+  it('plans one clip per distinct voiceover, all in the narrator voice: captions, bubbles and screen lines are left out', () => {
     const dir = lab();
     try {
       const plan = planNarration(readComic(dir).comic!);
-      expect(plan.lines.map((l) => `${l.panel}:${l.kind}:${l.voice}`)).toEqual(['0:caption:atlas', '0:bubble:arcas', '1:bubble:thalia', '2:caption:atlas', '3:caption:atlas']);
-      expect(plan.clips).toHaveLength(5);
+      expect(plan.lines.map((l) => `${l.panel}:${l.kind}:${l.voice}`)).toEqual(['0:voiceover:thalia', '1:voiceover:thalia', '2:voiceover:thalia', '3:voiceover:thalia']);
+      expect(plan.clips).toHaveLength(4);
+      expect(plan.clips.every((c) => c.voice === NARRATOR_VOICE)).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -91,27 +96,30 @@ describe('labs narrate', () => {
     try {
       const s = stub();
       const r = await narrateLab(dir, opts(s));
-      expect(r).toMatchObject({ lines: 5, clips: 5, made: 5, reused: 0, removed: 0, requests: 5, wroteIndex: true });
-      expect(r.characters).toBe('Tuesday, a little after ten.Which provider answered?Find out what it really does.A small copy of it.Your turn.'.length);
+      expect(r).toMatchObject({ lines: 4, clips: 4, made: 4, reused: 0, removed: 0, requests: 4, wroteIndex: true });
+      expect(r.characters).toBe('On Tuesday finance asked us a question nobody could answer.Find out what it really does.We made a small copy for you to look at.Your turn.'.length);
 
-      expect(s.calls).toHaveLength(5);
+      expect(s.calls).toHaveLength(4);
       expect(s.calls[0]!.url).toBe(`https://api.cloudflare.com/client/v4/accounts/acct123/ai/run/${TTS_MODEL}`);
       expect(s.calls[0]!.headers.authorization).toBe('Bearer tok-secret');
-      expect(s.calls.map((c) => c.body.speaker).sort()).toEqual(['arcas', 'atlas', 'atlas', 'atlas', 'thalia']);
-      expect(s.calls.find((c) => c.body.speaker === 'thalia')!.body.text).toBe('Find out what it really does.');
+      expect(s.calls.map((c) => c.body.speaker)).toEqual(['thalia', 'thalia', 'thalia', 'thalia']); // one storyteller
+      expect(s.calls.map((c) => c.body.text).sort()).toEqual(['Find out what it really does.', 'On Tuesday finance asked us a question nobody could answer.', 'We made a small copy for you to look at.', 'Your turn.']);
+      expect(s.calls.map((c) => c.body.text)).not.toContain('Which provider answered?'); // bubbles are text only
       expect(s.peak()).toBeLessThanOrEqual(3);
 
-      expect(clipFiles(dir)).toHaveLength(5);
+      expect(clipFiles(dir)).toHaveLength(4);
       expect(clipFiles(dir).every((f) => /^[0-9a-f]{16}\.mp3$/.test(f))).toBe(true);
       const audio = AudioSchema.parse(JSON.parse(readFileSync(join(dir, 'learn', 'audio.json'), 'utf8')));
       expect(audio.model).toBe(TTS_MODEL);
-      expect(Object.keys(audio.clips)).toHaveLength(5);
-      expect(audio.lines).toHaveLength(5);
+      expect(Object.keys(audio.clips)).toHaveLength(4);
+      expect(audio.lines).toHaveLength(4);
+      expect(audio.lines.map((l) => ({ panel: l.panel, kind: l.kind, bubble: l.bubble }))).toEqual([0, 1, 2, 3].map((panel) => ({ panel, kind: 'voiceover', bubble: undefined })));
+      expect(Object.values(audio.clips).every((c) => c.voice === NARRATOR_VOICE)).toBe(true);
       const [key, clip] = Object.entries(audio.clips)[0]!;
       expect(clip.bytes).toBe(CLIP.length);
       expect(clip.seconds).toBeCloseTo(mp3Seconds(new Uint8Array(CLIP)), 1);
       expect(new Uint8Array(readFileSync(join(dir, "learn", "audio", `${key}.mp3`)))).toEqual(new Uint8Array(CLIP));
-      expect(r.seconds).toBeCloseTo(5 * mp3Seconds(new Uint8Array(CLIP)), 5);
+      expect(r.seconds).toBeCloseTo(4 * mp3Seconds(new Uint8Array(CLIP)), 5);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -126,7 +134,7 @@ describe('labs narrate', () => {
       // No token at all: nothing is missing, so none is needed.
       const r = await narrateLab(dir, { fetchImpl: s.fetchImpl });
       expect(s.calls).toHaveLength(0);
-      expect(r).toMatchObject({ made: 0, reused: 5, removed: 0, requests: 0, characters: 0, wroteIndex: false });
+      expect(r).toMatchObject({ made: 0, reused: 4, removed: 0, requests: 0, characters: 0, wroteIndex: false });
       expect(readFileSync(join(dir, 'learn', 'audio.json'), 'utf8')).toBe(before);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -142,9 +150,9 @@ describe('labs narrate', () => {
       const s = stub();
       const r = await narrateLab(dir, opts(s));
       expect(s.calls.map((c) => c.body.text)).toEqual(['Find out why it does that.']);
-      expect(r).toMatchObject({ made: 1, reused: 4, removed: 1, wroteIndex: true });
+      expect(r).toMatchObject({ made: 1, reused: 3, removed: 1, wroteIndex: true });
       const now = clipFiles(dir);
-      expect(now).toHaveLength(5);
+      expect(now).toHaveLength(4);
       expect(had.filter((f) => !now.includes(f))).toHaveLength(1);
       // The new index is the one `labs learn-check` accepts.
       expect(compileLearnDir(dir)!.problems).toEqual([]);
@@ -160,9 +168,9 @@ describe('labs narrate', () => {
       const s = stub();
       const r = await narrateLab(dir, { ...opts(s), dryRun: true, log: (l) => lines.push(l) });
       expect(s.calls).toHaveLength(0);
-      expect(r).toMatchObject({ made: 5, requests: 0, wroteIndex: false });
+      expect(r).toMatchObject({ made: 4, requests: 0, wroteIndex: false });
       expect(r.characters).toBeGreaterThan(100);
-      expect(lines.filter((l) => l.includes('would make'))).toHaveLength(5);
+      expect(lines.filter((l) => l.includes('would make'))).toHaveLength(4);
       expect(lines.join('\n')).toContain('Find out what it really does.');
       expect(existsSync(join(dir, 'learn', 'audio'))).toBe(false);
       expect(existsSync(join(dir, 'learn', 'audio.json'))).toBe(false);
@@ -196,8 +204,8 @@ describe('labs narrate', () => {
       const waits: number[] = [];
       const s = stub([429, 503, 200]);
       const r = await narrateLab(dir, opts(s, { concurrency: 1, sleep: async (ms: number) => void waits.push(ms) }));
-      expect(r.made).toBe(5);
-      expect(r.requests).toBe(7); // five clips, two of the first attempts were refused once
+      expect(r.made).toBe(4);
+      expect(r.requests).toBe(6); // four clips, two of the first attempts were refused once
       expect(waits).toHaveLength(2);
       expect(waits[1]!).toBeGreaterThan(waits[0]! - 1);
     } finally {
@@ -236,6 +244,66 @@ describe('labs narrate', () => {
     try {
       rmSync(join(dir, 'learn', 'comic.yaml'));
       await expect(narrateLab(dir, { dryRun: true })).rejects.toThrow(/no learn\/comic\.yaml/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('labs narrate and the contract', () => {
+  it('says what to add when no panel has a voiceover (an old comic), and writes nothing', async () => {
+    const dir = lab(COMIC().replace(/^ +voiceover: .*\n/gm, ''));
+    try {
+      const s = stub();
+      await expect(narrateLab(dir, opts(s))).rejects.toThrow(/no panel has a `voiceover`/);
+      expect(s.calls).toHaveLength(0);
+      expect(existsSync(join(dir, 'learn', 'audio.json'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a panel without a voiceover simply has no clip', async () => {
+    const dir = lab(COMIC().replace(/^ +voiceover: We made a small copy.*\n/m, ''));
+    try {
+      const s = stub();
+      const r = await narrateLab(dir, opts(s));
+      expect(r).toMatchObject({ lines: 3, clips: 3, made: 3 });
+      expect(AudioSchema.parse(JSON.parse(readFileSync(join(dir, 'learn', 'audio.json'), 'utf8'))).lines.map((l) => l.panel)).toEqual([0, 1, 3]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a comic that uses a retired person, before any call', async () => {
+    const dir = lab(COMIC().replace('cast: [tomasz]', 'cast: [priya]').replace('who: tomasz', 'who: priya'));
+    try {
+      const s = stub();
+      await expect(narrateLab(dir, opts(s))).rejects.toThrow(/priya is retired: use maren, tomasz or you/);
+      expect(s.calls).toHaveLength(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('replaces old-shape narration (caption and bubble clips): learn-check refuses it, narrate makes the voiceover clips and removes the old ones', async () => {
+    const dir = lab();
+    try {
+      // The audio an earlier version of narrate wrote for this comic: a clip per caption and per bubble.
+      const clips: Record<string, unknown> = {};
+      mkdirSync(join(dir, 'learn', 'audio'), { recursive: true });
+      const lines = legacyNarrationLines(readComic(dir).comic!).map((l) => {
+        const key = clipKey(TTS_MODEL, l.voice, l.text, sha256Hex);
+        clips[key] = { voice: l.voice, text: l.text, seconds: mp3Seconds(new Uint8Array(CLIP)), bytes: CLIP.length };
+        writeFileSync(join(dir, 'learn', 'audio', `${key}.mp3`), CLIP);
+        return { panel: l.panel, kind: l.kind, ...(l.bubble !== undefined ? { bubble: l.bubble } : {}), clip: key };
+      });
+      writeFileSync(join(dir, 'learn', 'audio.json'), JSON.stringify({ model: TTS_MODEL, clips, lines }));
+      expect(compileLearnDir(dir)!.problems.join('\n')).toMatch(/old caption-and-bubble format.*labs narrate/);
+      const r = await narrateLab(dir, opts(stub()));
+      expect(r.made).toBe(4);
+      expect(r.removed).toBe(Object.keys(clips).length);
+      expect(compileLearnDir(dir)!.problems).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -292,6 +360,12 @@ describe('the account id', () => {
 
 // The committed narration of the labs that have a comic: each must be in step with its comic.yaml, or the
 // voice would say words the panel does not show. (Run `labs narrate labs/<slug>` after changing a comic.)
+//
+// The labs move from the old contract (caption and bubble narration, several voices) to the voiceover
+// contract one rewrite at a time, so each lab is held to the contract it is written to: a comic with at least
+// one `voiceover` must have the one-voice narration (a dry run has nothing to make or remove); a comic without
+// keeps its old narration, which learn-check still accepts. Either way the bundle compiles with no problem
+// and every clip file is a real MP3 of the length audio.json says.
 describe('the narration committed with the labs', () => {
   const slugs = readdirSync(join(ROOT, 'labs')).filter((s) => existsSync(join(ROOT, 'labs', s, 'learn', 'comic.yaml')));
   it('covers the six explore labs that have a comic', () => {
@@ -303,10 +377,13 @@ describe('the narration committed with the labs', () => {
       expect(existsSync(join(dir, 'learn', 'audio.json'))).toBe(true);
       const compiled = compileLearnDir(dir)!;
       expect(compiled.problems).toEqual([]);
-      const lines: string[] = [];
-      const r = await narrateLab(dir, { dryRun: true, log: (l) => lines.push(l) });
-      expect(lines, 'a dry run has nothing to make or remove').toEqual([]);
-      expect(r).toMatchObject({ made: 0, removed: 0 });
+      if (usesVoiceover(compiled.bundle!.comic!)) {
+        const lines: string[] = [];
+        const r = await narrateLab(dir, { dryRun: true, log: (l) => lines.push(l) });
+        expect(lines, 'a dry run has nothing to make or remove').toEqual([]);
+        expect(r).toMatchObject({ made: 0, removed: 0 });
+        expect(compiled.bundle!.audio!.lines.every((l) => l.kind === 'voiceover')).toBe(true);
+      }
       // Every committed clip is really an MP3 of about the length audio.json says.
       for (const [key, clip] of Object.entries(compiled.bundle!.audio!.clips)) {
         const bytes = new Uint8Array(readFileSync(join(dir, 'learn', 'audio', `${key}.mp3`)));

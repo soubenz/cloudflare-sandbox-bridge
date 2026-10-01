@@ -22,14 +22,14 @@
  * calls onDone; Replay starts again from page 1. With prefers-reduced-motion
  * the comic starts finished (every page drawn, no camera, nothing typing).
  *
- * Narration (`{ audio }`, the lab's learn.audio plus its slug): when the lab has voices
- * the same clock plays them. Each clip starts when the clock reaches its start (the
- * timeline already sized every line to its clip) and stops on Skip, Replay, a hidden
- * tab, the Sound toggle and destroy; two never play at once (comic-audio.js is the pure
- * logic). A clip that cannot load is skipped in silence. If the browser refuses to start
+ * Narration (`{ audio }`, the lab's learn.audio plus its slug): when the lab has a storyteller
+ * the same clock plays her. One narrator clip per voiced panel (its `voiceover`; speech bubbles are
+ * text only and never voiced) starts when the clock reaches its start (the timeline already sized the
+ * panel to its clip) and stops on Skip, Replay, a hidden tab, the Sound toggle and destroy; exactly one
+ * clip plays at a time (comic-audio.js is the pure logic). A clip that cannot load is skipped in silence. If the browser refuses to start
  * sound before the learner has tapped anything, a small "Tap to turn the sound on" button
  * appears in the frame. The one other control, beside Replay and Skip and only on a comic
- * that has voices, is the Sound on/off toggle (kept in localStorage `opalix.comicSound`,
+ * that has a storyteller, is the Sound on/off toggle (kept in localStorage `opalix.comicSound`,
  * on by default): browsers need a way to turn sound off. Captions, bubbles and the
  * transcript are always there, so nothing depends on hearing.
  * The stage is role="img" with the title; "Read as text" under it is the

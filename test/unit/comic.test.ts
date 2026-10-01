@@ -6,7 +6,7 @@ import { ComicSchema, checkComic, allPanels } from '../../src/labs/comic';
 import { CAST, SCENES, PAGE, PAGE_W, layoutComic, panelSeconds, comicTranscript, comicPagesTranscript } from '../../src/labs/comic-kit';
 import { compileLearnDir } from '../../cli/src/learn-compile';
 
-const panel = (over: Record<string, unknown> = {}) => ({ scene: 'portrait', cast: ['maren'], bubbles: [{ who: 'maren', text: 'Hello there.' }], ...over });
+const panel = (over: Record<string, unknown> = {}): Record<string, any> => ({ scene: 'portrait', cast: ['maren'], bubbles: [{ who: 'maren', text: 'Hello there.' }], ...over });
 /** wide, square, square, wide, square, wide: three rows that fill exactly */
 const GOOD = {
   title: 'Which provider answered?',
@@ -189,6 +189,129 @@ describe('compileLearnDir with a comic', () => {
     } finally {
       rmSync(d, { recursive: true, force: true });
       rmSync(e, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---- the storyteller contract: a voiceover per panel, three people on stage -------------------
+
+/** A comic written to the voiceover contract: Maren tells it, Tomasz and You are drawn. */
+const VOICED = {
+  title: 'Which provider answered?',
+  panels: [
+    panel({ scene: 'desk', cast: ['maren'], caption: 'Tuesday.', voiceover: 'On Tuesday finance asked us a question we could not answer.', bubbles: [{ who: 'maren', text: 'Which provider answered?' }], lines: ['$ $ $', '?'] }),
+    panel({ scene: 'message', cast: ['tomasz'], prop: 'envelope', sfx: 'PING!', voiceover: 'Jonas sent the invoice, and Priya said support had no idea either.', bubbles: [{ who: 'tomasz', text: 'I built the gateway.' }] }),
+    panel({ scene: 'duo', cast: ['maren', 'tomasz'], voiceover: 'So Tomasz and I made a small copy of it for you to look at.', bubbles: [{ who: 'maren', text: 'Look at the log.' }, { who: 'tomasz', text: 'It is all in there.' }] }),
+    panel({ scene: 'portrait', cast: ['you'], voiceover: 'You are the new engineer, and the log is yours now.', bubbles: [{ who: 'you', text: 'On it.' }] }),
+    panel({ scene: 'screen', cast: [], bubbles: [], voiceover: 'Here is what the log looks like.', lines: ['$ gateway --log', '200 ok'] }),
+    panel({ scene: 'you', cast: [], bubbles: [], caption: 'Your turn.', voiceover: 'Your turn. Find out who answered.', lines: ['$ go', 'ready.'] }),
+  ],
+};
+const voiced = (patch: (p: Record<string, any>, i: number) => Record<string, any>) => ComicSchema.parse({ ...VOICED, panels: VOICED.panels.map(patch) });
+
+describe('voiceover: the story is told by one storyteller', () => {
+  it('accepts a comic with voiceovers for maren, tomasz and you, and finds nothing to fix', () => {
+    const c = ComicSchema.parse(VOICED);
+    expect(checkComic(c)).toEqual([]);
+    expect(c.pages[0]!.panels[0]!.voiceover).toBe('On Tuesday finance asked us a question we could not answer.');
+  });
+
+  it('limits a voiceover to 240 characters of plain single-line text', () => {
+    const withVoiceover = (voiceover: string) => ({ ...VOICED, panels: VOICED.panels.map((p, i) => (i === 0 ? { ...p, voiceover } : p)) });
+    expect(() => ComicSchema.parse(withVoiceover('a'.repeat(240)))).not.toThrow();
+    expect(() => ComicSchema.parse(withVoiceover('a'.repeat(241)))).toThrow();
+    expect(() => ComicSchema.parse(withVoiceover('two\nlines'))).toThrow();
+    expect(() => ComicSchema.parse(withVoiceover('<b>bold</b>'))).toThrow();
+    expect(() => ComicSchema.parse(withVoiceover(''))).toThrow();
+    // checkComic holds the line too, for a comic built without the schema.
+    const long = ComicSchema.parse(VOICED);
+    long.pages = [{ panels: long.pages[0]!.panels.map((p, i) => (i === 0 ? { ...p, voiceover: 'a'.repeat(300) } : p)) }];
+    expect(checkComic(long).join()).toMatch(/voiceover is 300 characters/);
+  });
+
+  it('still parses the retired ids, but rejects them in cast or as a bubble speaker once there is a voiceover', () => {
+    for (const id of ['priya', 'jonas', 'anneke']) {
+      expect(CAST.find((c) => c.id === id)!.retired).toBe(true);
+      const inCast = voiced((p, i) => (i === 3 ? { ...p, cast: [id], bubbles: [{ who: id, text: 'Hi.' }] } : p));
+      const problems = checkComic(inCast).join('\n');
+      expect(problems).toContain(`comic panel 4 (portrait): ${id} is retired: use maren, tomasz or you; mention them in the voiceover or caption instead`);
+      expect(problems.match(new RegExp(`${id} is retired`, 'g'))).toHaveLength(1); // once, though named twice
+    }
+    // as a speaker only (the speaker must also be in the cast, which is checked on its own)
+    const speaker = voiced((p, i) => (i === 2 ? { ...p, bubbles: [{ who: 'maren', text: 'Hi.' }, { who: 'priya', text: 'Hello.' }] } : p));
+    const problems = checkComic(speaker).join('\n');
+    expect(problems).toMatch(/priya is retired: use maren, tomasz or you/);
+    expect(problems).toMatch(/priya speaks but is not in the panel's cast/);
+  });
+
+  it('names the page and panel of a retired person on a comic of several pages', () => {
+    const c = ComicSchema.parse({ title: 'T', pages: [{ panels: VOICED.panels.slice(0, 3) }, { panels: [{ ...VOICED.panels[3], cast: ['anneke'], bubbles: [] }, ...VOICED.panels.slice(4)] }] });
+    expect(checkComic(c).join('\n')).toMatch(/comic page 2 panel 1 \(portrait\): anneke is retired/);
+  });
+
+  it('accepts maren, tomasz and you in any scene that draws people', () => {
+    for (const id of ['maren', 'tomasz', 'you']) {
+      for (const scene of ['desk', 'message', 'portrait']) {
+        const c = voiced((p, i) => (i === 3 ? { ...p, scene, cast: [id], bubbles: [{ who: id, text: 'Hi.' }], sfx: undefined } : p));
+        expect(checkComic(c), `${id} in ${scene}`).toEqual([]);
+      }
+    }
+    const trio = voiced((p, i) => (i === 2 ? { ...p, cast: ['tomasz', 'you'], bubbles: [{ who: 'you', text: 'Look at the log.' }, { who: 'tomasz', text: 'It is all in there.' }] } : p));
+    expect(checkComic(trio)).toEqual([]);
+  });
+
+  it('keeps the scene rules coherent: a screen or you scene needs no cast and a message from a named person is spoken of in the voiceover', () => {
+    // screen and you scenes draw nobody; cast on them is refused, as before
+    const cast = voiced((p, i) => (i === 4 ? { ...p, cast: ['maren'] } : p));
+    expect(checkComic(cast).join()).toMatch(/\(screen\): needs 0 cast member/);
+    // a message scene still shows the sender's envelope with someone in the room; the named person is in the voiceover
+    expect(checkComic(voiced((p, i) => (i === 1 ? { ...p, cast: [] } : p))).join()).toMatch(/\(message\): needs 1 cast member/);
+    expect(VOICED.panels[1]!.voiceover).toMatch(/Jonas.*Priya/);
+  });
+
+  it('keeps the old rules for a comic with no voiceover, so the labs that have not been rewritten keep working', () => {
+    const old = ComicSchema.parse(GOOD); // uses jonas
+    expect(checkComic(old)).toEqual([]);
+    const oldLong = ComicSchema.parse({ title: 'T', pages: [{ panels: GOOD.panels.concat(GOOD.panels).slice(0, 9) }, { panels: GOOD.panels }] });
+    expect(checkComic(oldLong).join()).not.toMatch(/at most 9 panels/);
+  });
+
+  it('allows at most 9 panels in all once the comic has a voiceover', () => {
+    const nine = ComicSchema.parse({ title: 'T', pages: [{ panels: VOICED.panels }, { panels: VOICED.panels.slice(0, 3) }] });
+    expect(checkComic(nine)).toEqual([]);
+    const ten = ComicSchema.parse({ title: 'T', pages: [{ panels: VOICED.panels }, { panels: VOICED.panels.slice(0, 4) }] });
+    expect(checkComic(ten).join()).toMatch(/at most 9 panels in all \(has 10\)/);
+  });
+
+  it('a panel with only a voiceover says something; narration is optional (no voiceover anywhere is not an error)', () => {
+    const only = voiced((p, i) => (i === 4 ? { scene: 'screen', cast: [], bubbles: [], voiceover: 'Only the storyteller speaks here.', lines: ['$ x'] } : p));
+    expect(checkComic(only)).toEqual([]);
+    const bare = voiced((p, i) => (i === 3 ? { scene: 'portrait', cast: ['maren'], bubbles: [] } : p));
+    expect(checkComic(bare).join()).toMatch(/says nothing \(add a voiceover/);
+    const none = ComicSchema.parse({ title: 'T', panels: VOICED.panels.map(({ voiceover: _v, ...p }) => p) });
+    expect(checkComic(none)).toEqual([]);
+  });
+
+  it('puts the voiceover in the transcript after the caption, so Read as text tells the whole story', () => {
+    const t = comicTranscript(ComicSchema.parse(VOICED).pages[0]!.panels);
+    expect(t[0]).toBe('Panel 1. Tuesday. On Tuesday finance asked us a question we could not answer. Maren: Which provider answered? On screen: $ $ $ / ?');
+    expect(t[4]).toBe('Panel 5. Here is what the log looks like. On screen: $ gateway --log / 200 ok');
+  });
+});
+
+// ---- the comics the browser specs (18-comic, 19-comic-audio) carry inline must be valid to the contract ----
+
+describe('the Playwright fixtures (test/e2e/comic-fixture.ts)', () => {
+  it('are valid voiceover-contract comics, with a valid bundle and a narration that cross-checks', async () => {
+    const { MULTI, SINGLE, bundleOf, narrationOf } = await import('../e2e/comic-fixture');
+    const { parseLearnBundle } = await import('../../src/labs/learn');
+    for (const [name, fx] of [['single', SINGLE], ['multi', MULTI]] as const) {
+      const c = ComicSchema.parse(fx);
+      expect(checkComic(c), name).toEqual([]);
+      expect(allPanels(c).every(({ panel }) => panel.cast.every((id) => ['maren', 'tomasz', 'you'].includes(id))), name).toBe(true);
+      expect(allPanels(c).length, name).toBeLessThanOrEqual(9);
+      // the whole learn bundle, with its narration, as `labs publish` and the Worker would check it
+      expect(() => parseLearnBundle(bundleOf(fx, narrationOf(fx)))).not.toThrow();
     }
   });
 });

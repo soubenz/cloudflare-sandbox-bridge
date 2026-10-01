@@ -9,10 +9,12 @@ import { readComic } from './learn-compile';
 /**
  * `labs narrate <dir>`: gives a lab's motion comic its voices.
  *
- * The words to speak and the voice of each come from comic-kit (narrationLines); each distinct
+ * One storyteller voice tells the story: the words to speak are the `voiceover` of each panel and the
+ * voice is the narrator's, both from comic-kit (narrationLines, NARRATOR_VOICE). Bubbles are text only
+ * and are never voiced. Each distinct
  * (model, voice, text) is one mp3 in `learn/audio/<clipKey>.mp3`, made by Workers AI text-to-speech
  * over its REST endpoint, and `learn/audio.json` indexes them (clip lengths and sizes, and which
- * clip reads which panel line). Both are committed: publishing never calls the model. Running it
+ * clip reads which panel's voiceover). Both are committed: publishing never calls the model. Running it
  * again makes only the clips that are missing, so a second run with nothing changed makes no
  * network call, and clips nothing refers to any more are deleted.
  */
@@ -49,7 +51,7 @@ export function buildAudioIndex(plan: NarrationPlan, measured: ReadonlyMap<strin
   return {
     model,
     clips,
-    lines: plan.lines.map((l) => ({ panel: l.panel, kind: l.kind, ...(l.bubble !== undefined ? { bubble: l.bubble } : {}), clip: l.key })),
+    lines: plan.lines.map((l) => ({ panel: l.panel, kind: l.kind, clip: l.key })),
   };
 }
 
@@ -80,7 +82,7 @@ export interface NarrateOptions {
 
 export interface NarrateResult {
   lab: string;
-  /** Spoken lines in the comic, and the distinct clips they need. */
+  /** Voiceovers in the comic, and the distinct clips they need. */
   lines: number;
   clips: number;
   /** Clips synthesised by this run (or that a dry run would synthesise), and their characters. */
@@ -161,7 +163,7 @@ export async function narrateLab(labDir: string, opts: NarrateOptions = {}): Pro
   const { comic, problems } = readComic(labDir);
   if (!comic) throw new Error(`cannot narrate ${labDir}:\n${problems.map((p) => `  - ${p}`).join('\n')}`);
   const plan = planNarration(comic);
-  if (plan.lines.length === 0) throw new Error(`${labDir}: the comic has nothing to speak`);
+  if (plan.lines.length === 0) throw new Error(`${labDir}: the comic has nothing to speak: no panel has a \`voiceover\` (the storyteller reads the voiceovers; see docs/learning-content.md)`);
   if (plan.clips.length > MAX_AUDIO_CLIPS) {
     throw new Error(`${labDir}: the comic needs ${plan.clips.length} distinct clips and a lab may carry at most ${MAX_AUDIO_CLIPS}; shorten it`);
   }

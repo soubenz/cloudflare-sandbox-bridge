@@ -57,8 +57,16 @@ export const TIMING = {
   bubbleGap: 0.25,
   /** Seconds per word when typing a bubble (the pace panelSeconds() budgets for). */
   word: 0.2,
-  /** The panel stays this long after its last word, so it can be read. */
+  /** The panel stays this long after its last word, so it can be read (and after its voiceover ends). */
   hold: 2.0,
+  /** A voiced panel's storyteller starts this long into the panel, once the picture has landed. */
+  voice: 0.6,
+  /** Its bubbles (text only) start typing this long after the voiceover starts, one after the other. */
+  bubbleLag: 0.8,
+  /** The last bubble is finished by this long after the voiceover ends, however many words there are. */
+  bubbleTail: 1.0,
+  /** Silence the storyteller leaves between the end of one voiceover and the start of the next panel's (the panel hold covers it). */
+  breath: 0.5,
   /** Slowest a screen line may type, and the shortest. */
   line: 1.0,
   /** Pulling back to the whole comic at the end. */
@@ -134,6 +142,8 @@ function cleanPanel(p) {
   };
   const caption = str(p.caption, 100);
   if (caption) out.caption = caption;
+  const voiceover = str(p.voiceover, 240);
+  if (voiceover) out.voiceover = voiceover;
   const sfx = str(p.sfx, 14);
   if (sfx) out.sfx = sfx;
   if (lines.length) out.lines = lines;
@@ -181,13 +191,13 @@ const grow = (r, pad) => ({ x: r.x - pad, y: r.y - pad, w: r.w + 2 * pad, h: r.h
 
 const CLIP_KEY = /^[0-9a-f]{16}$/;
 const AUDIO_SLUG = /^[a-z0-9][a-z0-9._-]{0,80}$/;
-/** Pause between one spoken line and the next. */
-export const VOICE_GAP = 0.35;
 
 /**
  * The narration of a learn bundle (`learn.audio` plus the lab's `slug`) as the player can trust it:
- * `{ slug, clips: { key: { seconds, text } }, lines: [{ panel, kind, bubble?, clip }] }`, or null when
- * it is not that. Clips with a bad key or length and lines that name a missing clip are dropped.
+ * `{ slug, clips: { key: { seconds, text } }, lines: [{ panel, kind: 'voiceover', clip }] }`, or null when
+ * it is not that. Clips with a bad key or length and lines that name a missing clip are dropped. The
+ * older caption-and-bubble narration (several voices) is not played: any line of another kind makes the
+ * whole narration null, so a lab that has not been re-narrated plays in silence rather than half-voiced.
  */
 export function cleanAudio(raw) {
   if (!raw || typeof raw !== 'object' || !raw.clips || typeof raw.clips !== 'object' || !Array.isArray(raw.lines)) return null;
@@ -199,19 +209,20 @@ export function cleanAudio(raw) {
   }
   const lines = [];
   for (const l of raw.lines.slice(0, 120)) {
-    if (!l || typeof l !== 'object' || !Number.isInteger(l.panel) || l.panel < 0 || !Object.hasOwn(clips, l.clip)) continue;
-    if (l.kind === 'caption') lines.push({ panel: l.panel, kind: 'caption', clip: l.clip });
-    else if (l.kind === 'bubble' && Number.isInteger(l.bubble) && l.bubble >= 0) lines.push({ panel: l.panel, kind: 'bubble', bubble: l.bubble, clip: l.clip });
+    if (!l || typeof l !== 'object') continue;
+    if (l.kind !== 'voiceover') return null;
+    if (!Number.isInteger(l.panel) || l.panel < 0 || !Object.hasOwn(clips, l.clip)) continue;
+    lines.push({ panel: l.panel, kind: 'voiceover', clip: l.clip });
   }
   return lines.length ? { slug: raw.slug, clips, lines } : null;
 }
 
 /**
- * Narration matched to a cleaned comic: a Map from the panel's global index (from 0) to
- * `{ caption?: { key, seconds }, bubbles: Map(bubble index -> { key, seconds }) }`, or null when there
- * is none or any line does not match the comic (a panel, caption or bubble that is not there, or
- * words that are not the clip's words): a voice must never say something other than what is shown,
- * so a mismatch turns the whole narration off.
+ * Narration matched to a cleaned comic: a Map from the panel's global index (from 0) to its voiceover
+ * clip `{ key, seconds }`, or null when there is none or anything does not match the comic: a line for a
+ * panel that has no voiceover, words that are not the clip's words, a panel twice, or a voiceover with no
+ * clip. A voice must never say something other than what the story says, and a story must never be
+ * half voiced, so any mismatch turns the whole narration off.
  */
 function resolveNarration(comic, rawAudio) {
   const audio = cleanAudio(rawAudio);
@@ -220,72 +231,55 @@ function resolveNarration(comic, rawAudio) {
   const out = new Map();
   for (const l of audio.lines) {
     const panel = panels[l.panel];
-    if (!panel) return null;
+    if (!panel || !panel.voiceover) return null;
     const clip = audio.clips[l.clip];
-    const entry = out.get(l.panel) ?? { caption: null, bubbles: new Map() };
-    if (l.kind === 'caption') {
-      if (!panel.caption || (clip.text && clip.text !== panel.caption) || entry.caption) return null;
-      entry.caption = { key: l.clip, seconds: clip.seconds };
-    } else {
-      const b = (panel.bubbles ?? [])[l.bubble];
-      if (!b || (clip.text && clip.text !== b.text) || entry.bubbles.has(l.bubble)) return null;
-      entry.bubbles.set(l.bubble, { key: l.clip, seconds: clip.seconds });
-    }
-    out.set(l.panel, entry);
+    if ((clip.text && clip.text !== panel.voiceover) || out.has(l.panel)) return null;
+    out.set(l.panel, { key: l.clip, seconds: clip.seconds });
   }
+  for (let i = 0; i < panels.length; i++) if (panels[i].voiceover && !out.has(i)) return null;
   return out;
 }
 
 /**
- * When a voiced panel's lines are spoken, from `pStart` (the panel's first moment): the caption's
- * clip as the caption appears, then each bubble's clip one gap after the one before. A bubble pops
- * as its clip starts and its words are typed across the clip's length in proportion to how long
- * each word is, so the typing keeps pace with the voice. A bubble with no clip (the learner's) is
- * typed at the usual pace in its turn. Returns `{ end, clips, bubbles }`, times in seconds on the clock.
+ * When a voiced panel is spoken, from `pStart` (the panel's first moment): the storyteller's clip starts
+ * TIMING.voice in. The panel's bubbles are text only: the first starts typing TIMING.bubbleLag after the
+ * clip starts and the rest follow one after the other, at the reading pace (TIMING.word per word),
+ * clamped so the last is finished by TIMING.bubbleTail after the clip ends; if there are more words than
+ * fit they type faster (never slower than the reading pace). Returns `{ clip, need, bubbles }` (`need` is how
+ * long the panel must last, from its start), times in seconds on the clock.
  */
 function voicedPanel(panel, voiced, pStart) {
-  const clips = [];
-  let ready = pStart + TIMING.content + TIMING.bubblePop; // the earliest the next line may begin
-  let end = pStart;
-  if (voiced.caption) {
-    const start = pStart + TIMING.caption;
-    end = start + voiced.caption.seconds;
-    clips.push({ key: voiced.caption.key, kind: 'caption', bubble: null, start, end, seconds: voiced.caption.seconds });
-    ready = Math.max(ready, end + VOICE_GAP);
-  }
-  const bubbles = (panel.bubbles ?? []).map((b, i) => {
-    const words = b.text.split(/\s+/).filter(Boolean);
-    const clip = voiced.bubbles.get(i);
-    const start = ready;
-    let seconds;
-    let wordTimes;
-    if (clip) {
-      seconds = clip.seconds;
-      const lengths = words.map((w) => w.length + 1);
-      const total = lengths.reduce((n, l) => n + l, 0) || 1;
-      let before = 0;
-      wordTimes = lengths.map((l) => {
-        const at = start + (seconds * before) / total;
-        before += l;
-        return at;
-      });
-      clips.push({ key: clip.key, kind: 'bubble', bubble: i, start, end: start + seconds, seconds });
-    } else {
-      seconds = words.length * TIMING.word;
-      wordTimes = words.map((_, k) => start + k * TIMING.word);
-    }
-    ready = start + seconds + (clip ? VOICE_GAP : TIMING.bubbleGap);
-    end = Math.max(end, start + seconds);
-    return { start: start - TIMING.bubblePop, end: start + seconds, step: words.length ? seconds / words.length : TIMING.word, wordTimes };
+  const start = pStart + TIMING.voice;
+  const clip = { key: voiced.key, kind: 'voiceover', bubble: null, start, end: start + voiced.seconds, seconds: voiced.seconds };
+  const bubbles = panel.bubbles ?? [];
+  const spoken = bubbles.reduce((n, b) => n + wordsIn(b.text), 0);
+  const first = start + TIMING.bubbleLag;
+  const room = clip.end + TIMING.bubbleTail - first - bubbles.length * TIMING.bubblePop - Math.max(0, bubbles.length - 1) * TIMING.bubbleGap;
+  const step = spoken > 0 ? clamp(room / spoken, 0.03, TIMING.word) : TIMING.word;
+  let cursor = first;
+  let late = 0;
+  const timed = bubbles.map((b) => {
+    const n = wordsIn(b.text);
+    const bStart = cursor;
+    const wordTimes = Array.from({ length: n }, (_, k) => bStart + TIMING.bubblePop + k * step);
+    const bEnd = bStart + TIMING.bubblePop + n * step;
+    cursor = bEnd + TIMING.bubbleGap;
+    late = Math.max(late, bEnd);
+    return { start: bStart, end: bEnd, step, wordTimes };
   });
-  return { end, clips, bubbles };
+  // The panel lasts until the voice is done and the hold has passed. Only when the bubbles could not be fitted
+  // within TIMING.bubbleTail of the clip's end (a great many words, typed at the fastest pace) does it wait for them too.
+  const tail = Math.max(TIMING.hold, TIMING.breath - TIMING.voice);
+  const need = Math.max(clip.end - pStart + tail, late > clip.end + TIMING.bubbleTail + 1e-9 ? late - pStart + TIMING.hold : 0);
+  return { clip, need, bubbles: timed };
 }
 
 /**
  * The schedule of a comic.
  *
- * With `{ audio }` (the lab's narration, see cleanAudio) every spoken line gets its start and end from
- * its clip and the panels are as long as the voice needs; without it, or when the narration does not
+ * With `{ audio }` (the lab's narration, see cleanAudio) every panel with a voiceover gets its start and end
+ * from its clip and is as long as the voice needs (the larger of what it takes to read everything the
+ * panel shows and the clip's end plus TIMING.hold); without it, or when the narration does not
  * match the comic, the schedule is the same as ever and `audio` is empty.
  *
  * Returns
@@ -296,7 +290,7 @@ function voicedPanel(panel, voiced, pStart) {
  *   pages     [{ index, title, start, end, panelsStart, sheet, banner, body, panels }]
  *   shots     the camera's moves: { t, dur, rect, kind }, in time order
  *   outro     { start, end } the pull-back at the end
- *   audio     the voice clips in start order: { key, kind, bubble, panel (number), start, end, seconds } (empty without narration)
+ *   audio     the voiceover clips in start order: { key, kind: 'voiceover', bubble: null, panel (number), start, end, seconds } (empty without narration); one per voiced panel, so never two at once
  *
  * and for each panel: start, end, dur, words, rect (its place on the reel),
  * popAt, captionAt, sfxAt, focusAt (when a narrow container's camera pushes in on its screen, or null),
@@ -342,11 +336,12 @@ export function buildTimeline(comic, { audio } = {}) {
       number += 1;
       const bubbles = panel.bubbles ?? [];
 
-      // With narration the voice sets the pace: the caption clip, then each bubble's clip, and the panel
-      // stays until the last of them is done (and for the usual hold after it, if that is longer than reading takes).
+      // With narration the storyteller sets the pace: the panel stays until its voiceover is done and the
+      // usual hold after it (the silence before the next panel's voiceover is that hold plus TIMING.voice,
+      // never less than TIMING.breath), and never less than reading everything it shows takes.
       const voiced = narration?.get(number - 1);
       const said = voiced ? voicedPanel(panel, voiced, pStart) : null;
-      const dur = said ? Math.max(panelSeconds(words), said.end - pStart + TIMING.hold) : panelSeconds(words);
+      const dur = said ? Math.max(panelSeconds(words), said.need) : panelSeconds(words);
 
       // Bubbles speak one after the other; the typing pace eases off if a long panel hits the cap.
       const spoken = bubbles.reduce((n, b) => n + wordsIn(b.text), 0);
@@ -363,7 +358,7 @@ export function buildTimeline(comic, { audio } = {}) {
             cursor = bEnd + TIMING.bubbleGap;
             return { who: b.who, pos: b.pos, start: bStart, end: bEnd, step, wordTimes };
           });
-      for (const a of said?.clips ?? []) clips.push({ ...a, panel: number });
+      if (said) clips.push({ ...said.clip, panel: number });
 
       // Screen lines type one after the other, as quickly as the panel's time allows.
       const lines = panel.lines ?? [];

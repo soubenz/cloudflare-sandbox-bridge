@@ -2,7 +2,7 @@ import { z } from 'zod';
 import registry from '../../packages/catalogue/concepts.json';
 import { KNOWN_DIAGRAMS, diagramRefs } from './diagram';
 import { ComicSchema, checkComic } from './comic';
-import { narrationLines } from './comic-kit';
+import { VOICEOVER_MAX, legacyNarrationLines, narrationLines, usesVoiceover } from './comic-kit';
 
 /**
  * The learning layer of a lab: a short story, one lesson per concept, quiz
@@ -159,10 +159,14 @@ export const MAX_AUDIO_CLIP_BYTES = 400 * 1024;
 export const CLIP_KEY = /^[0-9a-f]{16}$/;
 
 /**
- * The narration of the comic (learn/audio.json, written by `labs narrate`): which clip reads
- * which line. The mp3 files themselves are not in the bundle; `labs publish` uploads them
- * beside it (docs/api.md) and the console plays them from /api/audio/<slug>/<key>.mp3.
- * `lines` has one entry per spoken line of the comic in reading order (comic-kit narrationLines).
+ * The narration of the comic (learn/audio.json, written by `labs narrate`): which clip reads which
+ * line. The mp3 files themselves are not in the bundle; `labs publish` uploads them beside it
+ * (docs/api.md) and the console plays them from /api/audio/<slug>/<key>.mp3.
+ *
+ * `lines` has one entry per panel voiceover of the comic in reading order (comic-kit narrationLines):
+ * `{ panel, kind: voiceover, clip }`. The older shape (`caption` and `bubble` lines, several
+ * voices) still parses so that an old comic keeps its old narration until it is rewritten, but a comic
+ * with any voiceover needs the new shape (checkLearnBundle), and the console plays only the new one.
  */
 export const AudioSchema = z
   .object({
@@ -172,7 +176,7 @@ export const AudioSchema = z
         z.string().regex(CLIP_KEY),
         z.object({
           voice: z.string().regex(/^[a-z][a-z0-9-]{1,30}$/),
-          text: plain(150),
+          text: plain(VOICEOVER_MAX),
           seconds: z.number().min(0.05).max(70),
           bytes: z.number().int().min(1).max(MAX_AUDIO_CLIP_BYTES),
         })
@@ -182,7 +186,8 @@ export const AudioSchema = z
       .array(
         z.object({
           panel: z.number().int().min(0).max(35),
-          kind: z.enum(['caption', 'bubble']),
+          kind: z.enum(['voiceover', 'caption', 'bubble']),
+          /** Only the old `bubble` lines have one. */
           bubble: z.number().int().min(0).max(1).optional(),
           clip: z.string().regex(CLIP_KEY),
         })
@@ -192,6 +197,7 @@ export const AudioSchema = z
   .superRefine((a, ctx) => {
     for (const l of a.lines) {
       if (!(l.clip in a.clips)) ctx.addIssue({ code: 'custom', message: `narration line for panel ${l.panel + 1} names clip ${l.clip}, which is not in clips` });
+      if (l.kind === 'voiceover' && l.bubble !== undefined) ctx.addIssue({ code: 'custom', message: `narration line for panel ${l.panel + 1} is a voiceover and has no bubble number` });
     }
     const used = new Set(a.lines.map((l) => l.clip));
     for (const k of Object.keys(a.clips)) {
@@ -270,23 +276,49 @@ export function checkLearnBundle(
       problems.push('learn/audio.json narrates the comic, but there is no comic.yaml');
     } else {
       // The narration must be of exactly these words, or the voice would say something the panel does not.
-      const want = narrationLines(bundle.comic);
-      const have = bundle.audio.lines;
       const stale = (msg: string) => problems.push(`learn/audio.json is out of date with comic.yaml (${msg}); run \`labs narrate\` on the lab again`);
-      if (want.length !== have.length) {
-        stale(`the comic has ${want.length} spoken lines, the narration ${have.length}`);
-      } else {
-        for (let i = 0; i < want.length; i++) {
-          const w = want[i]!;
-          const h = have[i]!;
-          const clip = bundle.audio.clips[h.clip];
-          if (w.panel !== h.panel || w.kind !== h.kind || (w.bubble ?? -1) !== (h.bubble ?? -1)) {
-            stale(`line ${i + 1} is not where the comic has it`);
-            break;
+      const have = bundle.audio.lines;
+      const clipOf = (clip: string) => bundle.audio!.clips[clip];
+      if (usesVoiceover(bundle.comic)) {
+        // The voiceover contract: one clip per panel voiceover, all in the one narrator voice.
+        const want = narrationLines(bundle.comic);
+        if (have.some((l) => l.kind !== 'voiceover')) {
+          stale('it is in the old caption-and-bubble format, and the comic is now told by a voiceover');
+        } else if (want.length !== have.length) {
+          stale(`the comic has ${want.length} voiceover${want.length === 1 ? '' : 's'}, the narration ${have.length}`);
+        } else {
+          for (let i = 0; i < want.length; i++) {
+            const w = want[i]!;
+            const h = have[i]!;
+            const clip = clipOf(h.clip);
+            if (w.panel !== h.panel) {
+              stale(`voiceover ${i + 1} is not where the comic has it`);
+              break;
+            }
+            if (!clip || clip.text !== w.text || clip.voice !== w.voice) {
+              stale(`panel ${w.panel + 1}: the voiceover or the narrator\x27s voice changed`);
+              break;
+            }
           }
-          if (!clip || clip.text !== w.text || clip.voice !== w.voice) {
-            stale(`panel ${w.panel + 1}: ${w.kind === 'caption' ? 'the caption' : `bubble ${(w.bubble ?? 0) + 1}`} or its voice changed`);
-            break;
+        }
+      } else {
+        // An older comic (no voiceover) keeps its older narration (caption and bubble lines) until it is rewritten.
+        const want = legacyNarrationLines(bundle.comic);
+        if (want.length !== have.length) {
+          stale(`the comic has ${want.length} spoken lines, the narration ${have.length}`);
+        } else {
+          for (let i = 0; i < want.length; i++) {
+            const w = want[i]!;
+            const h = have[i]!;
+            const clip = clipOf(h.clip);
+            if (w.panel !== h.panel || w.kind !== h.kind || (w.bubble ?? -1) !== (h.bubble ?? -1)) {
+              stale(`line ${i + 1} is not where the comic has it`);
+              break;
+            }
+            if (!clip || clip.text !== w.text || clip.voice !== w.voice) {
+              stale(`panel ${w.panel + 1}: ${w.kind === 'caption' ? 'the caption' : `bubble ${(w.bubble ?? 0) + 1}`} or its voice changed`);
+              break;
+            }
           }
         }
       }

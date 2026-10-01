@@ -1,22 +1,25 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
-import { parse as parseYaml } from 'yaml';
 import { serveConsole } from './console-server';
+import { MULTI as MULTI_COMIC, SINGLE, bundleOf, narrationOf, oldShapeNarrationOf, type FixtureAudio, type FixtureBundle } from './comic-fixture';
 
 /**
- * The motion comic's voices in the console: a lab whose comic is narrated gets a Sound on/off toggle
- * beside Replay and Skip (remembered, on by default), each clip is started by the comic's own clock at
- * the time the timeline gives it, Skip and Replay and the toggle stop it, the browser's refusal to start
- * sound shows a "Tap to turn the sound on" button, reduced motion plays nothing by itself, a clip that
- * will not load is skipped, and a lab without narration is exactly as it was.
+ * The motion comic's storyteller in the console: a lab whose comic is narrated (one voiceover clip per
+ * panel, one narrator voice; speech bubbles are text only) gets a Sound on/off toggle beside Replay and
+ * Skip (remembered, on by default), each clip is started by the comic's own clock at the time the
+ * timeline gives it (0.6 s into its panel) and exactly one plays at a time, Skip and Replay and the toggle
+ * stop it, the browser's refusal to start sound shows a "Tap to turn the sound on" button, reduced motion
+ * plays nothing by itself, a clip that will not load is skipped, narration of the old shape (caption and
+ * bubble clips) or of other words plays silent, and a lab without narration is exactly as it was.
  *
  * Like 18-comic.spec.ts this needs no password, no API and no container: a static server serves
  * dashboard/public (the built bundle, with the CSP from public/_headers) and every call the console makes
  * is answered by a route stub, the audio route included (it serves a real mp3 fixture). The content is
- * real: the learn bundle, the comic and its narration (learn/audio.json) are those of
- * labs/see-what-a-gateway-does. In test mode (?comicTest=1) the comic never starts real playback: the
+ * inline (comic-fixture.ts): a small learn bundle, a two-page and a three-page comic written to the
+ * current contract, and their narration with made-up clip lengths; no lab's own content is read. In test
+ * mode (?comicTest=1) the comic never starts real playback: the
  * player records what it decided in window.__comicClock.audioLog(), and `?comicAudio=blocked` makes its
  * play() refuse as a browser does before anyone has tapped.
  *
@@ -32,52 +35,33 @@ const CLIP = readFileSync(join(here, '../fixtures/audio/maren-thalia.mp3'));
 
 // --------------------------------------------------------------- the content
 
-interface Bundle {
-  story?: { title: string; minutes: number; body: string };
-  comic?: { title: string; pages: Array<{ panels: Array<Record<string, any>> }> };
-  audio?: { model: string; clips: Record<string, { voice: string; text: string; seconds: number; bytes: number }>; lines: Array<{ panel: number; kind: string; bubble?: number; clip: string }> };
-  concepts: unknown[];
-  questions: unknown[];
-  answers_file: string;
-  fields: unknown[];
-}
-
-function compileLearn(slug: string): Bundle {
-  const dir = join(ROOT, 'labs', slug, 'learn');
-  const split = (text: string) => {
-    const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)!;
-    return { data: parseYaml(m[1]!) as Record<string, any>, body: m[2]!.trim() };
-  };
-  const story = split(readFileSync(join(dir, 'story.md'), 'utf8'));
-  const concepts = readdirSync(join(dir, 'concepts'))
-    .filter((f) => f.endsWith('.md'))
-    .sort()
-    .map((f) => {
-      const { data, body } = split(readFileSync(join(dir, 'concepts', f), 'utf8'));
-      return { id: data.id, title: data.title, minutes: data.minutes, recap: data.recap, body };
-    });
-  const quiz = parseYaml(readFileSync(join(dir, 'quiz.yaml'), 'utf8')) as { questions: Array<Record<string, unknown>> };
-  const qs = parseYaml(readFileSync(join(dir, 'questions.yaml'), 'utf8')) as { answers_file: string; fields: unknown[] };
-  const raw = parseYaml(readFileSync(join(dir, 'comic.yaml'), 'utf8')) as { title: string; panels?: Array<Record<string, any>>; pages?: Array<{ title?: string; panels: Array<Record<string, any>> }> };
-  return {
-    story: { title: story.data.title, minutes: story.data.minutes, body: story.body },
-    comic: {
-      title: raw.title,
-      pages: (raw.pages ?? [{ panels: raw.panels ?? [] }]).map((pg) => ({ ...(pg.title ? { title: pg.title } : {}), panels: pg.panels.map((p) => ({ cast: [], prop: 'none', bubbles: [], ...p })) })),
-    },
-    audio: JSON.parse(readFileSync(join(dir, 'audio.json'), 'utf8')),
-    concepts,
-    questions: quiz.questions.map((q) => ({ diagnostic: true, ...q })),
-    answers_file: qs.answers_file,
-    fields: qs.fields,
-  };
-}
+// A small comic written to the current contract (a voiceover per panel, Maren, Tomasz and You, bubbles as text)
+// with the narration `labs narrate` would write for it, three or five made-up clips (every clip the stub serves
+// is the same sample mp3). See comic-fixture.ts; no lab's own comic or narration is read.
+type Bundle = FixtureBundle;
 
 const VOICED = 'see-what-a-gateway-does';
+const MULTI = 'follow-one-request-through-the-stack';
 const SILENT = 'see-how-requests-are-routed';
-const bundle = compileLearn(VOICED);
-const audio = bundle.audio!;
-const BUNDLES: Record<string, Bundle> = { [VOICED]: bundle, [SILENT]: { ...bundle, audio: undefined } };
+const OLD_SHAPE = 'prove-where-one-requests-data-went';
+const MISMATCH = 'see-why-a-document-matched';
+const audio = narrationOf(SINGLE);
+const multiAudio = narrationOf(MULTI_COMIC);
+const bundle = bundleOf(SINGLE, audio);
+/** The old narration: a clip per caption and per bubble, several voices. A console plays it silent, whole. */
+const oldShape = oldShapeNarrationOf(SINGLE);
+/** Narration of other words than the comic's: a voice must never say what the panel does not. */
+const wrongWords: FixtureAudio = structuredClone(audio);
+wrongWords.clips[wrongWords.lines[1]!.clip]!.text = 'Some other words entirely.';
+const BUNDLES: Record<string, Bundle> = {
+  [VOICED]: bundle,
+  [MULTI]: bundleOf(MULTI_COMIC, multiAudio),
+  [SILENT]: bundleOf(SINGLE),
+  [OLD_SHAPE]: bundleOf(SINGLE, oldShape),
+  [MISMATCH]: bundleOf(SINGLE, wrongWords),
+};
+/** The labs whose clips the audio route serves. */
+const NARRATED = new Set([VOICED, MULTI, OLD_SHAPE, MISMATCH]);
 
 const lab = (o: Record<string, unknown>): Record<string, any> => ({
   version: '1.0.0',
@@ -96,7 +80,13 @@ const lab = (o: Record<string, unknown>): Record<string, any> => ({
   progress: null,
   ...o,
 });
-const LABS = [lab({ slug: VOICED, title: 'See what a gateway does', order: 1 }), lab({ slug: SILENT, title: 'See how requests are routed', order: 2 })];
+const LABS = [
+  lab({ slug: VOICED, title: 'See what a gateway does', order: 1 }),
+  lab({ slug: MULTI, title: 'Follow one request through the stack', order: 2 }),
+  lab({ slug: SILENT, title: 'See how requests are routed', order: 3 }),
+  lab({ slug: OLD_SHAPE, title: 'Prove where one request data went', order: 4 }),
+  lab({ slug: MISMATCH, title: 'See why a document matched', order: 5 }),
+];
 
 // ------------------------------------------------------------- a fake console
 
@@ -142,7 +132,7 @@ async function stub(page: Page): Promise<Stub> {
   // Registered after the catch-all, so it is asked first.
   await page.route('**/api/audio/**', async (route) => {
     const m = /^\/api\/audio\/([^/]+)\/([0-9a-f]{16}\.mp3)$/.exec(new URL(route.request().url()).pathname);
-    if (!m || m[1] !== VOICED) return route.fulfill({ status: 404, body: 'no' });
+    if (!m || !NARRATED.has(m[1]!)) return route.fulfill({ status: 404, body: 'no' });
     s.clipRequests.push(m[2]!);
     if (s.missing.has(m[2]!)) return route.fulfill({ status: 404, body: 'gone' });
     return route.fulfill({ status: 200, contentType: 'audio/mpeg', headers: { 'accept-ranges': 'bytes', 'cache-control': 'private, max-age=60' }, body: CLIP });
@@ -174,8 +164,8 @@ const test = base.extend<object, { staticServer: string }>({
 
 interface Clip {
   key: string;
-  kind: 'caption' | 'bubble';
-  bubble: number | null;
+  kind: 'voiceover';
+  bubble: null;
   panel: number;
   start: number;
   end: number;
@@ -192,7 +182,7 @@ interface Seam {
   seek: (t: number) => void;
   time: () => number;
   doneCalls: () => number;
-  timeline: () => { total: number; pages: Array<{ panels: Array<{ number: number; start: number; captionAt: number | null; bubbles: Array<{ start: number; end: number; wordTimes: number[] }> }> }> };
+  timeline: () => { total: number; pages: Array<{ panels: Array<{ number: number; start: number; end: number; captionAt: number | null; bubbles: Array<{ start: number; end: number; wordTimes: number[] }> }> }> };
   audio: Clip[];
   audioLog: () => LogEntry[];
   audioState: () => { sound: boolean; blocked: boolean; current: string | null; failed: string[] };
@@ -308,25 +298,28 @@ test.describe('the Sound toggle', () => {
 });
 
 test.describe('the clips follow the clock', () => {
-  test('the seam lists every spoken line of the comic with the start the timeline gives it', async ({ page }) => {
+  test('the seam lists one voiceover clip per voiced panel with the start the timeline gives it', async ({ page }) => {
     await beforeYouBegin(page, VOICED);
     const list = await clips(page);
     expect(list).toHaveLength(audio.lines.length);
+    expect(list.map((c) => c.panel)).toEqual([1, 2, 3, 5, 6]); // panel 4 is a silent screen
+    expect(list.every((c) => c.kind === 'voiceover' && c.bubble === null)).toBe(true);
     expect(list.map((c) => c.key).sort()).toEqual(audio.lines.map((l) => l.clip).sort());
     for (const c of list) {
       expect(c.url).toBe(`/api/audio/${VOICED}/${c.key}.mp3`);
       expect(c.end - c.start).toBeCloseTo(audio.clips[c.key]!.seconds, 2);
     }
-    for (let i = 1; i < list.length; i++) expect(list[i]!.start).toBeGreaterThanOrEqual(list[i - 1]!.end);
-    // The first line is the caption of panel 1, spoken as it appears; the next is the first bubble, one gap after.
+    // Never two at once, and a breath of silence between one voiceover and the next.
+    for (let i = 1; i < list.length; i++) expect(list[i]!.start - list[i - 1]!.end).toBeGreaterThanOrEqual(0.5);
+    // Each clip starts 0.6 s into its panel, and the panel is held until the voice is done and the hold has passed.
     const tl = await timeline(page);
-    const p1 = tl.pages[0]!.panels[0]!;
-    expect(list[0]).toMatchObject({ kind: 'caption', panel: 1 });
-    expect(list[0]!.start).toBeCloseTo(p1.captionAt!, 6);
-    expect(list[1]).toMatchObject({ kind: 'bubble', panel: 1, bubble: 0 });
-    expect(list[1]!.start).toBeCloseTo(list[0]!.end + 0.35, 6);
-    expect(p1.bubbles[0]!.end).toBeCloseTo(list[1]!.end, 6);
-    // Narrated panels are held until the voice is done.
+    const panels = tl.pages.flatMap((p) => p.panels);
+    for (const c of list) {
+      const p = panels[c.panel - 1]!;
+      expect(c.start).toBeCloseTo(p.start + 0.6, 6);
+      expect(p.end).toBeGreaterThanOrEqual(c.end + 2 - 1e-6);
+    }
+    expect(panels[3]!.captionAt).toBeCloseTo(panels[3]!.start + 0.5, 6); // a caption fades in at the panel start, voiced or not
     expect(tl.total).toBeGreaterThan(list.at(-1)!.end);
   });
 
@@ -362,20 +355,31 @@ test.describe('the clips follow the clock', () => {
     expect((await log(page)).at(-1)).toMatchObject({ type: 'stop', key: c.key });
   });
 
-  test('types a bubble\'s words across its clip, so the typing keeps pace with the voice', async ({ page }) => {
+  test('shows a bubble as text only, typed after the voiceover starts and within it, one bubble after the other', async ({ page }) => {
     await beforeYouBegin(page, VOICED);
     const list = await clips(page);
-    const c = list.find((x) => x.kind === 'bubble' && x.panel === 1)!;
-    const panel = page.locator('#learnHost .cm-panel[data-panel="1"]');
-    const total = await panel.locator('.cm-bub').first().locator('.cm-w').count();
-    await at(page, c.start - 0.02);
+    const tl = await timeline(page);
+    const duo = tl.pages[1]!.panels[0]!; // panel 5: two bubbles
+    const c = list.find((x) => x.panel === duo.number)!;
+    const panel = page.locator(`#learnHost .cm-panel[data-panel="${duo.number}"]`);
+    const totals = [await panel.locator('.cm-bub').nth(0).locator('.cm-w').count(), await panel.locator('.cm-bub').nth(1).locator('.cm-w').count()];
+    expect(duo.bubbles[0]!.start).toBeCloseTo(c.start + 0.8, 6);
+    // Nothing is typed until 0.8 s after the voice starts.
+    await at(page, c.start + 0.7);
     expect(await bubbleWordsOn(panel, 0)).toBe(0);
-    await at(page, c.start + (c.end - c.start) / 2);
+    // Half way through the first bubble's words, some are typed and not all.
+    const w = duo.bubbles[0]!.wordTimes;
+    await at(page, (w[0]! + w.at(-1)!) / 2 + 0.01);
     const half = await bubbleWordsOn(panel, 0);
-    expect(half).toBeGreaterThan(total * 0.25);
-    expect(half).toBeLessThan(total);
-    await at(page, c.end - 0.02);
-    expect(await bubbleWordsOn(panel, 0)).toBe(total);
+    expect(half).toBeGreaterThan(0);
+    expect(half).toBeLessThan(totals[0]!);
+    expect(await bubbleWordsOn(panel, 1)).toBe(0); // the second speaker waits their turn
+    // By the end of the voice plus a second both are fully typed; no clip is ever made for a bubble.
+    await at(page, c.end + 1.05);
+    expect(await bubbleWordsOn(panel, 0)).toBe(totals[0]);
+    expect(await bubbleWordsOn(panel, 1)).toBe(totals[1]);
+    expect(duo.bubbles[1]!.end).toBeLessThanOrEqual(c.end + 1 + 1e-6);
+    expect(list.filter((x) => x.panel === duo.number)).toHaveLength(1);
   });
 
   test('preloads the clips of the first page as the comic starts, and no real playback happens in test mode', async ({ page }) => {
@@ -555,7 +559,7 @@ test.describe('real playback (no test seam)', () => {
     await expect.poll(async () => (await media()).filter((c) => c.type === 'play').length, { timeout: 15000 }).toBeGreaterThan(0);
     const firstPlay = (await media()).find((c) => c.type === 'play')!;
     expect(firstPlay.src).toBe(`/api/audio/${VOICED}/${first}.mp3`);
-    // The clip is the caption of panel 1, which the timeline starts about 2 s in (lead, camera move, caption beat).
+    // The clip is the voiceover of panel 1, which the timeline starts about 4 s in (lead, the first page's title card, the 0.6 s beat).
     expect(firstPlay.at).toBeGreaterThan(1000);
     // Skip pauses what is sounding and nothing plays after it.
     await skipBtn(page).click();
@@ -622,4 +626,109 @@ test.describe('a lab with no narration', () => {
     await expect(soundBtn(page)).toHaveCount(0);
     expect(s.clipRequests).toEqual([]);
   });
+});
+
+test.describe('narration a console cannot trust plays silent, whole', () => {
+  for (const [what, slug] of [
+    ['of the old shape (a clip per caption and per bubble, several voices)', OLD_SHAPE],
+    ['of other words than the comic\'s', MISMATCH],
+  ] as const) {
+    test(`${what}: Replay and Skip only, no sound controls, nothing scheduled, nothing fetched, nothing broken`, async ({ page }) => {
+      const s = await beforeYouBegin(page, slug);
+      await expect(page.locator('#learnHost .cm-controls').getByRole('button')).toHaveText(['Replay', 'Skip']);
+      await expect(page.locator('#btnComicSound, #btnComicTapSound')).toHaveCount(0);
+      expect(await clips(page)).toEqual([]);
+      const tl = await timeline(page);
+      // The comic is on its ordinary, silent schedule: no panel is held for a voice.
+      const silent = tl.pages.flatMap((p) => p.panels);
+      for (const t of [silent[0]!.start + 1, silent[2]!.start + 1, silent[4]!.start + 1]) {
+        await at(page, t);
+        expect(await log(page)).toEqual([]);
+      }
+      expect(s.clipRequests).toEqual([]);
+      await skipBtn(page).click();
+      await expect(cm(page)).toHaveAttribute('data-state', 'done');
+      expect(s.errors).toEqual([]);
+    });
+  }
+});
+
+test.describe('exactly one clip at a time', () => {
+  test('sweeping the whole clock, one clip is sounding at most, and it is the one the timeline says', async ({ page }) => {
+    await beforeYouBegin(page, VOICED);
+    const tl = await timeline(page);
+    const list = await clips(page);
+    for (let t = 0; t <= tl.total; t += 0.4) {
+      await at(page, t);
+      const want = list.find((c) => t >= c.start && t < c.end)?.key ?? null;
+      expect((await audioState(page)).current, `at ${t.toFixed(1)} s`).toBe(want);
+    }
+    const entries = await log(page);
+    neverTwoAtOnce(entries);
+    expect(new Set(entries.filter((e) => e.type === 'play').map((e) => e.key))).toEqual(new Set(list.map((c) => c.key)));
+  });
+});
+
+/** The page is not wider than the window; on failure, names the elements that stick out. */
+const noHorizontalScroll = async (page: Page) => {
+  const over = await page.evaluate(() => {
+    const width = window.innerWidth;
+    const wide: string[] = [];
+    const clipped = (el: Element) => {
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        const ox = getComputedStyle(p).overflowX;
+        if (ox !== 'visible' && p.getBoundingClientRect().right <= width + 0.5) return true;
+      }
+      return false;
+    };
+    for (const el of document.querySelectorAll('body *')) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.right > width + 0.5 && !clipped(el)) wide.push(`${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}.${String((el as HTMLElement).className).split(' ')[0]} right=${Math.round(r.right)}`);
+    }
+    return { extra: document.documentElement.scrollWidth - width, wide: wide.slice(0, 8) };
+  });
+  expect(over.extra, `sticking out: ${over.wide.join(', ')}`).toBeLessThanOrEqual(0);
+};
+
+test.describe('a narrated comic of several pages', () => {
+  test('has a clip per voiced panel across the pages, in order, each inside its panel, one at a time', async ({ page }) => {
+    await beforeYouBegin(page, MULTI);
+    const tl = await timeline(page);
+    const list = await clips(page);
+    expect(tl.pages).toHaveLength(3);
+    expect(list).toHaveLength(9); // every panel of the comic is voiced
+    expect(list.map((c) => c.panel)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const panels = tl.pages.flatMap((p) => p.panels);
+    for (const c of list) {
+      const p = panels[c.panel - 1]!;
+      expect(c.start).toBeGreaterThanOrEqual(p.start + 0.6 - 1e-6);
+      expect(c.end).toBeLessThanOrEqual(p.end);
+    }
+    for (let i = 1; i < list.length; i++) expect(list[i]!.start).toBeGreaterThan(list[i - 1]!.end);
+    // Jump over a page turn: the clip of the earlier page stops, the next starts at its offset.
+    await at(page, list[3]!.start + 0.5);
+    expect((await audioState(page)).current).toBe(list[3]!.key);
+    await at(page, list[4]!.start + 0.4);
+    expect((await audioState(page)).current).toBe(list[4]!.key);
+    neverTwoAtOnce(await log(page));
+  });
+
+  for (const width of [800, 1000, 1280]) {
+    test(`at ${width}px the stage and its Sound toggle fit the card, with no sideways scroll`, async ({ page }) => {
+      const s = await stub(page);
+      await page.setViewportSize({ width, height: 900 });
+      await open(page);
+      await page.locator(`.lab[data-slug="${MULTI}"] .lab-start`).click();
+      await expect(cm(page)).toBeVisible();
+      const tl = await timeline(page);
+      for (const t of [tl.pages[0]!.panels[1]!.start + 2, tl.pages[1]!.panels[0]!.start + 2, tl.total]) {
+        await at(page, t);
+        await noHorizontalScroll(page);
+      }
+      await expect(soundBtn(page)).toBeVisible();
+      const box = (await soundBtn(page).boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(width + 0.5);
+      expect(s.errors).toEqual([]);
+    });
+  }
 });
