@@ -201,6 +201,14 @@ tool's own UI is not exposed as a tab and the lab ships a small page of its
 own instead. An API key the learner uses on purpose, kept in the session
 env, is lab material, not a login screen.
 
+A tool that signs people in from a request header (a trusted-proxy mode, as
+ContextForge has) can also be a tab: the session proxy cannot add headers, so
+the lab ships a small stdlib reverse proxy as the `ui: true` service. It sets
+the header itself on every request (discarding the client's), forwards the
+full path, and sends the tool's login and logout URLs back to its home page.
+See `labs/see-how-tools-reach-an-agent/workspace/admin_proxy.py`. Only do this
+for a lab-local tool holding made-up data.
+
 ## Design rules (from the product plan)
 
 - **Outcome-based checker.** A check script tests whether the system

@@ -10,10 +10,11 @@ server to an agent through a gateway, not a puzzle to fix.
 | `weather-tools` | A toy MCP tool server: `get_weather` and `get_forecast` |
 | `calculator-tools` | A toy MCP tool server: `add`, `subtract`, `multiply` |
 | `contextforge` | The gateway, with both servers registered and their tools exposed through the virtual server `toy-tools` |
+| **ContextForge** tab | ContextForge's own admin pages: MCP servers (the registered gateways), virtual servers, tools and metrics |
 | **view** tab | A read-only page: registered gateways, discovered tools, the virtual server, and ContextForge's own record of every call |
 
-ContextForge's admin UI needs a login, so the **view** tab stands in for
-it. Talk to the gateway with `call_tool.py`. No key or token is needed.
+Both tabs open already signed in. Talk to the gateway with
+`call_tool.py`. No key or token is needed.
 
 ## Start here
 

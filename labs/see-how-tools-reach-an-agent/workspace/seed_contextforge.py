@@ -10,11 +10,10 @@ this same service (which re-runs this whole script -- see the
 the background and then execs the gateway in the foreground) finds
 everything already in place and changes nothing.
 
-ContextForge is booted with AUTH_REQUIRED=false and
-ALLOW_UNAUTHENTICATED_ADMIN=true (see manifest.yaml), so every request
-this script makes -- a plain script, not a browser -- is automatically
-treated as the platform admin. No key or token is minted or needed here;
-see call_tool.py for the same thing from the learner's side.
+ContextForge is booted in trusted-proxy mode (see manifest.yaml): it takes
+the admin identity from the X-Authenticated-User header, which every request
+this script makes carries. No key or token is minted or needed here; see
+call_tool.py for the same thing from the learner's side.
 """
 import json
 import os
@@ -32,6 +31,9 @@ GATEWAYS = [
     {"name": "calculator-tools", "url": CALC_TOOL_URL, "description": "toy calculator MCP tool server"},
 ]
 VIRTUAL_SERVER_NAME = "toy-tools"
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 
 def _request(method, path, body=None, timeout=15):
@@ -39,6 +41,7 @@ def _request(method, path, body=None, timeout=15):
     url = CONTEXTFORGE_URL + path
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("X-Authenticated-User", ADMIN_USER)
     if data is not None:
         req.add_header("Content-Type", "application/json")
     try:

@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
 """A small read-only page for this lab's `view` tab.
 
-ContextForge's own admin UI always redirects a real browser to a login
-form (a "Sign In" page renders even with AUTH_REQUIRED=false and
-ALLOW_UNAUTHENTICATED_ADMIN=true -- that flag combination only bypasses
-auth for non-browser requests, such as this page's own server-side calls,
-or an agent's), so under this catalogue's no-login rule it is not exposed
-as a tab. This page is the substitute: what gateways and tools are
-registered (from ContextForge's own REST API, called server-side, so a
-learner never has to worry about a key), what virtual server exposes
-them, and -- the point of the lab -- ContextForge's own record of every
-call that has actually gone through it, read straight from its tool_metrics
-table.
+Next to ContextForge's own admin pages (the `admin` tab, see
+admin_proxy.py), this is the compact one: what gateways and tools are
+registered (from ContextForge's own REST API, called server-side), what
+virtual server exposes them, and -- the point of the lab -- ContextForge's
+own record of every call that has actually gone through it, read straight
+from its tool_metrics table.
 
 Plain stdlib http.server, no external assets: the container has no
 internet, and nothing here needs a framework. The page rebuilds itself
@@ -36,13 +31,17 @@ VIEW_PREFIX = os.environ.get("VIEW_PREFIX", "").rstrip("/")
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
 CONTEXTFORGE_DB_PATH = os.environ.get("CONTEXTFORGE_DB_PATH", "/workspace/contextforge.db")
 
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
+
 REFRESH_SECONDS = 5
 
 
 def _get_json(path):
     """Returns (ok, data_or_error_message). No token needed -- see call_tool.py's docstring."""
     url = CONTEXTFORGE_URL + path
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    req = urllib.request.Request(url, headers={"Accept": "application/json", "X-Authenticated-User": ADMIN_USER})
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             raw = resp.read()
@@ -168,10 +167,10 @@ PAGE_TEMPLATE = """<!doctype html>
 <body>
 <h1>What ContextForge is doing</h1>
 <p class="note">
-  Read-only. Reloads every %(refresh)ss. ContextForge's own admin UI needs a
-  login even with AUTH_REQUIRED=false, so this page stands in for it --
-  everything below comes from ContextForge's own REST API and its own
-  tool_metrics table, called and read the same way call_tool.py does.
+  Read-only. Reloads every %(refresh)ss. Everything below comes from
+  ContextForge's own REST API and its own tool_metrics table, called and
+  read the same way call_tool.py does. The ContextForge tab shows its
+  admin pages.
 </p>
 
 <h2>Registered gateways (the toy tool servers)</h2>

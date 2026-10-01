@@ -21,6 +21,9 @@ import urllib.request
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
 VIRTUAL_SERVER_NAME = os.environ.get("CONTEXTFORGE_VIRTUAL_SERVER", "toy-tools")
 ANSWERS_PATH = os.environ.get("ANSWERS_FILE", "/workspace/answers.json")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 # The exact arguments the brief tells the learner to call calculator-tools-add
 # with -- deliberately different from the '{"a": 3, "b": 4}' example already
@@ -47,6 +50,7 @@ def _request(method, path, body=None, timeout=15, headers=None):
     url = CONTEXTFORGE_URL + path
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method, headers=dict(headers or {}))
+    req.add_header("X-Authenticated-User", ADMIN_USER)
     if data is not None:
         req.add_header("Content-Type", "application/json")
     try:

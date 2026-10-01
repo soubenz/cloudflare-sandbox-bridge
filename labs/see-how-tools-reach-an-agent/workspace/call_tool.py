@@ -6,13 +6,12 @@ the request and response.
     python3 -B call_tool.py weather-tools-get-weather '{"city": "Paris"}'
     python3 -B call_tool.py calculator-tools-add '{"a": 3, "b": 4}'
 
-This lab's ContextForge is booted with AUTH_REQUIRED=false and
-ALLOW_UNAUTHENTICATED_ADMIN=true, so no key or token is required at all --
-every request from a plain script (as opposed to a browser) is
-automatically treated as the platform admin. That is the "auto-issued...
-unauthenticated admin mode" path. If you mint your own token some other
-way and want to use it instead, pass it with --token (or set
-CONTEXTFORGE_TOKEN) and this script will send it as a Bearer token.
+This lab's ContextForge trusts a header from a proxy instead of a login
+(see manifest.yaml): the admin identity is the X-Authenticated-User header,
+which this script sets itself, so no key or token is required. If you mint
+your own token some other way and want to use it instead, pass it with
+--token (or set CONTEXTFORGE_TOKEN) and this script will send it as a Bearer
+token as well.
 
 Talks to the *virtual server* this lab's seed step created
 (toy-tools), not to ContextForge's REST tool-management API -- that is
@@ -28,6 +27,9 @@ import urllib.request
 
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
 VIRTUAL_SERVER_NAME = os.environ.get("CONTEXTFORGE_VIRTUAL_SERVER", "toy-tools")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 
 def _request(method, url, headers=None, body=None, timeout=30):
@@ -54,7 +56,7 @@ def _request(method, url, headers=None, body=None, timeout=30):
 
 
 def _auth_headers(token):
-    headers = {"Accept": "application/json, text/event-stream"}
+    headers = {"Accept": "application/json, text/event-stream", "X-Authenticated-User": ADMIN_USER}
     if token:
         headers["Authorization"] = "Bearer %s" % token
     return headers
