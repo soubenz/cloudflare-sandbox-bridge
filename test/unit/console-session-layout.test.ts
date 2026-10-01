@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 const L = (await import('../../dashboard/src/session-layout.js' as string)) as {
   GUIDE_OPEN_MIN_WIDTH: number;
   defaultGuideOpen: (width: unknown) => boolean;
+  GUIDE_TABS: Record<string, string>;
   guideTabsFor: (o?: Record<string, unknown>) => string[];
   dockKind: (tabs: string[]) => 'answers' | 'checks';
   roveIndex: (key: string, index: number, count: number) => number | null;
@@ -34,46 +35,39 @@ describe('defaultGuideOpen', () => {
 });
 
 describe('guideTabsFor', () => {
-  it('opens a build lab on its Brief, with no Story tab', () => {
+  it('opens a build lab on its Brief, then Checks and Hints', () => {
     expect(L.guideTabsFor({ type: 'build' })).toEqual(['brief', 'checks', 'hints']);
     expect(L.guideTabsFor({ type: 'break-fix' })).toEqual(['brief', 'checks', 'hints']);
   });
 
-  it('gives a build lab a Lessons tab only when it has learning content', () => {
-    expect(L.guideTabsFor({ type: 'build', lessons: true })).toEqual(['brief', 'lessons', 'checks', 'hints']);
-    expect(L.guideTabsFor({ type: 'build', lessons: false })).not.toContain('lessons');
+  it('has no Story and no Lessons tab for any lab: they are read before the lab starts', () => {
+    for (const type of ['explore', 'build', 'break-fix', undefined]) {
+      // A lab that ships a story and lessons gets exactly the tabs it would without them.
+      for (const extra of [{}, { story: true }, { lessons: true }, { story: true, lessons: true }]) {
+        const tabs = L.guideTabsFor({ type, ...extra });
+        expect(tabs).not.toContain('story');
+        expect(tabs).not.toContain('lessons');
+        expect(tabs).toEqual(L.guideTabsFor({ type }));
+      }
+    }
   });
 
-  it('folds a story a build lab ships into its Lessons tab instead of dropping it', () => {
-    const tabs = L.guideTabsFor({ type: 'build', story: true, lessons: false });
-    expect(tabs).toEqual(['brief', 'lessons', 'checks', 'hints']);
-    expect(tabs).not.toContain('story');
-    expect(L.guideTabsFor({ type: 'build', story: true, lessons: true })).not.toContain('story');
-  });
-
-  it('opens an explore lab on its Story, then Lessons, Brief and Questions', () => {
-    const tabs = L.guideTabsFor({ type: 'explore', story: true, lessons: true, questions: true });
-    expect(tabs.slice(0, 4)).toEqual(['story', 'lessons', 'brief', 'questions']);
-    expect(tabs[0]).toBe('story');
+  it('opens an explore lab on its Brief, then Questions', () => {
+    expect(L.guideTabsFor({ type: 'explore', questions: true }).slice(0, 2)).toEqual(['brief', 'questions']);
   });
 
   it('keeps hints (and a solution, when there is one) after those, and drops Checks for graded questions', () => {
-    const tabs = L.guideTabsFor({ type: 'explore', story: true, lessons: true, questions: true, solution: true });
-    expect(tabs).toEqual(['story', 'lessons', 'brief', 'questions', 'hints', 'solution']);
+    const tabs = L.guideTabsFor({ type: 'explore', questions: true, solution: true });
+    expect(tabs).toEqual(['brief', 'questions', 'hints', 'solution']);
     expect(tabs).not.toContain('checks');
   });
 
   it('gives an explore lab without questions a Checks tab, so its results have a home', () => {
-    expect(L.guideTabsFor({ type: 'explore', story: true, lessons: true })).toEqual(['story', 'lessons', 'brief', 'checks', 'hints']);
-  });
-
-  it('treats an explore lab with no learning content like any other lab', () => {
     expect(L.guideTabsFor({ type: 'explore' })).toEqual(['brief', 'checks', 'hints']);
   });
 
-  it('skips the tabs an explore lab lacks without leaving gaps', () => {
-    expect(L.guideTabsFor({ type: 'explore', lessons: true, questions: true })).toEqual(['lessons', 'brief', 'questions', 'hints']);
-    expect(L.guideTabsFor({ type: 'explore', questions: true })).toEqual(['brief', 'questions', 'hints']);
+  it('gives a build lab with questions both the Questions and the Checks tabs', () => {
+    expect(L.guideTabsFor({ type: 'build', questions: true })).toEqual(['brief', 'questions', 'checks', 'hints']);
   });
 
   it('adds the Solution only when the API says one exists, and always last', () => {
@@ -82,10 +76,10 @@ describe('guideTabsFor', () => {
   });
 
   it('never repeats a tab, and every tab is one the guide knows', () => {
-    const known = new Set(['story', 'lessons', 'brief', 'questions', 'checks', 'hints', 'solution']);
+    const known = new Set(['brief', 'questions', 'checks', 'hints', 'solution']);
     for (const type of ['explore', 'build', 'break-fix', undefined]) {
-      for (const story of [false, true]) for (const lessons of [false, true]) for (const questions of [false, true]) for (const solution of [false, true]) {
-        const tabs = L.guideTabsFor({ type, story, lessons, questions, solution });
+      for (const questions of [false, true]) for (const solution of [false, true]) {
+        const tabs = L.guideTabsFor({ type, questions, solution });
         expect(new Set(tabs).size).toBe(tabs.length);
         for (const t of tabs) expect(known.has(t)).toBe(true);
         expect(tabs).toContain('brief');
@@ -97,11 +91,15 @@ describe('guideTabsFor', () => {
   it('is safe to call with nothing', () => {
     expect(L.guideTabsFor()).toEqual(['brief', 'checks', 'hints']);
   });
+
+  it('knows exactly the tabs it can return', () => {
+    expect(Object.keys(L.GUIDE_TABS)).toEqual(['brief', 'questions', 'checks', 'hints', 'solution']);
+  });
 });
 
 describe('dockKind', () => {
   it('counts answers for a lab graded through its questions, checks otherwise', () => {
-    expect(L.dockKind(['story', 'lessons', 'brief', 'questions', 'hints'])).toBe('answers');
+    expect(L.dockKind(['brief', 'questions', 'hints'])).toBe('answers');
     expect(L.dockKind(['brief', 'checks', 'hints'])).toBe('checks');
     expect(L.dockKind(['brief', 'questions', 'checks', 'hints'])).toBe('checks');
   });
@@ -137,11 +135,6 @@ describe('roveIndex', () => {
 });
 
 describe('tabBadge and railLabel', () => {
-  it('says how many lessons are read', () => {
-    expect(L.tabBadge('lessons', { read: 2, total: 4 })).toEqual({ text: '2/4', label: '2 of 4 read' });
-    expect(L.tabBadge('lessons', { read: 0, total: 0 })).toBeNull();
-  });
-
   it('says how many questions are answered', () => {
     expect(L.tabBadge('questions', { answered: 2, total: 3 })).toEqual({ text: '2/3', label: '2 of 3 answered' });
   });
@@ -164,12 +157,12 @@ describe('tabBadge and railLabel', () => {
   });
 
   it('has no badge for the tabs that count nothing', () => {
-    for (const id of ['story', 'brief', 'nope']) expect(L.tabBadge(id, { read: 1, total: 2 })).toBeNull();
+    for (const id of ['story', 'lessons', 'brief', 'nope']) expect(L.tabBadge(id, { read: 1, total: 2 })).toBeNull();
   });
 
   it('names a rail icon by its tab and its badge', () => {
-    expect(L.railLabel('lessons', L.tabBadge('lessons', { read: 2, total: 4 }))).toBe('Lessons, 2 of 4 read');
-    expect(L.railLabel('story', null)).toBe('Story');
+    expect(L.railLabel('questions', L.tabBadge('questions', { answered: 2, total: 3 }))).toBe('Questions, 2 of 3 answered');
+    expect(L.railLabel('brief', null)).toBe('Brief');
     expect(L.railLabel('solution', L.tabBadge('solution', { unlocked: false }))).toBe('Solution, locked');
   });
 });

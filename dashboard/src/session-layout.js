@@ -3,9 +3,11 @@
  * has for a lab, whether it starts open, how a tab list is walked with the
  * arrow keys, and the numbers the tab badges, the rail and the dock show.
  *
- * The guide is the reading pane on the left of a running lab (Story, Lessons,
- * Brief, Questions, Checks, Hints, Solution); the workspace window is on the
- * right. app.js owns the elements and calls these to decide what they say.
+ * The guide is the reading pane on the left of a running lab (Brief,
+ * Questions, Checks, Hints, Solution); the workspace window is on the right.
+ * The lab's story and lessons are not in it: they are read full screen
+ * before the lab starts (before-you-begin.js). app.js owns the elements and
+ * calls these to decide what they say.
  */
 
 /** Below this window width the guide starts collapsed to its icon rail. */
@@ -19,8 +21,6 @@ export const defaultGuideOpen = (width) => !(Number.isFinite(width) && width < G
 
 /** Every guide tab, by id, with the words it wears. */
 export const GUIDE_TABS = {
-  story: 'Story',
-  lessons: 'Lessons',
   brief: 'Brief',
   questions: 'Questions',
   checks: 'Checks',
@@ -32,41 +32,24 @@ export const GUIDE_TABS = {
  * The tabs a lab's guide has, in order.
  *
  *   type       the lab's type from the catalogue ('explore', 'build', 'break-fix', ...)
- *   story      the lab ships a story
- *   lessons    it ships lessons
  *   questions  it has graded questions (a form that writes the answers file)
  *   solution   the API says a solution exists
  *
- * An explore lab that has learning content starts with its Story (then the
- * Lessons, the Brief and the Questions). Its checks are read off the
- * Questions tab (they grade the answers), so it has no Checks tab of its own;
- * every other lab starts with its Brief. A story in a lab that does not open
- * on it is folded into its Lessons tab, so nothing a lab ships goes missing.
- * Hints are always there (the tab says when a lab has none); the Solution only
- * when the lab has one.
+ * Every lab starts with its Brief. An explore lab graded through its
+ * questions has them next, and reads its checks off that tab (they grade the
+ * answers), so it has no Checks tab of its own; every other lab has its
+ * Checks (after its Questions, if it has those). Hints are always there (the
+ * tab says when a lab has none); the Solution only when the lab has one. The
+ * story and the lessons are never tabs: they are read before the lab starts.
  */
-export function guideTabsFor({ type, story = false, lessons = false, questions = false, solution = false } = {}) {
-  const exploring = type === 'explore' && (story || lessons || questions);
-  const tabs = [];
-  if (exploring) {
-    if (story) tabs.push('story');
-    if (lessons) tabs.push('lessons');
-    tabs.push('brief');
-    if (questions) tabs.push('questions');
-    else tabs.push('checks');
-  } else {
-    tabs.push('brief');
-    if (story || lessons) tabs.push('lessons');
-    if (questions) tabs.push('questions');
-    tabs.push('checks');
-  }
+export function guideTabsFor({ type, questions = false, solution = false } = {}) {
+  const tabs = ['brief'];
+  if (questions) tabs.push('questions');
+  if (!(questions && type === 'explore')) tabs.push('checks');
   tabs.push('hints');
   if (solution) tabs.push('solution');
   return tabs;
 }
-
-/** Whether the lab's story gets its own tab (an exploring lab) or rides in the Lessons tab. */
-export const storyHasOwnTab = (tabs) => tabs.includes('story');
 
 /**
  * What the dock's progress half counts: 'answers' for a lab whose guide
@@ -93,7 +76,6 @@ export function roveIndex(key, index, count) {
  * `text` is what is drawn ("2/4"), `label` what a screen reader adds ("2 of 4
  * read"); a badge with no text still has a label (the Solution's lock).
  *
- *   lessons    { read, total }
  *   questions  { answered, total }
  *   checks     { passed, count }
  *   hints      { delivered, slots }
@@ -101,7 +83,6 @@ export function roveIndex(key, index, count) {
  */
 export function tabBadge(id, c = {}) {
   const n = (v) => (Number.isFinite(v) ? v : 0);
-  if (id === 'lessons') return n(c.total) > 0 ? { text: `${n(c.read)}/${n(c.total)}`, label: `${n(c.read)} of ${n(c.total)} read` } : null;
   if (id === 'questions') return n(c.total) > 0 ? { text: `${n(c.answered)}/${n(c.total)}`, label: `${n(c.answered)} of ${n(c.total)} answered` } : null;
   if (id === 'checks') return n(c.count) > 0 ? { text: `${n(c.passed)}/${n(c.count)}`, label: `${n(c.passed)} of ${n(c.count)} passing` } : null;
   if (id === 'hints') return n(c.slots) > 0 ? { text: `${n(c.delivered)}/${n(c.slots)}`, label: `${n(c.delivered)} of ${n(c.slots)} shown` } : null;
@@ -109,7 +90,7 @@ export function tabBadge(id, c = {}) {
   return null;
 }
 
-/** The accessible name of a tab's rail icon: "Lessons, 2 of 4 read". */
+/** The accessible name of a tab's rail icon: "Questions, 2 of 3 answered". */
 export const railLabel = (id, badge) => `${GUIDE_TABS[id] ?? id}${badge?.label ? `, ${badge.label}` : ''}`;
 
 /**

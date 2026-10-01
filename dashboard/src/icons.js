@@ -48,7 +48,7 @@ export function uiIcon(name, size = 16) {
 
 /**
  * A glyph from the page's inline sprite (the <symbol>s at the top of index.html),
- * for the session screen's tabs and rail. `id` is the symbol's id ("i-cap").
+ * for the session screen's tabs and rail. `id` is the symbol's id ("i-list").
  */
 export function spriteIcon(id, size = 18) {
   const svg = document.createElementNS(SVG_NS, 'svg');

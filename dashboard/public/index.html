@@ -30,8 +30,6 @@
     <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
     <symbol id="i-bulb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></symbol>
     <symbol id="i-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></symbol>
-    <symbol id="i-story" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h10a4 4 0 0 1 4 4v12H9a4 4 0 0 1-4-4V4z"/><path d="M9 9h6M9 13h4"/></symbol>
-    <symbol id="i-cap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-4 9 4-9 4-9-4z"/><path d="M7 11.5V16c0 1.5 2.5 3 5 3s5-1.5 5-3v-4.5"/></symbol>
     <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
     <symbol id="i-question" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/></symbol>
     <symbol id="i-checks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></symbol>
@@ -224,8 +222,6 @@
     <div class="guide-top">
       <!-- Only the tabs the lab has are shown, in the order it wants (app.js, from session-layout.js). -->
       <div class="seg guide-tabs" id="guideTabs" role="tablist" aria-label="Guide sections">
-        <button type="button" class="tab gtab" role="tab" id="tabStory" data-guide-tab="story" aria-selected="false" aria-controls="viewStory" tabindex="-1" hidden><span class="gtab-label">Story</span><span class="gtab-badge" hidden></span></button>
-        <button type="button" class="tab gtab" role="tab" id="tabLessons" data-guide-tab="lessons" aria-selected="false" aria-controls="viewLessons" tabindex="-1" hidden><span class="gtab-label">Lessons</span><span class="gtab-badge" hidden></span></button>
         <button type="button" class="tab gtab" role="tab" id="tabBrief" data-guide-tab="brief" aria-selected="false" aria-controls="viewBrief" tabindex="-1" hidden><span class="gtab-label">Brief</span><span class="gtab-badge" hidden></span></button>
         <button type="button" class="tab gtab" role="tab" id="tabQuestions" data-guide-tab="questions" aria-selected="false" aria-controls="viewQuestions" tabindex="-1" hidden><span class="gtab-label">Questions</span><span class="gtab-badge" hidden></span></button>
         <button type="button" class="tab gtab" role="tab" id="tabChecks" data-guide-tab="checks" aria-selected="false" aria-controls="viewChecks" tabindex="-1" hidden><span class="gtab-label">Checks</span><span class="gtab-badge" hidden></span></button>
@@ -238,14 +234,6 @@
     </div>
 
     <div class="guide-body" id="guideBody">
-      <div class="gview" id="viewStory" role="tabpanel" aria-labelledby="tabStory" tabindex="0">
-        <article class="guide-article learn-body" id="storyBody"></article>
-      </div>
-
-      <div class="gview" id="viewLessons" role="tabpanel" aria-labelledby="tabLessons" tabindex="0">
-        <article class="guide-article learn-body" id="lessonsBody"></article>
-      </div>
-
       <div class="gview" id="viewBrief" role="tabpanel" aria-labelledby="tabBrief" tabindex="0">
         <article class="brief" id="briefBody"><p class="muted">Loading the brief…</p></article>
       </div>
@@ -513,7 +501,7 @@
     <dl class="onboarding-blocks">
       <div>
         <dt>Guide, terminal and editor</dt>
-        <dd>The guide on the left says what you are asked to do: its Brief (or the Story of an explore lab), the lessons, the checks and the hints. Hide it with the button above it when you want the room. On the right, work in the Terminal, or open a file from the tree in the Editor and save it with <kbd>Ctrl</kbd> <kbd>S</kbd>.</dd>
+        <dd>The guide on the left says what you are asked to do: its Brief, the questions or checks, and the hints. The story and the lessons come before the lab starts. Hide it with the button above it when you want the room. On the right, work in the Terminal, or open a file from the tree in the Editor and save it with <kbd>Ctrl</kbd> <kbd>S</kbd>.</dd>
       </div>
       <div>
         <dt>Checks</dt>

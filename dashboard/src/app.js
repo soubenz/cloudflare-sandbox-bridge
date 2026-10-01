@@ -16,7 +16,6 @@ import { icon, spriteIcon, uiIcon } from './icons.js';
 import { createMasteryStore, normalizeLearn, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
 import { runOnboarding } from './onboarding.js';
 import { runBeforeYouBegin } from './before-you-begin.js';
-import { buildLessonsTab, buildStoryTab, hasLessons, hasStory } from './learn-tab.js';
 import { mountQuestionsForm } from './questions-form.js';
 import { SAFE_FILE } from './answers-file.js';
 import {
@@ -1101,8 +1100,10 @@ function maybeShowOnboarding() {
 
 /*
  * The learning flow: the platform quiz (once, then on request), "Before you
- * begin" between Start and the boot for a lab that has learning content, and
- * in a session the Learn and Questions tabs. Everything a lab teaches comes
+ * begin" between Start and the boot for a lab that has learning content (its
+ * story, then its lessons full screen), and in a session the Questions tab.
+ * The story and the lessons are read there and are not in the session at
+ * all. Everything a lab teaches comes
  * from its learn bundle (GET /api/learn/:slug); a lab without one, or a
  * bundle that cannot be fetched, behaves exactly as it did before.
  */
@@ -1257,26 +1258,21 @@ async function initLearning() {
 
 // --- in a session
 
-/** What the running session shows of its lab's bundle. */
-const learnSession = { id: '', learn: null, story: null, lessons: null, form: null };
+/** What the running session shows of its lab's bundle: the graded questions. */
+const learnSession = { id: '', form: null };
 
-/** Removes the guide's Story, Lessons and Questions and everything behind them. */
+/** Removes the guide's Questions and everything behind them. */
 function resetLearnSession() {
-  learnSession.story?.destroy();
-  learnSession.lessons?.destroy();
   learnSession.form?.destroy();
-  learnSession.learn = null;
-  learnSession.story = null;
-  learnSession.lessons = null;
   learnSession.form = null;
   learnSession.id = '';
-  for (const id of ['storyBody', 'lessonsBody', 'questionsBody']) $(id).replaceChildren();
+  $('questionsBody').replaceChildren();
 }
 
 /**
- * Builds the guide's Story and Lessons and, for a lab with graded fields, its
- * Questions. Called once the session is running; a restart of the container
- * reuses what is there so unsaved answers are not lost.
+ * Builds, for a lab with graded fields, the guide's Questions. Called once the
+ * session is running; a restart of the container reuses what is there so
+ * unsaved answers are not lost.
  */
 async function loadLearn() {
   const session = state.session;
@@ -1289,23 +1285,8 @@ async function loadLearn() {
   if (!entry || state.session !== session || learnSession.id === session.id) return;
   learnSession.id = session.id;
   const { learn } = entry;
-  learnSession.learn = learn;
 
   const questions = learn.fields.length > 0 && SAFE_FILE.test(learn.answers_file);
-  const tabs = guideTabsFor({ type: state.lab?.type, story: hasStory(learn), lessons: hasLessons(learn), questions });
-  if (tabs.includes('story')) learnSession.story = buildStoryTab($('storyBody'), { learn });
-  if (tabs.includes('lessons')) {
-    learnSession.lessons = buildLessonsTab($('lessonsBody'), {
-      learn,
-      mastery: mastery.get(),
-      withStory: !tabs.includes('story'),
-      onProgress: (p) => {
-        guide.lessons = p;
-        updateBadges();
-      },
-    });
-  }
-
   if (questions) {
     const file = learn.answers_file;
     const current = () => state.session;
@@ -1352,7 +1333,7 @@ async function loadLearn() {
 
 /*
  * The guide is the reading pane beside the workspace: a tablist of the lab's
- * Story, Lessons, Brief, Questions, Checks, Hints and Solution (session-layout.js
+ * Brief, Questions, Checks, Hints and Solution (session-layout.js
  * says which a lab has and in what order). It can be hidden, and then a rail of
  * icons stands in for it; each icon reopens it on that tab. Whether it is open
  * is decided when a lab starts (from the window's width) and is never
@@ -1366,7 +1347,6 @@ const guide = {
   tabs: [],
   /** The lab's learn bundle has been looked at (or there is none), so the tabs are final. */
   ready: false,
-  lessons: { read: 0, total: 0 },
   answers: { answered: 0, total: 0 },
   checks: { passed: 0, count: 0 },
   /** 'checks', or 'answers' for a lab graded through its questions. */
@@ -1374,8 +1354,6 @@ const guide = {
 };
 
 const GUIDE_PANEL = {
-  story: 'viewStory',
-  lessons: 'viewLessons',
   brief: 'viewBrief',
   questions: 'viewQuestions',
   checks: 'viewChecks',
@@ -1383,15 +1361,13 @@ const GUIDE_PANEL = {
   solution: 'viewSolution',
 };
 const RAIL_ICON = {
-  story: 'i-story',
-  lessons: 'i-cap',
   brief: 'i-list',
   questions: 'i-question',
   checks: 'i-checks',
   hints: 'i-bulb',
   solution: 'i-key',
 };
-const VISIBLE_BADGES = new Set(['lessons', 'questions', 'checks']);
+const VISIBLE_BADGES = new Set(['questions', 'checks']);
 const guideTab = (id) => $(`tab${id[0].toUpperCase()}${id.slice(1)}`);
 
 /** A status line for screen readers: the checks' outcome, a finished lab. */
@@ -1442,7 +1418,6 @@ function showGuideTab(id, { reveal = false, focus = false } = {}) {
 function updateBadges() {
   const hints = state.hints;
   const ctx = {
-    lessons: guide.lessons,
     questions: guide.answers,
     checks: guide.checks,
     hints: { delivered: hints?.delivered.length ?? 0, slots: hints ? hintSlots(hints) : 0 },
@@ -1522,11 +1497,8 @@ function applyGuideTabs(tabs) {
 
 /** The tabs the lab has right now (the solution's presence changes while the lab runs). */
 function currentGuideTabs() {
-  const learn = learnSession.learn;
   return guideTabsFor({
     type: state.lab?.type,
-    story: hasStory(learn),
-    lessons: hasLessons(learn),
     questions: Boolean(learnSession.form),
     solution: Boolean(state.solution),
   });
@@ -1550,7 +1522,6 @@ function resetGuide() {
   guide.tab = null;
   guide.tabs = [];
   guide.ready = false;
-  guide.lessons = { read: 0, total: 0 };
   guide.answers = { answered: 0, total: 0 };
   guide.checks = { passed: 0, count: 0 };
   guide.kind = 'checks';
@@ -1756,11 +1727,11 @@ function enterSession() {
   $('expiryTimer').textContent = '';
   delete $('expiryTimer').dataset.urgent;
   $('briefBody').innerHTML = '<p class="muted">Loading the brief…</p>';
-  // A new session starts without the last one's Story, Lessons and Questions, and with the guide open again.
+  // A new session starts without the last one's Questions, and with the guide open again.
   resetLearnSession();
   resetGuide();
   hideLearnScreen();
-  // The task, not an empty terminal: the guide opens on the brief (or the story), and the workspace on the files.
+  // The task, not an empty terminal: the guide opens on the brief, and the workspace on the files.
   showView('editor');
   showBoot('Claiming a container…');
 
@@ -2106,7 +2077,7 @@ async function onRunning(status) {
   renderServiceTabs();
   renderServiceList(status.services);
   refreshFiles();
-  // The guide's Story, Lessons and Questions are extras: if they cannot be built the lab is unchanged.
+  // The guide's Questions are an extra: if they cannot be built the lab is unchanged.
   // The tabs are final once the brief and the bundle have been read (or failed).
   loadBrief().finally(() =>
     loadLearn()

@@ -3,7 +3,12 @@
  * learning content and the session booting.
  *
  *   story  ->  diagnostic questions (only for concepts not already known)
- *          ->  the plan: each lesson open in full or folded to its recap
+ *          ->  the lessons, full screen: each open in full or folded to its recap
+ *          ->  Start the lab
+ *
+ * This is the only place the story and the lessons are read: the session
+ * screen has neither. A lab with no lessons goes from its story straight to
+ * Start; one with no story begins at its questions or its lessons.
  *
  * The check decides, the learner overrides: the questions only set the
  * default. A folded lesson has "Show me the lesson anyway", an open one "I
@@ -11,40 +16,15 @@
  * "Start the lab" is pressed (a container costs money), and "Skip all, just
  * start the lab" is on every step.
  *
- * Builds into `host`, focusing each step's heading. Diagnostic outcomes go to
- * the analytics call best effort and are also saved in the mastery record.
+ * Builds into `host`, focusing each step's heading and saying the step in a
+ * polite live region. Diagnostic outcomes go to the analytics call best
+ * effort and are also saved in the mastery record.
  */
 
-import {
-  answersBody,
-  diagnosticQuestions,
-  lessonReason,
-  planLessons,
-  readingTime,
-  recordDiagnostic,
-  setOverride,
-} from './learn-model.js';
-import { actionBar, button, focusHeading, lessonCard, make, questionScreen, screenHead, show, storyContent } from './learn-ui.js';
+import { answersBody, diagnosticQuestions, readingTime, recordDiagnostic } from './learn-model.js';
+import { buildLessons, hasLessons, planSummary } from './learn-lessons.js';
+import { actionBar, button, focusHeading, make, questionScreen, screenHead, show, storyContent } from './learn-ui.js';
 import { uiIcon } from './icons.js';
-
-/** The short tag on a lesson that says why it starts the way it does. */
-export function reasonChip(reason) {
-  if (reason === 'known') return 'You know this';
-  if (reason === 'skipped') return 'Skipped';
-  if (reason === 'forced') return 'Opened by you';
-  if (reason === 'strong') return 'Familiar from your quiz';
-  return '';
-}
-
-/** "2 lessons open, 1 folded to its recap". */
-export function planSummary(plan) {
-  const open = plan.filter((p) => p.state === 'expanded').length;
-  const folded = plan.length - open;
-  if (plan.length === 0) return 'This lab has no lessons.';
-  if (open === 0) return 'You already know what this lab needs. Every lesson is a one-line recap.';
-  const lessons = (n) => `${n} ${n === 1 ? 'lesson' : 'lessons'}`;
-  return folded ? `${lessons(open)} open, ${folded} folded to a recap.` : `${lessons(open)} to read.`;
-}
 
 /**
  * Runs the screen.
@@ -58,25 +38,42 @@ export function planSummary(plan) {
  */
 export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBack }) {
   const learn = entry.learn;
+  const hasStory = Boolean(learn.story || learn.comic);
+  const lessonsAhead = hasLessons(learn);
   // The steps of this lab's screen, fixed now so the bar does not change length part-way:
-  // the story (if it has one), the questions (if any are due), and the plan.
+  // the story (if it has one), the questions (if any are due), and the lessons (if it has any).
+  const questionsDue = diagnosticQuestions(learn, store.get()).length > 0;
   const stages = [
-    ...(learn.story || learn.comic ? ['story'] : []),
-    ...(diagnosticQuestions(learn, store.get()).length > 0 ? ['questions'] : []),
-    'plan',
+    ...(hasStory ? ['story'] : []),
+    ...(questionsDue ? ['questions'] : []),
+    ...(lessonsAhead || questionsDue || !hasStory ? ['lessons'] : []),
   ];
   const steps = (name) => ({ current: stages.indexOf(name) + 1, total: stages.length });
-  let cards = [];
+  let lessons = null;
   let prose = null;
+  let diagnosed = false;
   let starting = false;
   let gone = false;
 
+  // Said to screen readers on every step; the heading takes focus too, this names the step among the others.
+  const live = make('p', 'sr-only');
+  live.setAttribute('role', 'status');
+  live.setAttribute('aria-live', 'polite');
+  host.before(live);
+  const announce = (name, label) => {
+    live.textContent = '';
+    // Set on the next turn so the same words said twice are still said.
+    setTimeout(() => {
+      if (!gone) live.textContent = `Step ${steps(name).current} of ${stages.length}: ${label}`;
+    }, 50);
+  };
+
   const cleanup = () => {
-    for (const c of cards) c.destroy();
-    cards = [];
+    lessons?.destroy();
+    lessons = null;
     prose?.destroy();
     prose = null;
-    host.classList.remove('learn-wrap-comic');
+    host.classList.remove('learn-wrap-comic', 'learn-wrap-lessons');
   };
 
   async function start() {
@@ -122,11 +119,13 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
   function story() {
     cleanup();
     const s = learn.story ?? { title: learn.comic.title, minutes: 0 };
-    const more = diagnosticQuestions(learn, store.get()).length > 0 || learn.concepts.length > 0;
+    const more = diagnosticQuestions(learn, store.get()).length > 0 || lessonsAhead;
     // The motion comic when the lab has one, with the text story folded under it; the text alone otherwise.
     prose = storyContent(learn, { headingLevel: 2 });
     const body = prose.node;
     host.classList.toggle('learn-wrap-comic', prose.hasComic);
+    // Whether the comic has ended, was skipped or never played, Continue is how the learner moves on:
+    // the story is not taken away from them (nor from a learner who asked for reduced motion, for whom it starts finished).
     const next = button(more ? 'Continue' : 'Start the lab', {
       kind: 'accent',
       onClick: more ? questions : start,
@@ -141,6 +140,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       body,
       actionBar([next, skipAll(), back()])
     );
+    announce('story', s.title);
     focusHeading(host);
   }
 
@@ -148,8 +148,9 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
 
   function questions() {
     cleanup();
-    const asked = diagnosticQuestions(learn, store.get());
-    if (asked.length === 0) return plan();
+    // Asked once per visit to this screen: coming back from the lessons to the story does not ask them again.
+    const asked = diagnosed ? [] : diagnosticQuestions(learn, store.get());
+    if (asked.length === 0) return lessonsStep();
     const results = [];
     const step = (i) => {
       cleanup();
@@ -159,7 +160,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
         question: q,
         index: i,
         total: asked.length,
-        lastLabel: 'See my plan',
+        lastLabel: 'See the lessons',
         steps: steps('questions'),
         onNext: (r) => {
           results.push(r);
@@ -172,89 +173,80 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
         screen.root,
         actionBar([skipAll(), back()], { label: 'Screen options' })
       );
+      if (i === 0) announce('questions', 'A few quick questions');
       focusHeading(host);
     };
     step(0);
   }
 
   function finishQuestions(asked, results) {
+    diagnosed = true;
     store.update((m) => recordDiagnostic(m, results));
     try {
       Promise.resolve(post?.(answersBody(results, { phase: 'diagnostic', slug: lab.slug, version: entry.version }))).catch(() => {});
     } catch {
-      /* analytics never blocks the plan */
+      /* analytics never blocks the lessons */
     }
-    plan();
+    lessonsStep();
   }
 
-  // --- plan -----------------------------------------------------------------
+  // --- lessons --------------------------------------------------------------
 
-  function plan() {
+  /** The lessons, full screen: the whole width of the console, then Start the lab. */
+  function lessonsStep() {
     cleanup();
-    const mastery = store.get();
-    const lessons = planLessons(learn, mastery);
-    const list = make('div', 'lesson-list');
-    const byConcept = new Map(learn.concepts.map((c) => [c.id, c]));
+    host.classList.add('learn-wrap-lessons');
 
-    const refresh = (id, card, focus = true) => {
-      const m = store.get();
-      const now = planLessons(learn, m).find((p) => p.concept === id);
-      card.update({ state: now.state, chip: reasonChip(lessonReason(id, m)) }, { focus });
-      summary.textContent = planSummary(planLessons(learn, m));
-    };
-
-    const summary = make('p', 'learn-lede plan-summary', planSummary(lessons));
+    const summary = make('p', 'learn-lede plan-summary');
     summary.setAttribute('role', 'status');
     summary.setAttribute('aria-live', 'polite');
-
-    for (const p of lessons) {
-      const concept = byConcept.get(p.concept);
-      if (!concept) continue;
-      const card = lessonCard({
-        concept,
-        state: p.state,
-        mode: 'plan',
-        chip: reasonChip(lessonReason(p.concept, mastery)),
-        headingTag: 'h2',
-        onAction: (action) => {
-          store.update((m) => setOverride(m, p.concept, action));
-          refresh(p.concept, card);
-        },
-      });
-      cards.push(card);
-      list.append(card.root);
-    }
+    const tally = make('p', 'lessons-tally');
+    const list = make('section', 'learn-lessons');
+    list.setAttribute('aria-label', 'Lessons');
+    lessons = buildLessons(list, {
+      learn,
+      store,
+      onPlan: (plan) => {
+        summary.textContent = planSummary(plan);
+      },
+      onProgress: ({ read, total }) => {
+        tally.textContent = total ? `${read} of ${total} ${total === 1 ? 'lesson' : 'lessons'} read` : '';
+      },
+    });
 
     const go = button('Start the lab', { kind: 'accent', onClick: start, id: 'btnStartLab' });
     go.dataset.start = 'primary';
     go.classList.add('learn-start', 'btn-lg');
     go.append(uiIcon('arrow', 16));
+    const toStory = hasStory ? [button('← Back to the story', { kind: 'quiet', onClick: story, id: 'btnBackStory' })] : [];
 
     show(
       host,
       screenHead({
         eyebrow: eyebrow(),
-        title: 'Your plan for this lab',
+        title: 'Lessons for this lab',
         mark: 'this lab',
         meta: 'The questions set where each lesson starts. You decide what to read.',
-        steps: steps('plan'),
+        steps: steps('lessons'),
       }),
       summary,
       list,
-      actionBar([go, skipAll(), back()], { sticky: true, label: 'Start' })
+      actionBar([go, ...toStory, skipAll(), back(), tally], { sticky: true, label: 'Start' })
     );
+    announce('lessons', 'Lessons');
     focusHeading(host);
   }
 
   // --- go -------------------------------------------------------------------
 
-  if (learn.story || learn.comic) story();
+  if (hasStory) story();
   else questions();
 
   return {
     destroy() {
       gone = true;
       cleanup();
+      live.remove();
     },
   };
 }

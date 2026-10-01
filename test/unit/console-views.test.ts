@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 /**
  * Every tab in the console has to resolve to a view element.
@@ -68,7 +68,7 @@ describe('the guide tabs and their panels', () => {
   );
 
   it('has a tab in the markup for every tab the layout module knows, and no other', () => {
-    expect(known.length).toBeGreaterThanOrEqual(7);
+    expect(known.length).toBeGreaterThanOrEqual(5);
     expect(tabs.map((t) => t.id).sort()).toEqual([...known].sort());
   });
 
@@ -87,9 +87,19 @@ describe('the guide tabs and their panels', () => {
     }
   });
 
+  it('has no Story or Lessons tab, panel, body or icon left anywhere in the console', () => {
+    // The story and the lessons are read full screen before the lab starts (before-you-begin.js), not in the guide.
+    const gone = ['tabStory', 'tabLessons', 'viewStory', 'viewLessons', 'storyBody', 'lessonsBody', 'i-story', 'i-cap', 'buildStoryTab', 'buildLessonsTab'];
+    const files = ['dashboard/public/index.html', 'dashboard/public/session.css', 'dashboard/public/learn.css', 'dashboard/public/comic.css', ...readdirSync('dashboard/src').map((f) => `dashboard/src/${f}`)];
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8');
+      for (const word of gone) expect(text.includes(word), `${file} still mentions ${word}`).toBe(false);
+    }
+  });
+
   it('has every sprite glyph the rail and tabs point at', () => {
     const icons = [...app.slice(app.indexOf('const RAIL_ICON = {'), app.indexOf('};', app.indexOf('const RAIL_ICON = {'))).matchAll(/'(i-[a-z]+)'/g)].map((m) => m[1]!);
-    expect(icons.length).toBeGreaterThanOrEqual(7);
+    expect(icons.length).toBeGreaterThanOrEqual(5);
     for (const id of icons) expect(html.includes(`<symbol id="${id}"`), `no <symbol id="${id}">`).toBe(true);
     for (const use of html.matchAll(/<use href="#([\w-]+)"/g)) expect(html.includes(`<symbol id="${use[1]}"`), `<use href="#${use[1]}"> has no symbol`).toBe(true);
   });

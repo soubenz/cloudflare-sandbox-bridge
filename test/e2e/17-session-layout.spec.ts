@@ -6,8 +6,9 @@ import { test as base, expect, type Locator, type Page, type Route } from '@play
 import { parse as parseYaml } from 'yaml';
 
 /**
- * The session screen's layout: the guide (Story, Lessons, Brief, Questions, Checks, Hints,
- * Solution) beside the workspace window, the rail it collapses to, the dock under both.
+ * The session screen's layout: the guide (Brief, Questions, Checks, Hints, Solution) beside the
+ * workspace window, the rail it collapses to, the dock under both. The story and the lessons are
+ * not in it: they are read full screen before the lab starts (19-lessons-flow.spec.ts).
  *
  * Like 16-learning.spec.ts this needs no password, no API and no container: a small static
  * server serves dashboard/public (the built bundle, with the CSP from public/_headers) and every
@@ -411,38 +412,38 @@ test.describe('the guide', () => {
     expect(s.errors).toEqual([]);
   });
 
-  test('opens a build lab on its Brief: Brief, Checks, Hints, and no Story', async ({ page }) => {
+  test('opens a build lab on its Brief: Brief, Checks, Hints', async ({ page }) => {
     await session(page, BUILD);
     expect(await tabIds(page)).toEqual(['brief', 'checks', 'hints']);
     await expect(activeTab(page)).toHaveAttribute('data-guide-tab', 'brief');
     await expect(activeTab(page)).toHaveText('Brief');
-    await expect(page.locator('#tabStory')).toBeHidden();
     await expect(page.locator('#viewBrief')).toBeVisible();
     await expect(page.locator('#briefBody h2').first()).toHaveText('The brief');
     // What the lab says it teaches leads the brief.
     await expect(page.locator('#briefBody .objectives li').first()).toHaveText('do the thing');
   });
 
-  test('gives a build lab with lessons a Lessons tab after the Brief, with the story folded into it', async ({ page }) => {
+  test('gives a build lab that ships lessons no Lessons tab, and no folded story: it is Brief, Checks, Hints', async ({ page }) => {
     await session(page, BUILD_LEARN);
-    expect(await tabIds(page)).toEqual(['brief', 'lessons', 'checks', 'hints']);
+    expect(await tabIds(page)).toEqual(['brief', 'checks', 'hints']);
     await expect(activeTab(page)).toHaveText('Brief');
-    await guide(page).getByRole('tab', { name: 'Lessons' }).click();
-    await expect(page.locator('#viewLessons')).toBeVisible();
-    // The story is the top of the lessons, not a tab of its own.
-    await expect(page.locator('#lessonsBody .learn-story-title')).toHaveText(bundle.story!.title);
-    await expect(page.locator('#lessonsBody .lesson')).toHaveCount(bundle.concepts.length);
-    await expect(page.locator('#tabStory')).toBeHidden();
+    await expect(guide(page).getByRole('tab', { name: 'Lessons' })).toHaveCount(0);
+    await expect(guide(page).getByRole('tab', { name: 'Story' })).toHaveCount(0);
+    // Nothing of the lessons or the story is folded into any pane of the guide.
+    await expect(guide(page).locator('.lesson, .learn-story, .md-diagram, .cm')).toHaveCount(0);
+    const text = await guide(page).innerText();
+    expect(text).not.toContain(bundle.story!.title);
+    for (const c of bundle.concepts) expect(text).not.toContain(c.title);
   });
 
-  test('opens an explore lab on its Story, then Lessons, Brief and Questions', async ({ page }) => {
+  test('opens an explore lab on its Brief, then Questions and Hints: no Story, no Lessons', async ({ page }) => {
     await session(page, EXPLORE);
-    expect((await tabIds(page)).slice(0, 4)).toEqual(['story', 'lessons', 'brief', 'questions']);
-    expect(await tabIds(page)).toEqual(['story', 'lessons', 'brief', 'questions', 'hints']);
-    await expect(activeTab(page)).toHaveAttribute('data-guide-tab', 'story');
-    await expect(page.locator('#viewStory')).toBeVisible();
-    await expect(page.locator('#storyBody .learn-story-title')).toHaveText(bundle.story!.title);
-    await expect(page.locator('#storyBody .learn-prose p').first()).toBeVisible();
+    expect(await tabIds(page)).toEqual(['brief', 'questions', 'hints']);
+    await expect(activeTab(page)).toHaveAttribute('data-guide-tab', 'brief');
+    await expect(page.locator('#viewBrief')).toBeVisible();
+    await expect(guide(page).getByRole('tab', { name: 'Story' })).toHaveCount(0);
+    await expect(guide(page).getByRole('tab', { name: 'Lessons' })).toHaveCount(0);
+    await expect(guide(page).locator('.lesson, .learn-story, .md-diagram, .cm')).toHaveCount(0);
     // Its checks are read under its questions, so it has no Checks tab.
     await expect(page.locator('#tabChecks')).toBeHidden();
   });
@@ -514,13 +515,9 @@ test.describe('hiding the guide', () => {
   test('the rail has an icon for every tab, each named for what it opens and its count', async ({ page }) => {
     await session(page, EXPLORE);
     await page.locator('#btnGuideHide').click();
-    expect(await railIds(page)).toEqual(['story', 'lessons', 'brief', 'questions', 'hints']);
+    expect(await railIds(page)).toEqual(['brief', 'questions', 'hints']);
     const names = await page.locator('#railTabs button').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
-    expect(names[0]).toBe('Story');
-    expect(names[1]).toMatch(/^Lessons, \d+ of \d+ read$/);
-    expect(names[2]).toBe('Brief');
-    expect(names[3]).toBe('Questions, 0 of 3 answered');
-    expect(names[4]).toBe('Hints, 1 of 3 shown');
+    expect(names).toEqual(['Brief', 'Questions, 0 of 3 answered', 'Hints, 1 of 3 shown']);
     // Every one is a real button of a touch-friendly size.
     for (const box of await page.locator('#railTabs button, #btnGuideShow').all()) {
       const r = (await box.boundingBox())!;
@@ -618,7 +615,7 @@ test.describe('the guide per lab', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('#guide')).toHaveAttribute('data-ready', 'true');
     await expect(guide(page)).toBeVisible();
-    await expect(activeTab(page)).toHaveAttribute('data-guide-tab', 'story');
+    await expect(activeTab(page)).toHaveAttribute('data-guide-tab', 'brief');
   });
 });
 
@@ -777,12 +774,8 @@ test.describe('an explore lab', () => {
     expect(s.errors).toEqual([]);
   });
 
-  test('its guide badges: lessons read, questions answered, hints shown', async ({ page }) => {
+  test('its guide badges: questions answered, hints shown', async ({ page }) => {
     await session(page, EXPLORE);
-    await page.getByRole('tab', { name: 'Lessons' }).click();
-    await expect(page.locator('#lessonsBody .lesson').first()).toBeVisible();
-    // The lesson on screen counts as read.
-    await expect(page.locator('#tabLessons .gtab-badge')).toHaveText(new RegExp(`^[1-9]\\d*/${bundle.concepts.length}$`));
     // Hints say their count to a screen reader; the tab itself stays plain.
     await expect(page.locator('#tabHints')).toHaveAttribute('aria-label', 'Hints, 1 of 3 shown');
     await expect(page.locator('#tabHints .gtab-badge')).toBeHidden();
@@ -1122,7 +1115,7 @@ test.describe('keyboard and accessibility', () => {
     await expect(list).toHaveAttribute('aria-label', 'Guide sections');
     // Exactly one tab is in the tab order: the selected one.
     const stops = await guideTabs(page).evaluateAll((els) => els.filter((e) => (e as HTMLElement).tabIndex === 0).map((e) => (e as HTMLElement).dataset.guideTab));
-    expect(stops).toEqual(['story']);
+    expect(stops).toEqual(['brief']);
     // Every tab controls a panel that is labelled by it.
     for (const id of await tabIds(page)) {
       const tab = page.locator(`#guideTabs [data-guide-tab="${id}"]`);
@@ -1131,27 +1124,25 @@ test.describe('keyboard and accessibility', () => {
       await expect(page.locator(`#${panel}`)).toHaveAttribute('aria-labelledby', (await tab.getAttribute('id'))!);
     }
 
-    await page.locator('#tabStory').focus();
+    await page.locator('#tabBrief').focus();
     await page.keyboard.press('ArrowRight');
-    await expect(page.locator('#tabLessons')).toBeFocused();
-    await expect(page.locator('#tabLessons')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('#viewLessons')).toBeVisible();
-    await expect(page.locator('#viewStory')).toBeHidden();
-    await page.keyboard.press('ArrowRight');
-    await expect(page.locator('#tabBrief')).toBeFocused();
+    await expect(page.locator('#tabQuestions')).toBeFocused();
+    await expect(page.locator('#tabQuestions')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#viewQuestions')).toBeVisible();
+    await expect(page.locator('#viewBrief')).toBeHidden();
     await page.keyboard.press('End');
     await expect(page.locator('#tabHints')).toBeFocused();
     await expect(page.locator('#viewHints')).toBeVisible();
     await page.keyboard.press('ArrowRight');
-    await expect(page.locator('#tabStory')).toBeFocused();
+    await expect(page.locator('#tabBrief')).toBeFocused();
     await page.keyboard.press('ArrowLeft');
     await expect(page.locator('#tabHints')).toBeFocused();
     await page.keyboard.press('Home');
-    await expect(page.locator('#tabStory')).toBeFocused();
-    await expect(page.locator('#tabStory')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#tabBrief')).toBeFocused();
+    await expect(page.locator('#tabBrief')).toHaveAttribute('aria-selected', 'true');
     // Only the active tab is tabbable, still.
     const after = await guideTabs(page).evaluateAll((els) => els.filter((e) => (e as HTMLElement).tabIndex === 0).map((e) => (e as HTMLElement).dataset.guideTab));
-    expect(after).toEqual(['story']);
+    expect(after).toEqual(['brief']);
   });
 
   test('the workspace tabs rove with the arrow keys too, and the keyboard stays on them', async ({ page }) => {
@@ -1177,9 +1168,6 @@ test.describe('keyboard and accessibility', () => {
     await page.locator('#btnGuideHide').focus();
     await page.keyboard.press('Enter');
     await expect(page.locator('#btnGuideShow')).toBeFocused();
-    await page.keyboard.press('Tab');
-    await expect(page.getByRole('button', { name: 'Story' })).toBeFocused();
-    await page.keyboard.press('Tab');
     await page.keyboard.press('Tab');
     await expect(page.getByRole('button', { name: 'Brief' })).toBeFocused();
     await page.keyboard.press('Enter');
@@ -1322,7 +1310,7 @@ test.describe('screenshots', () => {
       await page.locator('#btnGuideHide').click();
       await shot('build-hidden');
 
-      // An explore lab: the story, the lessons, the questions, hidden.
+      // An explore lab: the brief, the questions, hidden.
       await page.locator('#btnEnd').click();
       await page.locator('#endDialog').getByRole('button', { name: 'Discard' }).click();
       await expect(page.locator('#launcher')).toBeVisible();
@@ -1330,10 +1318,7 @@ test.describe('screenshots', () => {
       await openGuide();
       await expect(page.locator('#viewService')).toBeVisible();
       await expect(page.frameLocator('#serviceFrame').getByRole('heading', { name: 'Echo service' })).toBeVisible();
-      await shot('explore-story');
-      await page.getByRole('tab', { name: 'Lessons' }).click();
-      await page.locator('#lessonsBody .diagram').first().scrollIntoViewIfNeeded();
-      await shot('explore-lessons');
+      await shot('explore-brief');
       await page.getByRole('tab', { name: 'Questions' }).click();
       await page.locator('.qfield[data-key="support_deployment"] input[value="a"]').check();
       await page.locator('.qfield[data-key="support_tokens_hello"] input').fill('11');

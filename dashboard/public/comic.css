@@ -266,7 +266,7 @@
 /* ---------- Replay and Skip, the timecode, the text version ---------- */
 .cm-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-top: var(--s4); }
 .cm-btn { gap: 8px; }
-.cm .cm-btn, .learn-screen .cm .cm-btn, .guide .cm .cm-btn { min-height: 44px; padding: 0 20px; border-radius: 999px; font-size: 15px; height: auto; }
+.cm .cm-btn, .learn-screen .cm .cm-btn { min-height: 44px; padding: 0 20px; border-radius: 999px; font-size: 15px; height: auto; }
 .cm-btn:disabled { cursor: default; }
 
 /* Sound: a toggle beside Replay and Skip (only on a comic with voices), and, only if the browser refuses

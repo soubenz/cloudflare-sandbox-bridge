@@ -6,8 +6,8 @@ import { test as base, expect, type Locator, type Page, type Route } from '@play
 import { parse as parseYaml } from 'yaml';
 
 /**
- * The motion comic in the console: it plays in "Before you begin" and in the
- * guide's Story tab; Replay and Skip are its only buttons; Skip ends it on the
+ * The motion comic in the console: it plays in "Before you begin" (the story step) and nowhere
+ * else, not in the session's guide; Replay and Skip are its only buttons; Skip ends it on the
  * finished comic and Replay starts it over; reduced motion shows it finished;
  * "Read as text" lists every panel; a lab with no comic (or one that cannot be
  * drawn) still shows the text story; nothing scrolls sideways at any width.
@@ -569,64 +569,43 @@ test.describe('in Before you begin', () => {
     expect(await page.evaluate(() => window.__comicClock)).toBeUndefined();
   });
 
-  test('starting the lab takes the Before you begin comic down and hands over to the guide\'s own', async ({ page }) => {
+  test('starting the lab takes the Before you begin comic down: the session has none', async ({ page }) => {
     const s = await beforeYouBegin(page, EXPLORE, { test: true });
     await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
     await expect(page.locator('#workspace')).toBeVisible();
     await expect(page.locator('#guide')).toHaveAttribute('data-ready', 'true');
-    await expect(page.locator('#learnHost .cm')).toHaveCount(0);
-    await expect(page.locator('.cm')).toHaveCount(1);
-    await expect(page.locator('#storyBody .cm')).toHaveCount(1);
+    await expect(page.locator('.cm')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__comicClock)).toBeUndefined();
     expect(s.errors).toEqual([]);
+  });
+
+  test('moving on from the story takes the comic down too: the clock is gone before the lessons are read', async ({ page }) => {
+    await beforeYouBegin(page, EXPLORE, { test: true });
+    expect(await page.evaluate(() => Boolean(window.__comicClock))).toBe(true);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(page.locator('.cm')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__comicClock)).toBeUndefined();
   });
 });
 
 // =========================================================================
-// plays in the guide's Story tab
+// not in the session
 // =========================================================================
 
-test.describe('in the Story tab', () => {
-  test('an explore lab opens on its Story with the comic playing and the text story folded under it', async ({ page }) => {
+test.describe('in the session', () => {
+  test('a lab with a comic has no Story tab and no comic in its guide', async ({ page }) => {
     const s = await runningLab(page, EXPLORE);
-    await expect(page.locator('#viewStory')).toBeVisible();
-    await expect(page.locator('#storyBody .learn-story-title')).toHaveText(bundle.story!.title);
-    await expect(page.locator('#storyBody .cm')).toBeVisible();
-    await expect(page.locator('#storyBody .cm-controls').getByRole('button')).toHaveText(['Replay', 'Skip']);
-    await expect.poll(async () => (await timecode(page, '#storyBody').textContent())?.split(' / ')[0], { timeout: 8000 }).not.toBe('0:00');
-    const fold = page.locator('#storyBody .cm-story-text');
-    await fold.locator('summary').click();
-    await expect(fold.locator('.learn-prose p').first()).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Story' })).toHaveCount(0);
+    await expect(page.getByRole('tab', { name: 'Lessons' })).toHaveCount(0);
+    await expect(page.locator('.cm, .cm-story, .cm-story-text, .learn-story')).toHaveCount(0);
+    await expect(page.locator('.tab-active')).toHaveText('Brief');
     expect(s.errors).toEqual([]);
   });
 
-  test('Skip and Replay work there too', async ({ page }) => {
-    await runningLab(page, EXPLORE, { test: true });
-    await skipBtn(page, '#storyBody').click();
-    await expect(page.locator('#storyBody .cm')).toHaveAttribute('data-state', 'done');
-    await expect(page.locator('#storyBody .cm-panel.on')).toHaveCount(panelCount(single));
-    await replayBtn(page, '#storyBody').click();
-    await expect(page.locator('#storyBody .cm')).toHaveAttribute('data-state', 'playing');
-    await expect(page.locator('#storyBody .cm-panel.on')).toHaveCount(0);
-  });
-
-  test('a lab with no comic keeps its text story in the Story tab', async ({ page }) => {
+  test('a lab with only a text story has none of it in its guide either', async ({ page }) => {
     await runningLab(page, NO_COMIC);
-    await expect(page.locator('#storyBody .learn-story-title')).toHaveText(bundle.story!.title);
-    await expect(page.locator('#storyBody .cm')).toHaveCount(0);
-    await expect(page.locator('#storyBody .learn-prose p').first()).toBeVisible();
-  });
-
-  test('pauses while its tab is hidden and carries on when it is shown again', async ({ page }) => {
-    await runningLab(page, EXPLORE, { test: true });
-    await clock.resume(page);
-    await expect.poll(() => clock.time(page), { timeout: 8000 }).toBeGreaterThan(0.3);
-    await page.getByRole('tab', { name: 'Brief' }).click();
-    await expect(page.locator('#viewStory')).toBeHidden();
-    const held = await clock.time(page);
-    await page.waitForTimeout(700);
-    expect(await clock.time(page)).toBeCloseTo(held, 1);
-    await page.getByRole('tab', { name: 'Story' }).click();
-    await expect.poll(() => clock.time(page), { timeout: 8000 }).toBeGreaterThan(held + 0.3);
+    await expect(page.locator('#guide .learn-prose, #guide .learn-story')).toHaveCount(0);
+    expect(await page.locator('#guide').innerText()).not.toContain(bundle.story!.title);
   });
 });
 
@@ -747,7 +726,7 @@ test.describe('one clock', () => {
 // =========================================================================
 
 test.describe('layout', () => {
-  for (const width of [1000, 1280, 1440]) {
+  for (const width of [800, 1000, 1280, 1440]) {
     test(`Before you begin at ${width}px: the stage fits its card, playing and finished, with no sideways scroll`, async ({ page }) => {
       await beforeYouBegin(page, MULTI, { test: true }, { width, height: 900 });
       const tl = await timeline(page);
@@ -771,13 +750,8 @@ test.describe('layout', () => {
   });
 
   for (const viewport of [1000, 800]) {
-    test(`in the guide pane (${viewport}px window) the bubbles, captions and screen lines stay readable on every panel`, async ({ page }) => {
-      await runningLab(page, EXPLORE, { test: true }, { width: viewport, height: 900 });
-      // The guide is closed below 1180px: open it.
-      if ((await page.locator('#guide').isHidden())) await page.locator('#btnGuideToggle').click();
-      await expect(page.locator('#viewStory')).toBeVisible();
-      const paneWidth = (await page.locator('#storyBody .cm-stage').boundingBox())!.width;
-      expect(paneWidth).toBeLessThan(470);
+    test(`at ${viewport}px the bubbles, captions and screen lines stay readable on every panel`, async ({ page }) => {
+      await beforeYouBegin(page, EXPLORE, { test: true }, { width: viewport, height: 900 });
       const tl = await timeline(page);
       // Bubbles, name tags and captions are about 11px or more on screen. A screen's lines are read once the
       // camera has pushed in on its monitor (a 40 character line cannot be bigger than the monitor it is typed on).
@@ -801,21 +775,6 @@ test.describe('layout', () => {
       await noHorizontalScroll(page);
     });
   }
-
-  test('in a 400px guide pane the picture never sticks out of the pane', async ({ page }) => {
-    await runningLab(page, MULTI, { test: true }, { width: 1000, height: 900 });
-    if (await page.locator('#guide').isHidden()) await page.locator('#btnGuideToggle').click();
-    const guideBox = (await page.locator('#guide').boundingBox())!;
-    expect(guideBox.width).toBeGreaterThan(330);
-    expect(guideBox.width).toBeLessThan(470);
-    const tl = await timeline(page);
-    for (const t of [tl.pages[0]!.panels[2]!.start + 2, tl.pages[1]!.panels[1]!.start + 2, tl.total]) {
-      await at(page, t);
-      const st = (await stage(page, '#storyBody').boundingBox())!;
-      expect(st.x + st.width).toBeLessThanOrEqual(guideBox.x + guideBox.width + 0.5);
-      await noHorizontalScroll(page);
-    }
-  });
 });
 
 // =========================================================================
@@ -855,20 +814,6 @@ test.describe('pictures', () => {
         await page.setViewportSize({ width: 1280, height: Math.min(Math.ceil(height) + 320, 4200) });
         await at(page, tl.total);
         await shotOf(page, `${name}-${theme}-finished`, st);
-      });
-
-      test(`${name} comic, ${theme}, in the guide pane: mid-play and finished`, async ({ page }) => {
-        await runningLab(page, slug, { theme, test: true }, { width: 1000, height: 900 });
-        if (await page.locator('#guide').isHidden()) await page.locator('#btnGuideToggle').click();
-        await expect(page.locator('#storyBody .cm')).toBeVisible();
-        const tl = await timeline(page);
-        const panels = tl.pages.flatMap((x) => x.panels);
-        for (const p of [panels[0]!, panels[Math.floor(panels.length / 2)]!, panels[panels.length - 1]!]) {
-          await at(page, p.end - 0.15);
-          await page.locator('#guide').screenshot({ path: join(SHOTS, `guide-${name}-${theme}-panel-${String(p.number).padStart(2, '0')}.png`) });
-        }
-        await at(page, tl.total);
-        await page.locator('#guide').screenshot({ path: join(SHOTS, `guide-${name}-${theme}-finished.png`) });
       });
     }
   }

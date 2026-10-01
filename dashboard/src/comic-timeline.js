@@ -452,7 +452,7 @@ export const bannerOn = (page, t) => t >= page.start + (page.index === 0 ? 0 : T
 // The camera
 // ---------------------------------------------------------------------------
 
-/** The frame's shape for a container this wide: wide and short on a big screen, squarer in a narrow guide. */
+/** The frame's shape for a container this wide: wide and short on a big screen, squarer in a narrow one. */
 export function playAspect(width) {
   if (width >= 900) return 16 / 9;
   if (width >= NARROW) return 4 / 3;

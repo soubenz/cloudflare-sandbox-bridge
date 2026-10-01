@@ -1,9 +1,11 @@
 /*
- * The learning screens of the console: the platform quiz, "Before you begin",
- * the desktop notice, the lesson cards, and the Learn and Questions tabs.
+ * The learning screens of the console: the platform quiz, "Before you begin"
+ * (the story, the questions, and the lessons full screen), the desktop notice,
+ * the lesson cards, and the Questions tab's cards.
  *
  * Drawn as the design's centred step cards: one card on the dotted page with a
- * progress-steps bar across its top. Only the console's own tokens (styles.css):
+ * progress-steps bar across its top; the lessons step is the one exception, it
+ * takes the whole width of the console. Only the console's own tokens (styles.css):
  * surfaces, ink, the status colours for a result (good for correct, warn for not
  * quite, never as the only signal: the words say it too), and the accent families
  * for level chips. Light and dark come with the tokens; no colour is named here.
@@ -254,6 +256,45 @@
 
 .plan-summary { margin: 0; }
 
+/* ---------- the lessons step: the whole width of the console ---------- */
+/* No card around it: the head and the action bar sit on the page, each lesson is a card as wide as the screen. */
+.learn-wrap.learn-wrap-lessons {
+  max-width: none; width: 100%; padding: 0; gap: 28px;
+  background: none; border: 0; border-radius: 0; box-shadow: none;
+}
+.learn-wrap-lessons .lesson-list { gap: 16px; }
+.learn-wrap-lessons .lesson { padding: 24px 32px 28px; gap: 14px; border-radius: var(--radius-xl); }
+.learn-wrap-lessons .lesson .lesson-title { font-size: clamp(20px, 1.2vw + 8px, 28px); }
+.learn-wrap-lessons .lesson-recap { max-width: 72ch; font-size: var(--fs-lg); }
+/* The reading size grows with the window, so the 72ch line (and the diagram beside it) fills a big screen well. */
+.learn-wrap-lessons .lesson-body {
+  display: flow-root; margin-top: var(--s2);
+  max-width: calc(72ch + 56px + 1100px);
+  font-size: clamp(16px, calc(0.45vw + 11px), 20px);
+}
+.learn-wrap-lessons .lesson-body > :not(.md-diagram) { max-width: 72ch; }
+.learn-wrap-lessons .lesson-body .diagram { max-width: min(100%, 52rem); }
+/*
+ * Wide: the text on the left, its diagram large on the right, level with the top of the lesson and
+ * following the reader down it. (One diagram is the case; a second one runs on in the text.)
+ */
+@media (min-width: 1280px) {
+  .learn-wrap-lessons .lesson-body {
+    display: grid; align-items: start; column-gap: 56px;
+    grid-template-columns: minmax(0, 72ch) clamp(400px, 44%, 1100px);
+  }
+  .learn-wrap-lessons .lesson-body > * { grid-column: 1; }
+  .learn-wrap-lessons .lesson-body > .md-diagram {
+    grid-column: 2; grid-row: 1 / span 40; margin: 0;
+    position: sticky; top: var(--s4);
+  }
+  .learn-wrap-lessons .lesson-body > .md-diagram ~ .md-diagram { grid-column: 1; grid-row: auto; position: static; margin: var(--s3) 0 var(--s4); }
+  .learn-wrap-lessons .lesson-body .diagram { max-width: none; margin: 0; }
+}
+.learn-wrap-lessons .learn-actions-sticky { margin-inline: 0; padding: 12px 18px; }
+.lessons-tally { margin: 0 0 0 auto; font: 400 12.5px/1.4 var(--mono); color: var(--ink-muted); }
+.lessons-tally:empty { display: none; }
+
 /* ---------- the desktop notice ---------- */
 .notice-screen { display: flex; flex-direction: column; }
 .notice-wrap { width: 100%; max-width: 520px; margin-inline: auto; display: flex; flex-direction: column; gap: 22px; flex: 1; }
@@ -279,10 +320,8 @@
 .notice-foot { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: auto; }
 .notice-foot p { margin: 0; max-width: 34ch; text-align: center; font-size: 11.5px; color: var(--ink-muted); }
 
-/* ---------- the guide's Story, Lessons and Questions tabs ---------- */
+/* ---------- the guide's Questions tab ---------- */
 /* (The guide's own layout is session.css; these are the parts the learning screens share.) */
-.learn-story { margin-bottom: var(--s6); }
-.learn-lessons .learn-meta { margin: 0 0 var(--s4); }
 
 /* The badge of a question card (see questions-form.js): outline, info, ok, warn. */
 .badge-outline { border: 1px solid var(--border-input); color: var(--ink-2); background: transparent; }
@@ -352,7 +391,8 @@
   .ob-choice { padding: 16px; }
   .learn-actions-sticky .learn-start { flex: 1 1 100%; }
   .ob-tally { margin-left: 0; flex-basis: 100%; }
-  .lesson { padding: 16px; }
+  .lesson, .learn-wrap-lessons .lesson { padding: 16px; }
+  .lessons-tally { margin-left: 0; flex-basis: 100%; }
   .lesson-head .lesson-toggle { margin-left: 0; flex-basis: 100%; }
   .lesson-meta { margin-left: 0; }
   .lesson .btn, .qform .btn { min-height: 44px; }

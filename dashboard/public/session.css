@@ -2,7 +2,7 @@
  * The session screen: a running lab.
  *
  * Two columns on the dotted page. On the left the guide, a reading pane with
- * the lab's Story, Lessons, Brief, Questions, Checks, Hints and Solution as
+ * the lab's Brief, Questions, Checks, Hints and Solution as
  * tabs; it can be hidden, and then it is a 64px rail of icons. On the right the
  * workspace window, the landing page's navy product window: a bar with the
  * title and the RUNNING pill, tabs for the Terminal, the Editor (its file tree
@@ -136,7 +136,7 @@
 .block-meta[data-tone="bad"] { color: var(--bad); }
 .guide-head .block-meta + .btn { margin-left: 0; }
 
-/* The brief, the story and the lessons read as one column of prose. */
+/* The brief reads as one column of prose. */
 .brief { line-height: 1.65; padding: 0; }
 .brief > * { max-width: 70ch; }
 .brief > table, .brief > pre { max-width: 100%; }
@@ -164,19 +164,6 @@
 .brief .objectives h3 { margin: 0 0 8px; font: 700 11px/1.3 var(--sans); text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent-text); }
 .brief .objectives ul { margin: 0; padding-left: 20px; }
 .brief .objectives li { color: var(--ink); font-size: 14.5px; line-height: 1.5; font-weight: 500; }
-
-/* Story and lessons. */
-.guide-article { line-height: 1.6; }
-.guide-article > * { max-width: none; }
-.learn-story { margin-bottom: 28px; }
-.guide-article .learn-story-title, .guide-article .learn-lessons-title { margin: 0 0 6px; font: 700 clamp(24px, 2.2vw, 30px)/1.1 var(--display); letter-spacing: -0.04em; }
-.learn-lessons .learn-meta { margin: 0 0 16px; }
-.learn-story .learn-prose { font-size: 16px; line-height: 1.65; }
-.guide-article .lesson-list { gap: 12px; }
-.guide-article .lesson { background: var(--surface-2); padding: 18px 20px; }
-.guide-article .lesson[data-state="collapsed"] { background: var(--surface); }
-.guide-article .lesson .lesson-title { font-size: 19px; }
-.guide-article .lesson-toggle { min-height: 40px; }
 
 /* ---------- the rail: the guide, hidden ---------- */
 .guide-rail {

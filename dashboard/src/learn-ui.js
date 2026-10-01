@@ -2,7 +2,7 @@
  * The pieces the learning screens share: a question, a lesson card and the
  * small helpers around them. DOM only (no markup strings: every string goes in as
  * text), no knowledge of the API or of storage; the screens in onboarding.js,
- * before-you-begin.js and learn-tab.js put them together.
+ * before-you-begin.js and learn-lessons.js put them together.
  *
  * Accessibility notes that apply to all of it:
  *   - a screen's heading takes focus when the screen changes (focusHeading)
@@ -274,20 +274,17 @@ export function questionScreen({ question, index, total, onNext, lastLabel = 'Fi
  *
  *   concept    { id, title, minutes, recap, body }
  *   state      'expanded' | 'collapsed'
- *   mode       'plan' (Before you begin) or 'tab' (the session's Learn tab)
  *   chip       optional short text about why it starts this way ("You know this")
- *   onAction   plan mode: called with 'forced' (Show me the lesson anyway) or
- *              'skipped' (I know this, skip); the caller records it and calls update()
+ *   onAction   called with 'forced' (Show me the lesson anyway) or 'skipped'
+ *              (I know this, skip); the caller records it and calls update()
  *   headingTag the tag of the lesson title (default h2)
  *
- * Tab mode has one toggle (aria-expanded) that only changes what is showing.
  * The body, with its diagrams, is built the first time the lesson opens and
  * its players are stopped by destroy(). Returns { root, update, destroy }.
  */
-export function lessonCard({ concept, state, mode, chip, onAction, headingTag = 'h2' }) {
+export function lessonCard({ concept, state, chip, onAction, headingTag = 'h2' }) {
   const root = make('article', 'lesson');
   root.dataset.concept = concept.id;
-  const bodyId = `lesson-${++uid}`;
   let current = state;
   let chipText = chip;
   let body = null;
@@ -304,43 +301,23 @@ export function lessonCard({ concept, state, mode, chip, onAction, headingTag = 
     if (chipText) head.append(make('span', 'chip lesson-chip', chipText));
     root.append(head);
 
-    let focusTarget = null;
     if (current === 'collapsed') {
       root.append(make('p', 'lesson-recap', concept.recap));
     } else {
       if (!body) {
         body = make('div', 'lesson-body');
-        body.id = bodyId;
         markdown = mountMarkdown(body, concept.body, { headingLevel: Number(headingTag.slice(1)) + 1 });
       }
       root.append(body);
     }
 
-    if (mode === 'plan') {
-      const b =
-        current === 'collapsed'
-          ? button('Show me the lesson anyway', { kind: 'quiet', onClick: () => onAction?.('forced') })
-          : button('I know this, skip', { kind: 'ghost', onClick: () => onAction?.('skipped') });
-      b.classList.add('lesson-toggle');
-      head.append(b);
-      focusTarget = b;
-    } else {
-      const open = current === 'expanded';
-      const b = button(open ? 'Hide lesson' : 'Show lesson', {
-        kind: 'ghost',
-        onClick: () => {
-          current = current === 'expanded' ? 'collapsed' : 'expanded';
-          build(true);
-        },
-      });
-      b.classList.add('lesson-toggle');
-      b.setAttribute('aria-expanded', String(open));
-      b.setAttribute('aria-controls', bodyId);
-      if (!open) b.removeAttribute('aria-controls');
-      head.append(b);
-      focusTarget = b;
-    }
-    if (focusAfter && focusTarget) focusTarget.focus();
+    const toggle =
+      current === 'collapsed'
+        ? button('Show me the lesson anyway', { kind: 'quiet', onClick: () => onAction?.('forced') })
+        : button('I know this, skip', { kind: 'ghost', onClick: () => onAction?.('skipped') });
+    toggle.classList.add('lesson-toggle');
+    head.append(toggle);
+    if (focusAfter) toggle.focus();
   };
   build(false);
 
