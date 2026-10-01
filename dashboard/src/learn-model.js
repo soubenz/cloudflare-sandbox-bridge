@@ -409,11 +409,14 @@ export function normalizeLearn(entry) {
   const have = new Set(concepts.map((c) => c.id));
   const questions = (Array.isArray(learn.questions) ? learn.questions : []).map(cleanQuestion).filter((q) => q && have.has(q.concept));
   const fields = (Array.isArray(learn.fields) ? learn.fields : []).map(cleanField).filter(Boolean);
+  // The motion comic is passed through whole: the player (comic.js) checks it panel by panel and falls back to the text story.
+  const comic = learn.comic && typeof learn.comic === 'object' && isStr(learn.comic.title) && Array.isArray(learn.comic.pages) ? learn.comic : null;
   return {
     version: typeof entry.version === 'string' ? entry.version : '',
     learn: {
       version: 1,
       ...(story ? { story } : {}),
+      ...(comic ? { comic } : {}),
       concepts,
       questions,
       answers_file: isStr(learn.answers_file) ? learn.answers_file : 'answers.json',

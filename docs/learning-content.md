@@ -144,6 +144,16 @@ Rules `labs learn-check` enforces:
 
 Lines on a screen are coloured by how they start: `$` is a command, `200` or `ok` is green, `4xx`, `5xx` or `error` is orange or red. Use `?` where the lab wants the learner to find the value.
 
+### How it plays
+
+The console (`dashboard/src/comic.js`) lays the whole comic out as one reel (every page a sheet of paper, one under the other) and plays it on a single clock; the schedule is a pure function in `comic-timeline.js`, so a panel's start, each word of a bubble and the camera at any second are the same every time.
+
+- **Camera.** It starts on the first page, flies to each panel as it pops in, and zooms to fit it. Between pages it flies down to the next sheet (and to its title card, held a moment, when the page has a `title`). After the last panel it pulls back until the whole comic is in frame, and the frame grows to fit it. A panel stays up for `panelSeconds(words)` of every word it shows: what is said, the caption and the screen lines. Bubbles type word by word, speaker after speaker; screen lines type one after another; the caption fades in; a `sfx` word slams in with a shake.
+- **Replay and Skip** are the only controls. Skip goes straight to the finished comic (every page drawn, every bubble typed). Replay starts again from page 1. A thin progress bar and a timecode (`m:ss / m:ss`) show where it is; they are not controls. The comic plays by itself when it first shows, waits while its tab or the page is hidden, and stops its clock when it is finished or when the learner leaves the screen.
+- **Read as text.** Under the stage, a disclosure lists the transcript of every panel (the same text `labs learn-check` reads: `Panel 3. Maren: ...`, with a `Page 2: Title.` line per page when there are several). The stage itself is one image with the comic's title; the animation is hidden from screen readers, and the transcript is its equivalent. The text story from `story.md` sits under that, folded under "Read the story as text", and is the whole story when a lab has no comic or the comic cannot be drawn.
+- **Reduced motion.** With `prefers-reduced-motion: reduce` the comic starts finished: every page drawn, no camera, nothing typing, the same two buttons (Skip is then off; Replay plays it as cuts from panel to panel, still without travelling or typing).
+- **Narrow places.** The stage is as wide as its container. In the guide pane (360 to 520px) the frame is squarer, the words of a wide panel are drawn larger so that bubbles stay about 13px on screen and captions 11px or more, and the camera pushes in on a screen once what is said has been said.
+
 ## Trimming the brief
 
 Once the lesson teaches a concept, the brief stops explaining it. The brief keeps: what is running, the tools, what done looks like, the pressure sentence if any. Target 300 words or fewer for an explore lab.

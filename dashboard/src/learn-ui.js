@@ -14,6 +14,7 @@
 
 import { gradeQuestion, readingTime } from './learn-model.js';
 import { mountMarkdown } from './markdown.js';
+import { mountComic } from './comic.js';
 
 /** Element with a class and optional text. */
 export function make(tag, className, text) {
@@ -30,6 +31,53 @@ export function button(label, { kind = '', onClick, type = 'button', id } = {}) 
   if (id) b.id = id;
   if (onClick) b.addEventListener('click', onClick);
   return b;
+}
+
+/**
+ * The story of a learn bundle: the motion comic when the bundle has one, with
+ * the text story folded under it ("Read the story as text"), else the text
+ * story alone. The text story is also the complete fallback when the comic
+ * cannot be drawn (a malformed bundle, a browser without what it needs): a
+ * mount that throws leaves nothing behind and the text shows as if there were
+ * no comic.
+ *
+ *   learn          the bundle ({ story, comic? })
+ *   headingLevel   the level the story's own headings start at
+ *   onDone         called when the comic has played to its end (or was skipped)
+ *
+ * Returns { node, hasComic, destroy }; `destroy` stops the comic's clock and the markdown's diagrams.
+ */
+export function storyContent(learn, { headingLevel = 2, onDone } = {}) {
+  const prose = make('div', 'learn-prose story-quote');
+  const markdown = learn.story ? mountMarkdown(prose, learn.story.body, { headingLevel }) : null;
+  let comic = null;
+  const holder = make('div', 'cm-holder');
+  if (learn.comic) {
+    try {
+      comic = mountComic(holder, learn.comic, { onDone });
+    } catch {
+      comic = null;
+    }
+  }
+  if (!comic) {
+    return { node: prose, hasComic: false, destroy: () => markdown?.destroy() };
+  }
+  const nodes = [holder];
+  if (markdown) {
+    const fold = make('details', 'cm-story-text');
+    fold.append(make('summary', '', 'Read the story as text'), prose);
+    nodes.push(fold);
+  }
+  const node = make('div', 'cm-story');
+  node.append(...nodes);
+  return {
+    node,
+    hasComic: true,
+    destroy() {
+      comic.destroy();
+      markdown?.destroy();
+    },
+  };
 }
 
 /** Moves focus to a screen's heading (it has tabindex -1) so the change is announced. */

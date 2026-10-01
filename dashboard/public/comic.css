@@ -1,0 +1,284 @@
+/*
+ * The motion comic (dashboard/src/comic.js): a camera frame on the learner's
+ * story, in the landing page's language: a navy window, a cream comic page,
+ * thick navy outlines, Funnel Display for the big words, JetBrains Mono on the
+ * screens, pill buttons like the rest of the console.
+ *
+ * The comic's colours are the three token blocks just below (light, dark under
+ * prefers-color-scheme, dark under data-theme), the same arrangement as
+ * styles.css; the two dark blocks must stay identical. scripts/contrast-check.mjs
+ * asserts that, checks every pair of text and ground named here in both themes,
+ * and fails if any other rule in this file names a colour. The people's own
+ * colours (skin, hair, shirts) are drawn in comic-art.js and are the same in both.
+ *
+ * The motion is driven by the clock in comic.js; CSS only eases the flip of a
+ * class (a panel popping in, a word appearing) and loops the ambient bits of the
+ * art (bobbing, blinking, twinkling). All of that is switched off for reduced
+ * motion, for a finished comic and for the test clock (?comicTest=1).
+ */
+
+:root {
+  --cm-ink: #0a0f2c;
+  --cm-edge: #0a0f2c;
+  --cm-shadow: #0a0f2c;
+  --cm-paper: #fffaf0;
+  --cm-fg-paper: #0a0f2c;
+  --cm-chip-bg: #0a0f2c;
+  --cm-chip-fg: #ffffff;
+  --cm-stage: #0a0f2c;
+  --cm-stage-line: #1c2446;
+  --cm-stage-bar: #9aabff;
+  --cm-bubble: #ffffff;
+  --cm-caption: #fff3b0;
+  --cm-sfx: #ffd84a;
+  --cm-screen-bg: #070b22;
+  --cm-screen-text: #9aabff;
+  --cm-screen-out: #e8ebf7;
+  --cm-screen-ok: #7fe3a8;
+  --cm-screen-warn: #ffb86b;
+  --cm-bg-ice: #e6ebff;
+  --cm-bg-sand: #fbeed3;
+  --cm-bg-mint: #dcf4f0;
+  --cm-bg-navy: #0a0f2c;
+  --cm-bg-lilac: #eee6fe;
+  --cm-bg-cobalt: #3552f2;
+  --cm-bg-rose: #fde4ea;
+  --cm-fg-ice: #0a0f2c;
+  --cm-fg-sand: #0a0f2c;
+  --cm-fg-mint: #0a0f2c;
+  --cm-fg-navy: #ffffff;
+  --cm-fg-lilac: #0a0f2c;
+  --cm-fg-cobalt: #ffffff;
+  --cm-fg-rose: #0a0f2c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --cm-edge: #8ea2ff;
+    --cm-shadow: #050819;
+    --cm-paper: #0e1330;
+    --cm-fg-paper: #e8ebf7;
+    --cm-chip-bg: #3552f2;
+    --cm-stage: #050819;
+    --cm-bg-ice: #182456;
+    --cm-bg-sand: #33230a;
+    --cm-bg-mint: #0c2f2c;
+    --cm-bg-navy: #050819;
+    --cm-bg-lilac: #261648;
+    --cm-bg-rose: #3a1220;
+    --cm-fg-ice: #e8ebf7;
+    --cm-fg-sand: #e8ebf7;
+    --cm-fg-mint: #e8ebf7;
+    --cm-fg-navy: #e8ebf7;
+    --cm-fg-lilac: #e8ebf7;
+    --cm-fg-rose: #e8ebf7;
+  }
+}
+
+:root[data-theme="dark"] {
+  --cm-edge: #8ea2ff;
+  --cm-shadow: #050819;
+  --cm-paper: #0e1330;
+  --cm-fg-paper: #e8ebf7;
+  --cm-chip-bg: #3552f2;
+  --cm-stage: #050819;
+  --cm-bg-ice: #182456;
+  --cm-bg-sand: #33230a;
+  --cm-bg-mint: #0c2f2c;
+  --cm-bg-navy: #050819;
+  --cm-bg-lilac: #261648;
+  --cm-bg-rose: #3a1220;
+  --cm-fg-ice: #e8ebf7;
+  --cm-fg-sand: #e8ebf7;
+  --cm-fg-mint: #e8ebf7;
+  --cm-fg-navy: #e8ebf7;
+  --cm-fg-lilac: #e8ebf7;
+  --cm-fg-rose: #e8ebf7;
+}
+
+/* ---------- the player ---------- */
+.cm { display: block; min-width: 0; margin: 0 0 var(--s4); }
+
+/* The frame: as wide as its container; comic.js sets its height (it grows to the whole comic at the end). */
+.cm-stage {
+  position: relative; width: 100%; min-height: 120px; overflow: hidden; contain: paint;
+  border-radius: 26px; background: var(--cm-stage); border: 1px solid var(--cm-stage-line);
+  box-shadow: var(--shadow);
+}
+.cm-view { position: absolute; inset: 0; overflow: hidden; }
+/* The reel is every page of the comic in the page's own units; the camera is its transform. */
+.cm-reel { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; font-family: var(--sans); }
+.cm-sheet { position: absolute; background: var(--cm-paper); border-radius: 10px; box-shadow: var(--shadow-sm); }
+.cm-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; z-index: 5; background: color-mix(in srgb, var(--cm-stage-bar) 22%, transparent); }
+.cm-bar > span { display: block; height: 100%; background: var(--cm-stage-bar); width: 0; }
+
+/* A page's title card. */
+.cm-banner { position: absolute; display: flex; align-items: center; gap: 18px; opacity: 0; transition: opacity 0.5s ease; }
+.cm-banner.on { opacity: 1; }
+.cm-banner-n {
+  flex: none; padding: 7px 16px; border-radius: 999px; background: var(--cm-chip-bg); color: var(--cm-chip-fg);
+  font: 700 20px/1 var(--sans); letter-spacing: 0.12em; text-transform: uppercase;
+}
+.cm-banner-t { min-width: 0; font: 800 40px/1 var(--display); letter-spacing: -0.04em; color: var(--cm-fg-paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- a panel ---------- */
+.cm-panel {
+  position: absolute; margin: 0; overflow: hidden;
+  border: 4px solid var(--cm-edge); border-radius: 20px; box-shadow: 8px 8px 0 var(--cm-shadow);
+  background: var(--cm-pbg); color: var(--cm-pfg);
+  opacity: 0; transition: opacity 0.35s ease, transform 0.6s cubic-bezier(0.2, 1.25, 0.3, 1);
+}
+.cm-bg-ice { --cm-pbg: var(--cm-bg-ice); --cm-pfg: var(--cm-fg-ice); }
+.cm-bg-sand { --cm-pbg: var(--cm-bg-sand); --cm-pfg: var(--cm-fg-sand); }
+.cm-bg-mint { --cm-pbg: var(--cm-bg-mint); --cm-pfg: var(--cm-fg-mint); }
+.cm-bg-navy { --cm-pbg: var(--cm-bg-navy); --cm-pfg: var(--cm-fg-navy); }
+.cm-bg-lilac { --cm-pbg: var(--cm-bg-lilac); --cm-pfg: var(--cm-fg-lilac); }
+.cm-bg-cobalt { --cm-pbg: var(--cm-bg-cobalt); --cm-pfg: var(--cm-fg-cobalt); }
+.cm-bg-rose { --cm-pbg: var(--cm-bg-rose); --cm-pfg: var(--cm-fg-rose); }
+.cm-enter-left { transform: translateX(-90px) rotate(-3deg); }
+.cm-enter-top { transform: translateY(-90px) rotate(2deg); }
+.cm-enter-right { transform: translateX(90px) rotate(3deg); }
+.cm-enter-zoom { transform: scale(0.55); }
+.cm-enter-up { transform: translateY(80px) rotate(-2deg); }
+.cm-panel.on { opacity: 1; transform: none; }
+.cm-panel.shake { animation: cm-shake 0.55s both; }
+.cm-halftone {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(color-mix(in srgb, var(--cm-ink) 13%, transparent) 1.6px, transparent 1.7px);
+  background-size: 14px 14px; animation: cm-drift 12s linear infinite;
+}
+.cm-art { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+
+/* Caption: the yellow strip along the foot. */
+.cm-cap {
+  position: absolute; left: 12px; bottom: 12px; max-width: calc(100% - 24px);
+  padding: 0.5em 0.85em; background: var(--cm-caption); color: var(--cm-ink);
+  border: 3px solid var(--cm-ink); border-radius: 6px; box-shadow: 3px 3px 0 var(--cm-ink);
+  font: 700 calc(13px * var(--tt, 1))/1.25 var(--sans); letter-spacing: 0.06em; text-transform: uppercase;
+  opacity: 0; transform: translateX(-24px); transition: opacity 0.4s ease, transform 0.5s cubic-bezier(0.2, 1.3, 0.3, 1);
+}
+.cm-scene-desk .cm-cap, .cm-scene-screen .cm-cap { max-width: 56%; }
+.cm-cap.on { opacity: 1; transform: none; }
+
+/* The closing panel's big words. */
+.cm-display {
+  position: absolute; left: 67%; right: 3%; top: 50%; margin: 0;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.08em;
+  font: 800 64px/1.02 var(--display); letter-spacing: -0.015em; color: var(--cm-pfg); white-space: nowrap;
+  opacity: 0; transform: translateY(-40%) scale(0.9); transform-origin: 0 50%;
+  transition: opacity 0.4s ease, transform 0.6s cubic-bezier(0.2, 1.3, 0.3, 1);
+}
+.cm-display.on { opacity: 1; transform: translateY(-50%); }
+.cm-display-b { padding: 0 0.16em; border-radius: 0.2em; background: var(--cm-caption); color: var(--cm-ink); }
+
+/* Speech bubbles: words appear as the clock reaches them. */
+.cm-bub {
+  --bw: 62%;
+  position: absolute; max-width: var(--bw); padding: 0.7em 0.95em;
+  background: var(--cm-bubble); color: var(--cm-ink);
+  border: 3px solid var(--cm-ink); border-radius: 22px; box-shadow: 3px 3px 0 var(--cm-ink);
+  font: 600 calc(15px * var(--ts, 1))/1.35 var(--sans);
+  opacity: 0; transform: scale(0.5) translateY(14px); transform-origin: 20% 100%;
+  transition: opacity 0.25s ease, transform 0.45s cubic-bezier(0.2, 1.6, 0.3, 1);
+}
+.cm-scene-desk .cm-bub, .cm-scene-screen .cm-bub, .cm-scene-you .cm-bub { --bw: 58%; }
+.cm-scene-duo .cm-bub { --bw: 48%; }
+.cm-scene-duo .cm-pos-tr { top: 96px; }
+.cm-bub.on { opacity: 1; transform: none; }
+.cm-bub::after {
+  content: ''; position: absolute; left: 1.6em; bottom: -0.62em; width: 0.9em; height: 0.9em;
+  background: var(--cm-bubble); border-right: 3px solid var(--cm-ink); border-bottom: 3px solid var(--cm-ink); transform: rotate(45deg);
+}
+.cm-pos-tr::after, .cm-pos-br::after { left: auto; right: 1.8em; }
+.cm-pos-tl { left: 12px; top: 26px; }
+.cm-pos-tr { right: 12px; top: 26px; }
+.cm-pos-bl { left: 12px; bottom: calc(34px + 30px * var(--ts, 1)); }
+.cm-pos-br { right: 12px; bottom: calc(34px + 30px * var(--ts, 1)); }
+.cm-pos-tr, .cm-pos-br { transform-origin: 80% 100%; }
+.cm-tag {
+  position: absolute; left: 0.9em; top: -0.95em; padding: 0.12em 0.65em; border-radius: 999px;
+  background: var(--cm-ink); color: var(--cm-bubble);
+  font: 700 calc(12px * var(--tt, 1))/1.3 var(--sans); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.cm-w { display: inline-block; white-space: pre; opacity: 0; transform: translateY(6px); transition: opacity 0.18s ease, transform 0.18s ease; }
+.cm-w.on { opacity: 1; transform: none; }
+
+/* Sound effect. */
+.cm-sfx {
+  position: absolute; font: 800 min(46px, calc(290px / (0.62 * var(--sfxlen, 6))))/1 var(--display); letter-spacing: -0.03em; color: var(--cm-sfx);
+  -webkit-text-stroke: 3px var(--cm-ink); paint-order: stroke fill;
+  opacity: 0; transform: rotate(-8deg) scale(2.6); transition: opacity 0.15s ease, transform 0.5s cubic-bezier(0.2, 1.7, 0.3, 1);
+}
+.cm-sfx.on { opacity: 1; transform: rotate(-8deg) scale(1); }
+.cm-scene-message .cm-sfx { left: 16px; bottom: 22px; }
+.cm-scene-portrait .cm-sfx { right: 12px; top: 128px; }
+.cm-scene-desk .cm-sfx { right: 22px; top: 18px; }
+
+/* A screen's text, typed line by line: a box over the art, sized by the art's own screen. */
+.cm-lines { position: absolute; container-type: inline-size; overflow: hidden; }
+.cm-lines-in {
+  display: flex; flex-direction: column; gap: 0.3em;
+  font: 600 min(calc(18px * var(--ts, 1)), calc(100cqw / (0.62 * var(--maxlen, 30))))/1.35 var(--mono);
+}
+.cm-line { white-space: pre; opacity: 0; color: var(--cm-screen-out); }
+.cm-line.on { opacity: 1; }
+.cm-line[data-kind="cmd"] { color: var(--cm-screen-text); }
+.cm-line[data-kind="ok"] { color: var(--cm-screen-ok); }
+.cm-line[data-kind="warn"] { color: var(--cm-screen-warn); }
+
+/* A narrow container's camera is in on the screen: what lies outside it steps back rather than be cut in half. */
+.cm-panel.focus .cm-bub, .cm-panel.focus .cm-cap, .cm-panel.focus .cm-sfx, .cm-panel.focus .cm-display { opacity: 0; }
+
+/* ---------- ambient loops of the art ---------- */
+.cm-char { transform-box: fill-box; transform-origin: 50% 100%; animation: cm-bob 3.2s ease-in-out infinite; }
+.cm-char.cm-tilt, .cm-char.cm-lean { animation: cm-bob 3.2s ease-in-out infinite, cm-lean 4.6s ease-in-out infinite; }
+.cm-eye { transform-box: fill-box; transform-origin: center; animation: cm-blink 4.2s infinite; }
+.cm-mouth { transform-box: fill-box; transform-origin: center; }
+.cm-char.speaking .cm-mouth { animation: cm-talk 0.26s ease-in-out infinite alternate; }
+.cm-twinkle { transform-box: fill-box; transform-origin: center; animation: cm-tw 1.8s ease-in-out infinite; }
+.cm-rays { transform-box: fill-box; transform-origin: center; animation: cm-spin 40s linear infinite; }
+.cm-trail { stroke-dasharray: 6 8; animation: cm-dash 0.6s linear infinite; }
+.cm-scan { animation: cm-scan 3.2s linear infinite; }
+.cm-panel.on .cm-fly { animation: cm-flyin 0.9s 0.1s cubic-bezier(0.2, 1, 0.3, 1) both; }
+@keyframes cm-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes cm-lean { 0%, 100% { rotate: -1.6deg; } 50% { rotate: 1.8deg; } }
+@keyframes cm-blink { 0%, 91%, 100% { transform: scaleY(1); } 94% { transform: scaleY(0.08); } }
+@keyframes cm-talk { from { transform: scaleY(1); } to { transform: scaleY(1.9); } }
+@keyframes cm-tw { 0%, 100% { opacity: 0.2; transform: scale(0.6); } 50% { opacity: 1; transform: scale(1.2); } }
+@keyframes cm-spin { to { transform: rotate(360deg); } }
+@keyframes cm-dash { to { stroke-dashoffset: -14; } }
+@keyframes cm-scan { from { transform: translateY(0); opacity: 0; } 10% { opacity: 0.5; } to { transform: translateY(170px); opacity: 0; } }
+@keyframes cm-drift { to { background-position: 28px 14px; } }
+@keyframes cm-flyin { 0% { transform: translate(-150px, 60px) rotate(-22deg); opacity: 0; } 25% { opacity: 1; } 70% { transform: translate(8px, -6px) rotate(4deg); } 100% { transform: none; opacity: 1; } }
+@keyframes cm-shake {
+  0%, 100% { transform: none; } 15% { transform: translate(-7px, 3px) rotate(-0.6deg); } 30% { transform: translate(6px, -4px) rotate(0.5deg); }
+  45% { transform: translate(-5px, 2px); } 60% { transform: translate(4px, -2px); } 80% { transform: translate(-2px, 1px); }
+}
+
+/* Still: a finished comic, reduced motion and the test clock hold every loop and every ease. */
+.cm[data-state="done"] .cm-reel *, .cm[data-reduced] .cm-reel *, .cm[data-test] .cm-reel * { animation: none !important; }
+.cm[data-reduced] .cm-reel *, .cm[data-test] .cm-reel * { transition: none !important; }
+.cm[data-state="done"] .cm-panel, .cm[data-state="done"] .cm-banner { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .cm-reel * { animation: none !important; transition: none !important; }
+}
+
+/* ---------- Replay and Skip, the timecode, the text version ---------- */
+.cm-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-top: var(--s4); }
+.cm-btn { gap: 8px; }
+.cm .cm-btn, .learn-screen .cm .cm-btn, .guide .cm .cm-btn { min-height: 44px; padding: 0 20px; border-radius: 999px; font-size: 15px; height: auto; }
+.cm-btn:disabled { cursor: default; }
+.cm-time { margin-left: auto; font: 500 12.5px/1 var(--mono); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+
+.cm-text, .cm-story-text { margin-top: var(--s4); border: 1px solid var(--border); border-radius: 16px; background: var(--surface-2); }
+.cm-text > summary, .cm-story-text > summary { padding: 12px 16px; cursor: pointer; font-weight: 600; font-size: 14.5px; color: var(--ink-2); border-radius: 16px; }
+.cm-text > summary:hover, .cm-story-text > summary:hover { color: var(--ink); }
+.cm-text[open] > summary, .cm-story-text[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.cm-transcript { margin: 0; padding: 4px 16px 16px; list-style: none; display: flex; flex-direction: column; gap: 8px; color: var(--ink-2); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.cm-story-text > .learn-prose, .cm-story-text > .markdown-body { padding: 4px 16px 8px; }
+
+/* A story that is a comic gets a wider card on the Before you begin screen. */
+.learn-wrap.learn-wrap-comic { max-width: 1100px; }
+@media (max-width: 760px) {
+  .cm-stage { border-radius: 20px; }
+}

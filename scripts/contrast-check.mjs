@@ -16,7 +16,10 @@
 // mirror of the accents must equal packages/design, and every colour pair the
 // console draws as text (4.5:1) or as a boundary or fill that must be seen
 // (3:1) is checked in both themes. No colour may be named outside the token
-// blocks of styles.css (learn.css and session.css included).
+// blocks of styles.css (learn.css and session.css included). The motion comic
+// (dashboard/public/comic.css) keeps its own token blocks, arranged the same
+// way; its text-on-ground pairs are checked below and it too may name no colour
+// outside them.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -313,6 +316,12 @@ const consolePairs = [
   ["win-ok", "win-strip", 4.5, "saved, on the editor's toolbar"],
   ["accent-on-dark", "navy-deep", 3.0, "the focus ring inside the window"],
   ["accent-fill", "navy-deep", 3.0, "the selected window tab against the window"],
+  // The motion comic's two buttons and its timecode, on the learning card and in the guide.
+  ["ink", "surface", 4.5, "Replay, the comic's outlined button"],
+  ["on-strong", "strong", 4.5, "Skip, the comic's navy button"],
+  ["ink-muted", "surface", 4.5, "the comic's timecode"],
+  ["ink-muted", "surface-2", 4.5, "the comic's timecode in the guide"],
+  ["ink-2", "surface-2", 4.5, "Read as text, and the transcript under the comic"],
   ["win-ok", "navy-deep", 3.0, "a healthy service's dot"],
   ["win-warn", "navy-deep", 3.0, "a restarting service's dot"],
 ];
@@ -365,6 +374,77 @@ for (const [theme, tokens] of Object.entries(consoleThemes)) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The motion comic (dashboard/public/comic.css): its own token blocks, the same
+// three as the console's (light, dark under prefers-color-scheme, dark under
+// data-theme), and every pair of text and ground it draws, in each theme.
+{
+  const comicCss = readFileSync(join(root, "dashboard/public/comic.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const grab = (re, label) => {
+    const m = comicCss.match(re);
+    if (!m) {
+      console.error(`FAIL: could not find the ${label} block in dashboard/public/comic.css`);
+      process.exit(1);
+    }
+    return m[1];
+  };
+  const cmLightBody = grab(/^:root\s*\{([^}]*)\}/m, "comic :root (light)");
+  const cmAttrBody = grab(/:root\[data-theme="dark"\]\s*\{([^}]*)\}/, 'comic [data-theme="dark"]');
+  const cmMediaBody = grab(/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root:not\(\[data-theme\]\)\s*\{([^}]*)\}/, "comic dark @media");
+  if (norm(cmMediaBody) !== norm(cmAttrBody)) {
+    console.error('\nFAIL: the comic\'s dark @media block and [data-theme="dark"] block differ');
+    failed++;
+  } else {
+    console.log('\ncomic dark @media block and [data-theme="dark"] block are identical: ok');
+  }
+  const cmLight = hexTokens(cmLightBody);
+  const comicThemes = {
+    light: cmLight,
+    "dark (attr)": { ...cmLight, ...hexTokens(cmAttrBody) },
+    "dark (media)": { ...cmLight, ...hexTokens(cmMediaBody) },
+  };
+  const grounds = ["ice", "sand", "mint", "navy", "lilac", "cobalt", "rose"];
+  const comicPairs = [
+    ...grounds.map((n) => [`fg-${n}`, `bg-${n}`, 4.5, `words drawn straight on the ${n} panel`]),
+    ["ink", "bubble", 4.5, "speech bubble text"],
+    ["ink", "caption", 4.5, "caption text, the highlighted word of the closing panel"],
+    ["bubble", "ink", 4.5, "a speaker's name tag"],
+    ["chip-fg", "chip-bg", 4.5, "the page number on a title card"],
+    ["fg-paper", "paper", 4.5, "a page's title card"],
+    ["screen-text", "screen-bg", 4.5, "a typed command on a screen"],
+    ["screen-out", "screen-bg", 4.5, "a screen's output"],
+    ["screen-ok", "screen-bg", 4.5, "a screen's success line"],
+    ["screen-warn", "screen-bg", 4.5, "a screen's warning line"],
+    ["sfx", "ink", 4.5, "a sound effect's fill against its outline"],
+    ["edge", "paper", 3.0, "a panel's border against the page"],
+    ["stage-bar", "stage", 3.0, "the progress bar against the frame"],
+  ];
+  const cmRows = [["comic theme", "pair", "ratio", "min", "ok"]];
+  for (const [theme, tokens] of Object.entries(comicThemes)) {
+    for (const [fg, bg, min, what] of comicPairs) {
+      const a = tokens[`cm-${fg}`];
+      const b = tokens[`cm-${bg}`];
+      const r = a && b ? ratio(a, b) : 0;
+      const ok = Boolean(a && b && r >= min);
+      if (!ok) failed++;
+      cmRows.push([theme, `${fg} on ${bg} (${what})`, a && b ? r.toFixed(2) : "missing", String(min), ok ? "ok" : "FAIL"]);
+    }
+    // A sound effect is large text with a thick outline: it must stand out from the panel by its fill or by its outline.
+    for (const n of grounds) {
+      const sfx = tokens["cm-sfx"];
+      const ink = tokens["cm-ink"];
+      const bg = tokens[`cm-bg-${n}`];
+      const r = sfx && ink && bg ? Math.max(ratio(sfx, bg), ratio(ink, bg)) : 0;
+      const ok = r >= 3;
+      if (!ok) failed++;
+      cmRows.push([theme, `sfx or its outline on bg-${n} (a sound effect on the ${n} panel)`, r.toFixed(2), "3", ok ? "ok" : "FAIL"]);
+    }
+  }
+  const cw = cmRows[0].map((_, i) => Math.max(...cmRows.map((r) => r[i].length)));
+  console.log("");
+  for (const r of cmRows) console.log(r.map((c, i) => c.padEnd(cw[i])).join("  ").trimEnd());
+}
+
 // Nothing but the token blocks may name a colour: every other rule reads a variable.
 {
   const stripped = (css) =>
@@ -373,7 +453,7 @@ for (const [theme, tokens] of Object.entries(consoleThemes)) {
       .replace(/^:root\s*\{[^}]*\}/m, "")
       .replace(/:root\[data-theme="dark"\]\s*\{[^}]*\}/, "")
       .replace(/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root:not\(\[data-theme\]\)\s*\{[^}]*\}\s*\}/, "");
-  for (const file of ["styles.css", "learn.css", "session.css"]) {
+  for (const file of ["styles.css", "learn.css", "session.css", "comic.css"]) {
     const body = stripped(readFileSync(join(root, "dashboard/public", file), "utf8"));
     const strays = [];
     for (const m of body.matchAll(/\{([^{}]*)\}/g)) {

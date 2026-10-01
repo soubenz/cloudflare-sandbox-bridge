@@ -16,8 +16,7 @@
 
 import { lessonReason, planLessons, readingTime } from './learn-model.js';
 import { reasonChip } from './before-you-begin.js';
-import { lessonCard, make } from './learn-ui.js';
-import { mountMarkdown } from './markdown.js';
+import { lessonCard, make, storyContent } from './learn-ui.js';
 
 /** Whether a bundle has a story / lessons / anything for the guide's learning tabs. */
 export const hasStory = (learn) => Boolean(learn?.story);
@@ -33,9 +32,9 @@ function storySection(learn) {
   section.append(title);
   const meta = readingTime(learn.story.minutes);
   if (meta) section.append(make('p', 'learn-meta', meta));
-  const body = make('div', 'learn-prose story-quote');
-  const markdown = mountMarkdown(body, learn.story.body, { headingLevel: 3 });
-  section.append(body);
+  // The motion comic with the text folded under it, or the text story alone (also the fallback if the comic cannot play).
+  const markdown = storyContent(learn, { headingLevel: 3 });
+  section.append(markdown.node);
   return { section, markdown };
 }
 

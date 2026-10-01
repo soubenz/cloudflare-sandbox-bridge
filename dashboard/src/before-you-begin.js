@@ -24,9 +24,8 @@ import {
   recordDiagnostic,
   setOverride,
 } from './learn-model.js';
-import { actionBar, button, focusHeading, lessonCard, make, questionScreen, screenHead, show } from './learn-ui.js';
+import { actionBar, button, focusHeading, lessonCard, make, questionScreen, screenHead, show, storyContent } from './learn-ui.js';
 import { uiIcon } from './icons.js';
-import { mountMarkdown } from './markdown.js';
 
 /** The short tag on a lesson that says why it starts the way it does. */
 export function reasonChip(reason) {
@@ -62,7 +61,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
   // The steps of this lab's screen, fixed now so the bar does not change length part-way:
   // the story (if it has one), the questions (if any are due), and the plan.
   const stages = [
-    ...(learn.story ? ['story'] : []),
+    ...(learn.story || learn.comic ? ['story'] : []),
     ...(diagnosticQuestions(learn, store.get()).length > 0 ? ['questions'] : []),
     'plan',
   ];
@@ -77,6 +76,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     cards = [];
     prose?.destroy();
     prose = null;
+    host.classList.remove('learn-wrap-comic');
   };
 
   async function start() {
@@ -121,11 +121,12 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
 
   function story() {
     cleanup();
-    const s = learn.story;
+    const s = learn.story ?? { title: learn.comic.title, minutes: 0 };
     const more = diagnosticQuestions(learn, store.get()).length > 0 || learn.concepts.length > 0;
-    prose = null;
-    const body = make('div', 'learn-prose');
-    prose = mountMarkdown(body, s.body, { headingLevel: 2 });
+    // The motion comic when the lab has one, with the text story folded under it; the text alone otherwise.
+    prose = storyContent(learn, { headingLevel: 2 });
+    const body = prose.node;
+    host.classList.toggle('learn-wrap-comic', prose.hasComic);
     const next = button(more ? 'Continue' : 'Start the lab', {
       kind: 'accent',
       onClick: more ? questions : start,
@@ -134,7 +135,6 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     next.classList.add('btn-lg');
     next.append(uiIcon('arrow', 16));
     if (!more) next.dataset.start = 'primary';
-    body.classList.add('story-quote');
     show(
       host,
       screenHead({ eyebrow: eyebrow(), title: s.title, meta: readingTime(s.minutes), badge: 'Case file', steps: steps('story') }),
@@ -248,7 +248,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
 
   // --- go -------------------------------------------------------------------
 
-  if (learn.story) story();
+  if (learn.story || learn.comic) story();
   else questions();
 
   return {
