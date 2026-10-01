@@ -12,13 +12,28 @@ import {
   summaryLine,
 } from './launcher-model.js';
 import { isPhoneLike, readDevice } from './device.js';
-import { icon, uiIcon } from './icons.js';
+import { icon, spriteIcon, uiIcon } from './icons.js';
 import { createMasteryStore, normalizeLearn, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
 import { runOnboarding } from './onboarding.js';
 import { runBeforeYouBegin } from './before-you-begin.js';
-import { buildLearnTab, hasLearnContent } from './learn-tab.js';
+import { buildLessonsTab, buildStoryTab, hasLessons, hasStory } from './learn-tab.js';
 import { mountQuestionsForm } from './questions-form.js';
 import { SAFE_FILE } from './answers-file.js';
+import {
+  GUIDE_TABS,
+  answerDots,
+  checkDots,
+  defaultGuideOpen,
+  dockAction,
+  dockKind,
+  dockProgressText,
+  guideTabsFor,
+  hintCountdown,
+  railLabel,
+  roveIndex,
+  tabBadge,
+  windowTitle,
+} from './session-layout.js';
 // The presentation copy of every path and module: title, intro, skills, icon
 // and accent. The public /labs page reads the same file.
 import pathMeta from '../../packages/catalogue/paths.json';
@@ -116,6 +131,14 @@ const state = {
   idleTimer: 0,
   /** setInterval id of the resume card's "m:ss left". */
   resumeTimer: 0,
+  /** The service whose page is loaded in the frame (`service` is the one selected). */
+  loadedService: null,
+  /** The workspace view showing ('terminal', 'editor' or 'service'). */
+  view: 'editor',
+  /** The latest run's results, for the dock's dots. */
+  lastResults: null,
+  /** The session has been taken to where its lab starts (a service's page, for an explore lab). */
+  landed: false,
 };
 
 // ------------------------------------------------------------------ toast
@@ -1235,23 +1258,25 @@ async function initLearning() {
 // --- in a session
 
 /** What the running session shows of its lab's bundle. */
-const learnSession = { id: '', tab: null, form: null };
+const learnSession = { id: '', learn: null, story: null, lessons: null, form: null };
 
-/** Removes the Learn and Questions tabs and everything behind them. */
+/** Removes the guide's Story, Lessons and Questions and everything behind them. */
 function resetLearnSession() {
-  learnSession.tab?.destroy();
+  learnSession.story?.destroy();
+  learnSession.lessons?.destroy();
   learnSession.form?.destroy();
-  learnSession.tab = null;
+  learnSession.learn = null;
+  learnSession.story = null;
+  learnSession.lessons = null;
   learnSession.form = null;
   learnSession.id = '';
-  for (const id of ['tabLearn', 'tabQuestions']) $(id).hidden = true;
-  for (const id of ['viewLearn', 'viewQuestions']) $(id).classList.remove('view-active');
+  for (const id of ['storyBody', 'lessonsBody', 'questionsBody']) $(id).replaceChildren();
 }
 
 /**
- * Builds the Learn tab (story and lessons) and, for a lab with graded fields,
- * the Questions tab. Called once the session is running; a restart of the
- * container reuses what is there so unsaved answers are not lost.
+ * Builds the guide's Story and Lessons and, for a lab with graded fields, its
+ * Questions. Called once the session is running; a restart of the container
+ * reuses what is there so unsaved answers are not lost.
  */
 async function loadLearn() {
   const session = state.session;
@@ -1264,18 +1289,34 @@ async function loadLearn() {
   if (!entry || state.session !== session || learnSession.id === session.id) return;
   learnSession.id = session.id;
   const { learn } = entry;
+  learnSession.learn = learn;
 
-  if (hasLearnContent(learn)) {
-    learnSession.tab = buildLearnTab($('learnBody'), { learn, mastery: mastery.get() });
-    $('tabLearn').hidden = false;
+  const questions = learn.fields.length > 0 && SAFE_FILE.test(learn.answers_file);
+  const tabs = guideTabsFor({ type: state.lab?.type, story: hasStory(learn), lessons: hasLessons(learn), questions });
+  if (tabs.includes('story')) learnSession.story = buildStoryTab($('storyBody'), { learn });
+  if (tabs.includes('lessons')) {
+    learnSession.lessons = buildLessonsTab($('lessonsBody'), {
+      learn,
+      mastery: mastery.get(),
+      withStory: !tabs.includes('story'),
+      onProgress: (p) => {
+        guide.lessons = p;
+        updateBadges();
+      },
+    });
   }
 
-  if (learn.fields.length > 0 && SAFE_FILE.test(learn.answers_file)) {
+  if (questions) {
     const file = learn.answers_file;
     const current = () => state.session;
     learnSession.form = mountQuestionsForm($('questionsBody'), {
       fields: learn.fields,
       file,
+      onProgress: (p) => {
+        guide.answers = p;
+        updateBadges();
+        renderDock();
+      },
       io: {
         read: async () => {
           const s = current();
@@ -1303,9 +1344,297 @@ async function loadLearn() {
         return run?.results?.length ? `Latest run: ${summaryText(tally(run.results))}` : 'The checks could not run. See the Checks panel.';
       },
     });
-    $('tabQuestions').hidden = false;
     learnSession.form.reload();
   }
+}
+
+// ------------------------------------------------------------ the guide
+
+/*
+ * The guide is the reading pane beside the workspace: a tablist of the lab's
+ * Story, Lessons, Brief, Questions, Checks, Hints and Solution (session-layout.js
+ * says which a lab has and in what order). It can be hidden, and then a rail of
+ * icons stands in for it; each icon reopens it on that tab. Whether it is open
+ * is decided when a lab starts (from the window's width) and is never
+ * remembered: every lab opens with its guide open on a wide screen.
+ */
+
+const guide = {
+  open: true,
+  /** The active tab's id, and every tab the lab has, in order. */
+  tab: null,
+  tabs: [],
+  /** The lab's learn bundle has been looked at (or there is none), so the tabs are final. */
+  ready: false,
+  lessons: { read: 0, total: 0 },
+  answers: { answered: 0, total: 0 },
+  checks: { passed: 0, count: 0 },
+  /** 'checks', or 'answers' for a lab graded through its questions. */
+  kind: 'checks',
+};
+
+const GUIDE_PANEL = {
+  story: 'viewStory',
+  lessons: 'viewLessons',
+  brief: 'viewBrief',
+  questions: 'viewQuestions',
+  checks: 'viewChecks',
+  hints: 'viewHints',
+  solution: 'viewSolution',
+};
+const RAIL_ICON = {
+  story: 'i-story',
+  lessons: 'i-cap',
+  brief: 'i-list',
+  questions: 'i-question',
+  checks: 'i-checks',
+  hints: 'i-bulb',
+  solution: 'i-key',
+};
+const VISIBLE_BADGES = new Set(['lessons', 'questions', 'checks']);
+const guideTab = (id) => $(`tab${id[0].toUpperCase()}${id.slice(1)}`);
+
+/** A status line for screen readers: the checks' outcome, a finished lab. */
+function announce(text) {
+  $('sessionLive').textContent = '';
+  // Set on the next turn so the same words said twice are still said.
+  setTimeout(() => ($('sessionLive').textContent = text), 50);
+}
+
+/** Opens or hides the guide. Focus is the caller's business (what it moves to depends on what was pressed). */
+function setGuideOpen(open) {
+  guide.open = open;
+  $('workspace').dataset.guide = open ? 'open' : 'closed';
+  $('guide').hidden = !open;
+  $('guideRail').hidden = open;
+  const toggle = $('btnGuideToggle');
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.querySelector('.btn-label').textContent = open ? 'Hide guide' : 'Show guide';
+}
+
+/** Shows one tab's panel. `reveal` opens a hidden guide on it; `focus` puts the keyboard on the tab. */
+function showGuideTab(id, { reveal = false, focus = false } = {}) {
+  if (!guide.tabs.includes(id)) return;
+  const changed = guide.tab !== id;
+  guide.tab = id;
+  for (const key of Object.keys(GUIDE_TABS)) {
+    const tab = guideTab(key);
+    const on = key === id;
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+    tab.classList.toggle('tab-active', on);
+    $(GUIDE_PANEL[key]).classList.toggle('gview-active', on);
+  }
+  for (const b of $('railTabs').children) {
+    if (b.dataset.railTab === id) b.setAttribute('aria-current', 'true');
+    else b.removeAttribute('aria-current');
+  }
+  if (reveal && !guide.open) setGuideOpen(true);
+  if (changed) $('guideBody').scrollTop = 0;
+  const tab = guideTab(id);
+  if (guide.open) tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (focus) tab.focus();
+  // Answers may have been edited in the editor since the form last looked.
+  if (id === 'questions') learnSession.form?.reload();
+}
+
+/** The badges on the tabs and the rail, from what the session knows now. */
+function updateBadges() {
+  const hints = state.hints;
+  const ctx = {
+    lessons: guide.lessons,
+    questions: guide.answers,
+    checks: guide.checks,
+    hints: { delivered: hints?.delivered.length ?? 0, slots: hints ? hintSlots(hints) : 0 },
+    solution: { unlocked: state.solution ? solutionUnlocked(state.solution) : undefined },
+  };
+  for (const id of Object.keys(GUIDE_TABS)) {
+    const badge = tabBadge(id, ctx[id]);
+    const tab = guideTab(id);
+    const chip = tab.querySelector('.gtab-badge');
+    // Hints and the Solution say their count and state to a screen reader and in the dock; the tab stays plain.
+    const drawn = VISIBLE_BADGES.has(id) ? badge?.text : '';
+    chip.textContent = drawn ?? '';
+    chip.hidden = !drawn;
+    chip.setAttribute('aria-hidden', 'true');
+    tab.setAttribute('aria-label', railLabel(id, badge));
+    const rail = [...$('railTabs').children].find((b) => b.dataset.railTab === id);
+    if (rail) {
+      rail.setAttribute('aria-label', railLabel(id, badge));
+      const chip2 = rail.querySelector('.rail-badge');
+      chip2.textContent = drawn ?? '';
+      chip2.hidden = !drawn;
+    }
+  }
+}
+
+/** The rail's icons, one per tab the lab has. */
+function renderRail() {
+  const host = $('railTabs');
+  host.replaceChildren();
+  for (const id of guide.tabs) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'rail-btn rail-tab';
+    button.dataset.railTab = id;
+    button.append(spriteIcon(RAIL_ICON[id], 20));
+    const chip = document.createElement('span');
+    chip.className = 'rail-badge';
+    chip.setAttribute('aria-hidden', 'true');
+    button.append(chip);
+    // Reopens the guide on this tab, and the keyboard goes with it.
+    button.addEventListener('click', () => showGuideTab(id, { reveal: true, focus: true }));
+    host.append(button);
+  }
+}
+
+/** Where the checks' results are read: their own tab, or (graded by questions) under the form. */
+function placeChecksBlock() {
+  const own = guide.tabs.includes('checks');
+  const slot = $(own ? 'checksSlot' : 'questionsChecksSlot');
+  const block = $('checksBlock');
+  if (block.parentElement !== slot) slot.append(block);
+  block.classList.toggle('questions-checks', !own);
+  $('btnChecksInline').hidden = !own;
+}
+
+/** Sets which tabs the guide has, in order, keeping the learner where they are when they can be. */
+function applyGuideTabs(tabs) {
+  const reordered = tabs.join() !== guide.tabs.join();
+  guide.tabs = tabs;
+  guide.kind = dockKind(tabs);
+  if (reordered) {
+    const list = $('guideTabs');
+    const focused = document.activeElement;
+    for (const id of Object.keys(GUIDE_TABS)) guideTab(id).hidden = !tabs.includes(id);
+    list.append(...tabs.map(guideTab));
+    if (focused instanceof HTMLElement && list.contains(focused)) focused.focus();
+    renderRail();
+  }
+  placeChecksBlock();
+  $('answersTag').hidden = guide.kind !== 'answers';
+  $('checksTag').hidden = guide.kind === 'answers';
+  showGuideTab(tabs.includes(guide.tab) ? guide.tab : tabs[0]);
+  updateBadges();
+  renderDock();
+  renderChecksButtons();
+}
+
+/** The tabs the lab has right now (the solution's presence changes while the lab runs). */
+function currentGuideTabs() {
+  const learn = learnSession.learn;
+  return guideTabsFor({
+    type: state.lab?.type,
+    story: hasStory(learn),
+    lessons: hasLessons(learn),
+    questions: Boolean(learnSession.form),
+    solution: Boolean(state.solution),
+  });
+}
+
+/** Called when the lab's brief and learn bundle have been read (or failed): the tabs are final from here. */
+function buildGuide() {
+  if (!state.session) return;
+  guide.ready = true;
+  $('guide').dataset.ready = 'true';
+  applyGuideTabs(currentGuideTabs());
+}
+
+/** The solution appeared or went: the tab follows, once the guide is built. */
+function syncGuideTabs() {
+  if (guide.ready) applyGuideTabs(currentGuideTabs());
+}
+
+/** A new lab: the guide starts open (on a wide window), on nothing yet. */
+function resetGuide() {
+  guide.tab = null;
+  guide.tabs = [];
+  guide.ready = false;
+  guide.lessons = { read: 0, total: 0 };
+  guide.answers = { answered: 0, total: 0 };
+  guide.checks = { passed: 0, count: 0 };
+  guide.kind = 'checks';
+  $('guide').dataset.ready = 'false';
+  for (const id of Object.keys(GUIDE_TABS)) {
+    const tab = guideTab(id);
+    tab.hidden = true;
+    tab.setAttribute('aria-selected', 'false');
+    tab.classList.remove('tab-active');
+    $(GUIDE_PANEL[id]).classList.remove('gview-active');
+  }
+  $('railTabs').replaceChildren();
+  $('checksSlot').append($('checksBlock'));
+  $('checksBlock').classList.remove('questions-checks');
+  $('btnChecksInline').hidden = false;
+  $('answersTag').hidden = true;
+  $('checksTag').hidden = false;
+  setGuideOpen(defaultGuideOpen(window.innerWidth));
+  $('guideBody').scrollTop = 0;
+}
+
+// ------------------------------------------------------------ the dock
+
+/** The dock's progress, next hint, cost and action, and the header's two progress tags. */
+function renderDock() {
+  const kind = guide.kind;
+  const { answered, total } = guide.answers;
+  const { passed, count } = guide.checks;
+  const planned = state.summary?.checks?.length ?? 0;
+  const dots = kind === 'answers' ? answerDots(answered, total) : checkDots(state.lastResults, planned);
+  const text = dockProgressText({ kind, answered, total, passed, count, planned });
+  const hostDots = $('dockDots');
+  hostDots.replaceChildren(...dots.map((d) => Object.assign(document.createElement('i'), { className: d === 'p' ? '' : d })));
+  hostDots.setAttribute('aria-label', text);
+  $('dockProgress').textContent = text;
+
+  // Answers tag (an explore lab): dots and "2/3", in the header.
+  $('tagDots').replaceChildren(...answerDots(answered, total).map((d) => Object.assign(document.createElement('i'), { className: d === 'p' ? '' : d })));
+  $('statAnswers').textContent = total ? `${answered}/${total}` : NO_VALUE;
+
+  const h = state.hints;
+  const slots = h ? hintSlots(h) : 0;
+  const locked = [];
+  for (let i = 0; i < slots; i++) {
+    if (h.delivered.some((d) => d.index === i)) continue;
+    locked.push(state.startedAt ? hintRemainingMs(h.schedule[i] ?? 0) : null);
+  }
+  $('dockHint').textContent = hintCountdown({ locked, slots });
+  renderChecksButtons();
+}
+
+/** The labels and enabled state of the three buttons that run the checks (header, Checks tab, dock). */
+function renderChecksButtons() {
+  const running = state.checksRunning;
+  const live = Boolean(state.session) && $('statePill').dataset.state !== 'ended';
+  const answers = guide.kind === 'answers';
+  const setLabel = (button, label) => {
+    const target = button.querySelector('.btn-label') ?? button;
+    if (target.textContent !== label) target.textContent = label;
+  };
+  const action = dockAction({ kind: guide.kind, answered: guide.answers.answered, total: guide.answers.total });
+  setLabel($('btnChecks'), running ? 'Running…' : answers ? 'Check answers' : 'Run checks');
+  setLabel($('btnChecksInline'), running ? 'Running…' : 'Run checks');
+  const dockRuns = action.action === 'checks';
+  setLabel($('btnDockAction'), running && dockRuns ? 'Running…' : action.label);
+  $('btnDockAction').dataset.action = action.action;
+  for (const button of [$('btnChecks'), $('btnChecksInline')]) {
+    button.disabled = running || !live;
+    if (running) button.setAttribute('aria-busy', 'true');
+    else button.removeAttribute('aria-busy');
+  }
+  $('btnDockAction').disabled = (running && dockRuns) || !live;
+  if (running && dockRuns) $('btnDockAction').setAttribute('aria-busy', 'true');
+  else $('btnDockAction').removeAttribute('aria-busy');
+}
+
+/** The dock's button: take the learner to the questions, or run the checks. */
+function dockPressed() {
+  if ($('btnDockAction').dataset.action === 'questions') {
+    showGuideTab('questions', { reveal: true });
+    learnSession.form?.focusFirstUnanswered();
+    return;
+  }
+  runChecks();
 }
 
 async function startSession(slug, card) {
@@ -1382,6 +1711,7 @@ function enterSession() {
   state.dirty = false;
   state.expanded.clear();
   state.service = null;
+  state.loadedService = null;
   state.serviceDown = null;
   state.serviceOpenSeq++;
   $('serviceDown').hidden = true;
@@ -1391,17 +1721,32 @@ function enterSession() {
   $('checksSummary').textContent = '';
   delete $('checksSummary').dataset.tone;
   $('hintsPanel').innerHTML = '<p class="muted small">Hints unlock on a timer as the lab goes on.</p>';
+  $('hintSteps').replaceChildren();
+  $('hintsMeta').textContent = '';
+  state.lastResults = null;
+  state.landed = false;
   resetSessionFeedback();
   $('fileList').innerHTML = '';
   $('serviceTabs').innerHTML = '';
-  $('serviceLabel').hidden = true;
   $('serviceList').innerHTML = '';
   $('servicesBlock').hidden = true;
+  setServicesOpen(false);
   $('serviceFrame').removeAttribute('src');
   $('noticeList').innerHTML = '';
   $('noticeEmpty').hidden = false;
+  $('noticeCount').textContent = '';
+  $('activityPane').dataset.open = 'false';
+  $('btnActivityToggle').hidden = true;
+  $('btnActivityToggle').textContent = 'Show all';
+  $('btnActivityToggle').setAttribute('aria-expanded', 'false');
+  $('idleClock').hidden = true;
   $('editorPath').textContent = 'No file open';
   delete $('editorPath').dataset.dirty;
+  // A new lab gets a new editor: the last one's document must not show under "No file open".
+  state.editor?.destroy?.();
+  state.editor = null;
+  $('editorMount').replaceChildren();
+  $('editorEmpty').hidden = false;
   $('editorStatus').textContent = '';
   $('btnSaveFile').disabled = true;
   $('endedBanner').hidden = true;
@@ -1411,12 +1756,12 @@ function enterSession() {
   $('expiryTimer').textContent = '';
   delete $('expiryTimer').dataset.urgent;
   $('briefBody').innerHTML = '<p class="muted">Loading the brief…</p>';
-  // A new session starts without the last one's Learn and Questions tabs.
+  // A new session starts without the last one's Story, Lessons and Questions, and with the guide open again.
   resetLearnSession();
+  resetGuide();
   hideLearnScreen();
-  // The task, not an empty terminal: a learner arriving at a lab should be
-  // looking at what they have been asked to do.
-  showView('brief');
+  // The task, not an empty terminal: the guide opens on the brief (or the story), and the workspace on the files.
+  showView('editor');
   showBoot('Claiming a container…');
 
   $('launcher').hidden = true;
@@ -1431,7 +1776,12 @@ function enterSession() {
   $('sessionId').textContent = state.session.id;
   $('statePill').title = `Session ${state.session.id}`;
   clearInterval(state.resumeTimer);
-  for (const id of ['btnChecks', 'btnChecksInline', 'btnSnapshot', 'btnEnd']) $(id).disabled = false;
+  // The last session's 'ended' must not keep the new one's buttons off.
+  setStatePill('starting');
+  for (const id of ['btnChecks', 'btnChecksInline', 'btnDockAction', 'btnSnapshot', 'btnEnd']) $(id).disabled = false;
+  $('btnGuideToggle').disabled = false;
+  $('btnServiceRestart').disabled = false;
+  renderDock();
 
   openEventStream();
   pollUntilRunning();
@@ -1648,10 +1998,11 @@ function noticeFor(type, tone, data) {
   const build = LEARNER_NOTICES[type];
   if (!build) return;
   const [title, detail] = build(data ?? {});
-  addNotice(tone, title, detail);
+  // A pressure event is the lab changing under the learner: the strip opens so it is not missed.
+  addNotice(tone, title, detail, { open: type === 'pressure' });
 }
 
-function addNotice(tone, title, detail) {
+function addNotice(tone, title, detail, { open = false } = {}) {
   const li = document.createElement('li');
   li.className = `ev-${tone}`;
   li.innerHTML = `<span class="when"></span><span class="detail"><strong class="notice-title"></strong> <span class="notice-body"></span></span>`;
@@ -1662,6 +2013,18 @@ function addNotice(tone, title, detail) {
   list.prepend(li);
   while (list.children.length > 100) list.lastElementChild.remove();
   $('noticeEmpty').hidden = true;
+  const n = list.children.length;
+  $('noticeCount').textContent = `${n} ${n === 1 ? 'notice' : 'notices'}`;
+  $('btnActivityToggle').hidden = n < 2;
+  if (open && n > 1) setActivityOpen(true);
+}
+
+/** The activity strip: its newest line, or all of it. */
+function setActivityOpen(open) {
+  $('activityPane').dataset.open = String(open);
+  const toggle = $('btnActivityToggle');
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.textContent = open ? 'Show less' : 'Show all';
 }
 
 // A restart can start a second poll while the first is still sleeping, and
@@ -1743,8 +2106,16 @@ async function onRunning(status) {
   renderServiceTabs();
   renderServiceList(status.services);
   refreshFiles();
-  // The Learn and Questions tabs are extras: if they cannot be built the lab is unchanged.
-  loadBrief().finally(() => loadLearn().catch((err) => console.error('Learn tabs could not be built', err)));
+  // The guide's Story, Lessons and Questions are extras: if they cannot be built the lab is unchanged.
+  // The tabs are final once the brief and the bundle have been read (or failed).
+  loadBrief().finally(() =>
+    loadLearn()
+      .catch((err) => console.error('The guide could not be built', err))
+      .finally(() => {
+        buildGuide();
+        landOnService();
+      })
+  );
   bootStep('terminal');
   hideBoot();
 }
@@ -1757,9 +2128,24 @@ function setSessionLab(slug) {
   }
   const lab = labsBySlug.get(slug) ?? null;
   if (state.lab?.slug !== slug) state.lab = lab;
+  // "Gateway and access · lab 3 of 6 · " before the slug, when the catalogue says where the lab sits.
+  const where = locateLab(launcherModel, slug);
+  $('sessionWhere').textContent = where ? `${where.module.known ? where.module.title : where.path.title} · lab ${where.position} of ${where.total} · ` : '';
   $('sessionLab').textContent = slug;
   $('sessionTitle').textContent = lab?.title ?? '';
   $('sessionTitle').title = lab?.title ?? '';
+}
+
+/**
+ * An explore lab is about what its service shows, so it opens on that service's page, once, when it is
+ * up and the learner has not already gone somewhere else.
+ */
+function landOnService() {
+  if (state.landed || !state.session) return;
+  state.landed = true;
+  if (state.lab?.type !== 'explore' || state.view !== 'editor' || state.openFile) return;
+  const first = $('serviceTabs').querySelector('.tab');
+  if (first) openService(first.dataset.service, first);
 }
 
 /**
@@ -1777,6 +2163,7 @@ async function loadBrief() {
     try {
       const labs = await api.labs();
       for (const lab of labs) labsBySlug.set(lab.slug, lab);
+      launcherModel = buildLauncherModel(labs, pathMeta, { passed: passedSlugs(labs) });
       setSessionLab(state.session.lab);
     } catch {
       /* the brief is still worth showing without them */
@@ -2066,7 +2453,7 @@ function onEnded(reason) {
   hideExpiryBanner();
   $('expiryTimer').textContent = reason ? `ended: ${reason}` : 'ended';
   delete $('expiryTimer').dataset.urgent;
-  for (const id of ['btnChecks', 'btnChecksInline', 'btnSnapshot', 'btnEnd']) $(id).disabled = true;
+  for (const id of ['btnChecks', 'btnChecksInline', 'btnDockAction', 'btnSnapshot', 'btnEnd']) $(id).disabled = true;
   state.terminal?.dispose();
   state.terminal = null;
   state.events?.close();
@@ -2091,6 +2478,8 @@ function onEnded(reason) {
   $('btnNewFile').disabled = true;
   learnSession.form?.disable();
   for (const b of $('serviceList').querySelectorAll('button')) b.disabled = true;
+  $('btnServiceRestart').disabled = true;
+  renderDock();
 }
 
 /**
@@ -2153,6 +2542,7 @@ function teardownSession() {
   hideExpiryBanner();
   hideBoot();
   resetLearnSession();
+  setServicesOpen(false);
 }
 
 /** An ended session leaves a dead workspace on screen; this is the way out. */
@@ -2253,31 +2643,51 @@ function formatClock(ms) {
 
 const NO_VALUE = '—';
 
-/** "2/4" from a tally of the latest run, or a dash before any run. */
+/** "2/4" from a tally of the latest run, or a dash before any run; the Checks tab and the dock follow. */
 function setChecksStat(t) {
   $('statChecks').textContent = t ? `${t.passed}/${t.count}` : NO_VALUE;
+  guide.checks = t ? { passed: t.passed, count: t.count } : { passed: 0, count: 0 };
+  updateBadges();
+  renderDock();
 }
 
-/** "1/3": hints delivered over the lab's hint slots. */
+/** The Hints tab's count and steps, the tab badge and the dock's next hint: hints delivered over the lab's slots. */
 function setHintsStat() {
   const h = state.hints;
   const slots = h ? hintSlots(h) : 0;
-  $('statHints').textContent = slots ? `${h.delivered.length}/${slots}` : NO_VALUE;
+  $('hintsMeta').textContent = slots ? `${h.delivered.length} of ${slots} shown` : '';
+  const steps = [];
+  for (let i = 0; i < slots; i++) {
+    const step = document.createElement('span');
+    const shown = h.delivered.some((d) => d.index === i);
+    step.textContent = String(i + 1);
+    if (shown) step.className = 'on';
+    else step.className = 'locked';
+    steps.push(step);
+  }
+  $('hintSteps').replaceChildren(...steps);
+  updateBadges();
+  renderDock();
 }
 
 /** "≈ $0.03" from `status().cost.usd` or a `metrics` event; a missing number leaves what is shown. */
 function setCostStat(usd) {
   if (usd == null || !Number.isFinite(Number(usd))) return;
   const n = Number(usd);
-  $('statCost').textContent = n > 0 && n < 0.005 ? '< $0.01' : `≈ $${n.toFixed(2)}`;
+  const text = n > 0 && n < 0.005 ? '< $0.01' : `≈ $${n.toFixed(2)}`;
+  $('statCost').textContent = text;
+  $('dockCostValue').textContent = text;
   $('statCostWrap').title = `About $${n.toFixed(4)} spent by this session so far`;
+  $('dockCost').title = $('statCostWrap').title;
 }
 
 function resetBarStats() {
   setChecksStat(null);
   setHintsStat();
   $('statCost').textContent = NO_VALUE;
+  $('dockCostValue').textContent = NO_VALUE;
   $('statCostWrap').title = 'Approximate spend by this session so far';
+  $('dockCost').title = $('statCostWrap').title;
 }
 
 // ------------------------------------------------------- theme and identity
@@ -2349,10 +2759,13 @@ function showIdleBanner() {
   clearInterval(state.idleTimer);
   state.idleDeadline = Date.now() + IDLE_WARN_BEFORE_MS;
   const tick = () => {
-    $('idleCountdown').textContent = formatClock(state.idleDeadline - Date.now());
+    const left = formatClock(state.idleDeadline - Date.now());
+    $('idleCountdown').textContent = left;
+    $('idleClock').textContent = `idle ${left}`;
   };
   tick();
   $('idleBanner').hidden = false;
+  $('idleClock').hidden = false;
   state.idleTimer = setInterval(tick, 1000);
 }
 
@@ -2361,6 +2774,7 @@ function hideIdleBanner() {
   clearInterval(state.idleTimer);
   state.idleTimer = 0;
   $('idleBanner').hidden = true;
+  $('idleClock').hidden = true;
 }
 
 /** "I'm here": the API moves the idle clock; the banner goes only once it has. */
@@ -2389,7 +2803,7 @@ function showExpiryBanner(left) {
 
 function hideExpiryBanner() {
   $('expiryBanner').hidden = true;
-  if (!endInFlight) $('btnEnd').textContent = 'End session';
+  if (!endInFlight) $('btnEnd').textContent = 'End lab';
 }
 
 // ---------------------------------------------------------------- checks
@@ -2444,16 +2858,13 @@ function absorbStatus(status, { celebrate = false } = {}) {
  * so in the panel where the results will land.
  */
 async function runChecks() {
-  // The header button and the one in the Checks block are the same control.
-  const buttons = [$('btnChecks'), $('btnChecksInline')];
+  // The header button, the one in the Checks block and the dock's are the same control.
   const panel = $('checksPanel');
   state.checksRunning = true;
-  for (const button of buttons) {
-    button.disabled = true;
-    button.setAttribute('aria-busy', 'true');
-  }
-  $('btnChecks').textContent = 'Running…';
-  $('btnChecksInline').textContent = 'Running…';
+  renderChecksButtons();
+  // Where the results will land is where the learner is taken: the Checks tab, or (graded by questions) the Questions tab.
+  const home = guide.tabs.includes('checks') ? 'checks' : guide.tabs.includes('questions') ? 'questions' : null;
+  if (home) showGuideTab(home);
   const previous = panel.querySelector('.check') ? panel.innerHTML : '';
   panel.innerHTML = `
     <div class="inline-status">
@@ -2466,6 +2877,7 @@ async function runChecks() {
     state.checksRunning = false;
     renderChecks(run);
     showResultIfComplete(run, true);
+    if (run?.results?.length) announce(`Checks: ${summaryText(tally(run.results))}`);
     // History and hints move on with every run; the run itself is not enough.
     refreshStatus();
     return run;
@@ -2476,11 +2888,7 @@ async function runChecks() {
     return null;
   } finally {
     state.checksRunning = false;
-    for (const button of buttons) {
-      button.textContent = 'Run checks';
-      button.removeAttribute('aria-busy');
-      button.disabled = !state.session || $('statePill').dataset.state === 'ended';
-    }
+    renderChecksButtons();
   }
 }
 
@@ -2523,10 +2931,12 @@ function renderChecks(run) {
     panel.innerHTML = '<p class="muted small">Not run yet. Run checks to grade your work so far.</p>';
     summary.textContent = '';
     delete summary.dataset.tone;
+    state.lastResults = null;
     setChecksStat(null);
     return;
   }
   const t = tally(run.results);
+  state.lastResults = run.results;
   setChecksStat(t);
   summary.textContent = summaryText(t);
   summary.dataset.tone = t.passed === t.count ? 'good' : t.passed ? 'warn' : 'bad';
@@ -2683,6 +3093,7 @@ function startHintTimer() {
       box.querySelector('.hint-label').textContent = lockedHintLabel(Number(box.dataset.hint), after);
       if (state.startedAt && hintRemainingMs(after) <= 0) overdue = true;
     }
+    renderDock();
     if (overdue) refreshStatus();
   }, 60_000);
 }
@@ -2736,12 +3147,16 @@ function solutionProgressText(progress) {
  */
 function renderSolution(solution) {
   const block = $('solutionBlock');
+  const had = Boolean(state.solution);
   if (!solution || solution.available !== true) {
     state.solution = null;
     block.hidden = true;
+    if (had) syncGuideTabs();
+    updateBadges();
     return;
   }
   state.solution = solution;
+  if (!had) syncGuideTabs();
   const unlocked = solutionUnlocked(solution);
   block.hidden = false;
   block.dataset.state = unlocked ? 'unlocked' : 'locked';
@@ -2751,6 +3166,7 @@ function renderSolution(solution) {
   $('solutionReady').hidden = !unlocked;
   $('solutionRule').textContent = solution.rule || 'The solution unlocks as you work through the lab.';
   $('solutionProgress').textContent = solutionProgressText(solution.progress);
+  updateBadges();
 }
 
 /** The stream said it unlocked; show that now and let status() confirm it. */
@@ -2766,6 +3182,7 @@ function resetSolution() {
   $('solutionBlock').hidden = true;
   const dialog = $('solutionDialog');
   if (dialog.open) dialog.close();
+  syncGuideTabs();
 }
 
 /** Bumped by every load and by closing, so an answer that arrives late is dropped. */
@@ -3080,6 +3497,11 @@ function showResultCard(run, celebrate) {
   $('resultTime').textContent = state.result.time;
   updateResultHints();
   $('resultCard').hidden = false;
+  if (celebrate) {
+    announce('Lab complete. Every check passed.');
+    // The result card is in the guide: if the guide is hidden, say where it is.
+    if (!guide.open) toast('Lab complete. Every check passed. Open the guide to see your result.', 'good');
+  }
   if (celebrate && !matchMedia('(prefers-reduced-motion: reduce)').matches) confettiBurst();
 }
 
@@ -3338,6 +3760,7 @@ async function openFile(name) {
     const editor = await ensureEditor();
     if (!editor) return;
     state.openFile = name;
+    updateWindowTitle();
     $('editorPath').textContent = name;
     $('editorPath').title = `/workspace/${name}`;
     await editor.load(result.content ?? '', name);
@@ -3432,13 +3855,14 @@ function renderServiceTabs() {
   host.innerHTML = '';
   const services = state.session.urls?.services ?? {};
   const names = Object.keys(services);
-  $('serviceLabel').hidden = !names.length;
   for (const name of names) {
     const tab = document.createElement('button');
-    tab.className = 'tab';
+    tab.type = 'button';
+    tab.className = 'tab wtab';
     tab.setAttribute('role', 'tab');
     tab.setAttribute('aria-selected', 'false');
     tab.setAttribute('aria-controls', 'viewService');
+    tab.tabIndex = -1;
     tab.title = `Open the ${name} service`;
     tab.dataset.service = name;
     tab.dataset.health = 'unknown';
@@ -3449,6 +3873,7 @@ function renderServiceTabs() {
     tab.append(dot, name);
     tab.addEventListener('click', () => openService(name, tab));
     host.append(tab);
+    // The dot is the tab's own mark of health; "Open the echo service (healthy)" is what the tooltip says.
   }
 }
 
@@ -3462,6 +3887,7 @@ function renderServiceTabs() {
 function renderServiceList(services) {
   const names = Object.keys(services ?? {});
   $('servicesBlock').hidden = !names.length;
+  if (!names.length) setServicesOpen(false);
   const host = $('serviceList');
   host.innerHTML = '';
   for (const name of names) {
@@ -3481,6 +3907,23 @@ function renderServiceList(services) {
     host.append(li);
     setServiceHealth(name, services[name]?.health ?? 'unknown');
   }
+  updateServicesSummary();
+}
+
+/** The Services button: how many are healthy, and one dot for the worst of them. */
+function updateServicesSummary() {
+  const rows = [...$('serviceList').children].map((li) => li.querySelector('.svc-health')?.dataset.health ?? 'unknown');
+  const healthy = rows.filter((h) => h === 'healthy').length;
+  $('servicesCount').textContent = rows.length ? `${healthy}/${rows.length}` : '';
+  const worst = rows.includes('unhealthy') ? 'unhealthy' : rows.includes('restarting') ? 'restarting' : rows.length && healthy === rows.length ? 'healthy' : 'unknown';
+  $('servicesDot').dataset.health = worst;
+  $('btnServices').title = rows.length ? `${healthy} of ${rows.length} services healthy` : '';
+}
+
+/** The Services popover: every service the lab runs, with its health and a Restart. */
+function setServicesOpen(open) {
+  $('servicesPop').hidden = !open;
+  $('btnServices').setAttribute('aria-expanded', String(open));
 }
 
 function setServiceHealth(name, health) {
@@ -3496,6 +3939,7 @@ function setServiceHealth(name, health) {
   if (!el) return;
   el.dataset.health = health;
   el.textContent = health;
+  updateServicesSummary();
 }
 
 async function restartService(name, button) {
@@ -3512,7 +3956,7 @@ async function restartService(name, button) {
     else toast(`${name} restarted but is ${health}. If you changed its files, check them and restart it again.`, 'bad');
     // A tab already showing this service is showing the old process's page.
     if (state.service === name && $('viewService').classList.contains('view-active')) {
-      openService(name, $('serviceTabs').querySelector('.tab-active') ?? undefined, { reload: true });
+      openService(name, activeServiceTab(), { reload: true });
     }
   } catch (err) {
     setServiceHealth(name, 'unknown');
@@ -3542,15 +3986,16 @@ async function openService(name, tab, { reload = false } = {}) {
   const base = serviceBaseUrl(id, name);
   $('serviceName').textContent = name;
   $('serviceOpen').href = base;
+  state.service = name;
 
-  const loaded = state.service === name && frame.getAttribute('src') && state.serviceDown !== name;
+  const loaded = frame.getAttribute('src') && state.loadedService === name && state.serviceDown !== name;
   if (!reload && loaded) {
     showView('service', tab);
     return;
   }
 
   const seq = ++state.serviceOpenSeq;
-  state.service = name;
+  state.loadedService = name;
   state.serviceDown = null;
   $('serviceDown').hidden = true;
   frame.hidden = false;
@@ -3619,31 +4064,67 @@ function showServiceDown(name) {
   $('serviceDown').hidden = false;
 }
 
-function showView(view, tabEl) {
-  for (const el of document.querySelectorAll('.view')) el.classList.remove('view-active');
-  for (const el of document.querySelectorAll('.tab')) {
-    el.classList.remove('tab-active');
-    el.setAttribute('aria-selected', 'false');
-  }
+/** The service tab that is showing, if a service is. */
+const activeServiceTab = () => $('serviceTabs').querySelector('.tab[aria-selected="true"]') ?? undefined;
 
-  // Every tab's `data-view` must have an entry here. Adding the Brief tab
-  // without one made `$(undefined)` null and threw on `.classList`, which
-  // enterSession swallowed into the launcher's error line — so no lab could
-  // be started at all. Fail loudly instead of dereferencing null.
-  const map = { brief: 'viewBrief', learn: 'viewLearn', questions: 'viewQuestions', terminal: 'viewTerminal', editor: 'viewEditor', service: 'viewService' };
+/**
+ * Shows one of the workspace window's views (the guide's tabs are showGuideTab's). `focus` is false
+ * for a tab reached with the arrow keys, so the keyboard stays on the tablist.
+ */
+function showView(view, tabEl, { focus = true } = {}) {
+  // Every tab's `data-view` must have an entry here. Adding a tab without one
+  // made `$(undefined)` null and threw on `.classList`, which enterSession
+  // swallowed into the launcher's error line — so no lab could be started at
+  // all. Fail loudly instead of dereferencing null.
+  const map = { terminal: 'viewTerminal', editor: 'viewEditor', service: 'viewService' };
   const target = map[view] && $(map[view]);
   if (!target) throw new Error(`showView: no view registered for "${view}"`);
+  for (const el of document.querySelectorAll('#window .view')) el.classList.remove('view-active');
+  for (const el of document.querySelectorAll('#workspaceTabs .tab')) {
+    el.setAttribute('aria-selected', 'false');
+    el.tabIndex = -1;
+  }
   target.classList.add('view-active');
-  const tab = tabEl ?? document.querySelector(`.tab[data-view="${view}"]`);
-  tab?.classList.add('tab-active');
+  const tab = tabEl ?? document.querySelector(`#workspaceTabs .tab[data-view="${view}"]`);
   tab?.setAttribute('aria-selected', 'true');
-  // Answers may have been edited in the editor since the form last looked.
-  if (view === 'questions') learnSession.form?.reload();
+  if (tab) tab.tabIndex = 0;
+  state.view = view;
+  updateWindowTitle();
   if (view === 'terminal') {
     state.terminal?.refit();
     // Switching to the terminal is switching to typing in it.
-    state.terminal?.focus();
+    if (focus) state.terminal?.focus();
   }
+}
+
+/** The window's title: the open file in the editor, else the view's name. */
+function updateWindowTitle() {
+  $('windowTitle').textContent = windowTitle({ view: state.view, file: state.openFile, service: state.service });
+}
+
+/** A workspace tab pressed (focus: true) or reached with the arrow keys (focus: false). */
+function activateWorkspaceTab(tab, { focus }) {
+  if (tab.dataset.service) return openService(tab.dataset.service, tab);
+  showView(tab.dataset.view, tab, { focus });
+  if (focus && tab.dataset.view === 'editor' && state.openFile) state.editor?.focus();
+}
+
+/**
+ * Arrow keys walk a tablist (Left/Right, Home, End), and the tab under the keyboard is the one
+ * shown. `tabs()` are the tabs in order; a tab reached this way keeps the focus.
+ */
+function wireTablist(list, tabs, activate) {
+  list.addEventListener('keydown', (event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const all = tabs();
+    const at = all.indexOf(document.activeElement);
+    if (at < 0) return;
+    const next = roveIndex(event.key, at, all.length);
+    if (next === null) return;
+    event.preventDefault();
+    all[next].focus();
+    activate(all[next]);
+  });
 }
 
 // ---------------------------------------------------------------- wiring
@@ -3775,7 +4256,7 @@ async function endSession(snapshot) {
     toast(`The session may not have ended cleanly — ${err.message}`, 'bad');
   } finally {
     endInFlight = false;
-    btn.textContent = 'End session';
+    btn.textContent = 'End lab';
   }
   // Ending is a deliberate act with an obvious next step, so take it —
   // rather than parking the learner in a dead workspace behind one more
@@ -3804,12 +4285,41 @@ $('btnNewFile').addEventListener('click', newFile);
 $('btnReconnectTerm').addEventListener('click', reconnectTerminal);
 $('btnSaveFile').addEventListener('click', saveFile);
 
-for (const tab of document.querySelectorAll('.tab[data-view]')) {
-  tab.addEventListener('click', () => {
-    showView(tab.dataset.view, tab);
-    if (tab.dataset.view === 'editor' && state.openFile) state.editor?.focus();
-  });
+// The workspace window's tabs (Terminal, Editor, one per service) and the guide's.
+for (const tab of document.querySelectorAll('#workspaceTabs .tab[data-view]')) {
+  tab.addEventListener('click', () => activateWorkspaceTab(tab, { focus: true }));
 }
+const workspaceTabs = () => [...$('workspaceTabs').querySelectorAll('.tab:not([hidden])')];
+wireTablist($('workspaceTabs'), workspaceTabs, (tab) => activateWorkspaceTab(tab, { focus: false }));
+
+for (const tab of document.querySelectorAll('#guideTabs .tab[data-guide-tab]')) {
+  tab.addEventListener('click', () => showGuideTab(tab.dataset.guideTab));
+}
+wireTablist($('guideTabs'), () => [...$('guideTabs').querySelectorAll('.tab:not([hidden])')], (tab) => showGuideTab(tab.dataset.guideTab));
+
+// Hiding the guide: the keyboard goes to the rail's Show button, and Show takes it back to the tab.
+$('btnGuideToggle').addEventListener('click', () => setGuideOpen(!guide.open));
+$('btnGuideHide').addEventListener('click', () => {
+  setGuideOpen(false);
+  $('btnGuideShow').focus();
+});
+$('btnGuideShow').addEventListener('click', () => {
+  setGuideOpen(true);
+  (guide.tab ? guideTab(guide.tab) : $('btnGuideToggle')).focus();
+});
+
+// The Services popover: Escape closes it (and the keyboard returns to its button); so does a click elsewhere.
+$('btnServices').addEventListener('click', () => setServicesOpen($('servicesPop').hidden));
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || $('servicesPop').hidden) return;
+  setServicesOpen(false);
+  $('btnServices').focus();
+});
+document.addEventListener('click', (event) => {
+  if (!$('servicesPop').hidden && !$('servicesBlock').contains(event.target)) setServicesOpen(false);
+});
+$('btnActivityToggle').addEventListener('click', () => setActivityOpen($('activityPane').dataset.open !== 'true'));
+$('btnDockAction').addEventListener('click', dockPressed);
 
 // Boot modal ways out.
 $('btnBootLabs').addEventListener('click', backToLabs);
@@ -3824,7 +4334,7 @@ $('serviceFrame').addEventListener('load', () => {
   $('serviceLoading').hidden = true;
 });
 $('btnServiceDownRetry').addEventListener('click', () => {
-  if (state.service) openService(state.service, $('serviceTabs').querySelector('.tab-active') ?? undefined, { reload: true });
+  if (state.service) openService(state.service, activeServiceTab(), { reload: true });
 });
 $('btnServiceDownRestart').addEventListener('click', (event) => {
   if (state.service) restartService(state.service, event.currentTarget);
@@ -3842,7 +4352,10 @@ function openServiceTab(event) {
 $('serviceOpen').addEventListener('click', openServiceTab);
 $('serviceOpen').addEventListener('auxclick', openServiceTab);
 $('btnServiceReload').addEventListener('click', () => {
-  if (state.service) openService(state.service, $('serviceTabs').querySelector('.tab-active') ?? undefined, { reload: true });
+  if (state.service) openService(state.service, activeServiceTab(), { reload: true });
+});
+$('btnServiceRestart').addEventListener('click', (event) => {
+  if (state.service) restartService(state.service, event.currentTarget);
 });
 
 $('btnToastClose').addEventListener('click', () => ($('toast').hidden = true));

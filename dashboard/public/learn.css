@@ -279,48 +279,65 @@
 .notice-foot { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: auto; }
 .notice-foot p { margin: 0; max-width: 34ch; text-align: center; font-size: 11.5px; color: var(--ink-muted); }
 
-/* ---------- the session's Learn and Questions tabs ---------- */
-.learn-body > * { max-width: 76ch; }
+/* ---------- the guide's Story, Lessons and Questions tabs ---------- */
+/* (The guide's own layout is session.css; these are the parts the learning screens share.) */
 .learn-story { margin-bottom: var(--s6); }
-.brief .learn-story-title, .brief .learn-lessons-title { margin: 0 0 var(--s2); font-size: var(--fs-xl); line-height: 1.3; }
 .learn-lessons .learn-meta { margin: 0 0 var(--s4); }
-.learn-body .lesson-list, .learn-body .lesson { max-width: 76ch; }
 
-/* ---------- the graded questions as a form ---------- */
-.questions-body > * { max-width: 70ch; }
-.qform { margin: 0; }
-.qform-lede { margin: 0 0 var(--s5); color: var(--ink-2); }
-.qfield { margin: 0 0 var(--s5); min-width: 0; }
+/* The badge of a question card (see questions-form.js): outline, info, ok, warn. */
+.badge-outline { border: 1px solid var(--border-input); color: var(--ink-2); background: transparent; }
+.badge-info { background: var(--accent-soft); color: var(--accent-text); }
+.badge-warn { background: color-mix(in oklab, var(--warn) 14%, var(--surface)); color: var(--warn); }
+
+/* ---------- the graded questions as a form: one card per question ---------- */
+.questions-body { display: block; }
+.qform { margin: 0; display: flex; flex-direction: column; gap: 14px; }
+.qform-head { display: flex; align-items: flex-end; gap: 12px; margin: 0 0 2px; }
+.qform-title { margin: 0; font: 700 clamp(24px, 2.2vw, 30px)/1.08 var(--display); letter-spacing: -0.04em; }
+.qform-lede { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+.qform-save { margin-left: auto; text-align: right; font: 400 12px/1.4 var(--mono); color: var(--ink-muted); flex: none; }
+.qfield {
+  margin: 0; min-width: 0;
+  display: flex; flex-direction: column; gap: 12px; padding: 18px 20px; border-radius: 22px;
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.qfield[data-status="checked-correct"] { border-color: color-mix(in oklab, var(--good) 45%, var(--border)); }
+.qfield[data-status="checked-wrong"] { border-color: color-mix(in oklab, var(--bad) 45%, var(--border)); }
+.qfield-top { display: flex; align-items: center; gap: 10px; }
+.qfield-status { margin: 0; }
+.qfield-index { font: 400 11.5px/1.3 var(--mono); color: var(--ink-muted); }
 .qfield-set { margin: 0; padding: 0; border: 0; min-width: 0; }
-.qfield-prompt { display: block; padding: 0; margin: 0 0 var(--s2); font-weight: 600; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere; }
+.qfield-prompt { display: block; padding: 0; margin: 0 0 12px; font: 650 18px/1.3 var(--display); letter-spacing: -0.02em; color: var(--ink); overflow-wrap: anywhere; }
 .qfield .qfield-input {
-  display: block; width: 100%; max-width: 100%; min-width: 0; height: 36px;
-  padding: 0 var(--s3);
-  background: var(--surface-2); color: var(--ink);
-  border: 1px solid var(--border-input); border-radius: var(--radius-sm);
-  font: var(--fs-base)/1.2 var(--sans);
+  display: block; width: 100%; max-width: 100%; min-width: 0; height: 48px; padding: 0 16px;
+  background: var(--surface); color: var(--ink);
+  border: 1.5px solid var(--border-input); border-radius: 14px;
+  font: 15px/1.2 var(--mono);
 }
-.qfield .qfield-input:focus-visible { outline-offset: 0; border-color: var(--accent); }
-.qfield-choices { display: grid; gap: var(--s1); }
+.qfield .qfield-input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.qfield select.qfield-input { font-family: var(--sans); }
+/* A choice is a pill; the real radio sits under it, invisible, and takes the click and the keys. */
+.qfield-choices { display: flex; flex-wrap: wrap; gap: 8px; }
 .qfield-choice {
-  display: flex; align-items: center; gap: var(--s3); min-height: 40px; padding: 6px var(--s3);
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer;
+  position: relative; display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px;
+  background: var(--surface); border: 1.5px solid var(--border-input); border-radius: 999px; cursor: pointer;
 }
-.qfield-choice:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
-.qfield-choice:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
-.qfield-choice input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--accent-fill); }
-.qfield-choice span { min-width: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: var(--fs-md); }
-.qfield-help { margin: var(--s2) 0 0; color: var(--ink-muted); font-size: var(--fs-md); line-height: 1.5; }
-.qform code, .qfield-prompt code { font-size: var(--fs-sm); background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--ink); }
+.qfield-choice:hover { background: var(--surface-3); }
+.qfield-choice:has(input:checked) { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--on-accent); }
+.qfield-choice:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 3px; }
+.qfield-choice input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.qfield-choice span { min-width: 0; overflow-wrap: anywhere; font: 600 15px/1.2 var(--sans); }
+.qfield-help { margin: 0; color: var(--ink-muted); font-size: 13.5px; line-height: 1.5; }
+.qform code, .qfield-prompt code { font-size: 0.88em; background: var(--surface-3); padding: 1px 6px; border-radius: 6px; color: var(--ink); }
 
-.qform-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); margin-top: var(--s5); }
-.qform-status { min-width: 9ch; font-size: var(--fs-md); color: var(--ink-2); }
+.qform-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); margin-top: 4px; }
+.qform-status { min-width: 9ch; font: 400 12px/1.4 var(--mono); color: var(--ink-muted); }
 .qform-status[data-state="saved"] { color: var(--good); }
 .qform-status[data-state="saved"]::before { content: '\2713\00a0'; }
-.qform-status[data-state="error"], .qform-status[data-state="loaderror"] { color: var(--bad); flex-basis: 100%; order: 5; }
+.qform-status[data-state="error"], .qform-status[data-state="loaderror"] { color: var(--bad); flex-basis: 100%; order: 5; font-size: 13px; }
 .qform-checks { flex-basis: 100%; }
 .qform-checks:empty { display: none; }
-
+.questions-checks { margin-top: 26px; }
 
 /* ---------- narrow screens ---------- */
 @media (max-width: 760px) {
@@ -339,9 +356,6 @@
   .lesson-head .lesson-toggle { margin-left: 0; flex-basis: 100%; }
   .lesson-meta { margin-left: 0; }
   .lesson .btn, .qform .btn { min-height: 44px; }
-  .qfield .qfield-input { height: 44px; font-size: 16px; }
-  .qfield-choice { min-height: 44px; }
+  .qfield .qfield-input { font-size: 16px; }
   .level-chip { margin-left: 0; }
-  /* The view is a fixed-height pane on a phone; its content scrolls inside it. */
-  .learn-body, .questions-body { padding: var(--s4) var(--s4) var(--s6); }
 }

@@ -17,7 +17,7 @@
  * and the timing. No markup strings: prompts and help go in as text.
  */
 
-import { MAX_RADIO_CHOICES, displayValue, fieldValue, mergeAnswers, parseAnswersFile, serializeAnswers } from './answers-file.js';
+import { MAX_RADIO_CHOICES, QUESTION_STATUS, answeredCount, displayValue, fieldValue, mergeAnswers, parseAnswersFile, questionStatus, serializeAnswers } from './answers-file.js';
 import { appendInline } from './markdown.js';
 import { button, make } from './learn-ui.js';
 
@@ -34,12 +34,28 @@ let uid = 0;
  *   runChecks  () => Promise<string | void>: the console's check action; a returned
  *              string is shown beside the button
  *   delay      debounce, in ms (default 600)
- * Returns { reload, save, flush, disable, destroy, statusText }.
+ *   onProgress ({ answered, total }) whenever the number of answered questions may have changed
+ * Returns { reload, save, flush, disable, destroy, statusText, progress, setResults, focusFirstUnanswered }.
+ *
+ * Each question is a card with a badge (Not answered, Answered, Saved). A lab
+ * whose checks report per question can pass them to setResults({ key: { pass } })
+ * and the badges turn to Checked, correct or not yet.
  */
-export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = SAVE_DELAY_MS }) {
+export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = SAVE_DELAY_MS, onProgress }) {
   const form = make('form', 'qform');
   form.noValidate = true;
   form.addEventListener('submit', (e) => e.preventDefault());
+
+  const NUMBER_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+  const head = make('div', 'qform-head');
+  const heading = make('div', 'qform-heading');
+  heading.append(make('span', 'eyebrow qform-eyebrow', 'Your answers'));
+  const title = make('h2', 'qform-title');
+  title.append(`${NUMBER_WORDS[fields.length] ?? fields.length} ${fields.length === 1 ? 'thing' : 'things'} to `, make('span', 'mark', 'find out.'));
+  heading.append(title);
+  const filled = make('span', 'qform-save');
+  head.append(heading, filled);
+  form.append(head);
 
   const lede = make('p', 'qform-lede');
   lede.append('Your answers are saved to ');
@@ -50,6 +66,8 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
   /** key -> { field, get(): raw string, set(string), inputs: HTMLElement[] } */
   const controls = new Map();
   const dirty = new Set();
+  /** key -> { pass } from a check run that reports per question (see setResults). */
+  let results = {};
   const edits = Object.create(null);
   let timer = 0;
   let saving = null;
@@ -74,6 +92,7 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
 
   const changed = (key) => {
     dirty.add(key);
+    refreshCards();
     edits[key] = (edits[key] || 0) + 1;
     setStatus('pending');
     clearTimeout(timer);
@@ -85,10 +104,14 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
 
   // --- fields ---------------------------------------------------------------
 
-  for (const field of fields) {
+  for (const [n, field] of fields.entries()) {
     const id = `qf${++uid}`;
     const wrap = make('div', 'qfield');
     wrap.dataset.key = field.key;
+    const top = make('div', 'qfield-top');
+    const badge = make('span', 'badge qfield-status');
+    top.append(badge, make('span', 'qfield-index', `${n + 1} of ${fields.length}`));
+    wrap.append(top);
     const helpId = field.help ? `${id}-help` : '';
     let control;
 
@@ -157,14 +180,15 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
       appendInline(help, field.help);
       wrap.append(help);
     }
-    controls.set(field.key, { field, ...control });
+    controls.set(field.key, { field, badge, wrap, ...control });
     form.append(wrap);
   }
 
   // --- actions --------------------------------------------------------------
 
-  const saveBtn = button('Save', { kind: 'primary', onClick: () => void save(), id: 'btnSaveAnswers' });
-  const checksBtn = button('Run checks', {
+  const saveBtn = button('Save', { kind: 'ghost', onClick: () => void save(), id: 'btnSaveAnswers' });
+  const checksBtn = button('Check my answers', {
+    kind: 'accent',
     onClick: async () => {
       checksBtn.disabled = true;
       checksNote.textContent = '';
@@ -183,7 +207,7 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
   checksNote.setAttribute('role', 'status');
   checksNote.setAttribute('aria-live', 'polite');
   const actions = make('div', 'qform-actions');
-  actions.append(saveBtn, status, checksBtn, checksNote);
+  actions.append(checksBtn, saveBtn, status, checksNote);
   form.append(actions);
   host.replaceChildren(form);
 
@@ -195,6 +219,25 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
     return out;
   };
 
+  /** Every card's badge and the count, from what the controls hold now. */
+  let lastAnswered = -1;
+  function refreshCards() {
+    const values = currentValues();
+    for (const [key, c] of controls) {
+      const kind = questionStatus({ value: values[key], dirty: dirty.has(key), result: results[key] });
+      const { text, tone } = QUESTION_STATUS[kind];
+      c.wrap.dataset.status = kind;
+      c.badge.textContent = text;
+      c.badge.className = `badge qfield-status badge-${tone}`;
+    }
+    const answered = answeredCount(fields, values);
+    filled.textContent = `${answered} of ${fields.length} filled in`;
+    if (answered !== lastAnswered) {
+      lastAnswered = answered;
+      onProgress?.({ answered, total: fields.length });
+    }
+  }
+
   /** Shows `obj` in every control the learner has not touched. */
   const fill = (obj) => {
     for (const [key, c] of controls) {
@@ -202,6 +245,7 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
       const text = displayValue(c.field, obj[key]);
       if (c.get() !== text) c.set(text);
     }
+    refreshCards();
   };
 
   async function readFileObject() {
@@ -245,6 +289,7 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
           io.onWritten?.(text);
         } while (again);
         setStatus(dirty.size ? 'pending' : 'saved');
+        refreshCards();
       } catch (err) {
         setStatus('error', `${err?.message ?? 'The write failed'}. Your answers are still here; press Save to try again.`);
       } finally {
@@ -260,11 +305,26 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
     if (dirty.size || timer) await save();
   }
 
+  refreshCards();
+
   return {
     reload,
     save,
     flush,
     statusText: () => status.textContent,
+    /** { answered, total } now. */
+    progress: () => ({ answered: answeredCount(fields, currentValues()), total: fields.length }),
+    /** Per-question outcomes of a check run, `{ key: { pass } }`; the badges follow. */
+    setResults(next) {
+      results = next && typeof next === 'object' ? next : {};
+      refreshCards();
+    },
+    /** Puts the cursor on the first question without an answer (or the first question). */
+    focusFirstUnanswered() {
+      const values = currentValues();
+      const pick = [...controls.values()].find((c) => values[c.field.key] == null) ?? [...controls.values()][0];
+      pick?.inputs[0]?.focus();
+    },
     disable() {
       disabled = true;
       clearTimeout(timer);

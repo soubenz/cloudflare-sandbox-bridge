@@ -1,6 +1,7 @@
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { terminalUrl } from './api.js';
+import { monoFamily, windowPalette, withAlpha } from './palette.js';
 
 /**
  * Attaches xterm.js to the session's terminal relay.
@@ -15,24 +16,34 @@ import { terminalUrl } from './api.js';
 const CONTROL_PREFIX = '\x01';
 
 export function attachTerminal({ container, sessionId, token, onNotice, onStatus, onInput }) {
+  // The window's own colours (styles.css tokens), so the terminal is the same navy as the editor and the bar around it.
+  const palette = windowPalette();
+  const family = monoFamily();
   const term = new Terminal({
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontFamily: family,
     fontSize: 13,
     lineHeight: 1.2,
     cursorBlink: true,
     scrollback: 5000,
     theme: {
-      background: '#0b0e13',
-      foreground: '#e6e9ef',
-      cursor: '#6aaee8',
-      cursorAccent: '#0b0e13',
-      selectionBackground: 'rgba(106, 174, 232, 0.35)',
+      background: palette.terminal,
+      foreground: palette.text,
+      cursor: palette.accent,
+      cursorAccent: palette.terminal,
+      selectionBackground: withAlpha(palette.accent, 0.3),
     },
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(container);
   safeFit();
+  // The page's own monospace face may still be loading: measure again once it is, or the cells are sized for the fallback.
+  document.fonts?.load?.("13px 'JetBrains Mono'")
+    .then(() => {
+      term.options.fontFamily = family;
+      safeFit();
+    })
+    .catch(() => {});
 
   const ws = new WebSocket(terminalUrl(sessionId, token));
   ws.binaryType = 'arraybuffer';

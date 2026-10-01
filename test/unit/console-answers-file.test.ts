@@ -17,6 +17,9 @@ const a = (await import('../../dashboard/src/answers-file.js' as string)) as {
   displayValue: (f: Field, stored: unknown) => string;
   mergeAnswers: (disk: unknown, fields: Field[], values: Record<string, unknown>, dirty?: Set<string>) => Record<string, unknown>;
   serializeAnswers: (o: unknown) => string;
+  questionStatus: (o?: { value?: unknown; dirty?: boolean; result?: { pass?: unknown } }) => string;
+  QUESTION_STATUS: Record<string, { text: string; tone: string }>;
+  answeredCount: (fields: Field[], values: Record<string, unknown> | undefined) => number;
 };
 
 const text: Field = { key: 't', prompt: 'P', kind: 'text' };
@@ -140,5 +143,54 @@ describe('the file name', () => {
       const template = a.parseAnswersFile(readFileSync(`labs/${lab}/workspace/${bundle.answers_file}`, 'utf8'));
       expect(Object.keys(template).sort(), lab).toEqual(bundle.fields.map((f) => f.key).sort());
     }
+  });
+});
+
+describe('what a question card says about it', () => {
+  it('is empty until there is an answer, whatever the answer is for a number', () => {
+    expect(a.questionStatus({ value: null })).toBe('empty');
+    expect(a.questionStatus({ value: undefined })).toBe('empty');
+    expect(a.questionStatus({ value: '' })).toBe('empty');
+    expect(a.questionStatus()).toBe('empty');
+    // Zero is an answer.
+    expect(a.questionStatus({ value: 0 })).toBe('saved');
+  });
+
+  it('is answered while the answer is not yet in the file, and saved once it is', () => {
+    expect(a.questionStatus({ value: 'a', dirty: true })).toBe('answered');
+    expect(a.questionStatus({ value: 'a', dirty: false })).toBe('saved');
+    expect(a.questionStatus({ value: 404 })).toBe('saved');
+  });
+
+  it('an emptied answer is empty even while it is unsaved', () => {
+    expect(a.questionStatus({ value: null, dirty: true })).toBe('empty');
+  });
+
+  it('takes a per-question check result when a lab reports one, and it wins over saved', () => {
+    expect(a.questionStatus({ value: 'a', result: { pass: true } })).toBe('checked-correct');
+    expect(a.questionStatus({ value: 'a', dirty: true, result: { pass: false } })).toBe('checked-wrong');
+  });
+
+  it('ignores a result that says nothing about pass or fail', () => {
+    expect(a.questionStatus({ value: 'a', result: {} })).toBe('saved');
+    expect(a.questionStatus({ value: 'a', result: { pass: 'yes' } })).toBe('saved');
+  });
+
+  it('has words and a badge style for every status it can give', () => {
+    for (const status of ['empty', 'answered', 'saved', 'checked-correct', 'checked-wrong']) {
+      expect(a.QUESTION_STATUS[status]?.text, status).toBeTruthy();
+      expect(['outline', 'info', 'ok', 'warn']).toContain(a.QUESTION_STATUS[status]?.tone);
+    }
+    expect(a.QUESTION_STATUS.empty!.text).toBe('Not answered');
+    expect(a.QUESTION_STATUS.answered!.text).toBe('Answered');
+    expect(a.QUESTION_STATUS.saved!.text).toBe('Saved');
+  });
+
+  it('counts the fields that have an answer', () => {
+    expect(a.answeredCount(fields, { t: 'x', n: null, c: 'a' })).toBe(2);
+    expect(a.answeredCount(fields, { t: '', n: 0, c: null })).toBe(1);
+    expect(a.answeredCount(fields, {})).toBe(0);
+    expect(a.answeredCount(fields, undefined)).toBe(0);
+    expect(a.answeredCount([], { t: 'x' })).toBe(0);
   });
 });

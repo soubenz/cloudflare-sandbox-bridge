@@ -75,3 +75,41 @@ export const serializeAnswers = (obj) => `${JSON.stringify(obj, null, 2)}\n`;
  * Radios read better than a select up to this many choices.
  */
 export const MAX_RADIO_CHOICES = 4;
+
+/**
+ * What a question's card says about it.
+ *
+ *   value   the control's JSON value now (null when empty)
+ *   dirty   the learner changed it and it has not been written yet
+ *   result  optional per-question outcome of a check run, `{ pass: boolean }`
+ *
+ * 'empty' (no answer yet), 'answered' (has one, not written yet), 'saved' (has
+ * one and it is in the file), and, when a check run reports on this question,
+ * 'checked-correct' or 'checked-wrong'. The console's checks grade the answers
+ * file as a whole today, so nothing passes a result in yet; the form takes
+ * them through setResults() the day a lab's checks report per question.
+ */
+export function questionStatus({ value, dirty = false, result } = {}) {
+  if (result && typeof result.pass === 'boolean') return result.pass ? 'checked-correct' : 'checked-wrong';
+  if (value == null || value === '') return 'empty';
+  return dirty ? 'answered' : 'saved';
+}
+
+/** The words on a card's badge for each status, and the badge style it wears. */
+export const QUESTION_STATUS = {
+  empty: { text: 'Not answered', tone: 'outline' },
+  answered: { text: 'Answered', tone: 'info' },
+  saved: { text: 'Saved', tone: 'ok' },
+  'checked-correct': { text: 'Checked \u00b7 correct', tone: 'ok' },
+  'checked-wrong': { text: 'Checked \u00b7 not yet', tone: 'warn' },
+};
+
+/** How many of the fields have an answer, from `{ key: value }`. */
+export function answeredCount(fields, values) {
+  let n = 0;
+  for (const f of fields) {
+    const v = values?.[f.key];
+    if (v != null && v !== '') n++;
+  }
+  return n;
+}

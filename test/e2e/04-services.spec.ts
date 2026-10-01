@@ -103,6 +103,8 @@ test.describe('the lab service UI', () => {
   test('lists every service with a restart that brings it back healthy', async ({ session }) => {
     // Tabs only cover ui: true services; this list is how a learner who
     // changed a service's config restarts it, since their shell can't.
+    // The list lives in the Services popover in the window's bar.
+    await session.locator('#btnServices').click();
     const row = session.locator('#serviceList li[data-service="echo"]');
     await expect(row).toBeVisible({ timeout: 30_000 });
     await expect(row.locator('.svc-health')).toHaveText('healthy');

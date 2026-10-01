@@ -16,6 +16,7 @@ import { basicSetup } from 'codemirror';
 import { EditorView, keymap } from '@codemirror/view';
 import { Compartment, Prec } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { monoFamily, windowPalette, withAlpha } from './palette.js';
 
 /** Grammar per file extension, imported on demand so the initial load stays small. */
 const GRAMMARS = {
@@ -37,6 +38,8 @@ async function loadLanguage(filename) {
 }
 
 export async function createEditor(mount, { onChange, onSave } = {}) {
+  const palette = windowPalette();
+  const family = monoFamily();
   const languageSlot = new Compartment();
   // Replacing the document to open a file is not an edit, and reporting it
   // as one made every freshly opened file look unsaved.
@@ -66,11 +69,20 @@ export async function createEditor(mount, { onChange, onSave } = {}) {
       EditorView.updateListener.of((u) => {
         if (u.docChanged && !loading) onChange?.();
       }),
-      EditorView.theme({
-        '&': { height: '100%', fontSize: '13px', backgroundColor: '#0b0e13' },
-        '.cm-gutters': { backgroundColor: '#0b0e13', borderRight: '1px solid #262e3a' },
-        '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', lineHeight: '1.55' },
-      }),
+      // The window's colours: the code sits on the same navy as the window around it. oneDark keeps the
+      // syntax colours; what it paints behind and around them is replaced here.
+      Prec.highest(EditorView.theme({
+        '&': { height: '100%', fontSize: '13px', backgroundColor: palette.editor, color: palette.text },
+        '.cm-content': { caretColor: palette.accent },
+        '.cm-cursor, .cm-dropCursor': { borderLeftColor: palette.accent },
+        '.cm-gutters': { backgroundColor: palette.editor, color: palette.muted, borderRight: `1px solid ${palette.line}` },
+        '.cm-activeLine': { backgroundColor: palette.strip },
+        '.cm-activeLineGutter': { backgroundColor: palette.strip, color: palette.text },
+        '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+          backgroundColor: withAlpha(palette.accent, 0.25),
+        },
+        '.cm-scroller': { fontFamily: family, lineHeight: '1.6' },
+      })),
     ],
   });
 
@@ -91,5 +103,6 @@ export async function createEditor(mount, { onChange, onSave } = {}) {
     },
     value: () => editor.state.doc.toString(),
     focus: () => editor.focus(),
+    destroy: () => editor.destroy(),
   };
 }

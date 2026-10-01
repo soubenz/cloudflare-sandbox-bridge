@@ -45,3 +45,19 @@ export function uiIcon(name, size = 16) {
   const [paths, box] = UI_ICONS[name];
   return svgIcon(paths, size, box, 1.8);
 }
+
+/**
+ * A glyph from the page's inline sprite (the <symbol>s at the top of index.html),
+ * for the session screen's tabs and rail. `id` is the symbol's id ("i-cap").
+ */
+export function spriteIcon(id, size = 18) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  const use = document.createElementNS(SVG_NS, 'use');
+  use.setAttribute('href', `#${id}`);
+  svg.append(use);
+  return svg;
+}

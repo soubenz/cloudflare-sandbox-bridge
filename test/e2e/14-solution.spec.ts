@@ -53,6 +53,11 @@ async function reloadConsole(page: Page) {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
   await expect(page.locator('#statePill')).toHaveText('running', { timeout: 60_000 });
+  // The Solution is a tab of the guide, there only when the API says a solution exists.
+  // The guide's tabs are final once the brief has been read; then show the solution's, if there is one.
+  await expect(page.locator('#guide')).toHaveAttribute('data-ready', 'true', { timeout: 60_000 });
+  const tab = page.locator('#tabSolution');
+  if (await tab.isVisible()) await tab.click();
 }
 
 /** Answers `/solution` with these files, with the CORS headers the console's origin needs. */
@@ -74,8 +79,10 @@ test.describe('solution reveal', () => {
   test('shows nothing when the API has no solution to offer', async ({ session }) => {
     const status = await serveSolutionStatus(session, undefined);
     await reloadConsole(session);
+    await session.locator('#tabHints').click();
     await expect(session.locator('#hintsPanel')).toBeVisible();
     await expect(session.locator('#solutionBlock')).toBeHidden();
+    await expect(session.locator('#tabSolution')).toBeHidden();
 
     status.value = { ...unlockedSolution(), available: false };
     await reloadConsole(session);
@@ -313,6 +320,7 @@ test.describe('solution reveal', () => {
     // The status the console re-reads after the event agrees with it.
     status.value = unlockedSolution();
     await emit(session.request, await sessionIdOf(session), 'solution.unlocked', {});
+    await session.locator('#tabSolution').click();
 
     const notice = session.locator('#noticeList li', { hasText: 'The solution is now available' });
     await expect(notice.first()).toBeVisible({ timeout: 30_000 });

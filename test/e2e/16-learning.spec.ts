@@ -1156,8 +1156,8 @@ test.describe('Before you begin', () => {
     await startCard(page);
     await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
     await enterSession(page);
-    await page.getByRole('tab', { name: 'Learn' }).click();
-    for (const c of bundle.concepts) await expect(page.locator(`#learnBody .lesson[data-concept="${c.id}"]`)).toHaveAttribute('data-state', 'collapsed');
+    await page.getByRole('tab', { name: 'Lessons' }).click();
+    for (const c of bundle.concepts) await expect(page.locator(`#lessonsBody .lesson[data-concept="${c.id}"]`)).toHaveAttribute('data-state', 'collapsed');
   });
 
   test('an answered diagnostic beats a strong area: a missed concept opens', async ({ page }) => {
@@ -1204,8 +1204,8 @@ async function intoSession(page: Page, opts: StubOptions = {}, mastery: Mastery 
   await startCard(page);
   await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
   await enterSession(page);
-  // The tabs are built once the brief has loaded.
-  await expect(page.locator('#tabLearn')).toBeVisible();
+  // The guide's tabs are built once the brief has loaded.
+  await expect(page.locator('#tabStory')).toBeVisible();
   await expect(page.locator('#tabQuestions')).toBeVisible();
   return s;
 }
@@ -1213,19 +1213,22 @@ async function intoSession(page: Page, opts: StubOptions = {}, mastery: Mastery 
 const field = (page: Page, key: string) => page.locator(`.qfield[data-key="${key}"]`);
 const lastPut = (s: Stub) => JSON.parse(s.puts.at(-1)!.body) as Answers;
 
-test.describe('the Learn tab', () => {
-  test('shows the story and every lesson with its diagram, toggleable, without changing how the lab opens', async ({ page }) => {
+test.describe('the Story and Lessons tabs', () => {
+  test('shows the story and every lesson with its diagram, toggleable, with the story first', async ({ page }) => {
     await intoSession(page);
-    // The brief is still what a learner lands on.
-    await expect(page.locator('.tab-active')).toHaveText('Brief');
-    const tabs = await page.locator('#centerTabs .tab:visible').allInnerTexts();
-    expect(tabs).toEqual(['Brief', 'Learn', 'Questions', 'Terminal', 'Editor']);
+    // An explore lab opens on its story, then its lessons, brief and questions (hints come last).
+    await expect(page.locator('.tab-active')).toHaveText('Story');
+    const tabs = await page.locator('#guideTabs .tab:visible').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.guideTab));
+    expect(tabs).toEqual(['story', 'lessons', 'brief', 'questions', 'hints']);
+    // The workspace window keeps its own tabs.
+    expect(await page.locator('#workspaceTabs .tab:visible').allInnerTexts()).toEqual(['Terminal', 'Editor']);
 
-    await page.getByRole('tab', { name: 'Learn' }).click();
-    await expect(page.locator('#viewLearn')).toBeVisible();
-    await expect(page.locator('#learnBody .learn-story-title')).toHaveText(bundle.story!.title);
-    await expect(page.locator('#learnBody .learn-story .learn-prose p').first()).toBeVisible();
-    const lessons = page.locator('#learnBody .lesson');
+    await expect(page.locator('#viewStory')).toBeVisible();
+    await expect(page.locator('#storyBody .learn-story-title')).toHaveText(bundle.story!.title);
+    await expect(page.locator('#storyBody .learn-story .learn-prose p').first()).toBeVisible();
+    await page.getByRole('tab', { name: 'Lessons' }).click();
+    await expect(page.locator('#viewLessons')).toBeVisible();
+    const lessons = page.locator('#lessonsBody .lesson');
     await expect(lessons).toHaveCount(bundle.concepts.length);
 
     // Nothing known: all open, each with a diagram and a toggle that folds it to its recap.
@@ -1247,8 +1250,8 @@ test.describe('the Learn tab', () => {
 
   test("follows the plan: a known concept is folded, and it opens on demand", async ({ page }) => {
     await intoSession(page, {}, { ...SKIPPED, concepts: { [ALIASES]: { known: true } } });
-    await page.getByRole('tab', { name: 'Learn' }).click();
-    const aliases = page.locator(`#learnBody .lesson[data-concept="${ALIASES}"]`);
+    await page.getByRole('tab', { name: 'Lessons' }).click();
+    const aliases = page.locator(`#lessonsBody .lesson[data-concept="${ALIASES}"]`);
     await expect(aliases).toHaveAttribute('data-state', 'collapsed');
     await expect(aliases.locator('.lesson-chip')).toHaveText('You know this');
     await aliases.getByRole('button', { name: 'Show lesson' }).click();
@@ -1259,10 +1262,10 @@ test.describe('the Learn tab', () => {
     await intoSession(page);
     // Starting a lab is for a computer; a window narrowed after that must still hold together.
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole('tab', { name: 'Learn' }).click();
-    await expect(page.locator('#learnBody .lesson').first()).toBeVisible();
+    await page.getByRole('tab', { name: 'Lessons' }).click();
+    await expect(page.locator('#lessonsBody .lesson').first()).toBeVisible();
     await noHorizontalScroll(page);
-    const widths = await page.locator('#learnBody .lesson, #learnBody .diagram, #learnBody pre').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right));
+    const widths = await page.locator('#lessonsBody .lesson, #lessonsBody .diagram, #lessonsBody pre').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right));
     for (const right of widths) expect(right).toBeLessThanOrEqual(390.5);
     // The tab is reachable in the scrolling tab strip.
     await expect(page.getByRole('tab', { name: 'Questions' })).toBeAttached();
@@ -1404,7 +1407,7 @@ test.describe('the Questions tab', () => {
     expect(s.puts).toEqual([]);
   });
 
-  test('Run checks saves what is pending, then runs the console’s own checks', async ({ page }) => {
+  test('Check my answers saves what is pending, then runs the console’s own checks', async ({ page }) => {
     const s = await intoSession(page);
     await page.getByRole('tab', { name: 'Questions' }).click();
     await field(page, 'support_deployment').locator('input[value="a"]').check();
@@ -1454,9 +1457,10 @@ test.describe('a lab without learning content', () => {
     expect(s.starts).toEqual([PLAIN]);
     expect(s.learnFetches).toEqual([]);
     await expect(screen(page)).toBeHidden();
-    await expect(page.locator('#tabLearn')).toBeHidden();
-    await expect(page.locator('#tabQuestions')).toBeHidden();
-    expect(await page.locator('#centerTabs .tab:visible').allInnerTexts()).toEqual(['Brief', 'Terminal', 'Editor']);
+    await expect(page.locator('#guide')).toHaveAttribute('data-ready', 'true');
+    for (const id of ['#tabStory', '#tabLessons', '#tabQuestions']) await expect(page.locator(id)).toBeHidden();
+    expect(await page.locator('#guideTabs .tab:visible').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.guideTab))).toEqual(['brief', 'checks', 'hints']);
+    expect(await page.locator('#workspaceTabs .tab:visible').allInnerTexts()).toEqual(['Terminal', 'Editor']);
     await expect(page.locator('.tab-active')).toHaveText('Brief');
     expect(s.errors).toEqual([]);
   });
@@ -1470,8 +1474,8 @@ test.describe('a lab without learning content', () => {
       expect(s.learnFetches).toContain(slug);
       expect(s.starts).toEqual([slug]);
       await expect(page.locator('#learnScreen')).toBeHidden();
-      await expect(page.locator('#tabLearn')).toBeHidden();
-      await expect(page.locator('#tabQuestions')).toBeHidden();
+      await expect(page.locator('#guide')).toHaveAttribute('data-ready', 'true');
+      for (const id of ['#tabStory', '#tabLessons', '#tabQuestions']) await expect(page.locator(id)).toBeHidden();
       expect(s.errors).toEqual([]);
     });
   }
@@ -1774,8 +1778,8 @@ test.describe('screenshots', () => {
         await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
         await enterSession(page);
       });
-      await page.getByRole('tab', { name: 'Learn' }).click();
-      await page.locator('#learnBody .lesson .diagram').first().scrollIntoViewIfNeeded();
+      await page.getByRole('tab', { name: 'Lessons' }).click();
+      await page.locator('#lessonsBody .lesson .diagram').first().scrollIntoViewIfNeeded();
       await shot('lesson-diagram');
       await page.getByRole('tab', { name: 'Questions' }).click();
       await field(page, 'support_deployment').locator('input[value="a"]').check();

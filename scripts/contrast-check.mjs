@@ -16,7 +16,7 @@
 // mirror of the accents must equal packages/design, and every colour pair the
 // console draws as text (4.5:1) or as a boundary or fill that must be seen
 // (3:1) is checked in both themes. No colour may be named outside the token
-// blocks of styles.css and learn.css.
+// blocks of styles.css (learn.css and session.css included).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -278,6 +278,56 @@ const consolePairs = [
   ["strong", "bg", 3.0, "the current path pill against the page"],
   ["done-bg", "surface", 3.0, "a done circle against a card"],
   ["ink-muted", "surface", 3.0, "the circle of an open lab row"],
+  // The session screen (session.css): the guide on the page's surfaces ...
+  ["ink-2", "surface-3", 4.5, "an inactive guide tab on the tab strip"],
+  ["accent-text", "surface", 4.5, "links in the brief"],
+  ["accent-text", "surface-2", 4.5, "links on a question card"],
+  ["ink-muted", "surface-2", 4.5, "help under a question, a hint's label"],
+  ["ink-2", "surface-2", 4.5, "a hint's text, a lesson's recap"],
+  ["on-accent", "accent-fill", 4.5, "a chosen answer, a selected window tab"],
+  ["accent-fill", "surface-2", 3.0, "a chosen answer against its card"],
+  ["border-input", "surface-2", 3.0, "an answer pill, a field, the dashed hint slot"],
+  ["accent-text", "accent-soft", 4.5, "the count on a guide tab"],
+  ["accent-text", "surface-3", 4.5, "the count on a guide tab that is not selected"],
+  ["done-fg", "done-bg", 4.5, "a passed check, a shown hint"],
+  ["done-bg", "surface-2", 3.0, "a passed dot and check against a card"],
+  // ... and the navy workspace window, the same in both themes.
+  ["on-accent", "navy-deep", 4.5, "white on the window: its title, a hovered file"],
+  ["navy-muted", "navy-deep", 4.5, "secondary text on the window: inactive tabs, file names"],
+  ["navy-muted", "win-strip", 4.5, "the toolbars and the activity strip"],
+  ["on-accent", "win-strip", 4.5, "the open file's name on its toolbar"],
+  ["navy-muted", "win-hover", 4.5, "a hovered tab or file"],
+  ["on-accent", "win-hover", 4.5, "a selected file, a hovered tab"],
+  ["win-dim", "navy-deep", 4.5, "small labels on the window: Workspace, sizes"],
+  ["win-dim", "win-strip", 4.5, "Lab activity, the notice count"],
+  ["win-muted", "navy-deep", 4.5, "line numbers in the editor"],
+  ["win-text", "navy-deep", 4.5, "code in the editor"],
+  ["win-text", "term-bg", 4.5, "text in the terminal"],
+  ["accent-on-dark", "term-bg", 4.5, "the terminal's cursor and prompt"],
+  ["accent-on-dark", "win-chip", 4.5, "the RUNNING pill"],
+  ["win-warn", "win-warn-bg", 4.5, "a starting lab, a dropped stream"],
+  ["win-fail", "win-fail-bg", 4.5, "an ended lab"],
+  ["win-warn", "navy-deep", 4.5, "the idle clock and the unsaved mark on the window"],
+  ["win-warn", "win-strip", 4.5, "unsaved, on the editor's toolbar"],
+  ["win-fail", "navy-deep", 4.5, "an error in the file tree"],
+  ["win-ok", "win-strip", 4.5, "saved, on the editor's toolbar"],
+  ["accent-on-dark", "navy-deep", 3.0, "the focus ring inside the window"],
+  ["accent-fill", "navy-deep", 3.0, "the selected window tab against the window"],
+  ["win-ok", "navy-deep", 3.0, "a healthy service's dot"],
+  ["win-warn", "navy-deep", 3.0, "a restarting service's dot"],
+];
+
+// [foreground, the colour it is mixed into, the tint, the share of the tint, minimum, what it is]: text on a
+// `color-mix(in srgb, tint share%, base)` ground, as the banners, badges and the result card paint it.
+const consoleTints = [
+  ["ink", "surface", "warn", 0.12, 4.5, "text on the idle and expiry banners"],
+  ["ink", "surface", "bad", 0.12, 4.5, "text on the ended banner"],
+  ["ink", "surface", "good", 0.1, 4.5, "text on the result card"],
+  ["ink-2", "surface", "good", 0.1, 4.5, "the lab's name on the result card"],
+  ["ink-muted", "surface", "good", 0.1, 4.5, "the stat labels on the result card"],
+  ["accent-green-ink", "surface", "good", 0.1, 4.5, "Lab complete"],
+  ["warn", "surface", "warn", 0.14, 4.5, "a check that has not passed yet, a timed-out check"],
+  ["bad", "surface", "bad", 0.14, 4.5, "a failed check's mark"],
 ];
 for (const [theme, tokens] of Object.entries(consoleThemes)) {
   accentPairs(`console ${theme}`, tokens, consoleNames);
@@ -293,6 +343,14 @@ for (const [theme, tokens] of Object.entries(consoleThemes)) {
     const ok = r >= min;
     if (!ok) failed++;
     rows2.push([`console ${theme}`, `${fg} on ${bg} (${what})`, r.toFixed(2), String(min), "-", ok ? "ok" : "FAIL"]);
+  }
+  for (const [fg, base, tint, share, min, what] of consoleTints) {
+    const a = tokens[fg];
+    const b = tokens[base] && tokens[tint] ? mixHex(tokens[tint], tokens[base], share) : null;
+    const r = a && b ? ratio(a, b) : 0;
+    const ok = Boolean(a && b && r >= min);
+    if (!ok) failed++;
+    rows2.push([`console ${theme}`, `${fg} on ${tint} ${Math.round(share * 100)}% in ${base} (${what})`, a && b ? r.toFixed(2) : "missing", String(min), "-", ok ? "ok" : "FAIL"]);
   }
   // A module's progress fill on its own tinted track (18% of the accent into the card colour).
   let worst = { r: Infinity, n: "" };
@@ -315,7 +373,7 @@ for (const [theme, tokens] of Object.entries(consoleThemes)) {
       .replace(/^:root\s*\{[^}]*\}/m, "")
       .replace(/:root\[data-theme="dark"\]\s*\{[^}]*\}/, "")
       .replace(/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root:not\(\[data-theme\]\)\s*\{[^}]*\}\s*\}/, "");
-  for (const file of ["styles.css", "learn.css"]) {
+  for (const file of ["styles.css", "learn.css", "session.css"]) {
     const body = stripped(readFileSync(join(root, "dashboard/public", file), "utf8"));
     const strays = [];
     for (const m of body.matchAll(/\{([^{}]*)\}/g)) {

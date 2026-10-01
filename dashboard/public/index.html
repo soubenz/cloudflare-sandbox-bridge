@@ -14,8 +14,33 @@
 <link rel="stylesheet" href="./styles.css">
 <link rel="stylesheet" href="./diagram.css">
 <link rel="stylesheet" href="./learn.css">
+<link rel="stylesheet" href="./session.css">
 </head>
 <body>
+
+<!-- The session screen's glyphs, drawn once; tabs, rail and buttons point at them with <use>. -->
+<svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></symbol>
+    <symbol id="i-play" viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 3l8 5-8 5V3z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-term" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 10l3 2-3 2M12 15h5"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-bulb" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></symbol>
+    <symbol id="i-story" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h10a4 4 0 0 1 4 4v12H9a4 4 0 0 1-4-4V4z"/><path d="M9 9h6M9 13h4"/></symbol>
+    <symbol id="i-cap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-4 9 4-9 4-9-4z"/><path d="M7 11.5V16c0 1.5 2.5 3 5 3s5-1.5 5-3v-4.5"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
+    <symbol id="i-question" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/></symbol>
+    <symbol id="i-checks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3M14 9l2 2"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5M12 18h.01"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5v3h-3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></symbol>
+  </defs>
+</svg>
 
 <!-- Shown from the moment a lab is launched until it is actually usable. -->
 <div class="modal" id="bootModal" hidden>
@@ -56,24 +81,28 @@
     </nav>
 
     <div class="bar-session" id="sessionBar" hidden>
-      <span class="pill" id="statePill" title="">—</span>
-      <span class="pill pill-stream" id="streamPill" role="status" title="Live updates are interrupted; the console keeps checking on its own" hidden>reconnecting…</span>
+      <!-- "Gateway and access · lab 3 of 6" over the lab's title. #sessionLab is the lab's slug, on its own. -->
       <span class="session-lab">
-        <span class="session-title" id="sessionTitle"></span>
-        <span class="mono muted small" id="sessionLab"></span>
+        <span class="session-eyebrow mono"><span id="sessionWhere"></span><span id="sessionLab"></span></span>
+        <strong class="session-title" id="sessionTitle"></strong>
       </span>
-      <span class="timer" id="expiryTimer" title="Time until the hard timeout"></span>
       <!-- The session id is on the state pill's tooltip; this copy is for screen readers and support. -->
       <span class="sr-only" id="sessionId"></span>
 
       <span class="bar-stats" id="barStats" role="group" aria-label="Session progress">
-        <span class="stat" title="Checks passing in the latest run">
-          <span class="stat-label">Checks</span> <b class="stat-value" id="statChecks">—</b>
+        <span class="tag tag-time" title="Time until the hard timeout">
+          <svg width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg>
+          <span class="timer" id="expiryTimer"></span>
         </span>
-        <span class="stat" title="Hints unlocked out of the lab's hints">
-          <span class="stat-label">Hints</span> <b class="stat-value" id="statHints">—</b>
+        <span class="tag" id="checksTag" title="Checks passing in the latest run">
+          <svg width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-check"/></svg>
+          <b class="stat-value" id="statChecks">—</b><span class="tag-label">checks</span>
         </span>
-        <span class="stat" id="statCostWrap" title="Approximate spend by this session so far">
+        <span class="tag" id="answersTag" title="Questions with an answer" hidden>
+          <span class="dots" id="tagDots" aria-hidden="true"></span>
+          <b class="stat-value" id="statAnswers">—</b><span class="tag-label">answered</span>
+        </span>
+        <span class="tag" id="statCostWrap" title="Approximate spend by this session so far">
           <span class="sr-only">Cost</span> <b class="stat-value" id="statCost">—</b>
         </span>
       </span>
@@ -81,9 +110,14 @@
 
     <div class="bar-actions nav-actions">
       <div class="session-actions" id="sessionActions" hidden>
-        <button id="btnChecks" class="btn btn-primary" disabled>Run checks</button>
-        <button id="btnSnapshot" class="btn" disabled title="Save the workspace so it survives a container restart">Snapshot</button>
-        <button id="btnEnd" class="btn btn-danger" disabled>End session</button>
+        <button id="btnGuideToggle" class="btn btn-ghost" type="button" aria-expanded="true" aria-controls="guide">
+          <svg width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-panel"/></svg><span class="btn-label">Hide guide</span>
+        </button>
+        <button id="btnChecks" class="btn btn-accent" disabled>
+          <svg width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-play"/></svg><span class="btn-label">Run checks</span>
+        </button>
+        <button id="btnSnapshot" class="btn btn-ghost" disabled title="Save the workspace so it survives a container restart">Snapshot</button>
+        <button id="btnEnd" class="btn btn-strong" disabled>End lab</button>
       </div>
       <button id="btnBackToLabs" class="btn btn-primary" hidden>← Back to labs</button>
       <div class="nav-account" id="navAccount">
@@ -172,209 +206,295 @@
   <div class="learn-wrap" id="learnHost"></div>
 </section>
 
-<!-- Live session -->
-<main class="workspace has-activity" id="workspace" hidden>
-  <aside class="pane pane-left" aria-label="Checks, hints and files">
-    <section class="block">
-      <h2>
-        Checks
-        <span class="block-meta" id="checksSummary" aria-live="polite"></span>
-        <button id="btnChecksInline" class="btn btn-tiny" title="Grade your work so far">Run checks</button>
-      </h2>
-      <div id="checksPanel" class="block-body" aria-live="polite"><p class="muted small">Not run yet. Run checks to grade your work so far.</p></div>
-    </section>
+<!-- Live session: the guide (reading pane) on the left, the workspace window on the right, the dock below. -->
+<main class="workspace" id="workspace" data-guide="open" hidden>
+  <!-- Spoken, not shown: what the last check run found, and that the lab is complete. -->
+  <p class="sr-only" id="sessionLive" role="status" aria-live="polite"></p>
+  <!-- The guide, hidden: a rail of icons. Each reopens the guide on its tab. Built by app.js from the lab's tabs. -->
+  <nav class="guide-rail" id="guideRail" aria-label="Guide, hidden" hidden>
+    <button type="button" class="rail-btn rail-toggle" id="btnGuideShow" aria-label="Show guide" aria-expanded="false" aria-controls="guide">
+      <svg width="20" height="20" aria-hidden="true" focusable="false"><use href="#i-panel"/></svg>
+    </button>
+    <span class="rail-sep" aria-hidden="true"></span>
+    <div class="rail-tabs" id="railTabs"></div>
+  </nav>
 
-    <!-- Every service the lab runs, including the ones with no tab, so a
-         learner who changed a service's config can restart it. -->
-    <section class="block" id="servicesBlock" hidden>
-      <h2>Services</h2>
-      <ul class="svc-list" id="serviceList" aria-live="polite"></ul>
-    </section>
-
-    <section class="block">
-      <h2>Hints</h2>
-      <div id="hintsPanel" class="block-body" aria-live="polite"><p class="muted small">Hints unlock on a timer as the lab goes on.</p></div>
-    </section>
-
-    <!-- Only for labs that ship a solution, and only once status() says so. There is
-         deliberately no way to reveal it early from here. -->
-    <section class="block" id="solutionBlock" aria-labelledby="solutionHeading" hidden>
-      <h2 id="solutionHeading">
-        Solution
-        <span class="block-meta" id="solutionMeta"></span>
-      </h2>
-      <div id="solutionPanel" class="block-body solution-panel" aria-live="polite">
-        <div id="solutionLocked">
-          <p class="solution-rule small">
-            <svg class="solution-lock" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 4 15h8a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 12 6h-.5V4.5A3.5 3.5 0 0 0 8 1Zm-2 3.5a2 2 0 1 1 4 0V6H6V4.5Z"/></svg>
-            <span class="sr-only">Locked. </span><span id="solutionRule"></span>
-          </p>
-          <p class="solution-progress small muted" id="solutionProgress"></p>
-        </div>
-        <div id="solutionReady" hidden>
-          <p class="small">The solution is available</p>
-          <button type="button" id="btnSolutionOpen" class="btn btn-primary">Compare with my work</button>
-        </div>
+  <section class="guide" id="guide" aria-label="Guide">
+    <div class="guide-top">
+      <!-- Only the tabs the lab has are shown, in the order it wants (app.js, from session-layout.js). -->
+      <div class="seg guide-tabs" id="guideTabs" role="tablist" aria-label="Guide sections">
+        <button type="button" class="tab gtab" role="tab" id="tabStory" data-guide-tab="story" aria-selected="false" aria-controls="viewStory" tabindex="-1" hidden><span class="gtab-label">Story</span><span class="gtab-badge" hidden></span></button>
+        <button type="button" class="tab gtab" role="tab" id="tabLessons" data-guide-tab="lessons" aria-selected="false" aria-controls="viewLessons" tabindex="-1" hidden><span class="gtab-label">Lessons</span><span class="gtab-badge" hidden></span></button>
+        <button type="button" class="tab gtab" role="tab" id="tabBrief" data-guide-tab="brief" aria-selected="false" aria-controls="viewBrief" tabindex="-1" hidden><span class="gtab-label">Brief</span><span class="gtab-badge" hidden></span></button>
+        <button type="button" class="tab gtab" role="tab" id="tabQuestions" data-guide-tab="questions" aria-selected="false" aria-controls="viewQuestions" tabindex="-1" hidden><span class="gtab-label">Questions</span><span class="gtab-badge" hidden></span></button>
+        <button type="button" class="tab gtab" role="tab" id="tabChecks" data-guide-tab="checks" aria-selected="false" aria-controls="viewChecks" tabindex="-1" hidden><span class="gtab-label">Checks</span><span class="gtab-badge" hidden></span></button>
+        <button type="button" class="tab gtab" role="tab" id="tabHints" data-guide-tab="hints" aria-selected="false" aria-controls="viewHints" tabindex="-1" hidden><span class="gtab-label">Hints</span><span class="gtab-badge" hidden></span></button>
+        <button type="button" class="tab gtab" role="tab" id="tabSolution" data-guide-tab="solution" aria-selected="false" aria-controls="viewSolution" tabindex="-1" hidden><span class="gtab-label">Solution</span><span class="gtab-badge" hidden></span></button>
       </div>
-    </section>
-
-    <section class="block block-grow">
-      <h2>
-        Workspace
-        <span class="block-actions">
-          <button id="btnNewFile" class="btn btn-tiny" title="Create a file in /workspace">+ New file</button>
-          <button id="btnRefreshFiles" class="btn btn-tiny btn-icon" title="Reload the file list" aria-label="Reload the file list">↻</button>
-        </span>
-      </h2>
-      <ul class="files" id="fileList" aria-label="Files in /workspace"><li class="muted">loading…</li></ul>
-      <p class="notice notice-bad small" id="fileError" role="alert" hidden></p>
-    </section>
-  </aside>
-
-  <section class="pane pane-center">
-    <div class="ended-banner" id="endedBanner" role="status" hidden>
-      <span id="endedText">This session has ended.</span>
-      <span class="banner-actions">
-        <button id="btnResume" class="btn btn-tiny btn-primary" hidden>Resume from snapshot</button>
-        <button id="btnRestart" class="btn btn-tiny" hidden>Restart lab</button>
-        <button id="btnEndedBack" class="btn btn-tiny">Back to labs</button>
-      </span>
-    </div>
-    <p class="banner banner-warn" id="idleBanner" role="alert" hidden>
-      <span class="banner-text">Still there? This lab ends for inactivity in <span class="countdown" id="idleCountdown">2:00</span>.</span>
-      <button id="btnImHere" class="btn btn-tiny btn-primary">I'm here</button>
-    </p>
-    <p class="banner banner-warn" id="expiryBanner" role="alert" hidden>
-      <span class="banner-text">Ends in <span class="countdown" id="expiryCountdown"></span> — end with a snapshot to keep your work.</span>
-    </p>
-    <!-- Shown once, when every check has passed; stays for the rest of the session. -->
-    <section class="result-card" id="resultCard" role="status" aria-labelledby="resultTitle" hidden>
-      <div class="confetti" id="confetti" aria-hidden="true"></div>
-      <div class="result-head">
-        <div class="result-title">
-          <h2 id="resultTitle">Lab complete</h2>
-          <p class="result-lab" id="resultLab"></p>
-        </div>
-        <span class="banner-actions">
-          <button id="btnCopySummary" class="btn btn-tiny">Copy summary</button>
-          <button id="btnResultBack" class="btn btn-tiny btn-primary">Back to labs</button>
-        </span>
-      </div>
-      <dl class="result-stats">
-        <div><dt>Checks</dt><dd id="resultChecks"></dd></div>
-        <div><dt>Time</dt><dd id="resultTime"></dd></div>
-        <div><dt>Hints used</dt><dd id="resultHints"></dd></div>
-      </dl>
-      <form class="result-feedback" id="feedbackForm">
-        <fieldset>
-          <legend>How was this lab?</legend>
-          <span class="rating">
-            <label><input type="radio" name="rating" value="1"> 1</label>
-            <label><input type="radio" name="rating" value="2"> 2</label>
-            <label><input type="radio" name="rating" value="3"> 3</label>
-            <label><input type="radio" name="rating" value="4"> 4</label>
-            <label><input type="radio" name="rating" value="5"> 5</label>
-          </span>
-        </fieldset>
-        <label class="sr-only" for="feedbackText">Anything to add? (optional)</label>
-        <textarea id="feedbackText" maxlength="2000" rows="2" placeholder="Anything to add? (optional)"></textarea>
-        <button type="submit" id="btnFeedback" class="btn btn-tiny btn-primary" disabled>Send</button>
-        <p class="notice notice-bad small" id="feedbackError" role="alert" hidden></p>
-      </form>
-      <p class="small result-thanks" id="feedbackThanks" hidden>Thanks — noted.</p>
-    </section>
-    <nav class="tabs" id="centerTabs" role="tablist" aria-label="Session views">
-      <button class="tab tab-active" data-view="brief" role="tab" aria-selected="true" aria-controls="viewBrief">Brief</button>
-      <!-- Only for labs whose bundle has a story or lessons / graded fields. -->
-      <button class="tab" data-view="learn" id="tabLearn" role="tab" aria-selected="false" aria-controls="viewLearn" hidden>Learn</button>
-      <button class="tab" data-view="questions" id="tabQuestions" role="tab" aria-selected="false" aria-controls="viewQuestions" hidden>Questions</button>
-      <button class="tab" data-view="terminal" role="tab" aria-selected="false" aria-controls="viewTerminal">Terminal</button>
-      <button class="tab" data-view="editor" role="tab" aria-selected="false" aria-controls="viewEditor">Editor</button>
-      <span class="tab-spacer" role="presentation"></span>
-      <span class="tab-group-label" id="serviceLabel" role="presentation" hidden>Services</span>
-      <span id="serviceTabs" class="service-tabs" role="presentation"></span>
-    </nav>
-
-    <div class="view view-active" id="viewBrief" role="tabpanel" aria-label="Brief">
-      <article class="brief" id="briefBody"><p class="muted">Loading the brief…</p></article>
+      <button type="button" class="icon-btn guide-hide" id="btnGuideHide" aria-label="Hide guide" aria-expanded="true" aria-controls="guide">
+        <svg width="18" height="18" aria-hidden="true" focusable="false"><use href="#i-panel"/></svg>
+      </button>
     </div>
 
-    <div class="view" id="viewLearn" role="tabpanel" aria-label="Learn">
-      <article class="brief learn-body" id="learnBody"></article>
-    </div>
-
-    <div class="view" id="viewQuestions" role="tabpanel" aria-label="Questions">
-      <div class="brief questions-body" id="questionsBody"></div>
-    </div>
-
-    <div class="view" id="viewTerminal" role="tabpanel" aria-label="Terminal">
-      <div id="term"></div>
-      <div class="term-status" id="termStatus" hidden>
-        <div class="term-status-card">
-          <p id="termStatusText">Terminal disconnected.</p>
-          <button id="btnReconnectTerm" class="btn btn-primary">Reconnect</button>
-        </div>
+    <div class="guide-body" id="guideBody">
+      <div class="gview" id="viewStory" role="tabpanel" aria-labelledby="tabStory" tabindex="0">
+        <article class="guide-article learn-body" id="storyBody"></article>
       </div>
-    </div>
 
-    <div class="view" id="viewEditor" role="tabpanel" aria-label="Editor">
-      <div class="editor-head">
-        <span class="mono editor-path" id="editorPath">No file open</span>
-        <span class="small editor-status" id="editorStatus" aria-live="polite"></span>
-        <span class="editor-head-spacer"></span>
-        <kbd class="small muted editor-kbd" id="saveShortcut">Ctrl S</kbd>
-        <button id="btnSaveFile" class="btn btn-tiny btn-primary" disabled>Save</button>
+      <div class="gview" id="viewLessons" role="tabpanel" aria-labelledby="tabLessons" tabindex="0">
+        <article class="guide-article learn-body" id="lessonsBody"></article>
       </div>
-      <div id="editorMount" class="editor-mount"></div>
-      <div class="empty-state" id="editorEmpty">
-        <p>No file open.</p>
-        <p class="muted small">Pick a file from the Workspace list, or create one with <strong>+ New file</strong>.</p>
-      </div>
-    </div>
 
-    <div class="view" id="viewService" role="tabpanel" aria-label="Service">
-      <div class="service-head">
-        <span class="mono" id="serviceName"></span>
-        <span class="small muted" id="serviceStatus" aria-live="polite"></span>
-        <span class="editor-head-spacer"></span>
-        <button id="btnServiceReload" class="btn btn-tiny">Reload</button>
-        <a id="serviceOpen" class="btn btn-tiny" target="_blank" rel="noopener noreferrer" href="#">Open in new tab ↗</a>
+      <div class="gview" id="viewBrief" role="tabpanel" aria-labelledby="tabBrief" tabindex="0">
+        <article class="brief" id="briefBody"><p class="muted">Loading the brief…</p></article>
       </div>
-      <div class="service-body" id="servicePanel">
-        <iframe id="serviceFrame" title="Service UI"></iframe>
-        <div class="service-down" id="serviceDown" role="alert" hidden>
-          <div class="empty-state service-down-card">
-            <p><strong id="serviceDownName"></strong> is not answering</p>
-            <p class="muted small">Its process is down or still starting. Restart it, or retry in a moment.</p>
-            <div class="modal-actions">
-              <button id="btnServiceDownRestart" class="btn btn-primary" type="button">Restart</button>
-              <button id="btnServiceDownRetry" class="btn" type="button">Retry</button>
+
+      <div class="gview" id="viewQuestions" role="tabpanel" aria-labelledby="tabQuestions" tabindex="0">
+        <div class="questions-body" id="questionsBody"></div>
+        <!-- An explore lab has no Checks tab: its results are read here, under the form (app.js moves #checksBlock in). -->
+        <div id="questionsChecksSlot"></div>
+      </div>
+
+      <div class="gview" id="viewChecks" role="tabpanel" aria-labelledby="tabChecks" tabindex="0">
+        <div id="checksSlot">
+          <section class="checks-block" id="checksBlock" aria-labelledby="checksHeading">
+            <div class="guide-head">
+              <h2 id="checksHeading">Checks</h2>
+              <span class="block-meta" id="checksSummary" aria-live="polite"></span>
+              <button id="btnChecksInline" class="btn btn-accent btn-sm" title="Grade your work so far">Run checks</button>
             </div>
-            <details id="serviceDownLogsBox" hidden>
-              <summary class="small muted">Last log lines</summary>
-              <pre class="logs-tail" id="serviceDownLogs"></pre>
-            </details>
+
+            <!-- Shown once, when every check has passed; stays for the rest of the session. -->
+            <section class="result-card" id="resultCard" role="status" aria-labelledby="resultTitle" hidden>
+              <div class="confetti" id="confetti" aria-hidden="true"></div>
+              <div class="result-head">
+                <div class="result-title">
+                  <h2 id="resultTitle">Lab complete</h2>
+                  <p class="result-lab" id="resultLab"></p>
+                </div>
+                <span class="banner-actions">
+                  <button id="btnCopySummary" class="btn btn-sm">Copy summary</button>
+                  <button id="btnResultBack" class="btn btn-sm btn-strong">Back to labs</button>
+                </span>
+              </div>
+              <dl class="result-stats">
+                <div><dt>Checks</dt><dd id="resultChecks"></dd></div>
+                <div><dt>Time</dt><dd id="resultTime"></dd></div>
+                <div><dt>Hints used</dt><dd id="resultHints"></dd></div>
+              </dl>
+              <form class="result-feedback" id="feedbackForm">
+                <fieldset>
+                  <legend>How was this lab?</legend>
+                  <span class="rating">
+                    <label><input type="radio" name="rating" value="1"> 1</label>
+                    <label><input type="radio" name="rating" value="2"> 2</label>
+                    <label><input type="radio" name="rating" value="3"> 3</label>
+                    <label><input type="radio" name="rating" value="4"> 4</label>
+                    <label><input type="radio" name="rating" value="5"> 5</label>
+                  </span>
+                </fieldset>
+                <label class="sr-only" for="feedbackText">Anything to add? (optional)</label>
+                <textarea id="feedbackText" maxlength="2000" rows="2" placeholder="Anything to add? (optional)"></textarea>
+                <button type="submit" id="btnFeedback" class="btn btn-sm btn-accent" disabled>Send</button>
+                <p class="notice notice-bad small" id="feedbackError" role="alert" hidden></p>
+              </form>
+              <p class="small result-thanks" id="feedbackThanks" hidden>Thanks — noted.</p>
+            </section>
+
+            <div id="checksPanel" class="checks-list" aria-live="polite"><p class="muted small">Not run yet. Run checks to grade your work so far.</p></div>
+          </section>
+        </div>
+      </div>
+
+      <div class="gview" id="viewHints" role="tabpanel" aria-labelledby="tabHints" tabindex="0">
+        <div class="guide-head">
+          <h2>Hints</h2>
+          <span class="block-meta" id="hintsMeta"></span>
+        </div>
+        <div class="hint-steps" id="hintSteps" aria-hidden="true"></div>
+        <div id="hintsPanel" class="hints-list" aria-live="polite"><p class="muted small">Hints unlock on a timer as the lab goes on.</p></div>
+        <p class="hint-note mono small muted">Hints unlock on a timer. There is no reveal button, on purpose.</p>
+      </div>
+
+      <div class="gview" id="viewSolution" role="tabpanel" aria-labelledby="tabSolution" tabindex="0">
+        <!-- Only for labs that ship a solution, and only once status() says so. There is
+             deliberately no way to reveal it early from here. -->
+        <section id="solutionBlock" aria-labelledby="solutionHeading" hidden>
+          <div class="guide-head">
+            <h2 id="solutionHeading">Solution</h2>
+            <span class="block-meta" id="solutionMeta"></span>
           </div>
-        </div>
-        <div class="service-loading" id="serviceLoading" hidden>
-          <div class="spinner" aria-hidden="true"></div>
-          <p class="small muted" id="serviceLoadingText">Loading…</p>
-        </div>
+          <div id="solutionPanel" class="solution-panel" aria-live="polite">
+            <div id="solutionLocked">
+              <p class="solution-rule">
+                <svg class="solution-lock" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 4 15h8a1.5 1.5 0 0 0 1.5-1.5v-6A1.5 1.5 0 0 0 12 6h-.5V4.5A3.5 3.5 0 0 0 8 1Zm-2 3.5a2 2 0 1 1 4 0V6H6V4.5Z"/></svg>
+                <span class="sr-only">Locked. </span><span id="solutionRule"></span>
+              </p>
+              <p class="solution-progress small muted" id="solutionProgress"></p>
+            </div>
+            <div id="solutionReady" hidden>
+              <p>The solution is available</p>
+              <button type="button" id="btnSolutionOpen" class="btn btn-accent">Compare with my work</button>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </section>
 
-  <!--
-    The curated activity feed, for every learner: pressure events, hints and
-    warnings as prose. The raw event log below stays operator-only.
-  -->
-  <aside class="pane pane-right" id="activityPane" aria-label="Lab activity">
-    <section class="block block-grow">
-      <h2>Lab activity</h2>
-      <ol class="events" id="noticeList" role="log" aria-label="Lab activity"></ol>
-      <p class="muted small" id="noticeEmpty">Nothing yet. Pressure events, hints and warnings appear here.</p>
+  <div class="stage" id="stage">
+    <div class="ended-banner" id="endedBanner" role="status" hidden>
+      <span id="endedText">This session has ended.</span>
+      <span class="banner-actions">
+        <button id="btnResume" class="btn btn-sm btn-accent" hidden>Resume from snapshot</button>
+        <button id="btnRestart" class="btn btn-sm" hidden>Restart lab</button>
+        <button id="btnEndedBack" class="btn btn-sm">Back to labs</button>
+      </span>
+    </div>
+    <p class="banner banner-warn" id="idleBanner" role="alert" hidden>
+      <svg width="20" height="20" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg>
+      <span class="banner-text">Still there? This lab ends for inactivity in <span class="countdown" id="idleCountdown">2:00</span>.</span>
+      <button id="btnImHere" class="btn btn-sm btn-strong">I'm here</button>
+    </p>
+    <p class="banner banner-warn" id="expiryBanner" role="alert" hidden>
+      <svg width="20" height="20" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg>
+      <span class="banner-text">Ends in <span class="countdown" id="expiryCountdown"></span> — end with a snapshot to keep your work.</span>
+    </p>
+
+    <section class="window" id="window" aria-label="Workspace">
+      <div class="window-bar">
+        <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="window-title" id="windowTitle">Editor</span>
+        <span class="pill" id="statePill" title="">—</span>
+        <span class="pill pill-stream" id="streamPill" role="status" title="Live updates are interrupted; the console keeps checking on its own" hidden>reconnecting…</span>
+        <span class="window-meta">
+          <span class="window-idle mono" id="idleClock" hidden></span>
+          <!-- Every service the lab runs, including the ones with no tab, so a
+               learner who changed a service's config can restart it. -->
+          <span class="services" id="servicesBlock" hidden>
+            <button type="button" class="svc-btn" id="btnServices" aria-expanded="false" aria-controls="servicesPop">
+              <span class="svc-dot" id="servicesDot" data-health="unknown" aria-hidden="true"></span>
+              <span>Services</span>
+              <span class="mono svc-count" id="servicesCount"></span>
+              <svg width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-chevron"/></svg>
+            </button>
+            <div class="svc-pop" id="servicesPop" role="group" aria-label="Services" hidden>
+              <ul class="svc-list" id="serviceList" aria-live="polite"></ul>
+            </div>
+          </span>
+        </span>
+      </div>
+
+      <div class="wtabs" id="workspaceTabs" role="tablist" aria-label="Workspace views">
+        <button type="button" class="tab wtab" data-view="terminal" role="tab" id="tabTerminal" aria-selected="false" aria-controls="viewTerminal" tabindex="-1"><svg width="15" height="15" aria-hidden="true" focusable="false"><use href="#i-term"/></svg>Terminal</button>
+        <button type="button" class="tab wtab" data-view="editor" role="tab" id="tabEditor" aria-selected="false" aria-controls="viewEditor" tabindex="-1"><svg width="15" height="15" aria-hidden="true" focusable="false"><use href="#i-code"/></svg>Editor</button>
+        <span id="serviceTabs" class="service-tabs" role="presentation"></span>
+      </div>
+
+      <div class="view" id="viewTerminal" role="tabpanel" aria-label="Terminal">
+        <div id="term"></div>
+        <div class="term-status" id="termStatus" hidden>
+          <div class="term-status-card">
+            <p id="termStatusText">Terminal disconnected.</p>
+            <button id="btnReconnectTerm" class="btn btn-accent">Reconnect</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- The files live inside the Editor: the tree on the left, the open file beside it. -->
+      <div class="view" id="viewEditor" role="tabpanel" aria-label="Editor">
+        <div class="editor-layout">
+          <nav class="files-pane" aria-label="Files">
+            <div class="files-head">
+              <span>Workspace</span>
+              <span class="files-actions">
+                <button id="btnNewFile" class="files-btn" title="Create a file in /workspace"><svg width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg>New file</button>
+                <button id="btnRefreshFiles" class="files-btn files-btn-icon" title="Reload the file list" aria-label="Reload the file list"><svg width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg></button>
+              </span>
+            </div>
+            <ul class="files" id="fileList" aria-label="Files in /workspace"><li class="muted">loading…</li></ul>
+            <p class="notice notice-bad small" id="fileError" role="alert" hidden></p>
+          </nav>
+          <div class="editor-pane">
+            <div class="editor-head">
+              <span class="mono editor-path" id="editorPath">No file open</span>
+              <span class="small editor-status" id="editorStatus" aria-live="polite"></span>
+              <span class="editor-head-spacer"></span>
+              <kbd class="small editor-kbd" id="saveShortcut">Ctrl S</kbd>
+              <button id="btnSaveFile" class="files-btn files-btn-accent" aria-label="Save file" disabled>Save</button>
+            </div>
+            <div id="editorMount" class="editor-mount"></div>
+            <div class="empty-state" id="editorEmpty">
+              <p>No file open.</p>
+              <p class="small">Pick a file from the tree, or create one with <strong>New file</strong>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" id="viewService" role="tabpanel" aria-label="Service">
+        <div class="service-head">
+          <span class="mono" id="serviceName"></span>
+          <span class="small service-status" id="serviceStatus" aria-live="polite"></span>
+          <span class="editor-head-spacer"></span>
+          <button id="btnServiceRestart" class="files-btn" type="button" title="Stop this service and start it again, so it picks up changed files">Restart</button>
+          <button id="btnServiceReload" class="files-btn">Reload</button>
+          <a id="serviceOpen" class="files-btn" target="_blank" rel="noopener noreferrer" href="#">Open in new tab ↗</a>
+        </div>
+        <div class="service-body" id="servicePanel">
+          <iframe id="serviceFrame" title="Service UI"></iframe>
+          <div class="service-down" id="serviceDown" role="alert" hidden>
+            <div class="empty-state service-down-card">
+              <p><strong id="serviceDownName"></strong> is not answering</p>
+              <p class="muted small">Its process is down or still starting. Restart it, or retry in a moment.</p>
+              <div class="modal-actions">
+                <button id="btnServiceDownRestart" class="btn btn-accent" type="button">Restart</button>
+                <button id="btnServiceDownRetry" class="btn" type="button">Retry</button>
+              </div>
+              <details id="serviceDownLogsBox" hidden>
+                <summary class="small muted">Last log lines</summary>
+                <pre class="logs-tail" id="serviceDownLogs"></pre>
+              </details>
+            </div>
+          </div>
+          <div class="service-loading" id="serviceLoading" hidden>
+            <div class="spinner" aria-hidden="true"></div>
+            <p class="small" id="serviceLoadingText">Loading…</p>
+          </div>
+        </div>
+      </div>
+
+      <!--
+        The curated activity feed, for every learner: pressure events, hints and
+        warnings as prose. One line until it is opened. The raw event log stays
+        operator-only.
+      -->
+      <aside class="strip activity" id="activityPane" aria-label="Lab activity" data-open="false">
+        <div class="activity-head">
+          <h2>Lab activity</h2>
+          <span class="mono activity-count" id="noticeCount"></span>
+          <button type="button" class="files-btn activity-toggle" id="btnActivityToggle" aria-expanded="false" aria-controls="noticeList" hidden>Show all</button>
+        </div>
+        <ol class="events" id="noticeList" role="log" aria-label="Lab activity"></ol>
+        <p class="small activity-empty" id="noticeEmpty">Nothing yet. Pressure events, hints and warnings appear here.</p>
+      </aside>
     </section>
-  </aside>
+  </div>
+
+  <div class="dock" id="dock" role="region" aria-label="Progress">
+    <span class="it">
+      <span class="dots" id="dockDots" role="img" aria-label=""></span>
+      <span id="dockProgress">Checks not run yet</span>
+    </span>
+    <span class="sep" aria-hidden="true"></span>
+    <span class="it" id="dockHintWrap">
+      <svg width="16" height="16" aria-hidden="true" focusable="false"><use href="#i-bulb"/></svg>
+      <span id="dockHint"></span>
+    </span>
+    <span class="sep" aria-hidden="true"></span>
+    <span class="it mono dock-cost" id="dockCost" title="Approximate spend by this session so far"><span class="sr-only">Cost </span><span id="dockCostValue">—</span></span>
+    <button type="button" class="btn btn-accent btn-sm" id="btnDockAction" disabled>Run checks</button>
+  </div>
 </main>
 
 <footer class="footer">
@@ -391,8 +511,8 @@
     <p class="muted small">A lab is a real container. Four things are worth knowing before you start one.</p>
     <dl class="onboarding-blocks">
       <div>
-        <dt>Brief, terminal and editor</dt>
-        <dd>Every lab opens on its Brief, which says what you are asked to do. Work in the Terminal, or open a file from the Workspace list in the Editor and save it with <kbd>Ctrl</kbd> <kbd>S</kbd>.</dd>
+        <dt>Guide, terminal and editor</dt>
+        <dd>The guide on the left says what you are asked to do: its Brief (or the Story of an explore lab), the lessons, the checks and the hints. Hide it with the button above it when you want the room. On the right, work in the Terminal, or open a file from the tree in the Editor and save it with <kbd>Ctrl</kbd> <kbd>S</kbd>.</dd>
       </div>
       <div>
         <dt>Checks</dt>

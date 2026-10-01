@@ -41,6 +41,8 @@ test.describe('checks, hints and the result card', () => {
     await session.reload({ waitUntil: 'domcontentloaded' });
     await session.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
 
+    // Hints are a tab of the guide.
+    await session.locator('#tabHints').click();
     const locked = session.locator('#hintsPanel .hint-locked').first();
     await expect(locked).toBeVisible({ timeout: 60_000 });
     await expect(locked).toContainText(/Hint 1 · unlocks in/);
