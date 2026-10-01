@@ -145,7 +145,7 @@ describe('publish with a learn part', () => {
     expect(store.has(solutionKey('gw-lab', '1.0.0'))).toBe(true);
     expect(store.has(privateKey('gw-lab', '1.0.0'))).toBe(true);
     const body = await j(await call(env, 'GET', '/labs/gw-lab/learn', { headers: SERVICE }));
-    expect(Object.keys(body).sort()).toEqual(['learn', 'version']);
+    expect(Object.keys(body).sort()).toEqual(['learn', 'slug', 'version']);
     expect(Object.keys(body.learn).sort()).toEqual(['answers_file', 'concepts', 'fields', 'questions', 'story', 'version']);
   });
 

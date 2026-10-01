@@ -97,7 +97,7 @@
 }
 
 /* ---------- the player ---------- */
-.cm { display: block; min-width: 0; margin: 0 0 var(--s4); }
+.cm { display: block; position: relative; min-width: 0; margin: 0 0 var(--s4); }
 
 /* The frame: as wide as its container; comic.js sets its height (it grows to the whole comic at the end). */
 .cm-stage {
@@ -268,6 +268,15 @@
 .cm-btn { gap: 8px; }
 .cm .cm-btn, .learn-screen .cm .cm-btn, .guide .cm .cm-btn { min-height: 44px; padding: 0 20px; border-radius: 999px; font-size: 15px; height: auto; }
 .cm-btn:disabled { cursor: default; }
+
+/* Sound: a toggle beside Replay and Skip (only on a comic with voices), and, only if the browser refuses
+   to start sound before a tap, a small button over the top of the frame (not a dialog: nothing waits on it). */
+.cm-sound { min-width: 0; }
+.cm-sound-tap { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 8; white-space: nowrap; box-shadow: var(--shadow-sm); }
+.cm-sound-tap[hidden] { display: none; }
+@media (max-width: 420px) {
+  .cm-sound-tap { top: 8px; padding: 0 14px; font-size: 14px; }
+}
 .cm-time { margin-left: auto; font: 500 12.5px/1 var(--mono); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 
 .cm-text, .cm-story-text { margin-top: var(--s4); border: 1px solid var(--border); border-radius: 16px; background: var(--surface-2); }

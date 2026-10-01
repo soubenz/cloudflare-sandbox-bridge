@@ -57,10 +57,11 @@ minutes are usable now.
 | GET | `/usage?from=&to=` | service | estimated container spend per family from D1 sessions (epoch ms; default last 30 days) → `{ from, to, by_family: { agent: { hours, usd, sessions }, gateway }, total_usd }`; see `docs/runbooks/cost.md` |
 | GET | `/labs` | service¹ | catalogue, ordered by `(path, module, order, slug)` → `[{ slug, version, title, type, family, summary?, objectives, difficulty?, timeout_minutes, path?, module?, order?, prerequisites?, tier, estimated_minutes?, has_learn }]`. `has_learn` is always present: true when the current version ships a [learn bundle](#learn-bundle). `summary`, `difficulty`, `path`, `module`, `order`, `prerequisites` and `estimated_minutes` are omitted when the manifest does not set them; `tier` is `free` or `pro` (default `pro`); `objectives` is `[]` when unset. `bundle.ts` `listCatalogue({ path?, module?, tier?, limit?, cursor? })` implements the filtered, paged form (cursor = last slug of the previous page; default limit 50, max 200) for the route to expose |
 | GET | `/labs/:slug` | service¹ | current version + manifest → `{ version, manifest }` |
-| GET | `/labs/:slug/learn` | service¹ | the lab's [learn bundle](#learn-bundle), current version → `{ version, learn }`; `404 no_learn` when the lab is published without one, `404 lab_not_found` when it is not published. Read by the console Worker with the service key, like `GET /labs/:slug` |
+| GET | `/labs/:slug/learn` | service¹ | the lab's [learn bundle](#learn-bundle), current version → `{ slug, version, learn }` (the slug rides along so the console can build narration URLs from the bundle alone); `404 no_learn` when the lab is published without one, `404 lab_not_found` when it is not published. Read by the console Worker with the service key, like `GET /labs/:slug` |
 | GET | `/learn/onboarding` | service | the platform onboarding quiz, `packages/catalogue/onboarding.json` parsed with `parseOnboarding` → `{ version: 1, intro, areas, questions }`. It is a branching quiz: `areas` is `[{ area, blurb }]`, one per area of `concepts.json` (`blurb` a one-line description, up to 90 characters), and every question is a lab quiz question plus a required `level` of `basic` or `advanced` (every area has at least one of each; 12 to 24 questions in all). The console asks only about areas the learner ticks, the area's first `basic` question and then, if right, its first `advanced` one, in file order; see [Learning content](learning-content.md#the-platform-onboarding-quiz). `404 no_onboarding` when that file is not in the deployed bundle; a file that does not validate is a 500 |
 | POST | `/learn/answers` | service | anonymous quiz-answer analytics, called by the console Worker → `201 { ok: true, recorded }`. See [Learning analytics](#learning-analytics) |
-| POST | `/labs/publish` | service | multipart: `manifest`, `workspace`, `private` files, an optional `solution` file (the lab's `solution/` as a gzip tarball; `labs publish` sends it when the directory has anything to upload), an optional `learn` file (the compiled `learn/` folder as JSON, see [Learn bundle](#learn-bundle)) and optional `force=true` → `201 { slug, version, warnings: string[] }`; `warnings` lists prerequisites that are not published labs. Re-publishing an existing version is `409 version_exists` unless `force`. The solution is stored privately at `labs/{slug}/{version}/solution.tgz`, never inside `workspace.tgz` or `private.tgz` and never served by a catalogue route; a forced re-publish without a `solution` part removes the one the version had. The `learn` part is validated with `parseLearnBundle` (the Worker does not trust the CLI): a bundle that does not parse or does not cross-check is `400 invalid_learn_bundle` listing every problem, and nothing of the publish is stored; a forced re-publish without a `learn` part removes the one the version had |
+| GET | `/labs/:slug/audio/:file` | service¹ | one [narration clip](#narration-clips) of the lab's comic, current version. `:file` is `<16 hex>.mp3` (anything else is `404 no_audio`, and nothing else under the lab's R2 prefix is ever reachable). `200 audio/mpeg` with `Cache-Control: public, max-age=31536000, immutable` (the name is a content hash) and `Accept-Ranges: bytes`; a single `Range: bytes=a-b` / `a-` / `-n` is answered `206` with `Content-Range`, an unsatisfiable one `416`, several ranges the whole clip. Read by the console Worker with the service key (it proxies it as `GET /api/audio/:slug/:file`, cookie-gated, `Cache-Control: private`) |
+| POST | `/labs/publish` | service | multipart: `manifest`, `workspace`, `private` files, an optional `solution` file (the lab's `solution/` as a gzip tarball; `labs publish` sends it when the directory has anything to upload), an optional `learn` file (the compiled `learn/` folder as JSON, see [Learn bundle](#learn-bundle)), zero or more `audio` files (the comic's narration clips, see [Narration clips](#narration-clips)) and optional `force=true` → `201 { slug, version, warnings: string[] }`; `warnings` lists prerequisites that are not published labs. Re-publishing an existing version is `409 version_exists` unless `force`. The solution is stored privately at `labs/{slug}/{version}/solution.tgz`, never inside `workspace.tgz` or `private.tgz` and never served by a catalogue route; a forced re-publish without a `solution` part removes the one the version had. The `learn` part is validated with `parseLearnBundle` (the Worker does not trust the CLI): a bundle that does not parse or does not cross-check is `400 invalid_learn_bundle` listing every problem, and nothing of the publish is stored; a forced re-publish without a `learn` part removes the one the version had. The `audio` parts are checked against the bundle's `audio` index (`400 invalid_audio` otherwise, nothing stored) |
 | GET | `/pools`, `/pools/:family` | service¹ | warm pool stats → `{ warm, claimed, max_instances, available, config, stats }`; `max_instances` is the container class's ceiling (`MAX_INSTANCES_<FAMILY>` var, default 10) and `available` is `max_instances - claimed`, the sessions that could still start⁴; `stats` includes `consecutive_start_failures`, `degraded`, and `last_start_error` / `last_start_error_at` when a start has failed |
 | POST | `/pools/:family/prime` | service | `{ target? }` → `{ ok: true }`; only ever grows the pool |
 | POST | `/pools/:family/drain` | service | destroys every warm container; claimed ones are untouched → `{ ok: true }` |
@@ -249,12 +250,15 @@ checks.)
   "questions": [{ "id": "q-alias-purpose", "concept": "gateway.routing-aliases", "type": "single",
                   "prompt": "…", "options": [{ "id": "a", "text": "…" }], "answer": ["a"],
                   "explanation": "…", "diagnostic": true }],
+  "comic":     { "title": "…", "pages": [{ "panels": [ … ] }] },
+  "audio":     { "model": "@cf/deepgram/aura-2-en", "clips": { "82111213e8173703": { "voice": "atlas", "text": "…", "seconds": 2.06, "bytes": 12384 } },
+                 "lines": [{ "panel": 0, "kind": "caption", "clip": "82111213e8173703" }] },
   "answers_file": "answers.json",
   "fields":    [{ "key": "support_deployment", "prompt": "…", "kind": "choice", "choices": ["a", "b"], "help": "…" }]
 }
 ```
 
-`story` is absent when the lab has no `story.md`. `concepts` (at most 8),
+`story` is absent when the lab has no `story.md`; `comic` and `audio` when it has no `comic.yaml` or no narration (see below). `concepts` (at most 8),
 `questions` (at most 40) and `fields` (at most 12) may be empty arrays. Every
 concept id must be in `packages/catalogue/concepts.json`, every question's
 concept must have a lesson in the same bundle, and every lesson needs a
@@ -264,6 +268,25 @@ diagnostic question; the schema and the cross-checks live in
 Old versions keep the bundle they were published with. Rolling `current` back
 (`POST /labs/:slug/promote`) changes what `GET /labs/:slug/learn` serves, and
 `has_learn` follows after the index rebuild the promote already performs.
+
+### Narration clips
+
+A comic can be narrated (`labs narrate`, see `docs/learning-content.md#narration-voices`). The
+bundle's `audio` is the index: `clips` maps a 16-hex key to `{ voice, text, seconds, bytes }` (at
+most 80 clips, each at most 400 KB and 70 s), and `lines` lists, in reading order, which clip reads
+which spoken line (`panel` counts across pages from 0, `kind` is `caption` or `bubble`, `bubble`
+the index within the panel). `parseLearnBundle` cross-checks it against the comic with the same
+`narrationLines` the CLI used (`src/labs/comic-kit.ts`): audio that is not word for word, voice
+for voice the comic's own is `400 invalid_learn_bundle` ("out of date, run `labs narrate`").
+
+The clips themselves are `audio` parts of `POST /labs/publish` (content type `audio/mpeg`, file
+name `<key>.mp3`). The Worker rejects the publish with `400 invalid_audio`, storing nothing, unless every
+name is `<16 hex>.mp3` and unique, there are at most 80, each is at most 400 KB, starts like an MP3
+and is exactly the `bytes` the index says, and the uploaded set is exactly the set the index names (an
+unreferenced or missing clip is refused). They are stored at `labs/{slug}/{version}/audio/<key>.mp3`
+and served by `GET /labs/:slug/audio/:file` (service key; `Range` supported so a clip can seek). A
+forced re-publish leaves exactly that publish's clips. Nothing from `checks/` or `solution/` is
+reachable through the route.
 
 ## Learning analytics
 

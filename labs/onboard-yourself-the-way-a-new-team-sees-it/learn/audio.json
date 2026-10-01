@@ -1,0 +1,122 @@
+{
+  "model": "@cf/deepgram/aura-2-en",
+  "clips": {
+    "47f497a92ec69eec": {
+      "voice": "atlas",
+      "text": "Wednesday, a little after ten.",
+      "seconds": 2.14,
+      "bytes": 12816
+    },
+    "12dd3b7ec328efc7": {
+      "voice": "thalia",
+      "text": "A new team starts Monday. Their onboarding is a wiki page with nine bullets, and last time it took most of a week.",
+      "seconds": 7.1,
+      "bytes": 42624
+    },
+    "91801358b72decf8": {
+      "voice": "orion",
+      "text": "The script in the workspace runs the whole path for real. It is not a mock. Sorry about the comments.",
+      "seconds": 7.22,
+      "bytes": 43344
+    },
+    "0c599079f99beb22": {
+      "voice": "atlas",
+      "text": "Maren hands you the task.",
+      "seconds": 1.78,
+      "bytes": 10656
+    },
+    "6326295586947083": {
+      "voice": "thalia",
+      "text": "Be that new team for an hour. Get them fast-draft and their own tool, then make one real call that uses both.",
+      "seconds": 7.25,
+      "bytes": 43488
+    },
+    "0f34efc8fbd4c559": {
+      "voice": "atlas",
+      "text": "Three blanks to fill in as you go.",
+      "seconds": 2.09,
+      "bytes": 12528
+    },
+    "fd662ddf266d9c54": {
+      "voice": "atlas",
+      "text": "Nothing is broken. Walk the path for real.",
+      "seconds": 2.86,
+      "bytes": 17136
+    },
+    "ec09cdf877d16809": {
+      "voice": "thalia",
+      "text": "I will ask you again on Friday, so do not answer from the wiki.",
+      "seconds": 3.77,
+      "bytes": 22608
+    },
+    "da60f84df5d8467d": {
+      "voice": "orion",
+      "text": "Two people have edited it since the gateway moved.",
+      "seconds": 2.54,
+      "bytes": 15264
+    },
+    "14cf90c0da3739d0": {
+      "voice": "atlas",
+      "text": "Your turn.",
+      "seconds": 0.65,
+      "bytes": 3888
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "caption",
+      "clip": "47f497a92ec69eec"
+    },
+    {
+      "panel": 0,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "12dd3b7ec328efc7"
+    },
+    {
+      "panel": 1,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "91801358b72decf8"
+    },
+    {
+      "panel": 2,
+      "kind": "caption",
+      "clip": "0c599079f99beb22"
+    },
+    {
+      "panel": 2,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "6326295586947083"
+    },
+    {
+      "panel": 3,
+      "kind": "caption",
+      "clip": "0f34efc8fbd4c559"
+    },
+    {
+      "panel": 4,
+      "kind": "caption",
+      "clip": "fd662ddf266d9c54"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "ec09cdf877d16809"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 1,
+      "clip": "da60f84df5d8467d"
+    },
+    {
+      "panel": 5,
+      "kind": "caption",
+      "clip": "14cf90c0da3739d0"
+    }
+  ]
+}

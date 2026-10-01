@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
  * and the catalogue passthrough they depend on (`has_learn`).
  */
 type Call = { url: string; method: string; headers: Headers; body: string };
-type Reply = { status?: number; body?: unknown; raw?: string };
+type Reply = { status?: number; body?: unknown; raw?: string; headers?: Record<string, string> };
 
 const worker = (await import('../../dashboard/src/worker.js' as string)) as {
   default: { fetch: (req: Request, env: unknown) => Promise<Response> };
@@ -38,7 +38,7 @@ function env() {
         });
         for (const reply of replies) {
           const r = reply(url);
-          if (r) return new Response(r.raw ?? JSON.stringify(r.body ?? {}), { status: r.status ?? 200, headers: { 'content-type': 'application/json' } });
+          if (r) return new Response(r.status === 416 ? null : (r.raw ?? JSON.stringify(r.body ?? {})), { status: r.status ?? 200, headers: { 'content-type': 'application/json', ...r.headers } });
         }
         return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
       },
@@ -127,6 +127,85 @@ describe('GET /api/learn/:slug', () => {
     const res = await call('/api/learn/answers', { cookie });
     expect(res.status).toBe(404);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('GET /api/audio/:slug/:file', () => {
+  const FILE = '82111213e8173703.mp3';
+  const clip = (extra: Reply = {}): Reply => ({
+    raw: 'MP3DATA',
+    headers: { 'content-type': 'audio/mpeg', 'content-length': '7', 'accept-ranges': 'bytes', 'cache-control': 'public, max-age=31536000, immutable', 'x-secret': 'leak' },
+    ...extra,
+  });
+
+  it('reads the clip from the API with the service key and passes the audio through', async () => {
+    replies.push((u) => (u.endsWith(`/labs/see-what-a-gateway-does/audio/${FILE}`) ? clip() : undefined));
+    const res = await call(`/api/audio/see-what-a-gateway-does/${FILE}`, { cookie });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('MP3DATA');
+    expect(res.headers.get('content-type')).toBe('audio/mpeg');
+    expect(res.headers.get('content-length')).toBe('7');
+    expect(res.headers.get('accept-ranges')).toBe('bytes');
+    expect(calls[0]!.url).toBe(`https://api.internal/labs/see-what-a-gateway-does/audio/${FILE}`);
+    expect(calls[0]!.headers.get('authorization')).toBe('Bearer svc-key');
+  });
+
+  it('keeps the clip out of shared caches (the API says public; behind the cookie it is private) and forwards nothing else', async () => {
+    replies.push(() => clip());
+    const res = await call(`/api/audio/see-what-a-gateway-does/${FILE}`, { cookie });
+    expect(res.headers.get('cache-control')).toBe('private, max-age=31536000, immutable');
+    expect(res.headers.get('x-secret')).toBeNull();
+  });
+
+  it('forwards Range and passes 206 and Content-Range through', async () => {
+    replies.push(() => clip({ status: 206, raw: 'P3D', headers: { 'content-type': 'audio/mpeg', 'content-range': 'bytes 2-4/7', 'content-length': '3' } }));
+    const res = await call(`/api/audio/see-what-a-gateway-does/${FILE}`, { cookie, headers: { range: 'bytes=2-4', 'x-other': 'no' } });
+    expect(res.status).toBe(206);
+    expect(res.headers.get('content-range')).toBe('bytes 2-4/7');
+    expect(await res.text()).toBe('P3D');
+    expect(calls[0]!.headers.get('range')).toBe('bytes=2-4');
+    expect([...calls[0]!.headers.keys()].sort()).toEqual(['authorization', 'range']);
+  });
+
+  it('passes 416 through and an API 404 as it is', async () => {
+    replies.push(() => ({ status: 416, headers: { 'content-range': 'bytes */7' } }));
+    const res = await call(`/api/audio/see-what-a-gateway-does/${FILE}`, { cookie, headers: { range: 'bytes=99-' } });
+    expect(res.status).toBe(416);
+    expect(res.headers.get('content-range')).toBe('bytes */7');
+    replies.length = 0;
+    replies.push(() => ({ status: 404, body: { error: { code: 'no_audio', message: 'none' } } }));
+    const missing = await call(`/api/audio/see-what-a-gateway-does/${FILE}`, { cookie });
+    expect(missing.status).toBe(404);
+    expect(((await missing.json()) as any).error.code).toBe('no_audio');
+  });
+
+  it('is behind the console cookie', async () => {
+    const res = await call(`/api/audio/see-what-a-gateway-does/${FILE}`);
+    expect(res.status).toBe(401);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a slug or a file name that is not strictly what the API spells, and sends nothing on', async () => {
+    for (const path of [
+      `/api/audio/a%2Fb/${FILE}`,
+      `/api/audio/%E0%A4%A/${FILE}`,
+      `/api/audio/-x/${FILE}`,
+      '/api/audio/see-what-a-gateway-does/manifest.json',
+      '/api/audio/see-what-a-gateway-does/private.tgz',
+      `/api/audio/see-what-a-gateway-does/${FILE}.bak`,
+      '/api/audio/see-what-a-gateway-does/ABCDEF0123456789.mp3',
+      '/api/audio/see-what-a-gateway-does/abc.mp3',
+      '/api/audio/see-what-a-gateway-does/..%2Fprivate.tgz',
+    ]) {
+      expect((await call(path, { cookie })).status, path).toBe(400);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('answers 502 when the API refuses the console key, and only GET is served', async () => {
+    replies.push(() => ({ status: 401, body: {} }));
+    expect((await call(`/api/audio/see-what-a-gateway-does/${FILE}`, { cookie })).status).toBe(502);
+    expect((await call(`/api/audio/see-what-a-gateway-does/${FILE}`, { cookie, method: 'POST', body: '{}' })).status).toBe(404);
   });
 });
 

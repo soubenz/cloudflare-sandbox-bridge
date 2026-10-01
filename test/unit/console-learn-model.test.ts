@@ -673,6 +673,18 @@ describe('normalizing what the API sent', () => {
     expect(out.learn.answers_file).toBe('answers.json');
   });
 
+  it('passes a comic\'s narration through with the lab slug the API sent, and only with a comic and a slug', () => {
+    const bundle = compileLearnDir('labs/see-what-a-gateway-does')!.bundle!;
+    const withSlug = m.normalizeLearn({ slug: 'see-what-a-gateway-does', version: '1.0.0', learn: bundle })! as { learn: { audio?: { slug: string; clips: object; lines: unknown[] } } };
+    expect(withSlug.learn.audio!.slug).toBe('see-what-a-gateway-does');
+    expect(Object.keys(withSlug.learn.audio!.clips)).toHaveLength(Object.keys(bundle.audio!.clips).length);
+    expect(withSlug.learn.audio!.lines).toHaveLength(bundle.audio!.lines.length);
+    // No slug (an older API), no comic, or a malformed audio part: no narration, and the rest is untouched.
+    expect((m.normalizeLearn({ version: '1.0.0', learn: bundle })! as { learn: { audio?: unknown } }).learn.audio).toBeUndefined();
+    expect((m.normalizeLearn({ slug: 'x-lab', version: '1.0.0', learn: { ...bundle, comic: undefined } })! as { learn: { audio?: unknown } }).learn.audio).toBeUndefined();
+    expect((m.normalizeLearn({ slug: 'x-lab', version: '1.0.0', learn: { ...bundle, audio: { clips: 'x', lines: [] } } })! as { learn: { audio?: unknown } }).learn.audio).toBeUndefined();
+  });
+
   it('a bundle with only fields is still a bundle', () => {
     const out = m.normalizeLearn({ version: '1.0.0', learn: { fields: [{ key: 'k', prompt: 'P', kind: 'text' }] } })!;
     expect(out.learn.concepts).toEqual([]);

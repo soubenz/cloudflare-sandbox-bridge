@@ -6,7 +6,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { parse as parseYaml } from 'yaml';
 import { OpalixClient } from '../client';
+import { fileURLToPath } from 'node:url';
 import { compileLearnDir } from '../learn-compile';
+import { accountIdFrom, narrateLab } from '../narrate';
 
 /**
  * The lint rules live in scripts/lint-labs.mjs (plain Node, also runnable as
@@ -110,7 +112,9 @@ export function buildSolutionTgz(solutionDir: string): { tgz: Buffer; files: str
  * Worker validates the bundle again on its side; this only spares the author
  * a round trip.
  */
-export function buildLearnUpload(dir: string): { json: string; lessons: number; questions: number; fields: number } | undefined {
+export function buildLearnUpload(
+  dir: string
+): { json: string; lessons: number; questions: number; fields: number; audio: { name: string; bytes: Buffer }[] } | undefined {
   const result = compileLearnDir(dir);
   if (result === null) return undefined;
   if (result.problems.length > 0) {
@@ -120,7 +124,9 @@ export function buildLearnUpload(dir: string): { json: string; lessons: number; 
     );
   }
   const b = result.bundle!;
-  return { json: JSON.stringify(b), lessons: b.concepts.length, questions: b.questions.length, fields: b.fields.length };
+  // The narration's clips go up beside the bundle (compileLearnDir already checked each is on disk).
+  const audio = Object.keys(b.audio?.clips ?? {}).map((key) => ({ name: `${key}.mp3`, bytes: readFileSync(join(dir, 'learn', 'audio', `${key}.mp3`)) }));
+  return { json: JSON.stringify(b), lessons: b.concepts.length, questions: b.questions.length, fields: b.fields.length, audio };
 }
 
 function buildTgz(sourceDir: string, subdirs: string[]): Buffer {
@@ -174,10 +180,39 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
           for (const p of result.problems) console.error(`  - ${p}`);
         } else {
           const b = result.bundle!;
-          console.log(`${dir}: ok (${b.concepts.length} lessons, ${b.questions.length} questions, ${b.fields.length} fields${b.story ? ', story' : ''})`);
+          console.log(`${dir}: ok (${b.concepts.length} lessons, ${b.questions.length} questions, ${b.fields.length} fields${b.story ? ', story' : ''}${b.audio ? `, ${Object.keys(b.audio.clips).length} narration clips` : ''})`);
         }
       }
       if (failed > 0) process.exitCode = 1;
+    });
+
+  labs
+    .command('narrate <dir...>')
+    .description(
+      "Give each lab's motion comic its voices: synthesise the lines that have no clip yet into learn/audio/ and write learn/audio.json (needs CLOUDFLARE_API_TOKEN; the files are committed, publishing never calls the model)"
+    )
+    .option('--dry-run', 'list what would be synthesised and how many characters it is, change nothing, call nothing')
+    .action(async (dirs: string[], opts: { dryRun?: boolean }) => {
+      const wrangler = fileURLToPath(new URL('../../../wrangler.jsonc', import.meta.url));
+      const accountId = accountIdFrom(process.env, wrangler);
+      let characters = 0;
+      let made = 0;
+      for (const dir of dirs) {
+        console.log(`${dir}${opts.dryRun ? ' (dry run)' : ''}`);
+        const r = await narrateLab(dir, {
+          dryRun: opts.dryRun,
+          token: process.env.CLOUDFLARE_API_TOKEN,
+          ...(accountId ? { accountId } : {}),
+          log: (line) => console.log(line),
+        });
+        characters += r.characters;
+        made += r.made;
+        console.log(
+          `  ${r.lines} spoken lines, ${r.clips} clips: ${r.made} ${opts.dryRun ? 'to make' : 'made'} (${r.characters} characters), ${r.reused} reused, ${r.removed} ${opts.dryRun ? 'to remove' : 'removed'}` +
+            (opts.dryRun ? '' : `; ${r.seconds.toFixed(1)} s of audio, ${Math.round(r.bytes / 1024)} KB`)
+        );
+      }
+      if (dirs.length > 1) console.log(`all labs: ${made} clips ${opts.dryRun ? 'to make' : 'made'}, ${characters} characters`);
     });
 
   labs
@@ -239,6 +274,9 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
         if (learn) {
           form.set('learn', new Blob([learn.json], { type: 'application/json' }), 'learn.json');
           console.error(`learn/: ${learn.lessons} lesson${learn.lessons === 1 ? '' : 's'}, ${learn.questions} question${learn.questions === 1 ? '' : 's'}, ${learn.fields} field${learn.fields === 1 ? '' : 's'} compiled`);
+          // Narration clips: one `audio` part each, named <key>.mp3; the Worker checks them against the bundle's audio index.
+          for (const clip of learn.audio) form.append('audio', new Blob([clip.bytes], { type: 'audio/mpeg' }), clip.name);
+          if (learn.audio.length > 0) console.error(`learn/audio/: ${learn.audio.length} narration clip${learn.audio.length === 1 ? '' : 's'} (${Math.round(learn.audio.reduce((n, c) => n + c.bytes.length, 0) / 1024)} KB)`);
         }
 
         if (opts.force) form.set('force', 'true');

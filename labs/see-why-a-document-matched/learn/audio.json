@@ -1,0 +1,89 @@
+{
+  "model": "@cf/deepgram/aura-2-en",
+  "clips": {
+    "6a7e9a3ebc48e385": {
+      "voice": "atlas",
+      "text": "Thursday, a little after eleven.",
+      "seconds": 2.33,
+      "bytes": 13968
+    },
+    "f03d9fddf34678f1": {
+      "voice": "luna",
+      "text": "The assistant cited the wrong article again. It read fine. That is the problem.",
+      "seconds": 5.93,
+      "bytes": 35568
+    },
+    "510de276561f8402": {
+      "voice": "luna",
+      "text": "A customer asked one thing. It answered from a document next door.",
+      "seconds": 3.86,
+      "bytes": 23184
+    },
+    "2175225836be2d15": {
+      "voice": "thalia",
+      "text": "Before you touch Support's real index, learn to read what a retrieval service is telling you.",
+      "seconds": 5.42,
+      "bytes": 32544
+    },
+    "29ebd4928e457530": {
+      "voice": "orion",
+      "text": "The embedding is tiny on purpose, so the same text gives the same numbers. Not a real model. Sorry.",
+      "seconds": 7.46,
+      "bytes": 44784
+    },
+    "c68a73d2b5e8e6e1": {
+      "voice": "thalia",
+      "text": "Three answers, written down. Priya wants to know: is it the model, or the search?",
+      "seconds": 5.78,
+      "bytes": 34704
+    },
+    "14cf90c0da3739d0": {
+      "voice": "atlas",
+      "text": "Your turn.",
+      "seconds": 0.62,
+      "bytes": 3744
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "caption",
+      "clip": "6a7e9a3ebc48e385"
+    },
+    {
+      "panel": 0,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "f03d9fddf34678f1"
+    },
+    {
+      "panel": 1,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "510de276561f8402"
+    },
+    {
+      "panel": 2,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "2175225836be2d15"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "29ebd4928e457530"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 1,
+      "clip": "c68a73d2b5e8e6e1"
+    },
+    {
+      "panel": 5,
+      "kind": "caption",
+      "clip": "14cf90c0da3739d0"
+    }
+  ]
+}

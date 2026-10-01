@@ -12,17 +12,28 @@ export interface CastMember {
   id: string;
   name: string;
   role: string;
+  /** The text-to-speech voice (TTS_MODEL speaker) that reads this person's bubbles. The learner (`you`) has none: never spoken. */
+  voice?: string;
 }
 
-/** The recurring people of the story bible (docs/story-bible-ai-platform.md), plus the learner. */
+/**
+ * The recurring people of the story bible (docs/story-bible-ai-platform.md), plus the learner.
+ * The voices are chosen here and only here (with NARRATOR_VOICE): change one, run `labs narrate`
+ * again and only the clips of that voice are made anew.
+ */
 export const CAST: readonly CastMember[] = [
-  { id: 'maren', name: 'Maren', role: 'Platform lead' },
-  { id: 'tomasz', name: 'Tomasz', role: 'Staff engineer' },
-  { id: 'priya', name: 'Priya', role: 'Head of Support' },
-  { id: 'jonas', name: 'Jonas', role: 'Finance' },
-  { id: 'anneke', name: 'Anneke', role: 'Data protection' },
+  { id: 'maren', name: 'Maren', role: 'Platform lead', voice: 'thalia' },
+  { id: 'tomasz', name: 'Tomasz', role: 'Staff engineer', voice: 'orion' },
+  { id: 'priya', name: 'Priya', role: 'Head of Support', voice: 'luna' },
+  { id: 'jonas', name: 'Jonas', role: 'Finance', voice: 'arcas' },
+  { id: 'anneke', name: 'Anneke', role: 'Data protection', voice: 'andromeda' },
   { id: 'you', name: 'You', role: 'New platform engineer' },
 ];
+
+/** Reads every caption, and any bubble that names no speaker. */
+export const NARRATOR_VOICE = 'atlas';
+/** Workers AI text-to-speech model that makes the narration (`labs narrate`). */
+export const TTS_MODEL = '@cf/deepgram/aura-2-en';
 export const CAST_IDS = CAST.map((c) => c.id) as [string, ...string[]];
 
 /**
@@ -156,4 +167,49 @@ export function comicTranscript(panels: readonly TranscriptPanel[]): string[] {
     out.push(`Panel ${i + 1}. ${parts.join(' ')}`);
   });
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Narration: which words are spoken, by whom, and the name of their clip
+// ---------------------------------------------------------------------------
+
+/** One spoken line of a comic. `panel` counts across pages from 0; `bubble` is the bubble's index within its panel. */
+export interface NarrationLine {
+  panel: number;
+  kind: 'caption' | 'bubble';
+  bubble?: number;
+  voice: string;
+  text: string;
+}
+
+/**
+ * What is read aloud, in reading order: per panel the caption first (narrator), then
+ * its bubbles in order (the speaker's voice; a bubble with no speaker is the narrator's).
+ * Screen lines and sound effects are never spoken, and neither is the learner (`you`).
+ */
+export function narrationLines(comic: { pages: readonly { panels: readonly TranscriptPanel[] }[] }): NarrationLine[] {
+  const voiceOf = new Map(CAST.map((c) => [c.id, c.voice]));
+  const out: NarrationLine[] = [];
+  let panel = 0;
+  for (const pg of comic.pages) {
+    for (const p of pg.panels) {
+      if (p.caption) out.push({ panel, kind: 'caption', voice: NARRATOR_VOICE, text: p.caption });
+      p.bubbles.forEach((b, bubble) => {
+        const voice = b.who ? voiceOf.get(b.who) : NARRATOR_VOICE;
+        if (voice && b.text) out.push({ panel, kind: 'bubble', bubble, voice, text: b.text });
+      });
+      panel += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * The file name (without .mp3) of a spoken line: sixteen hex digits of the hash of model, voice and
+ * text, so identical words in the same voice share one file and a changed word, voice or model
+ * makes a new one. `hash` returns a hex digest (sha256 in the CLI); it is passed in so this file
+ * keeps no dependency the console bundle would have to carry.
+ */
+export function clipKey(model: string, voice: string, text: string, hash: (input: string) => string): string {
+  return hash(`${model}\n${voice}\n${text}`).slice(0, 16);
 }

@@ -54,7 +54,7 @@ export function storyContent(learn, { headingLevel = 2, onDone } = {}) {
   const holder = make('div', 'cm-holder');
   if (learn.comic) {
     try {
-      comic = mountComic(holder, learn.comic, { onDone });
+      comic = mountComic(holder, learn.comic, { onDone, audio: learn.audio });
     } catch {
       comic = null;
     }

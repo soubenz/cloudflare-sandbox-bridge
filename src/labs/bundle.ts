@@ -2,7 +2,8 @@ import type { Env } from '../env';
 import type { LabManifest } from './manifest';
 import { parseManifest } from './manifest';
 import { ApiError } from '../lib/errors';
-import { LearnBundleSchema, parseLearnBundle, type LearnBundle } from './learn';
+import { LearnBundleSchema, MAX_AUDIO_CLIPS, MAX_AUDIO_CLIP_BYTES, parseLearnBundle, type LearnBundle } from './learn';
+import { looksLikeMp3 } from './mp3';
 
 export function manifestKey(slug: string, version: string): string {
   return `labs/${slug}/${version}/manifest.json`;
@@ -31,6 +32,16 @@ export function solutionKey(slug: string, version: string): string {
 export function learnKey(slug: string, version: string): string {
   return `labs/${slug}/${version}/learn.json`;
 }
+/**
+ * One narration clip of the lab's comic (learn.json's `audio`): `file` is `<16 hex>.mp3`.
+ * Meant for learners like learn.json: GET /labs/:slug/audio/:file serves it, and only files a
+ * publish uploaded against the bundle's own audio index are ever stored here.
+ */
+export function audioKey(slug: string, version: string, file: string): string {
+  return `labs/${slug}/${version}/audio/${file}`;
+}
+/** A clip's file name: its sixteen-hex key and .mp3. */
+export const CLIP_FILE = /^[0-9a-f]{16}\.mp3$/;
 export function currentKey(slug: string): string {
   return `labs/${slug}/current`;
 }
@@ -89,6 +100,44 @@ export async function loadCurrentLearn(env: Env, slug: string): Promise<{ versio
   const parsed = LearnBundleSchema.safeParse(await obj.json());
   if (!parsed.success) throw ApiError.internal(`lab "${slug}" version "${version}" has a learn.json that does not parse`);
   return { version, learn: parsed.data };
+}
+
+/** The current version of a lab, for routes that read one of its stored files. 404 `lab_not_found` when unpublished. */
+export async function currentVersion(env: Env, slug: string): Promise<string> {
+  const currentObj = await env.LABS_BUCKET.get(currentKey(slug));
+  if (!currentObj) throw ApiError.notFound('lab_not_found', `No published lab "${slug}"`);
+  return (await currentObj.text()).trim();
+}
+
+/**
+ * Checks the clips a publish uploaded against the bundle's narration index and returns them
+ * by file name. Throws `400 invalid_audio` unless: every name is `<16 hex>.mp3`, no name repeats,
+ * there are at most MAX_AUDIO_CLIPS, each is at most MAX_AUDIO_CLIP_BYTES, starts like an MP3 and is as
+ * long as the index says, and the uploaded set is exactly the set the bundle's `audio.clips` names.
+ */
+export function checkAudioUpload(learn: LearnBundle | undefined, clips: readonly { name: string; bytes: ArrayBuffer }[]): void {
+  const bad = (message: string): never => {
+    throw ApiError.badRequest('invalid_audio', message);
+  };
+  if (clips.length === 0 && !learn?.audio) return;
+  if (!learn?.audio) bad('audio clips were uploaded but the learn bundle has no audio index');
+  const index = learn!.audio!.clips;
+  if (clips.length > MAX_AUDIO_CLIPS) bad(`a lab may carry at most ${MAX_AUDIO_CLIPS} audio clips (got ${clips.length})`);
+  const seen = new Set<string>();
+  for (const c of clips) {
+    if (!CLIP_FILE.test(c.name)) bad(`audio file name "${c.name.slice(0, 40)}" is not <16 hex digits>.mp3`);
+    if (seen.has(c.name)) bad(`audio file ${c.name} is uploaded twice`);
+    seen.add(c.name);
+    if (c.bytes.byteLength > MAX_AUDIO_CLIP_BYTES) bad(`audio file ${c.name} is ${c.bytes.byteLength} bytes; the limit is ${MAX_AUDIO_CLIP_BYTES}`);
+    const key = c.name.slice(0, -4);
+    const entry = index[key];
+    if (!entry) bad(`audio file ${c.name} is not referenced by the bundle's audio index`);
+    if (!looksLikeMp3(new Uint8Array(c.bytes))) bad(`audio file ${c.name} is not an MP3`);
+    if (entry!.bytes !== c.bytes.byteLength) bad(`audio file ${c.name} is ${c.bytes.byteLength} bytes but the index says ${entry!.bytes}`);
+  }
+  for (const key of Object.keys(index)) {
+    if (!seen.has(`${key}.mp3`)) bad(`the audio index names clip ${key}, but ${key}.mp3 was not uploaded`);
+  }
 }
 
 export async function loadCatalogue(env: Env): Promise<LabIndexEntry[]> {
@@ -183,6 +232,8 @@ export async function publishLab(
     solutionTgz?: ReadableStream | ArrayBuffer;
     /** Optional: the compiled learn/ folder, as parsed JSON (see `learnKey`). Validated here. */
     learnJson?: unknown;
+    /** Optional: the narration clips the bundle's `audio` index names (see `audioKey`). Validated here. */
+    audioClips?: { name: string; bytes: ArrayBuffer }[];
     force?: boolean;
   }
 ): Promise<{ slug: string; version: string; warnings: string[] }> {
@@ -197,6 +248,9 @@ export async function publishLab(
       throw ApiError.badRequest('invalid_learn_bundle', err instanceof Error ? err.message : String(err));
     }
   }
+
+  const audioClips = input.audioClips ?? [];
+  checkAudioUpload(learn, audioClips);
 
   if (input.force !== true && (await env.LABS_BUCKET.head(manifestKey(slug, version)))) {
     throw ApiError.conflict(
@@ -223,7 +277,15 @@ export async function publishLab(
       : input.force === true
         ? env.LABS_BUCKET.delete(learnKey(slug, version))
         : Promise.resolve(),
+    ...audioClips.map((c) => env.LABS_BUCKET.put(audioKey(slug, version, c.name), c.bytes, { httpMetadata: { contentType: 'audio/mpeg' } })),
   ]);
+  // A forced re-publish leaves exactly the clips of this publish, like learn.json and solution.tgz.
+  if (input.force === true) {
+    const keep = new Set(audioClips.map((c) => audioKey(slug, version, c.name)));
+    for (const key of await listAllKeys(env, audioKey(slug, version, ''))) {
+      if (!keep.has(key)) await env.LABS_BUCKET.delete(key);
+    }
+  }
 
   // Keep the rollback target. A forced re-publish of the version that is
   // already current must not overwrite `previous` with itself, or the real

@@ -124,6 +124,25 @@ function relay(res) {
   });
 }
 
+/** A narration clip's file name: sixteen hex digits and .mp3 (the API's own rule). */
+const CLIP_FILE = /^[0-9a-f]{16}\.mp3$/;
+
+/**
+ * Passes a clip through as it came, status and the headers a player needs (type, length, range). The
+ * API says `public` because the file name is a content hash; behind this cookie it is `private`, so a
+ * shared cache never hands a lab's audio to someone who is not signed in. Errors go the usual way.
+ */
+function relayAudio(res) {
+  if (res.status !== 200 && res.status !== 206 && res.status !== 416) return relay(res);
+  const headers = new Headers();
+  for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+    const v = res.headers.get(name);
+    if (v) headers.set(name, v);
+  }
+  headers.set('cache-control', res.status === 416 ? 'no-store' : 'private, max-age=31536000, immutable');
+  return new Response(res.status === 416 ? null : res.body, { status: res.status, headers });
+}
+
 /**
  * The catalogue with this person's progress folded in.
  *
@@ -431,6 +450,22 @@ async function route(request, env) {
       }
       if (!SLUG.test(slug)) return json({ error: 'not a lab slug' }, 400);
       return relay(await callApi(env, `/labs/${encodeURIComponent(slug)}/learn`));
+    }
+
+    // A narration clip of a lab's comic. Same origin as the console so the page's <audio> carries the
+    // cookie; this Worker reads it from the API with the service key. Strict names (a lab slug, and the
+    // sixteen-hex clip file) are all that ever reach a path, and Range goes through so a clip can seek.
+    const audioMatch = url.pathname.match(/^\/api\/audio\/([^/]+)\/([^/]+)$/);
+    if (audioMatch && request.method === 'GET') {
+      let slug = '';
+      try {
+        slug = decodeURIComponent(audioMatch[1]);
+      } catch {
+        /* a malformed escape is not a slug */
+      }
+      if (!SLUG.test(slug) || !CLIP_FILE.test(audioMatch[2])) return json({ error: 'not an audio clip' }, 400);
+      const range = request.headers.get('range');
+      return relayAudio(await callApi(env, `/labs/${encodeURIComponent(slug)}/audio/${audioMatch[2]}`, range ? { headers: { range } } : {}));
     }
 
     if (url.pathname === '/api/onboarding' && request.method === 'GET') {

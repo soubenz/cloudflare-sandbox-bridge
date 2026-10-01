@@ -33,6 +33,7 @@ const SERVICE_KEY_ONLY: Array<[string, string]> = [
   ['get', '/labs'],
   ['get', '/labs/:slug'],
   ['get', '/labs/:slug/learn'],
+  ['get', '/labs/:slug/audio/:file'],
   ['post', '/labs/publish'],
   ['get', '/learn/onboarding'],
   ['post', '/learn/answers'],
@@ -145,6 +146,17 @@ describe('route auth matrix', () => {
     // The answers table is anonymous: the route must not hand it an identity.
     const answers = handlerFor('post', '/learn/answers');
     expect(answers).not.toMatch(/user_id|uid|CF-Connecting-IP|x-forwarded-for|c\.req\.header\(/i);
+  });
+
+  it('the narration route takes the service key only and reads nothing but the lab\'s own audio files', () => {
+    // Clips are what `labs publish` uploaded against the learn bundle's audio index; the console Worker
+    // proxies them for a signed-in learner. Like the learn route it never touches checks/ or solution/.
+    const body = handlerFor('get', '/labs/:slug/audio/:file');
+    expect(body).toContain('requireServiceAuth(');
+    expect(body).not.toContain('requireBrowserAuth(');
+    expect(body).not.toMatch(/solutionKey\(|privateKey\(|workspaceKey\(/);
+    expect(body.indexOf('requireServiceAuth(')).toBeLessThan(body.indexOf('audioKey('));
+    expect(body).toContain('CLIP_FILE.test(file)');
   });
 
   it('has no unauthenticated session-start route', () => {

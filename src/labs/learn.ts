@@ -2,6 +2,7 @@ import { z } from 'zod';
 import registry from '../../packages/catalogue/concepts.json';
 import { KNOWN_DIAGRAMS, diagramRefs } from './diagram';
 import { ComicSchema, checkComic } from './comic';
+import { narrationLines } from './comic-kit';
 
 /**
  * The learning layer of a lab: a short story, one lesson per concept, quiz
@@ -151,11 +152,61 @@ export const FieldSchema = z
     if (f.kind !== 'choice' && f.choices) ctx.addIssue({ code: 'custom', message: `field ${f.key}: only a choice field has choices` });
   });
 
+/** Most distinct narration clips one lab may carry, and the largest one, in bytes (about 70 s of speech at 48 kbps is 400 KB). */
+export const MAX_AUDIO_CLIPS = 80;
+export const MAX_AUDIO_CLIP_BYTES = 400 * 1024;
+/** A clip's file name is its key plus this; the key is sixteen hex digits (comic-kit.ts clipKey). */
+export const CLIP_KEY = /^[0-9a-f]{16}$/;
+
+/**
+ * The narration of the comic (learn/audio.json, written by `labs narrate`): which clip reads
+ * which line. The mp3 files themselves are not in the bundle; `labs publish` uploads them
+ * beside it (docs/api.md) and the console plays them from /api/audio/<slug>/<key>.mp3.
+ * `lines` has one entry per spoken line of the comic in reading order (comic-kit narrationLines).
+ */
+export const AudioSchema = z
+  .object({
+    model: z.string().min(1).max(80),
+    clips: z
+      .record(
+        z.string().regex(CLIP_KEY),
+        z.object({
+          voice: z.string().regex(/^[a-z][a-z0-9-]{1,30}$/),
+          text: plain(150),
+          seconds: z.number().min(0.05).max(70),
+          bytes: z.number().int().min(1).max(MAX_AUDIO_CLIP_BYTES),
+        })
+      )
+      .refine((c) => Object.keys(c).length <= MAX_AUDIO_CLIPS, `at most ${MAX_AUDIO_CLIPS} clips`),
+    lines: z
+      .array(
+        z.object({
+          panel: z.number().int().min(0).max(35),
+          kind: z.enum(['caption', 'bubble']),
+          bubble: z.number().int().min(0).max(1).optional(),
+          clip: z.string().regex(CLIP_KEY),
+        })
+      )
+      .max(108),
+  })
+  .superRefine((a, ctx) => {
+    for (const l of a.lines) {
+      if (!(l.clip in a.clips)) ctx.addIssue({ code: 'custom', message: `narration line for panel ${l.panel + 1} names clip ${l.clip}, which is not in clips` });
+    }
+    const used = new Set(a.lines.map((l) => l.clip));
+    for (const k of Object.keys(a.clips)) {
+      if (!used.has(k)) ctx.addIssue({ code: 'custom', message: `clip ${k} is not used by any line` });
+    }
+  });
+export type LearnAudio = z.infer<typeof AudioSchema>;
+
 export const LearnBundleSchema = z.object({
   version: z.literal(1),
   story: StorySchema.optional(),
   /** Optional motion-comic version of the story (learn/comic.yaml); the text story stays as the fallback. */
   comic: ComicSchema.optional(),
+  /** Optional narration of the comic (learn/audio.json): which clip reads which line. */
+  audio: AudioSchema.optional(),
   concepts: z.array(ConceptSchema).max(8),
   questions: z.array(QuestionSchema).max(40),
   answers_file: z.string().regex(/^[A-Za-z0-9._-]+$/).default('answers.json'),
@@ -212,6 +263,34 @@ export function checkLearnBundle(
   if (bundle.comic) {
     problems.push(...checkComic(bundle.comic));
     if (!bundle.story) problems.push('a comic needs learn/story.md too: the text story is what screen readers, skipped comics and old consoles show');
+  }
+
+  if (bundle.audio) {
+    if (!bundle.comic) {
+      problems.push('learn/audio.json narrates the comic, but there is no comic.yaml');
+    } else {
+      // The narration must be of exactly these words, or the voice would say something the panel does not.
+      const want = narrationLines(bundle.comic);
+      const have = bundle.audio.lines;
+      const stale = (msg: string) => problems.push(`learn/audio.json is out of date with comic.yaml (${msg}); run \`labs narrate\` on the lab again`);
+      if (want.length !== have.length) {
+        stale(`the comic has ${want.length} spoken lines, the narration ${have.length}`);
+      } else {
+        for (let i = 0; i < want.length; i++) {
+          const w = want[i]!;
+          const h = have[i]!;
+          const clip = bundle.audio.clips[h.clip];
+          if (w.panel !== h.panel || w.kind !== h.kind || (w.bubble ?? -1) !== (h.bubble ?? -1)) {
+            stale(`line ${i + 1} is not where the comic has it`);
+            break;
+          }
+          if (!clip || clip.text !== w.text || clip.voice !== w.voice) {
+            stale(`panel ${w.panel + 1}: ${w.kind === 'caption' ? 'the caption' : `bubble ${(w.bubble ?? 0) + 1}`} or its voice changed`);
+            break;
+          }
+        }
+      }
+    }
   }
 
   const keys = bundle.fields.map((f) => f.key);

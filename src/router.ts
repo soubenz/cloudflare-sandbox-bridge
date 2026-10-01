@@ -1,9 +1,11 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { Env } from './env';
 import { isFamily } from './families/registry';
-import { loadCurrentManifest, loadCurrentLearn, listCatalogue, publishLab, solutionKey, INDEX_KEY } from './labs/bundle';
+import { loadCurrentManifest, loadCurrentLearn, listCatalogue, publishLab, solutionKey, audioKey, currentVersion, CLIP_FILE, INDEX_KEY } from './labs/bundle';
 import { parseAnswersBody, recordAnswers } from './labs/learn-answers';
 import { loadOnboarding } from './labs/onboarding';
+import { MAX_AUDIO_CLIPS, MAX_AUDIO_CLIP_BYTES } from './labs/learn';
+import { parseByteRange } from './lib/range';
 import { parseManifest } from './labs/manifest';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
@@ -82,7 +84,42 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     const slug = c.req.param('slug');
     const found = await loadCurrentLearn(c.env, slug);
     if (!found) throw ApiError.notFound('no_learn', `Lab "${slug}" has no learning content`);
-    return c.json(found);
+    // The slug rides along so the console can build the narration URLs (/api/audio/<slug>/<file>)
+    // from the bundle alone.
+    return c.json({ slug, ...found });
+  });
+
+  // One narration clip of the lab's comic, an mp3 uploaded by `labs publish` against
+  // the bundle's audio index. Service key like the learn route (the console Worker proxies
+  // it for a signed-in learner); the file name is a content hash, so it is cached for a year.
+  // Range requests are answered so the player can seek.
+  app.get('/labs/:slug/audio/:file', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const slug = c.req.param('slug');
+    const file = c.req.param('file');
+    if (!CLIP_FILE.test(file)) throw ApiError.notFound('no_audio', 'No such audio clip');
+    const key = audioKey(slug, await currentVersion(c.env, slug), file);
+    const head = await c.env.LABS_BUCKET.head(key);
+    if (!head) throw ApiError.notFound('no_audio', 'No such audio clip');
+    const headers: Record<string, string> = {
+      'content-type': 'audio/mpeg',
+      'accept-ranges': 'bytes',
+      'cache-control': 'public, max-age=31536000, immutable',
+    };
+    const size = head.size;
+    const range = parseByteRange(c.req.header('range'), size);
+    if (range === 'unsatisfiable') return new Response(null, { status: 416, headers: { ...headers, 'content-range': `bytes */${size}` } });
+    if (range) {
+      const part = await c.env.LABS_BUCKET.get(key, { range: { offset: range.start, length: range.end - range.start + 1 } });
+      if (!part) throw ApiError.notFound('no_audio', 'No such audio clip');
+      return new Response(part.body, {
+        status: 206,
+        headers: { ...headers, 'content-range': `bytes ${range.start}-${range.end}/${size}`, 'content-length': String(range.end - range.start + 1) },
+      });
+    }
+    const whole = await c.env.LABS_BUCKET.get(key);
+    if (!whole) throw ApiError.notFound('no_audio', 'No such audio clip');
+    return new Response(whole.body, { status: 200, headers: { ...headers, 'content-length': String(size) } });
   });
 
   app.post('/labs/publish', async (c) => {
@@ -109,12 +146,23 @@ export function createRouter(): Hono<{ Bindings: Env }> {
         throw ApiError.badRequest('invalid_learn_bundle', 'the learn part is not valid JSON');
       }
     }
+    // Optional: the narration clips (`audio` parts, one mp3 each, named <16 hex>.mp3) the learn
+    // bundle's audio index names. publishLab checks the set against the index.
+    const audioClips: { name: string; bytes: ArrayBuffer }[] = [];
+    for (const part of form.getAll('audio')) {
+      if (!(part instanceof File)) throw ApiError.badRequest('invalid_audio', 'an audio part is not a file');
+      if (part.type !== 'audio/mpeg') throw ApiError.badRequest('invalid_audio', `audio file ${part.name.slice(0, 40)} is ${part.type || 'untyped'}, not audio/mpeg`);
+      if (part.size > MAX_AUDIO_CLIP_BYTES) throw ApiError.badRequest('invalid_audio', `audio file ${part.name.slice(0, 40)} is ${part.size} bytes; the limit is ${MAX_AUDIO_CLIP_BYTES}`);
+      if (audioClips.length >= MAX_AUDIO_CLIPS) throw ApiError.badRequest('invalid_audio', `a lab may carry at most ${MAX_AUDIO_CLIPS} audio clips`);
+      audioClips.push({ name: part.name, bytes: await part.arrayBuffer() });
+    }
     const result = await publishLab(c.env, {
       manifestJson,
       workspaceTgz: await workspaceFile.arrayBuffer(),
       privateTgz: await privateFile.arrayBuffer(),
       ...(solutionTgz ? { solutionTgz } : {}),
       ...(learnJson !== undefined ? { learnJson } : {}),
+      ...(audioClips.length > 0 ? { audioClips } : {}),
       force: form.get('force') === 'true',
     });
     return c.json(result, 201);

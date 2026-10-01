@@ -1,0 +1,122 @@
+{
+  "model": "@cf/deepgram/aura-2-en",
+  "clips": {
+    "ee938278fa5b96b1": {
+      "voice": "atlas",
+      "text": "Ten past nine.",
+      "seconds": 1.46,
+      "bytes": 8784
+    },
+    "a76caa5cd6fe7a25": {
+      "voice": "andromeda",
+      "text": "A customer asked, in writing, where the data in their ticket was processed. Their contract names a region.",
+      "seconds": 6.26,
+      "bytes": 37584
+    },
+    "50802b52066fd3cb": {
+      "voice": "thalia",
+      "text": "Anneke needs proof for a customer. I pointed her at you.",
+      "seconds": 3.86,
+      "bytes": 23184
+    },
+    "4569a0788421920b": {
+      "voice": "atlas",
+      "text": "Calm, exact, no exclamation marks.",
+      "seconds": 2.62,
+      "bytes": 15696
+    },
+    "3a40b847f4556ba7": {
+      "voice": "andromeda",
+      "text": "I do not doubt the routing rules. I would like to see the request itself. Then I can sign my name under it.",
+      "seconds": 6.94,
+      "bytes": 41616
+    },
+    "3d08fe7a966e20da": {
+      "voice": "atlas",
+      "text": "Three things to pin down.",
+      "seconds": 1.46,
+      "bytes": 8784
+    },
+    "8e8488a9906ba1be": {
+      "voice": "atlas",
+      "text": "Three aliases, each declared to sit in its own region.",
+      "seconds": 4.01,
+      "bytes": 24048
+    },
+    "aea77e95fbafdbe7": {
+      "voice": "orion",
+      "text": "The EU one is not a straight line to its provider. There is something in the middle. I never wrote down what.",
+      "seconds": 6.94,
+      "bytes": 41616
+    },
+    "7a5da42d0d194a1c": {
+      "voice": "andromeda",
+      "text": "Answer from what happened, not from what was meant to happen. I will ask how you know.",
+      "seconds": 4.42,
+      "bytes": 26496
+    },
+    "14cf90c0da3739d0": {
+      "voice": "atlas",
+      "text": "Your turn.",
+      "seconds": 0.62,
+      "bytes": 3744
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "caption",
+      "clip": "ee938278fa5b96b1"
+    },
+    {
+      "panel": 0,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "a76caa5cd6fe7a25"
+    },
+    {
+      "panel": 1,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "50802b52066fd3cb"
+    },
+    {
+      "panel": 2,
+      "kind": "caption",
+      "clip": "4569a0788421920b"
+    },
+    {
+      "panel": 2,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "3a40b847f4556ba7"
+    },
+    {
+      "panel": 3,
+      "kind": "caption",
+      "clip": "3d08fe7a966e20da"
+    },
+    {
+      "panel": 4,
+      "kind": "caption",
+      "clip": "8e8488a9906ba1be"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "aea77e95fbafdbe7"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 1,
+      "clip": "7a5da42d0d194a1c"
+    },
+    {
+      "panel": 5,
+      "kind": "caption",
+      "clip": "14cf90c0da3739d0"
+    }
+  ]
+}

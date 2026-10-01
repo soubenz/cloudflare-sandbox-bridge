@@ -1,7 +1,8 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { LearnBundleSchema, checkLearnBundle, type LearnBundle } from '../../src/labs/learn';
+import { ComicSchema, checkComic, type Comic } from '../../src/labs/comic';
 
 /** Splits `---\nyaml\n---\nbody`; a file with no front matter has empty data. */
 export function splitFrontMatter(text: string): { data: Record<string, unknown>; body: string } {
@@ -23,6 +24,7 @@ export interface LearnCompileResult {
  *
  *   learn/story.md               front matter: title, minutes; body: the case file
  *   learn/comic.yaml             optional motion comic of the story: title, panels (docs/learning-content.md)
+ *   learn/audio.json + audio/    optional narration of the comic, written by `labs narrate` (clips are learn/audio/<key>.mp3)
  *   learn/concepts/<id>.md       front matter: id (must equal the file name), title, minutes, recap; body: the lesson
  *   learn/quiz.yaml              questions: [ ... ]
  *   learn/questions.yaml         answers_file, fields: [ ... ]   (explore labs)
@@ -84,6 +86,16 @@ export function compileLearnDir(labDir: string): LearnCompileResult | null {
     }
   }
 
+  let audio: unknown;
+  const audioText = read('audio.json');
+  if (audioText !== null) {
+    try {
+      audio = JSON.parse(audioText);
+    } catch (e) {
+      problems.push(`audio.json: not valid JSON (${(e as Error).message})`);
+    }
+  }
+
   let answersFile: string | undefined;
   let fields: unknown[] = [];
   const qText = read('questions.yaml');
@@ -102,6 +114,7 @@ export function compileLearnDir(labDir: string): LearnCompileResult | null {
     version: 1,
     story,
     ...(comic !== undefined ? { comic } : {}),
+    ...(audio !== undefined ? { audio } : {}),
     concepts,
     questions,
     ...(answersFile !== undefined ? { answers_file: answersFile } : {}),
@@ -112,6 +125,13 @@ export function compileLearnDir(labDir: string): LearnCompileResult | null {
     return { problems };
   }
   problems.push(...checkLearnBundle(parsed.data));
+
+  // Every clip the narration names must be on disk, as long as the index says.
+  for (const [key, clip] of Object.entries(parsed.data.audio?.clips ?? {})) {
+    const file = join(dir, 'audio', `${key}.mp3`);
+    if (!existsSync(file)) problems.push(`audio.json names clip ${key}, but learn/audio/${key}.mp3 does not exist; run \`labs narrate\``);
+    else if (statSync(file).size !== clip.bytes) problems.push(`learn/audio/${key}.mp3 is ${statSync(file).size} bytes but audio.json says ${clip.bytes}; run \`labs narrate\``);
+  }
 
   // The console writes the learner's answers into the file the lab's grader
   // already reads, so the fields must match that file's keys exactly.
@@ -133,4 +153,24 @@ export function compileLearnDir(labDir: string): LearnCompileResult | null {
   }
 
   return problems.length > 0 ? { problems } : { bundle: parsed.data, problems: [] };
+}
+
+/**
+ * Just the comic of `<labDir>/learn/comic.yaml`, validated like the full compile does (schema and
+ * checkComic), for `labs narrate`: narrating must work while the existing narration is stale.
+ * `comic` is absent when there is no file or it has problems.
+ */
+export function readComic(labDir: string): { comic?: Comic; problems: string[] } {
+  const file = join(labDir, 'learn', 'comic.yaml');
+  if (!existsSync(file)) return { problems: [`${labDir} has no learn/comic.yaml to narrate`] };
+  let raw: unknown;
+  try {
+    raw = parseYaml(readFileSync(file, 'utf8'));
+  } catch (e) {
+    return { problems: [`comic.yaml: not valid YAML (${(e as Error).message})`] };
+  }
+  const parsed = ComicSchema.safeParse(raw);
+  if (!parsed.success) return { problems: parsed.error.issues.map((i) => `comic.${i.path.join('.') || '(root)'}: ${i.message}`) };
+  const problems = checkComic(parsed.data);
+  return problems.length > 0 ? { problems } : { comic: parsed.data, problems: [] };
 }

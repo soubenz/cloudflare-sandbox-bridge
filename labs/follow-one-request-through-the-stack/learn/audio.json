@@ -1,0 +1,89 @@
+{
+  "model": "@cf/deepgram/aura-2-en",
+  "clips": {
+    "aba701255c5b6009": {
+      "voice": "atlas",
+      "text": "Tuesday afternoon.",
+      "seconds": 1.3,
+      "bytes": 7776
+    },
+    "dccceaf9844ece16": {
+      "voice": "luna",
+      "text": "This one took ages. Why?",
+      "seconds": 2.57,
+      "bytes": 15408
+    },
+    "0df3e472a5f90128": {
+      "voice": "arcas",
+      "text": "And what did it cost? I need a number per request.",
+      "seconds": 3.5,
+      "bytes": 21024
+    },
+    "fb3af254b2eb1ae0": {
+      "voice": "thalia",
+      "text": "That request was traced end to end. One request, four services, six spans. Nothing to fix. Read it.",
+      "seconds": 8.18,
+      "bytes": 49104
+    },
+    "7838a08d1f811dc9": {
+      "voice": "thalia",
+      "text": "Do not tell me it looks like the model. Read the numbers off the trace.",
+      "seconds": 4.1,
+      "bytes": 24624
+    },
+    "e91cd9f219d1e926": {
+      "voice": "arcas",
+      "text": "A hunch cannot go in my report. A number can.",
+      "seconds": 3.1,
+      "bytes": 18576
+    },
+    "14cf90c0da3739d0": {
+      "voice": "atlas",
+      "text": "Your turn.",
+      "seconds": 0.5,
+      "bytes": 3024
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "caption",
+      "clip": "aba701255c5b6009"
+    },
+    {
+      "panel": 0,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "dccceaf9844ece16"
+    },
+    {
+      "panel": 1,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "0df3e472a5f90128"
+    },
+    {
+      "panel": 2,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "fb3af254b2eb1ae0"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "7838a08d1f811dc9"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 1,
+      "clip": "e91cd9f219d1e926"
+    },
+    {
+      "panel": 5,
+      "kind": "caption",
+      "clip": "14cf90c0da3739d0"
+    }
+  ]
+}

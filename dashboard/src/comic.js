@@ -18,9 +18,20 @@
  * (CSS only eases a class flip, and the ambient loops of the art; both are
  * switched off for reduced motion, for a finished comic and for the test clock.)
  *
- * Two buttons, no more: Replay and Skip. Skip goes to the finished comic and
+ * Two playback buttons, no more: Replay and Skip. Skip goes to the finished comic and
  * calls onDone; Replay starts again from page 1. With prefers-reduced-motion
  * the comic starts finished (every page drawn, no camera, nothing typing).
+ *
+ * Narration (`{ audio }`, the lab's learn.audio plus its slug): when the lab has voices
+ * the same clock plays them. Each clip starts when the clock reaches its start (the
+ * timeline already sized every line to its clip) and stops on Skip, Replay, a hidden
+ * tab, the Sound toggle and destroy; two never play at once (comic-audio.js is the pure
+ * logic). A clip that cannot load is skipped in silence. If the browser refuses to start
+ * sound before the learner has tapped anything, a small "Tap to turn the sound on" button
+ * appears in the frame. The one other control, beside Replay and Skip and only on a comic
+ * that has voices, is the Sound on/off toggle (kept in localStorage `opalix.comicSound`,
+ * on by default): browsers need a way to turn sound off. Captions, bubbles and the
+ * transcript are always there, so nothing depends on hearing.
  * The stage is role="img" with the title; "Read as text" under it is the
  * accessible equivalent (the same transcript the CLI checks).
  *
@@ -32,11 +43,14 @@
  * Test seam: with `?comicTest=1` in the page address the clock does not start
  * by itself and window.__comicClock steps it (seek, pause, resume), so a
  * screenshot of "7.5 seconds" is the same picture every time. It does not
- * exist in normal use.
+ * exist in normal use. With narration it also lists the scheduled clips (`audio`), records
+ * every play and stop the player decides on (`audioLog()`; no real audio is started in test mode),
+ * and `?comicAudio=blocked` makes play() refuse with NotAllowedError until the learner taps.
  */
 
 import { CAST } from '../../src/labs/comic-kit.ts';
 import { captionIsDisplay, sceneArt } from './comic-art.js';
+import { audioReduce, audioWanted, clipUrl, initialAudio } from './comic-audio.js';
 import {
   DEFAULT_BG,
   NARROW,
@@ -44,6 +58,7 @@ import {
   buildTimeline,
   cameraAt,
   cameraTransform,
+  cleanAudio,
   cleanComic,
   clockReduce,
   initialClock,
@@ -76,6 +91,23 @@ function testModeOn() {
     return new URLSearchParams(window.location.search).get('comicTest') === '1';
   } catch {
     return false;
+  }
+}
+
+/** The Sound toggle's remembered state: on unless the learner turned it off. Storage can be missing or throw. */
+const SOUND_KEY = 'opalix.comicSound';
+function readSound() {
+  try {
+    return window.localStorage.getItem(SOUND_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+function writeSound(on) {
+  try {
+    window.localStorage.setItem(SOUND_KEY, on ? '1' : '0');
+  } catch {
+    /* a private window just forgets */
   }
 }
 
@@ -180,17 +212,22 @@ function buildPanel(panel, tp, placement) {
 /** Replay's glyph, built as DOM like the console's others. */
 const replayIcon = () => svgIcon('<path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/>', 16, 24, 1.8);
 const arrowIcon = () => svgIcon('<path d="M3 8h10M9 4l4 4-4 4"/>', 16, 16, 1.8);
+const SPEAKER = '<path d="M2.5 6h2.7L9 3v10L5.2 10H2.5z"/>';
+const soundIcon = (on) => svgIcon(on ? `${SPEAKER}<path d="M11.4 5.6a3.4 3.4 0 0 1 0 4.8M13 3.8a6 6 0 0 1 0 8.4"/>` : `${SPEAKER}<path d="M11.5 6l3 4M14.5 6l-3 4"/>`, 16, 16, 1.6);
 
 /**
  * Mounts the comic into `container` and starts it (unless the learner prefers reduced motion).
- * `comic` is `{ title, pages: [{ title?, panels }] }` as the learn bundle carries it. Throws if
+ * `comic` is `{ title, pages: [{ title?, panels }] }` as the learn bundle carries it; `audio` is its
+ * narration (`{ slug, clips, lines }`, see comic-timeline.js cleanAudio), optional. Throws if
  * there is nothing to play, so the caller can fall back to the text story.
  * Returns { destroy }.
  */
-export function mountComic(container, comic, { onDone } = {}) {
+export function mountComic(container, comic, { onDone, audio } = {}) {
   const clean = cleanComic(comic);
   if (!clean) throw new Error('comic: nothing to play');
-  const tl = buildTimeline(clean);
+  const tl = buildTimeline(clean, { audio });
+  const voices = cleanAudio(audio);
+  const hasAudio = voices !== null && tl.audio.length > 0;
   const testMode = testModeOn();
   const mq = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   let reduced = Boolean(mq?.matches);
@@ -269,7 +306,28 @@ export function mountComic(container, comic, { onDone } = {}) {
   const controls = el('div', 'cm-controls');
   controls.setAttribute('role', 'group');
   controls.setAttribute('aria-label', 'Comic playback');
-  controls.append(replay, skip, time);
+  controls.append(replay, skip);
+
+  // Sound: only a comic with voices has these two.
+  let sound = hasAudio ? readSound() : false;
+  const soundBtn = el('button', 'btn btn-ghost cm-btn cm-sound');
+  soundBtn.type = 'button';
+  soundBtn.id = 'btnComicSound';
+  const soundLabel = el('span', 'cm-sound-label');
+  const paintSound = () => {
+    soundBtn.setAttribute('aria-pressed', String(sound));
+    soundLabel.textContent = sound ? 'Sound on' : 'Sound off';
+    soundBtn.replaceChildren(soundIcon(sound), soundLabel);
+  };
+  const tap = el('button', 'btn btn-strong cm-btn cm-sound-tap', 'Tap to turn the sound on');
+  tap.type = 'button';
+  tap.id = 'btnComicTapSound';
+  tap.hidden = true;
+  if (hasAudio) {
+    paintSound();
+    controls.append(soundBtn);
+  }
+  controls.append(time);
 
   const status = el('p', 'sr-only');
   status.setAttribute('role', 'status');
@@ -281,6 +339,7 @@ export function mountComic(container, comic, { onDone } = {}) {
   details.append(summary, list);
 
   root.append(stage, controls, status, details);
+  if (hasAudio) root.append(tap);
   container.append(root);
 
   // ---- one frame ---------------------------------------------------------
@@ -379,6 +438,113 @@ export function mountComic(container, comic, { onDone } = {}) {
     render();
   }
 
+  // ---- the voices --------------------------------------------------------
+
+  let ast = initialAudio();
+  /** One Audio element per clip, made when its page is near (the first page at once) and kept for Replay. */
+  const elements = new Map();
+  /** In test mode: what the player decided, instead of real playback. */
+  const audioLog = [];
+  const blockedParam = testMode && new URLSearchParams(window.location.search).get('comicAudio') === 'blocked';
+  let unlocked = false;
+  const pageKeys = tl.pages.map((page) => {
+    const numbers = new Set(page.panels.map((p) => p.number));
+    return [...new Set(tl.audio.filter((c) => numbers.has(c.panel)).map((c) => c.key))];
+  });
+  const preloaded = new Set();
+
+  function elementFor(key) {
+    let a = elements.get(key);
+    if (a || typeof Audio !== 'function') return a ?? null;
+    a = new Audio();
+    a.preload = 'auto';
+    a.addEventListener('ended', () => feedAudio({ type: 'ended', key }));
+    // A clip that is missing or will not decode is skipped in silence; the comic carries on.
+    a.addEventListener('error', () => feedAudio({ type: 'errored', key }));
+    a.src = clipUrl(voices.slug, key);
+    elements.set(key, a);
+    return a;
+  }
+
+  /** Makes the elements of a page (the first at mount, the next as the camera nears it), if sound is on. */
+  function preloadPage(pi) {
+    if (!hasAudio || !sound || pi >= pageKeys.length || preloaded.has(pi)) return;
+    preloaded.add(pi);
+    for (const key of pageKeys[pi]) elementFor(key);
+  }
+
+  function runAudio(cmd) {
+    if (testMode) audioLog.push({ type: cmd.type, key: cmd.key, at: clock.t, ...(cmd.type === 'play' ? { offset: cmd.offset } : {}) });
+    if (cmd.type === 'stop') {
+      const a = elements.get(cmd.key);
+      try {
+        a?.pause();
+        if (a) a.currentTime = 0;
+      } catch {
+        /* an element that cannot rewind is stopped all the same */
+      }
+      return;
+    }
+    if (testMode) {
+      // No sound in a test: the browser's refusal can be staged, and nothing else is played.
+      if (blockedParam && !unlocked) {
+        const err = Object.assign(new Error('play() refused until the learner taps'), { name: 'NotAllowedError' });
+        Promise.resolve().then(() => feedAudio({ type: 'rejected', key: cmd.key, name: err.name }));
+      }
+      return;
+    }
+    const a = elementFor(cmd.key);
+    if (!a) {
+      feedAudio({ type: 'errored', key: cmd.key });
+      return;
+    }
+    try {
+      if (cmd.offset > 0) a.currentTime = cmd.offset;
+      const p = a.play();
+      p?.catch?.((err) => feedAudio({ type: 'rejected', key: cmd.key, name: err?.name ?? 'Error' }));
+    } catch (err) {
+      feedAudio({ type: 'rejected', key: cmd.key, name: err?.name ?? 'Error' });
+    }
+  }
+
+  function feedAudio(event) {
+    const out = audioReduce(ast, event);
+    ast = out.state;
+    for (const cmd of out.commands) runAudio(cmd);
+    tap.hidden = !(hasAudio && ast.blocked && sound && !gone);
+  }
+
+  /** Whether the clock is advancing, as far as the voices are concerned (a test steps it by hand, so only Skip and the end stop it). */
+  const audioRunning = () => !gone && clock.status === 'playing' && (testMode || running());
+
+  /** Asks the clock which clip should be sounding now and lets the state machine act on the answer. */
+  function syncAudio() {
+    if (!hasAudio) return;
+    const wanted = audioWanted(tl.audio, clock.t, { running: audioRunning(), sound });
+    if (clock.status === 'playing' && !gone) {
+      let page = 0;
+      tl.pages.forEach((p, i) => {
+        if (p.start <= clock.t) page = i;
+      });
+      preloadPage(page);
+      preloadPage(page + 1);
+    }
+    feedAudio({ type: 'sync', wanted });
+  }
+
+  function releaseAudio() {
+    for (const a of elements.values()) {
+      try {
+        a.pause();
+        a.removeAttribute('src');
+        a.load();
+      } catch {
+        /* nothing left to release */
+      }
+    }
+    elements.clear();
+  }
+
   // ---- the clock ---------------------------------------------------------
 
   function dispatch(action) {
@@ -386,6 +552,7 @@ export function mountComic(container, comic, { onDone } = {}) {
     clock = clockReduce(clock, action, tl.total);
     if (clock !== before) {
       render();
+      syncAudio();
       if (justFinished(before, clock)) finished();
     }
   }
@@ -409,11 +576,14 @@ export function mountComic(container, comic, { onDone } = {}) {
     raf = requestAnimationFrame(frame);
     if (!running()) {
       lastTs = null;
+      // The voices wait with the clock (a hidden tab, a comic scrolled away).
+      syncAudio();
       return;
     }
     const dt = lastTs === null ? 0 : (ts - lastTs) / 1000;
     lastTs = ts;
     dispatch({ type: 'tick', dt });
+    syncAudio();
   }
 
   function ensureLoop() {
@@ -427,7 +597,23 @@ export function mountComic(container, comic, { onDone } = {}) {
     lastKey = '';
     clock = { t: 0, status: 'playing' };
     render();
+    syncAudio();
     ensureLoop();
+  });
+  soundBtn.addEventListener('click', () => {
+    sound = !sound;
+    writeSound(sound);
+    paintSound();
+    status.textContent = sound ? 'Sound on.' : 'Sound off.';
+    syncAudio();
+  });
+  // Any tap is the browser's permission to make sound: if play() was refused, try again now,
+  // inside the tap (this covers the "Tap to turn the sound on" button, Replay and the toggle).
+  root.addEventListener('click', () => {
+    unlocked = true;
+    if (!ast.blocked) return;
+    feedAudio({ type: 'gesture' });
+    syncAudio();
   });
   skip.addEventListener('click', () => {
     dispatch({ type: 'skip' });
@@ -443,6 +629,7 @@ export function mountComic(container, comic, { onDone } = {}) {
     typeof IntersectionObserver === 'function'
       ? new IntersectionObserver((entries) => {
           for (const e of entries) visible = e.isIntersecting;
+          syncAudio();
         }, { threshold: [0, 0.15] })
       : null;
   io?.observe(root);
@@ -456,6 +643,7 @@ export function mountComic(container, comic, { onDone } = {}) {
   mq?.addEventListener?.('change', onMotionChange);
   const onVisibility = () => {
     lastTs = null;
+    syncAudio();
   };
   document.addEventListener('visibilitychange', onVisibility);
 
@@ -475,6 +663,9 @@ export function mountComic(container, comic, { onDone } = {}) {
     status: () => clock.status,
     doneCalls: () => doneCalls,
     timeline: () => tl,
+    audio: tl.audio.map((c) => ({ ...c, url: hasAudio ? clipUrl(voices.slug, c.key) : null })),
+    audioLog: () => audioLog.slice(),
+    audioState: () => ({ sound, blocked: ast.blocked, current: ast.current, failed: [...ast.failed] }),
   };
   if (testMode) window.__comicClock = seam;
 
@@ -483,6 +674,8 @@ export function mountComic(container, comic, { onDone } = {}) {
   function destroy() {
     if (gone) return;
     gone = true;
+    syncAudio();
+    releaseAudio();
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
     ro?.disconnect();
@@ -496,6 +689,8 @@ export function mountComic(container, comic, { onDone } = {}) {
   try {
     layout();
     render();
+    // The first page's clips start loading now (a reduced-motion comic starts finished and loads none until Replay).
+    if (clock.status === 'playing') preloadPage(0);
   } catch (err) {
     // Nothing is left behind if the comic cannot be drawn; the caller falls back to the text story.
     destroy();

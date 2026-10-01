@@ -411,12 +411,15 @@ export function normalizeLearn(entry) {
   const fields = (Array.isArray(learn.fields) ? learn.fields : []).map(cleanField).filter(Boolean);
   // The motion comic is passed through whole: the player (comic.js) checks it panel by panel and falls back to the text story.
   const comic = learn.comic && typeof learn.comic === 'object' && isStr(learn.comic.title) && Array.isArray(learn.comic.pages) ? learn.comic : null;
+  // The comic's narration, with the lab's slug (the API sends it beside the bundle) so the player can build the clip URLs; the player checks it line by line.
+  const audio = comic && isStr(entry.slug) && learn.audio && typeof learn.audio === 'object' && learn.audio.clips && typeof learn.audio.clips === 'object' && Array.isArray(learn.audio.lines) ? { ...learn.audio, slug: entry.slug } : null;
   return {
     version: typeof entry.version === 'string' ? entry.version : '',
     learn: {
       version: 1,
       ...(story ? { story } : {}),
       ...(comic ? { comic } : {}),
+      ...(audio ? { audio } : {}),
       concepts,
       questions,
       answers_file: isStr(learn.answers_file) ? learn.answers_file : 'answers.json',

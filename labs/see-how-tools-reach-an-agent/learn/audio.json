@@ -1,0 +1,100 @@
+{
+  "model": "@cf/deepgram/aura-2-en",
+  "clips": {
+    "de94e57cdb78a518": {
+      "voice": "atlas",
+      "text": "Thursday morning, by the coffee machine.",
+      "seconds": 2.18,
+      "bytes": 13104
+    },
+    "f5fe2aae55a2ea0e": {
+      "voice": "luna",
+      "text": "My assistant has to explain why a parcel is late. That starts with the weather in the depot's city.",
+      "seconds": 6.02,
+      "bytes": 36144
+    },
+    "eb6c5348c94a5e1e": {
+      "voice": "luna",
+      "text": "Search wrote a weather lookup, Billing a calculator. I do not want a fifth way.",
+      "seconds": 4.61,
+      "bytes": 27648
+    },
+    "dfa39b81a2569f84": {
+      "voice": "thalia",
+      "text": "Security wants one door. Agents ask a server what tools it has, then call them by name. See it from the agent's side.",
+      "seconds": 8.38,
+      "bytes": 50256
+    },
+    "84511f6dfc9af458": {
+      "voice": "atlas",
+      "text": "A tool gateway, with a weather server and a calculator behind it.",
+      "seconds": 4.01,
+      "bytes": 24048
+    },
+    "33be4fb371875baa": {
+      "voice": "thalia",
+      "text": "Look at the request bodies, and at what comes back when a call goes right and when it does not.",
+      "seconds": 5.14,
+      "bytes": 30816
+    },
+    "84b86eda1b047fef": {
+      "voice": "luna",
+      "text": "My assistant will read those answers. The shape of a failure matters to me.",
+      "seconds": 4.42,
+      "bytes": 26496
+    },
+    "14cf90c0da3739d0": {
+      "voice": "atlas",
+      "text": "Your turn.",
+      "seconds": 0.65,
+      "bytes": 3888
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "caption",
+      "clip": "de94e57cdb78a518"
+    },
+    {
+      "panel": 0,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "f5fe2aae55a2ea0e"
+    },
+    {
+      "panel": 1,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "eb6c5348c94a5e1e"
+    },
+    {
+      "panel": 2,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "dfa39b81a2569f84"
+    },
+    {
+      "panel": 3,
+      "kind": "caption",
+      "clip": "84511f6dfc9af458"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "33be4fb371875baa"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 1,
+      "clip": "84b86eda1b047fef"
+    },
+    {
+      "panel": 5,
+      "kind": "caption",
+      "clip": "14cf90c0da3739d0"
+    }
+  ]
+}
