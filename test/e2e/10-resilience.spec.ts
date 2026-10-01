@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { test, expect, emit, fulfillCors, openConsole, patchStatus, sessionIdOf, SERVICE_KEY } from './fixtures';
 
 /**
@@ -43,15 +44,38 @@ test.describe('a dropped event stream', () => {
   });
 });
 
+/**
+ * The session screen once the console has finished starting it: the boot
+ * modal gone, the guide built and the first file listing on screen. Stubs for
+ * the expired-token specs are installed only after this, so that the request
+ * they refuse is the one the spec makes and not one the page makes by itself
+ * while it is still opening (which would be answered with the 401 first, and
+ * leave the click below it with nothing to land on).
+ */
+async function settled(page: Page): Promise<void> {
+  await expect(page.locator('#bootModal')).toBeHidden({ timeout: 60_000 });
+  await expect(page.locator('#guide[data-ready="true"]')).toBeAttached({ timeout: 60_000 });
+  await expect(page.locator('#fileList li:has(.name)').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('#btnRefreshFiles')).toBeEnabled();
+}
+
 test.describe('a session token that has expired', () => {
   test('is replaced by rejoining, and the same session carries on', async ({ session }) => {
     const id = await sessionIdOf(session);
-    let requests = 0;
+    await settled(session);
+
+    const listings: number[] = []; // status of every file listing the page made, in order
+    let rejoins = 0;
     let refused = false;
+    session.on('response', (res) => {
+      if (FILES.test(res.url()) && res.request().method() === 'GET') listings.push(res.status());
+    });
+    session.on('request', (req) => {
+      if (req.method() === 'POST' && /\/api\/start$/.test(req.url())) rejoins++;
+    });
     // The API refuses the first file listing, as it would an aged-out token.
     await session.route(FILES, async (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
-      requests++;
       if (refused) return route.fallback();
       refused = true;
       await fulfillCors(route, 401, { error: { code: 'unauthorized', message: 'Session token expired' } });
@@ -59,15 +83,22 @@ test.describe('a session token that has expired', () => {
 
     await session.locator('#btnRefreshFiles').click();
 
-    // Refused once, asked again with the token the rejoin returned.
-    await expect.poll(() => requests, { timeout: 30_000 }).toBe(2);
-    await expect(session.locator('#fileList li').first()).toBeVisible();
+    // Refused once, then asked again with the token the rejoin returned. The
+    // page may list files again for its own reasons (a file written, a
+    // service coming up), so the count is a floor, not an exact number.
+    await expect.poll(() => listings.length, { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+    expect(listings[0]).toBe(401);
+    await expect.poll(() => listings.at(-1), { timeout: 30_000 }).toBe(200);
+    // One refusal cost one rejoin, not a loop of them.
+    expect(rejoins).toBe(1);
+    await expect(session.locator('#fileList li:has(.name)').first()).toBeVisible();
     await expect(session.locator('#sessionId')).toHaveText(id);
     await expect(session.locator('#workspace')).toBeVisible();
     await expect(session.locator('#launchError')).toBeHidden();
   });
 
   test('says the learner is signed out when the rejoin is refused too', async ({ session }) => {
+    await settled(session);
     await session.route(FILES, (route) =>
       route.request().method() === 'GET'
         ? fulfillCors(route, 401, { error: { code: 'unauthorized', message: 'Session token expired' } })
@@ -82,6 +113,8 @@ test.describe('a session token that has expired', () => {
     await expect(session.locator('#launcher')).toBeVisible({ timeout: 30_000 });
     await expect(session.locator('#launchError')).toContainText('Signed out — sign in to return to your running lab');
     await expect(session.locator('#workspace')).toBeHidden();
+    // Signing out is not a failed start: the boot modal must not be left over it.
+    await expect(session.locator('#bootModal')).toBeHidden();
   });
 });
 
@@ -93,7 +126,10 @@ test.describe('no free lab slot', () => {
     await page.route('**/api/start', (route) =>
       route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'pool exhausted' }) })
     );
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    // Go to the launcher itself, not a reload: a resumed session leaves the
+    // address at /labs/<slug>, and a lab's address starts that lab on load,
+    // which would hit the stubbed 503 before the picker was ever on screen.
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
 
     await page.locator('.lab[data-slug="hello"] button').click();

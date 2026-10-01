@@ -1778,6 +1778,8 @@ const guide = {
   checks: { passed: 0, count: 0 },
   /** 'checks', or 'answers' for a lab graded through its questions. */
   kind: 'checks',
+  /** A checks run was started before the tabs existed: take the learner to its results once they do. */
+  wantResults: false,
 };
 
 const GUIDE_PANEL = {
@@ -1916,7 +1918,11 @@ function applyGuideTabs(tabs) {
   placeChecksBlock();
   $('answersTag').hidden = guide.kind !== 'answers';
   $('checksTag').hidden = guide.kind === 'answers';
-  showGuideTab(tabs.includes(guide.tab) ? guide.tab : tabs[0]);
+  // A run started before the guide was built asked to be taken to its results: honour that
+  // instead of landing on the first tab (Brief) with the results hidden behind it.
+  const resultsTab = guide.wantResults && (tabs.includes('checks') ? 'checks' : tabs.includes('questions') ? 'questions' : null);
+  if (resultsTab) guide.wantResults = false;
+  showGuideTab(resultsTab || (tabs.includes(guide.tab) ? guide.tab : tabs[0]));
   updateBadges();
   renderDock();
   renderChecksButtons();
@@ -3293,6 +3299,8 @@ async function runChecks() {
   if (home) {
     showGuideTab(home);
     syncTabUrl(home);
+  } else {
+    guide.wantResults = true; // the guide is not built yet; applyGuideTabs takes the learner to the results once it is
   }
   const previous = panel.querySelector('.check') ? panel.innerHTML : '';
   panel.innerHTML = `

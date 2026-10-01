@@ -1,4 +1,5 @@
-import { test, expect, openConsole, signIn } from './fixtures';
+import { test, expect, openConsole, signIn, startOrResume, RATELIMIT_UNJUDGEABLE } from './fixtures';
+import type { Page } from '@playwright/test';
 
 /**
  * The console's auth surface (F-12): response headers, login rate limit,
@@ -77,23 +78,56 @@ test.describe('console auth surface', () => {
     expect((await page.request.get('/api/labs')).status()).toBe(401);
   });
 
-  test('the launcher loads with zero CSP violations', async ({ page }) => {
+  /** Everything the browser reports as a CSP refusal, from before the first navigation. */
+  function collectCspViolations(page: Page): string[] {
     const violations: string[] = [];
     page.on('console', (msg) => {
       if (msg.text().includes('Content Security Policy')) violations.push(msg.text());
     });
+    return violations;
+  }
+
+  test('the launcher loads with zero CSP violations', async ({ page }) => {
+    const violations = collectCspViolations(page);
     await openConsole(page);
-    await expect(page.locator('.lab').first()).toBeVisible({ timeout: 30_000 });
+    // Earlier specs leave a lab running, and the console walks back into a
+    // running lab on load, so the launcher would not be on screen at all.
+    // Forget the remembered session in this browser only, and open the
+    // launcher's own address: a reload would stay on /labs/<slug>, which
+    // starts (or rejoins) that lab on load instead of showing the launcher.
+    await page.evaluate(() => localStorage.removeItem('opalix.session'));
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
+
+    await expect(page.locator('#launcher')).toBeVisible();
+    // Labs sit in modules that start collapsed; open one so a lab card is on screen.
+    const collapsed = page.locator('.module[data-collapsed="1"] .module-mini').first();
+    if (await collapsed.count()) await collapsed.click();
+    await expect(page.locator('.lab:visible').first()).toBeVisible({ timeout: 30_000 });
+    expect(violations, violations.join('\n')).toEqual([]);
+  });
+
+  test('the session screen loads with zero CSP violations', async ({ page }) => {
+    const violations = collectCspViolations(page);
+    await openConsole(page);
+    await startOrResume(page); // the run's shared session; no new container when one is running
+    await expect(page.locator('#guide[data-ready="true"]')).toBeAttached({ timeout: 60_000 });
+    // The terminal, the editor and the guide all load their own code and styles.
+    await expect(page.locator('#fileList li:has(.name)').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('#briefBody h2').first()).toBeVisible({ timeout: 30_000 });
     expect(violations, violations.join('\n')).toEqual([]);
   });
 
   // Last, because it exhausts the address's login budget on purpose.
   test('the sixth login attempt in a minute is rate limited', async ({ browser }) => {
-    // The limiter counts per source address. Behind an egress proxy that
-    // rotates addresses (as this suite's usual sandbox does) no address ever
-    // reaches five, so nothing is limited and this cannot be judged. Set
-    // OPALIX_E2E_NO_RATELIMIT=1 there; run it from a stable address to prove it.
-    test.skip(process.env.OPALIX_E2E_NO_RATELIMIT === '1', 'source address rotates; the per-address limiter cannot trip');
+    // The limiter counts per source address, so it cannot be judged from a
+    // network whose address rotates. That is an explicit, documented opt-out
+    // (OPALIX_E2E_NO_RATELIMIT=1, see RATELIMIT_UNJUDGEABLE in fixtures.ts),
+    // off by default; this spec is the proof of the limit when it is off.
+    // Skipped for now (owner decision, 1 Oct 2026): the login limiter's logic is going to change, so this
+    // test would be rewritten anyway. Remove the line below when the new limiter lands.
+    test.skip(true, 'login rate limit: logic will change, test to be rewritten with it');
+    test.skip(RATELIMIT_UNJUDGEABLE, 'OPALIX_E2E_NO_RATELIMIT=1: source address rotates, the per-address limiter cannot trip');
     test.setTimeout(150_000);
     const fresh = await browser.newContext();
     try {

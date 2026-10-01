@@ -138,6 +138,12 @@ export async function startOrResume(page: Page): Promise<string> {
   }
 
   await expect(page.locator('#statePill')).toHaveText('running', { timeout: 120_000 });
+  // The pill reads 'running' as soon as the event stream says so, which can
+  // be a moment before the console has finished its own boot (the "Starting
+  // your lab" modal is still up and the first file listing is yet to be
+  // asked for). A spec that stubs the API or clicks straight away would then
+  // race the page's own start-up requests, so settle first.
+  await expect(page.locator('#bootModal')).toBeHidden({ timeout: 120_000 });
   // The API rejoins whatever session this address already has, whatever lab
   // it is running. Every spec below asserts on the hello lab's files,
   // services and checks, so say plainly that we are in the wrong lab rather
@@ -165,6 +171,26 @@ export async function startOrResume(page: Page): Promise<string> {
  * broken terminal — is worse. Set it knowingly, per environment.
  */
 export const WEBSOCKETS_BLOCKED = process.env.OPALIX_E2E_NO_WEBSOCKETS === '1';
+
+/**
+ * Whether the login rate limit can be judged from this network.
+ *
+ * The console's limiter (the LOGIN_LIMIT binding in dashboard/wrangler.jsonc,
+ * 5 attempts a minute) keys on CF-Connecting-IP, the caller's source address,
+ * and Cloudflare counts each address separately at each location. Behind an
+ * egress proxy that rotates addresses and locations -- this suite's usual
+ * sandbox does: successive requests to /cdn-cgi/trace report different `ip=`
+ * values in 160.79.106.128-141 and both IAD and EWR -- six wrong passwords
+ * are spread over several keys and none of them reaches five, so no 429 can
+ * ever be observed even though the limiter is working.
+ *
+ * Like OPALIX_E2E_NO_WEBSOCKETS this is an explicit opt-out, default off, never
+ * inferred from a status code: guessing from "no 429 came back" would excuse a
+ * limiter that had really gone missing. Set OPALIX_E2E_NO_RATELIMIT=1 only
+ * where the source address is known to rotate, and prove the limit from a
+ * stable address (a developer machine, CI) without it.
+ */
+export const RATELIMIT_UNJUDGEABLE = process.env.OPALIX_E2E_NO_RATELIMIT === '1';
 
 /** The service key, for the specs that push events into a session. */
 export const SERVICE_KEY = process.env.OPALIX_KEY;
