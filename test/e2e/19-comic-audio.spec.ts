@@ -361,7 +361,7 @@ test.describe('the clips follow the clock', () => {
     const tl = await timeline(page);
     const duo = tl.pages[1]!.panels[0]!; // panel 5: two bubbles
     const c = list.find((x) => x.panel === duo.number)!;
-    const panel = page.locator(`#learnHost .cm-panel[data-panel="${duo.number}"]`);
+    const panel = page.locator(`#learnHost .cm-pane[data-panel="${duo.number}"]`);
     const totals = [await panel.locator('.cm-bub').nth(0).locator('.cm-w').count(), await panel.locator('.cm-bub').nth(1).locator('.cm-w').count()];
     expect(duo.bubbles[0]!.start).toBeCloseTo(c.start + 0.8, 6);
     // Nothing is typed until 0.8 s after the voice starts.

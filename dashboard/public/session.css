@@ -408,7 +408,6 @@
 .dock .sep { width: 1px; height: 22px; background: var(--border-strong); flex: none; }
 .dock .it { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; white-space: nowrap; min-width: 0; }
 .dock .it svg { color: var(--ink-muted); flex: none; }
-.dock-cost { font-weight: 500 !important; }
 .dock .btn { min-height: 40px; padding: 0 18px; font-size: 14px; }
 .dock .it:has(#dockHint:empty), .dock .it:has(#dockHint:empty) + .sep { display: none; }
 

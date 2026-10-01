@@ -129,7 +129,7 @@ function displayLines(text) {
 
 /** Everything one panel is made of, built once; `parts` is what the frame loop flips. */
 function buildPanel(panel, tp, placement) {
-  const fig = el('figure', `cm-panel cm-bg-${panel.bg ?? DEFAULT_BG[panel.scene]} cm-scene-${panel.scene} cm-enter-${ENTER[(tp.number - 1) % ENTER.length]}`);
+  const fig = el('figure', `cm-pane cm-bg-${panel.bg ?? DEFAULT_BG[panel.scene]} cm-scene-${panel.scene} cm-enter-${ENTER[(tp.number - 1) % ENTER.length]}`);
   fig.style.left = `${placement.x}px`;
   fig.style.top = `${placement.y}px`;
   fig.style.width = `${placement.w}px`;
@@ -181,7 +181,7 @@ function buildPanel(panel, tp, placement) {
     box.style.setProperty('--maxlen', String(Math.max(...panel.lines.map((l) => l.length), 12)));
     const inner = el('div', 'cm-lines-in');
     panel.lines.forEach((text) => {
-      const row = el('div', 'cm-line', text);
+      const row = el('div', 'cm-scrline', text);
       row.dataset.kind = /^[$>]/.test(text) ? 'cmd' : /^(200|ok|ready)/i.test(text) ? 'ok' : /^(4\d\d|5\d\d|error|fail)/i.test(text) ? 'warn' : 'out';
       inner.append(row);
       parts.lines.push({ row, len: text.length, chars: -1 });

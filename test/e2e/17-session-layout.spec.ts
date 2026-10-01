@@ -896,6 +896,38 @@ test.describe('the workspace window', () => {
     expect(colours.gutters).toBe(rgb(colours.window));
   });
 
+  test('the code is readable: every line of text differs from the editor behind it', async ({ page }, info) => {
+    await session(page, BUILD);
+    await page.locator('#fileList li', { hasText: 'gateway.yaml' }).click();
+    await expect(page.locator('.cm-content')).toContainText('model_list');
+    const found = await page.evaluate(() => {
+      const lum = (c: string) => {
+        const [r, g, b] = (c.match(/[\d.]+/g) ?? ['0', '0', '0']).map(Number).map((v) => {
+          const x = v / 255;
+          return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const ratio = (a: string, b: string) => {
+        const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+        return (hi + 0.05) / (lo + 0.05);
+      };
+      const bg = getComputedStyle(document.querySelector('.cm-editor')!).backgroundColor;
+      const spans = [...document.querySelectorAll('.cm-line, .cm-line span')].filter((e) => e.textContent?.trim());
+      return {
+        bg,
+        worst: Math.min(...spans.map((e) => ratio(getComputedStyle(e).color, bg))),
+        // The motion comic once styled `.cm-line` (CodeMirror's own class) to opacity 0.
+        faded: spans.filter((e) => Number(getComputedStyle(e).opacity) < 1).length,
+        sample: spans.slice(0, 6).map((e) => [e.textContent, getComputedStyle(e).color, getComputedStyle(e).opacity]),
+      };
+    });
+    console.log(JSON.stringify(found));
+    await page.screenshot({ path: info.outputPath('editor.png') });
+    expect(found.worst).toBeGreaterThan(4.5);
+    expect(found.faded).toBe(0);
+  });
+
   test('the terminal is painted in the window’s terminal navy', async ({ page }) => {
     await session(page, BUILD);
     await page.getByRole('tab', { name: 'Terminal' }).click();
@@ -929,16 +961,17 @@ test.describe('the workspace window', () => {
 // =========================================================================
 
 test.describe('the header', () => {
-  test('says where the lab sits, its title, the time left, the checks, the cost and the three actions', async ({ page }) => {
+  test('says where the lab sits, its title, the time left, the checks and the three actions', async ({ page }) => {
     await session(page, BUILD);
     await expect(page.locator('#sessionTitle')).toHaveText('Keep EU data on EU routes');
     await expect(page.locator('#sessionLab')).toHaveText(BUILD);
     await expect(page.locator('#sessionWhere')).toHaveText(/ · lab \d+ of \d+ · $/);
     await expect(page.locator('#expiryTimer')).toHaveText(/^\d+:\d{2} left$/);
-    await expect(page.locator('#statCost')).toHaveText('≈ $0.03');
-    await expect(page.locator('#dockCostValue')).toHaveText('≈ $0.03');
+    await expect(page.locator('#statCostWrap')).toHaveCount(0);
+    await expect(page.locator('#dockCost')).toHaveCount(0);
     for (const id of ['#btnChecks', '#btnSnapshot', '#btnEnd']) await expect(page.locator(id)).toBeEnabled();
     await expect(page.locator('#btnEnd')).toHaveText('End lab');
+    await expect(page.locator('#btnBackToLabs')).toBeVisible();
     // The links, the help and the account belong to the launcher; the theme stays.
     await expect(page.locator('#navLinks')).toBeHidden();
     await expect(page.locator('#btnTheme')).toBeVisible();

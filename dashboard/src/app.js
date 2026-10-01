@@ -2189,7 +2189,8 @@ function enterSession() {
   $('workspace').hidden = false;
   $('sessionBar').hidden = false;
   $('sessionActions').hidden = false;
-  $('btnBackToLabs').hidden = true;
+  // A running lab can be left (it keeps running and the launcher offers Rejoin).
+  $('btnBackToLabs').hidden = false;
 
   setSessionLab(state.session.lab);
   // The id is for support, not for the bar: it lives on the state pill's
@@ -2241,13 +2242,6 @@ function openEventStream() {
       handleEvent(type, tone, parse(ev.data));
     });
   }
-  // `metrics` fires every 30s; it updates the header's cost, which is the
-  // only place it is shown.
-  es.addEventListener('metrics', (ev) => {
-    const data = parse(ev.data);
-    // The API sends `cost_usd`; `cost.usd` is the older shape.
-    setCostStat(data?.cost_usd ?? data?.cost?.usd);
-  });
   // The browser reconnects by itself and sends Last-Event-ID, so nothing
   // is lost across a blip. What the learner needs is to know the page is
   // not live meanwhile, and — if it stays down — for the console to keep
@@ -3108,24 +3102,9 @@ function setHintsStat() {
   renderDock();
 }
 
-/** "≈ $0.03" from `status().cost.usd` or a `metrics` event; a missing number leaves what is shown. */
-function setCostStat(usd) {
-  if (usd == null || !Number.isFinite(Number(usd))) return;
-  const n = Number(usd);
-  const text = n > 0 && n < 0.005 ? '< $0.01' : `≈ $${n.toFixed(2)}`;
-  $('statCost').textContent = text;
-  $('dockCostValue').textContent = text;
-  $('statCostWrap').title = `About $${n.toFixed(4)} spent by this session so far`;
-  $('dockCost').title = $('statCostWrap').title;
-}
-
 function resetBarStats() {
   setChecksStat(null);
   setHintsStat();
-  $('statCost').textContent = NO_VALUE;
-  $('dockCostValue').textContent = NO_VALUE;
-  $('statCostWrap').title = 'Approximate spend by this session so far';
-  $('dockCost').title = $('statCostWrap').title;
 }
 
 // ------------------------------------------------------- theme and identity
@@ -3284,7 +3263,6 @@ function absorbStatus(status, { celebrate = false } = {}) {
   }
   // An API that predates the solution omits it, which reads as "none".
   renderSolution(status?.solution);
-  setCostStat(status?.cost?.usd);
   if (state.checksRunning) return;
   if (status?.checks) renderChecks(status.checks);
   showResultIfComplete(status?.checks, celebrate);
@@ -4724,7 +4702,10 @@ $('btnRestart').addEventListener('click', restartLab);
 $('btnEndedBack').addEventListener('click', backToLabs);
 $('btnImHere').addEventListener('click', imHere);
 
-$('btnBackToLabs').addEventListener('click', backToLabs);
+$('btnBackToLabs').addEventListener('click', () => {
+  if ($('statePill').dataset.state === 'ended') backToLabs();
+  else setRoute('launcher', {});
+});
 $('btnSignOut')?.addEventListener('click', async () => {
   // POST-only on the Worker; a GET is refused. The page reload lands on the
   // login form because the cookie is gone.

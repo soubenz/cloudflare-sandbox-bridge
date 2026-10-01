@@ -122,7 +122,7 @@
 .cm-banner-t { min-width: 0; font: 800 40px/1 var(--display); letter-spacing: -0.04em; color: var(--cm-fg-paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- a panel ---------- */
-.cm-panel {
+.cm-pane {
   position: absolute; margin: 0; overflow: hidden;
   border: 4px solid var(--cm-edge); border-radius: 20px; box-shadow: 8px 8px 0 var(--cm-shadow);
   background: var(--cm-pbg); color: var(--cm-pfg);
@@ -140,8 +140,8 @@
 .cm-enter-right { transform: translateX(90px) rotate(3deg); }
 .cm-enter-zoom { transform: scale(0.55); }
 .cm-enter-up { transform: translateY(80px) rotate(-2deg); }
-.cm-panel.on { opacity: 1; transform: none; }
-.cm-panel.shake { animation: cm-shake 0.55s both; }
+.cm-pane.on { opacity: 1; transform: none; }
+.cm-pane.shake { animation: cm-shake 0.55s both; }
 .cm-halftone {
   position: absolute; inset: 0; pointer-events: none;
   background-image: radial-gradient(color-mix(in srgb, var(--cm-ink) 13%, transparent) 1.6px, transparent 1.7px);
@@ -220,14 +220,14 @@
   display: flex; flex-direction: column; gap: 0.3em;
   font: 600 min(calc(18px * var(--ts, 1)), calc(100cqw / (0.62 * var(--maxlen, 30))))/1.35 var(--mono);
 }
-.cm-line { white-space: pre; opacity: 0; color: var(--cm-screen-out); }
-.cm-line.on { opacity: 1; }
-.cm-line[data-kind="cmd"] { color: var(--cm-screen-text); }
-.cm-line[data-kind="ok"] { color: var(--cm-screen-ok); }
-.cm-line[data-kind="warn"] { color: var(--cm-screen-warn); }
+.cm-scrline { white-space: pre; opacity: 0; color: var(--cm-screen-out); }
+.cm-scrline.on { opacity: 1; }
+.cm-scrline[data-kind="cmd"] { color: var(--cm-screen-text); }
+.cm-scrline[data-kind="ok"] { color: var(--cm-screen-ok); }
+.cm-scrline[data-kind="warn"] { color: var(--cm-screen-warn); }
 
 /* A narrow container's camera is in on the screen: what lies outside it steps back rather than be cut in half. */
-.cm-panel.focus .cm-bub, .cm-panel.focus .cm-cap, .cm-panel.focus .cm-sfx, .cm-panel.focus .cm-display { opacity: 0; }
+.cm-pane.focus .cm-bub, .cm-pane.focus .cm-cap, .cm-pane.focus .cm-sfx, .cm-pane.focus .cm-display { opacity: 0; }
 
 /* ---------- ambient loops of the art ---------- */
 .cm-char { transform-box: fill-box; transform-origin: 50% 100%; animation: cm-bob 3.2s ease-in-out infinite; }
@@ -239,7 +239,7 @@
 .cm-rays { transform-box: fill-box; transform-origin: center; animation: cm-spin 40s linear infinite; }
 .cm-trail { stroke-dasharray: 6 8; animation: cm-dash 0.6s linear infinite; }
 .cm-scan { animation: cm-scan 3.2s linear infinite; }
-.cm-panel.on .cm-fly { animation: cm-flyin 0.9s 0.1s cubic-bezier(0.2, 1, 0.3, 1) both; }
+.cm-pane.on .cm-fly { animation: cm-flyin 0.9s 0.1s cubic-bezier(0.2, 1, 0.3, 1) both; }
 @keyframes cm-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @keyframes cm-lean { 0%, 100% { rotate: -1.6deg; } 50% { rotate: 1.8deg; } }
 @keyframes cm-blink { 0%, 91%, 100% { transform: scaleY(1); } 94% { transform: scaleY(0.08); } }
@@ -258,7 +258,7 @@
 /* Still: a finished comic, reduced motion and the test clock hold every loop and every ease. */
 .cm[data-state="done"] .cm-reel *, .cm[data-reduced] .cm-reel *, .cm[data-test] .cm-reel * { animation: none !important; }
 .cm[data-reduced] .cm-reel *, .cm[data-test] .cm-reel * { transition: none !important; }
-.cm[data-state="done"] .cm-panel, .cm[data-state="done"] .cm-banner { transition: none; }
+.cm[data-state="done"] .cm-pane, .cm[data-state="done"] .cm-banner { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .cm-reel * { animation: none !important; transition: none !important; }
 }

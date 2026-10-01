@@ -338,7 +338,7 @@ test.describe('in Before you begin', () => {
     const cm = page.locator('#learnHost .cm');
     await expect(cm).toHaveAttribute('data-state', 'done');
     // Every panel is drawn, every bubble fully typed, the bar full, the timecode at the end.
-    await expect(cm.locator('.cm-panel.on')).toHaveCount(panelCount(single));
+    await expect(cm.locator('.cm-pane.on')).toHaveCount(panelCount(single));
     await expect(cm.locator('.cm-bub.on')).toHaveCount(single.pages.flatMap((pg) => pg.panels).reduce((n, p) => n + p.bubbles.length, 0));
     expect(await cm.locator('.cm-w:not(.on)').count()).toBe(0);
     const parts = (await timecode(page, '#learnHost').textContent())!.split(' / ');
@@ -360,17 +360,17 @@ test.describe('in Before you begin', () => {
     await replayBtn(page, '#learnHost').click();
     const cm = page.locator('#learnHost .cm');
     await expect(cm).toHaveAttribute('data-state', 'playing');
-    await expect(cm.locator('.cm-panel.on')).toHaveCount(0);
+    await expect(cm.locator('.cm-pane.on')).toHaveCount(0);
     await expect(timecode(page, '#learnHost')).toHaveText(/^0:00 \/ /);
     await expect(skipBtn(page, '#learnHost')).toBeEnabled();
     // Step the clock: the first panel pops in when the camera arrives, not before.
     const tl = await timeline(page);
     await at(page, tl.pages[0]!.panels[0]!.start + 0.1);
-    await expect(cm.locator('.cm-panel.on')).toHaveCount(0);
+    await expect(cm.locator('.cm-pane.on')).toHaveCount(0);
     await at(page, tl.pages[0]!.panels[0]!.start + 1.2);
-    await expect(cm.locator('.cm-panel.on')).toHaveCount(1);
+    await expect(cm.locator('.cm-pane.on')).toHaveCount(1);
     await at(page, tl.pages[0]!.panels[2]!.start + 1.5);
-    await expect(cm.locator('.cm-panel.on')).toHaveCount(3);
+    await expect(cm.locator('.cm-pane.on')).toHaveCount(3);
     // Finishing a second time reports done a second time (once per run).
     await skipBtn(page, '#learnHost').click();
     expect(await clock.doneCalls(page)).toBe(2);
@@ -521,7 +521,7 @@ test.describe('reduced motion', () => {
     const cm = page.locator('#learnHost .cm');
     await expect(cm).toHaveAttribute('data-state', 'done');
     await expect(cm).toHaveAttribute('data-reduced', '1');
-    await expect(cm.locator('.cm-panel.on')).toHaveCount(panelCount(single));
+    await expect(cm.locator('.cm-pane.on')).toHaveCount(panelCount(single));
     expect(await cm.locator('.cm-w:not(.on)').count()).toBe(0);
     await expect(cm.locator('.cm-controls').getByRole('button')).toHaveText(['Replay', 'Skip']);
     await expect(skipBtn(page, '#learnHost')).toBeDisabled();
@@ -548,7 +548,7 @@ test.describe('reduced motion', () => {
     const tl = await timeline(page);
     await at(page, tl.pages[0]!.panels[1]!.start + 0.4);
     // The words of a bubble are there at once (no typing), the camera is on the panel already.
-    const state = await cm.evaluate((root) => ({ shown: root.querySelectorAll('.cm-panel.on').length, untyped: root.querySelectorAll('.cm-bub.on .cm-w:not(.on)').length }));
+    const state = await cm.evaluate((root) => ({ shown: root.querySelectorAll('.cm-pane.on').length, untyped: root.querySelectorAll('.cm-bub.on .cm-w:not(.on)').length }));
     expect(state.shown).toBeGreaterThanOrEqual(1);
     expect(state.untyped).toBe(0);
     expect(await cm.evaluate((root) => root.getAnimations({ subtree: true }).filter((an) => an.playState === 'running').length)).toBe(0);
@@ -563,7 +563,7 @@ test.describe('reduced motion', () => {
     const sheets = await cm.locator('.cm-sheet').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
     expect(sheets[0]!).toBeLessThan(sheets[1]!);
     expect(sheets[1]!).toBeLessThan(sheets[2]!);
-    await expect(cm.locator('.cm-panel.on')).toHaveCount(panelCount(multi));
+    await expect(cm.locator('.cm-pane.on')).toHaveCount(panelCount(multi));
     // The stage is as tall as the whole comic needs, so nothing is cut off.
     const st = (await cm.locator('.cm-stage').boundingBox())!;
     const last = (await cm.locator('.cm-sheet').last().boundingBox())!;
@@ -587,12 +587,12 @@ test.describe('one clock', () => {
     const tl = await timeline(page);
     const p = tl.pages[0]!.panels;
     // The clock waits for the test: nothing has moved.
-    await expect(page.locator('#learnHost .cm-panel.on')).toHaveCount(0);
+    await expect(page.locator('#learnHost .cm-pane.on')).toHaveCount(0);
     expect(await clock.time(page)).toBe(0);
     const frame = async (t: number) => {
       await at(page, t);
       return page.evaluate(() => ({
-        on: document.querySelectorAll('.cm-panel.on').length,
+        on: document.querySelectorAll('.cm-pane.on').length,
         words: document.querySelectorAll('.cm-w.on').length,
         reel: getComputedStyle(document.querySelector('.cm-reel')!).transform,
         time: document.querySelector('.cm-time')!.textContent,
@@ -662,11 +662,11 @@ test.describe('layout', () => {
         for (const panel of pg.panels) {
           await at(page, panel.end - 0.1);
           const sizes = await page.evaluate((n) => {
-            const fig = document.querySelector(`.cm-panel[data-panel="${n}"]`)!;
+            const fig = document.querySelector(`.cm-pane[data-panel="${n}"]`)!;
             const reel = document.querySelector('.cm-reel') as HTMLElement;
             const scale = reel.getBoundingClientRect().width / reel.offsetWidth;
             const px = (sel: string) => [...fig.querySelectorAll(sel)].filter((e) => e.getClientRects().length && getComputedStyle(e).opacity !== '0').map((e) => parseFloat(getComputedStyle(e).fontSize) * scale);
-            return { bubble: px('.cm-bub.on .cm-w'), tag: px('.cm-bub.on .cm-tag'), caption: px('.cm-cap.on'), lines: px('.cm-line.on') };
+            return { bubble: px('.cm-bub.on .cm-w'), tag: px('.cm-bub.on .cm-tag'), caption: px('.cm-cap.on'), lines: px('.cm-scrline.on') };
           }, panel.number);
           for (const [what, list] of Object.entries(sizes)) for (const v of list) expect(v, `panel ${panel.number} ${what} is ${v.toFixed(1)}px on screen`).toBeGreaterThanOrEqual(what === 'lines' ? linesFloor : floor);
         }
