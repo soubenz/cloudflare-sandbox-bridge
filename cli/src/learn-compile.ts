@@ -46,8 +46,16 @@ export function compileLearnDir(labDir: string): LearnCompileResult | null {
   const concepts: unknown[] = [];
   const conceptsDir = join(dir, 'concepts');
   if (existsSync(conceptsDir)) {
-    for (const file of readdirSync(conceptsDir).filter((f) => f.endsWith('.md')).sort()) {
-      const { data, body } = splitFrontMatter(readFileSync(join(conceptsDir, file), 'utf8'));
+    // Lessons play in file-name order unless a lesson says `order: <n>` in its front matter
+    // (lower first, default 100). The lesson that explains what the lab's subject *is* sets
+    // `order: 1`, so it comes before the ones that assume you know.
+    const loaded = readdirSync(conceptsDir)
+      .filter((f) => f.endsWith('.md'))
+      .sort()
+      .map((file) => ({ file, ...splitFrontMatter(readFileSync(join(conceptsDir, file), 'utf8')) }));
+    const orderOf = (d: Record<string, unknown>) => (typeof d.order === 'number' && Number.isFinite(d.order) ? d.order : 100);
+    loaded.sort((a, b) => orderOf(a.data) - orderOf(b.data)); // stable: ties keep file-name order
+    for (const { file, data, body } of loaded) {
       const stem = file.slice(0, -3);
       if (data.id !== stem) problems.push(`concepts/${file}: front matter id "${String(data.id)}" must equal the file name "${stem}"`);
       concepts.push({ id: data.id, title: data.title, minutes: data.minutes, recap: data.recap, body });

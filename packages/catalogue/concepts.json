@@ -9,6 +9,7 @@
     "sovereignty": { "title": "Data sovereignty", "path": "ai-platform", "module": 7 }
   },
   "concepts": [
+    { "id": "gateway.what-is-a-gateway", "title": "What an LLM gateway is and why teams run one" },
     { "id": "gateway.routing-aliases", "title": "Model aliases and routing" },
     { "id": "gateway.usage-and-spend", "title": "Tokens, cost and the spend log" },
     { "id": "gateway.error-semantics", "title": "What a gateway returns when it cannot serve a call" },
@@ -18,18 +19,22 @@
     { "id": "mcp.virtual-servers", "title": "Virtual servers: one endpoint over many tool servers" },
     { "id": "mcp.tool-errors", "title": "How a tool call fails, and what the agent sees" },
 
+    { "id": "rag.what-is-retrieval", "title": "What retrieval is and why a model needs it" },
     { "id": "rag.embeddings-similarity", "title": "Embeddings and similarity" },
     { "id": "rag.close-matches", "title": "Close matches and score thresholds" },
     { "id": "rag.out-of-corpus", "title": "Questions the corpus cannot answer" },
 
+    { "id": "otel.what-is-tracing", "title": "What a trace is and why one request needs one" },
     { "id": "otel.traces-and-spans", "title": "Traces and spans" },
     { "id": "otel.parent-child", "title": "Parent and child spans across services" },
     { "id": "otel.llm-attributes", "title": "Token and cost attributes on model calls" },
 
+    { "id": "platform.what-is-a-platform", "title": "What an AI platform gives a team that a pile of services does not" },
     { "id": "platform.onboarding-steps", "title": "What onboarding a team involves" },
     { "id": "platform.key-scopes", "title": "Key scopes and legacy aliases" },
     { "id": "platform.end-to-end-check", "title": "Proving a new team works end to end" },
 
+    { "id": "sovereignty.what-is-data-sovereignty", "title": "What data sovereignty means for an AI request" },
     { "id": "sovereignty.regions-routes", "title": "Regions and routes" },
     { "id": "sovereignty.hops-audit", "title": "Hops and audit trails" },
     { "id": "sovereignty.declared-vs-actual", "title": "Declared region versus actual region" }
