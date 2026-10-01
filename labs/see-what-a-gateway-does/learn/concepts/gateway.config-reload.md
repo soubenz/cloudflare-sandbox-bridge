@@ -2,9 +2,10 @@
 id: gateway.config-reload
 title: Changing gateway config and reloading it
 minutes: 2
+order: 5
 recap: The gateway reads its config when it starts, so an edit changes nothing until the service restarts; verify the change with a call, not by rereading the file.
 ---
-The alias mapping is a file, and this gateway reads that file when it starts. Editing `gateway/config.yaml` on disk does nothing to the running process. The change takes effect only when `litellm` restarts and reads the file again.
+The alias table you met in the first lesson is not magic: it is a file. And this gateway reads that file when it starts. Editing `gateway/config.yaml` on disk does nothing to the running process. The change takes effect only when `litellm` restarts and reads the file again.
 
 ::diagram[gateway-config-reload]
 

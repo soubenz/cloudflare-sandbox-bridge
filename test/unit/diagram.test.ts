@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { DIAGRAMS, KNOWN_DIAGRAMS, DiagramSchema, checkDiagram, diagramRefs, parseDiagramLibrary } from '../../src/labs/diagram';
 import { LearnBundleSchema, checkLearnBundle } from '../../src/labs/learn';
 
-const base = DiagramSchema.parse(DIAGRAMS[0]);
+const base = DiagramSchema.parse(DIAGRAMS.find((d) => d.id === 'gateway-alias-routing'));
 
 describe('diagram library', () => {
   it('ships valid diagrams with unique ids', () => {

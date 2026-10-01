@@ -2,9 +2,10 @@
 id: gateway.error-semantics
 title: What a gateway returns when it cannot serve a call
 minutes: 3
+order: 4
 recap: A failed call gets an HTTP status that says whose fault it was (4xx caller, 5xx server side) and a JSON error body with a message.
 ---
-A gateway has to say no sometimes, and how it says no matters to every client behind it. The HTTP status is the first signal, and its class carries the meaning.
+The last step of every call is returning the answer, or a clear error. This lesson is about the error. A gateway has to say no sometimes, and how it says no matters to every client behind it. The HTTP status is the first signal, and its class carries the meaning.
 
 ::diagram[gateway-error-semantics]
 

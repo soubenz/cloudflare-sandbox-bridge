@@ -52,6 +52,12 @@ Lesson body…
 - `recap` is one line, up to 160 characters. When a learner already knows the concept, the lesson collapses to this line.
 - Body up to 2,600 characters. Explain with the lab's own system, not in the abstract. End with what the learner will see in the lab.
 
+Lessons play in file-name order. An optional `order: <n>` in the front matter (a whole number; lower plays first, default 100, ties keep file-name order) moves a lesson earlier or later without renaming it. The foundation lesson below uses `order: 1`.
+
+### Foundation lesson
+
+Every lab's first lesson explains what the subject is, from scratch, right after the story. It assumes no prior knowledge: a plain definition with one everyday analogy, the problems the thing solves (each tied to a scene in the story), what it does step by step, where it sits, and the few terms the lab uses, ending with what the learner will do. Give it `order: 1` and its own concept id (`gateway.what-is-a-gateway` is the model). The other lessons then assume it and open with a sentence that bridges from it instead of repeating the definition.
+
 ## quiz.yaml
 
 ```yaml

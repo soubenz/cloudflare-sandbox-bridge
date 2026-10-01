@@ -156,7 +156,7 @@ describe('how long a comic takes', () => {
       expect(clean.pages.flatMap((p) => p.panels), dir).toHaveLength(comic.pages.flatMap((p) => p.panels).length);
       const tl = T.buildTimeline(clean);
       expect(tl.total, dir).toBeGreaterThan(20);
-      expect(tl.total, dir).toBeLessThan(90);
+      expect(tl.total, dir).toBeLessThan(180); // three minutes: a comic is a short film, not a lecture
       for (const p of T.panelsOf(tl)) {
         for (const b of p.bubbles) expect(b.end + T.TIMING.hold, `${dir} panel ${p.number}`).toBeLessThanOrEqual(p.end + 1e-9);
         for (const l of p.lines) expect(l.end, `${dir} panel ${p.number}`).toBeLessThan(p.end - 0.5);

@@ -2,6 +2,35 @@
   "version": 1,
   "diagrams": [
     {
+      "id": "gateway-what-it-does",
+      "title": "One front door for every model call",
+      "summary": "Two team apps send calls to one gateway. The gateway checks the key, looks up the alias, calls a provider, records the tokens and cost, and returns the answer. If a provider fails, a gateway can try another one.",
+      "nodes": [
+        { "id": "app1", "label": "Support app", "kind": "client", "x": 6, "y": 26 },
+        { "id": "app2", "label": "Search app", "kind": "client", "x": 6, "y": 74 },
+        { "id": "gw", "label": "Gateway", "sub": "one front door", "kind": "gateway", "x": 50, "y": 50 },
+        { "id": "p1", "label": "Provider one", "kind": "model", "x": 90, "y": 18 },
+        { "id": "p2", "label": "Provider two", "kind": "model", "x": 90, "y": 64 },
+        { "id": "log", "label": "Spend log", "kind": "log", "x": 62, "y": 90 }
+      ],
+      "edges": [
+        { "id": "app1-gw", "from": "app1", "to": "gw" },
+        { "id": "app2-gw", "from": "app2", "to": "gw" },
+        { "id": "gw-p1", "from": "gw", "to": "p1" },
+        { "id": "gw-p2", "from": "gw", "to": "p2" },
+        { "id": "gw-log", "from": "gw", "to": "log" }
+      ],
+      "steps": [
+        { "caption": "Every team sends its calls to the same front door. A call carries an alias and a key, never a provider name or a provider key.", "active": ["app1", "app2"], "packets": [{ "edge": "app1-gw", "label": "alias + key", "tone": "default" }, { "edge": "app2-gw", "label": "alias + key", "tone": "default" }] },
+        { "caption": "The gateway checks that the key is allowed in, then looks the alias up in its table.", "active": ["gw"], "packets": [], "notes": [{ "node": "gw", "text": "key ok, alias found", "tone": "ok" }] },
+        { "caption": "It calls the provider behind that alias, using a provider key that only the gateway holds.", "active": ["gw", "p1"], "packets": [{ "edge": "gw-p1", "label": "chat request", "tone": "default" }] },
+        { "caption": "The provider answers and reports how many tokens it read and wrote.", "active": ["p1", "gw"], "packets": [{ "edge": "gw-p1", "reverse": true, "label": "answer + usage", "tone": "ok" }] },
+        { "caption": "The gateway writes one row to its log: which alias, how many tokens, what it cost.", "active": ["gw", "log"], "packets": [{ "edge": "gw-log", "label": "one usage row", "tone": "default" }], "notes": [{ "node": "log", "text": "alias, tokens, cost", "tone": "ok" }] },
+        { "caption": "The answer goes back to the app that asked. The app learned nothing about providers or keys.", "active": ["gw", "app1"], "packets": [{ "edge": "app1-gw", "reverse": true, "label": "answer", "tone": "ok" }] },
+        { "caption": "Meant to: if provider one fails, the gateway retries on provider two and the app never notices. The lab's copy does not do this.", "active": ["gw", "p1", "p2"], "packets": [{ "edge": "gw-p1", "reverse": true, "label": "error", "tone": "bad" }, { "edge": "gw-p2", "label": "retry", "tone": "warn" }] }
+      ]
+    },
+    {
       "id": "gateway-alias-routing",
       "title": "One name, many models",
       "summary": "A team calls the alias support. The gateway looks it up, forwards the call to the model behind it and returns the answer.",

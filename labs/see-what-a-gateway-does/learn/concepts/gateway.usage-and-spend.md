@@ -2,9 +2,10 @@
 id: gateway.usage-and-spend
 title: Tokens, cost and the spend log
 minutes: 3
+order: 3
 recap: Every response carries prompt and completion token counts; the gateway records them per call, and spend is tokens times a per-model price.
 ---
-A model call is billed by size, not by count. The unit is the token: the input you send (prompt tokens) and the output you get back (completion tokens). Every chat response carries a `usage` block with both, plus a total that is simply their sum.
+Recording usage is the step that makes the gateway useful to Finance. This lesson is about what it records and how a price turns it into money. A model call is billed by size, not by count. The unit is the token: the input you send (prompt tokens) and the output you get back (completion tokens). Every chat response carries a `usage` block with both, plus a total that is simply their sum.
 
 ::diagram[gateway-usage-and-spend]
 

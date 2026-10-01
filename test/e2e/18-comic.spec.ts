@@ -88,8 +88,8 @@ function compileLearn(slug: string): Bundle {
   };
   const comicFile = join(dir, 'comic.yaml');
   if (existsSync(comicFile)) {
-    const raw = parseYaml(readFileSync(comicFile, 'utf8')) as { title: string; panels: Array<Record<string, any>> };
-    out.comic = { title: raw.title, pages: [{ panels: raw.panels.map(panelOf) }] };
+    const raw = parseYaml(readFileSync(comicFile, 'utf8')) as { title: string; panels?: Array<Record<string, any>>; pages?: Array<{ title?: string; panels: Array<Record<string, any>> }> };
+    out.comic = { title: raw.title, pages: (raw.pages ?? [{ panels: raw.panels ?? [] }]).map((pg) => ({ ...(pg.title ? { title: pg.title } : {}), panels: pg.panels.map(panelOf) })) };
   }
   return out;
 }
@@ -408,7 +408,7 @@ test.describe('in Before you begin', () => {
     const s = await beforeYouBegin(page, EXPLORE);
     const st = stage(page, '#learnHost');
     await expect(st).toHaveAttribute('role', 'img');
-    await expect(st).toHaveAttribute('aria-label', `${single.title}. An animated comic of 6 panels. The text version is below, under Read as text.`);
+    await expect(st).toHaveAttribute('aria-label', `${single.title}. An animated comic of ${panelCount(single)} panels over ${single.pages.length} pages. The text version is below, under Read as text.`);
     // The clock runs on its own: the timecode moves off zero.
     await expect.poll(async () => (await timecode(page, '#learnHost').textContent())?.split(' / ')[0], { timeout: 8000 }).not.toBe('0:00');
     await expect(page.locator('#learnHost .cm')).toHaveAttribute('data-state', 'playing');
@@ -440,7 +440,7 @@ test.describe('in Before you begin', () => {
     await expect(cm).toHaveAttribute('data-state', 'done');
     // Every panel is drawn, every bubble fully typed, the bar full, the timecode at the end.
     await expect(cm.locator('.cm-panel.on')).toHaveCount(panelCount(single));
-    await expect(cm.locator('.cm-bub.on')).toHaveCount(single.pages[0]!.panels.reduce((n, p) => n + p.bubbles.length, 0));
+    await expect(cm.locator('.cm-bub.on')).toHaveCount(single.pages.flatMap((pg) => pg.panels).reduce((n, p) => n + p.bubbles.length, 0));
     expect(await cm.locator('.cm-w:not(.on)').count()).toBe(0);
     const parts = (await timecode(page, '#learnHost').textContent())!.split(' / ');
     expect(parts[0]).toBe(parts[1]);
@@ -512,13 +512,14 @@ test.describe('in Before you begin', () => {
     await expect(text.locator('summary')).toHaveText('Read as text');
     await text.locator('summary').click();
     const items = text.locator('ol > li');
-    await expect(items).toHaveCount(6);
-    await expect(items.nth(0)).toContainText('Panel 1.');
-    await expect(items.nth(0)).toContainText('Tuesday, a little after ten.');
-    await expect(items.nth(0)).toContainText('Jonas: When Support');
-    await expect(items.nth(1)).toContainText('Maren: Jonas forwarded this.');
-    await expect(items.nth(3)).toContainText('On screen: $ send_calls.py');
-    await expect(items.nth(5)).toContainText('Panel 6. Your turn.');
+    await expect(items).toHaveCount(panelCount(single) + single.pages.length);
+    await expect(items.nth(0)).toContainText('Page 1: Life without a gateway.');
+    await expect(items.nth(1)).toContainText('Panel 1. Four teams, four providers, four keys.');
+    await expect(items.nth(1)).toContainText('Maren: Welcome to the museum.');
+    await expect(items.nth(2)).toContainText('Priya: Three in the morning');
+    await expect(items.nth(6)).toContainText('Page 2: One front door.');
+    await expect(items.nth(8)).toContainText('On screen: $ ask: support');
+    await expect(items.nth(10)).toContainText('Panel 9. Your turn.');
     // The animated parts are out of the accessibility tree: the stage is one image.
     await expect(page.locator('#learnHost .cm-view')).toHaveAttribute('aria-hidden', 'true');
     await expect(page.locator('#learnHost .cm-bar')).toHaveAttribute('aria-hidden', 'true');
@@ -602,7 +603,7 @@ test.describe('in the Story tab', () => {
     await runningLab(page, EXPLORE, { test: true });
     await skipBtn(page, '#storyBody').click();
     await expect(page.locator('#storyBody .cm')).toHaveAttribute('data-state', 'done');
-    await expect(page.locator('#storyBody .cm-panel.on')).toHaveCount(6);
+    await expect(page.locator('#storyBody .cm-panel.on')).toHaveCount(panelCount(single));
     await replayBtn(page, '#storyBody').click();
     await expect(page.locator('#storyBody .cm')).toHaveAttribute('data-state', 'playing');
     await expect(page.locator('#storyBody .cm-panel.on')).toHaveCount(0);
@@ -640,7 +641,7 @@ test.describe('reduced motion', () => {
     const cm = page.locator('#learnHost .cm');
     await expect(cm).toHaveAttribute('data-state', 'done');
     await expect(cm).toHaveAttribute('data-reduced', '1');
-    await expect(cm.locator('.cm-panel.on')).toHaveCount(6);
+    await expect(cm.locator('.cm-panel.on')).toHaveCount(panelCount(single));
     expect(await cm.locator('.cm-w:not(.on)').count()).toBe(0);
     await expect(cm.locator('.cm-controls').getByRole('button')).toHaveText(['Replay', 'Skip']);
     await expect(skipBtn(page, '#learnHost')).toBeDisabled();

@@ -2,9 +2,10 @@
 id: gateway.routing-aliases
 title: Model aliases and routing
 minutes: 3
+order: 2
 recap: An alias is the stable name callers send; the gateway's config maps it to a real deployment, and the provider's own log shows where a call really went.
 ---
-Larkfield's teams never write a provider model name in their code. They call the gateway and send an alias, `support` or `fast`, in the `model` field. The gateway looks that name up and decides where the call goes. The caller never has to know, and never has to change when the answer changes.
+Routing is the step where the gateway turns the name a caller sent into a real deployment. Larkfield's teams never write a provider model name in their code. They call the gateway and send an alias, `support` or `fast`, in the `model` field. The gateway looks that name up and decides where the call goes. The caller never has to know, and never has to change when the answer changes.
 
 ::diagram[gateway-alias-routing]
 

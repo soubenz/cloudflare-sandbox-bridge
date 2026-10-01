@@ -1,4 +1,38 @@
 questions:
+  - id: q-gateway-what
+    concept: gateway.what-is-a-gateway
+    type: single
+    prompt: "What is an LLM gateway?"
+    options:
+      - { id: a, text: "One front door that apps call, which forwards each request to a model provider" }
+      - { id: b, text: "A faster model that apps use instead of the providers' models" }
+      - { id: c, text: "A service that trains a private model on every team's prompts" }
+      - { id: d, text: "A replacement for the providers, so no outside company runs the models" }
+    answer: [a]
+    explanation: "A gateway runs no model of its own. It sits between your apps and the providers that do, and adds keys, routing, records and limits on the way through."
+  - id: q-gateway-problems
+    concept: gateway.what-is-a-gateway
+    type: multi
+    prompt: "Which two problems does sending every model call through one gateway help with?"
+    options:
+      - { id: a, text: "Provider keys scattered across every team's repository" }
+      - { id: b, text: "No single record of which team made which calls and what they cost" }
+      - { id: c, text: "A model giving wrong answers because its training data is old" }
+      - { id: d, text: "A prompt being too long for the model to read" }
+    answer: [a, b]
+    explanation: "A gateway is plumbing and bookkeeping. It keeps keys in one place and sees every call, but it does not make a model more accurate or change what a model can read."
+  - id: q-gateway-one-call
+    concept: gateway.what-is-a-gateway
+    type: single
+    prompt: "A team app sends one request through a gateway. Which describes what the gateway does with it?"
+    options:
+      - { id: a, text: "Looks the alias up, calls the provider with its own credentials, records the usage and returns the answer" }
+      - { id: b, text: "Hands the app the provider's key so the app can call the provider directly" }
+      - { id: c, text: "Sends the request to every provider and returns whichever answer looks best" }
+      - { id: d, text: "Passes the request along untouched, leaving the provider as the only one with a record" }
+    answer: [a]
+    explanation: "The gateway routes the call, uses the provider credentials and writes the usage row. Apps never hold provider keys, and the gateway's record exists whether or not the provider keeps one."
+    diagnostic: false
   - id: q-alias-caller-sends
     concept: gateway.routing-aliases
     type: single

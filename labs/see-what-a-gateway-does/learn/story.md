@@ -1,17 +1,23 @@
 ---
-title: Which provider answered?
+title: Four teams, four keys
 minutes: 2
 ---
-It is Tuesday, a little after ten. Jonas Berg from Finance has forwarded Maren Osei a question he cannot get answered anywhere: when the Support team's assistant replies to a customer, which provider answered, and what did that one reply cost?
+It is your second Monday at Larkfield, and Maren Osei starts the day with what she calls the museum tour.
 
-Nobody on the four teams that started building with models last year can say. Each team picked its own provider and kept its own keys. What Jonas has today is a monthly invoice and a shrug.
+Exhibit one: four product teams, four model providers, four API keys, each pasted into its own repo. One key also lives in a screenshot in a team chat. The screenshot got a lot of thumbs-up. Nobody noticed the key.
 
-Maren pulls you into the thread. "Tomasz built a gateway prototype before he moved on to other work," she says. "Teams call it by alias, `support` or `fast`, and never by a provider's model name. It is meant to be the one place that knows where a call went and what it used. Before we ask three more teams to move onto it, I want someone who has never seen it to tell me what it really does."
+Exhibit two: a Saturday, three in the morning. One provider goes down. Priya Nair's Support assistant stops answering customers. Search's assistant, on another provider, carries on happily, and nobody can point Support at it, because the provider's name is written into Support's code.
 
-She has set you up with a small copy of it: the gateway, a database behind it, and a scripted stand-in for a model provider that keeps its own record of every call it receives. There is no real model and no real bill, so nothing you do here costs anything.
+Exhibit three: a provider renames one model. Three apps had the old name written in their code. All three broke before breakfast.
 
-"Send it a few calls," she says. "Compare what the gateway says happened with what the provider says happened. Then ask it for something that does not exist and tell me how it complains. Jonas wants to hear that a caller can find out which deployment answered without asking us, so find out whether that is true."
+Exhibit four: Jonas Berg in Finance gets one invoice a month. Which team spent it? Which provider answered which reply? He gets a shrug.
 
-She adds one more thing. "Tomasz left a comment in the config saying the alias mapping is the part people change most often. If you want to see how that goes, try changing one. It is not part of what I need from you."
+Exhibit five: a research script retries a failing call, forever, from Friday evening. By Monday the month's budget is gone and the script is still asking politely.
 
-She goes back to her meeting. The three questions for her are in the lab.
+"Tomasz saw this coming," Maren says. "Before he moved on he built a prototype gateway." It is one front door for every model call. A team asks for a stable name such as `support` and never mentions a provider. The gateway holds the keys, picks the provider, writes down every call with its tokens and cost, and is meant to switch to another provider when one fails.
+
+"Meant to," Maren repeats. "Before three more teams move in, I want someone who has never seen it to tell me what it really does."
+
+She has set you up with a small copy: the gateway, a database behind it, and a scripted stand-in for a provider that keeps its own record of every call. No real model, no real bill. The copy has no fallback and one master key, so you will test what it does have: where a call is routed, what gets recorded about it, and how it complains when it cannot serve one.
+
+Three questions are waiting in the lab. Start by sending it a call.
