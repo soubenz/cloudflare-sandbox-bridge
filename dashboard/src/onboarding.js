@@ -34,12 +34,13 @@ import {
 import { actionBar, button, focusHeading, make, questionScreen, screenHead, show } from './learn-ui.js';
 import { icon, uiIcon } from './icons.js';
 import { mountMarkdown } from './markdown.js';
+import { goalKindField, hoursField, loadGoal } from './goal-fields.js';
 // The copy of every path and module (icon and accent too), shared with the launcher:
 // each area of the quiz is drawn with the icon and colour of the module it opens.
 import pathMeta from '../../packages/catalogue/paths.json';
 
-/** The three steps of the quiz: what you know, a question or two about it, where to start. */
-const STEPS = 3;
+/** The steps of the quiz: what you know, a question or two about it, your goal, where to start. */
+const STEPS = 4;
 
 /** The icon and accent family of the module an area belongs to (slate and a grid when the copy has none). */
 function moduleLook(area) {
@@ -76,9 +77,14 @@ export function summarise(mastery, areas = platformAreas()) {
  *   post        (body) => Promise, the analytics call; errors are swallowed
  *   onExit      ({ completed }) when the learner leaves: finished, or skipped
  *   areas       the platform's areas in module order (default: concepts.json)
+ *   onGoal      ({ levels, goal }) => Promise, called once the two last questions are answered (or skipped,
+ *               with what was filled in): `levels` is the whole { area: level } result, `goal` is
+ *               { goal_kind, goal_text, hours_per_week }. Errors are swallowed: the path is simply not shown.
+ *               Without it the quiz ends after the probes, as it did before paths.
+ *   initialGoal what the two last questions start from (default: what was answered last time)
  * Returns { destroy }.
  */
-export function runOnboarding({ host, onboarding, store, post, onExit, areas = platformAreas() }) {
+export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, initialGoal, areas = platformAreas() }) {
   const questions = onboarding.questions || [];
   const blurbs = onboarding.blurbs || {};
   const titleOf = (area) => areas.find((a) => a.area === area)?.title ?? area;
@@ -218,7 +224,7 @@ export function runOnboarding({ host, onboarding, store, post, onExit, areas = p
       title: `${titleOf(area)} \u00b7 question ${asked + 1} of up to ${MAX_PROBE}`,
       allowUnsure: true,
       steps: { current: 2, total: STEPS },
-      nextLabelFor: (r) => (endsAfter(ai, r) ? 'See where to start' : 'Next'),
+      nextLabelFor: (r) => (endsAfter(ai, r) ? (onGoal ? 'Next: your goal' : 'See where to start') : 'Next'),
       onNext: (r) => {
         results.push({ question_id: r.question_id, concept: r.concept, correct: r.correct });
         probe(ai);
@@ -240,7 +246,71 @@ export function runOnboarding({ host, onboarding, store, post, onExit, areas = p
         /* analytics never blocks the summary */
       }
     }
-    summary(next);
+    if (!onGoal) return summary(next);
+    goal = { ...(initialGoal ?? loadGoal()) };
+    goalQuestion(levels, next);
+  }
+
+  // --- the two last questions: what are you aiming for, and how many hours a week
+
+  /** What the two last questions hold so far: it survives going Back, and is what Skip sends. */
+  let goal = null;
+
+  /** Sends what was answered (best effort: the learner is never made to wait for it, or told it failed), then the summary. */
+  function sendGoal(levels, mastery) {
+    try {
+      Promise.resolve(onGoal({ levels, goal: { ...goal } })).catch(() => {});
+    } catch {
+      /* the path simply is not shown */
+    }
+    summary(mastery);
+  }
+
+  const skipGoalButton = (levels, mastery, id) =>
+    button('Skip these questions', { kind: 'quiet', onClick: () => sendGoal(levels, mastery), id });
+
+  function goalQuestion(levels, mastery) {
+    const field = goalKindField({ initial: goal, legend: 'What are you aiming for?', legendClass: 'sr-only' });
+    const form = make('form', 'ob-form');
+    form.noValidate = true;
+    const next = button('Next', { kind: 'accent', type: 'submit', id: 'btnGoalNext' });
+    next.classList.add('btn-lg');
+    next.append(uiIcon('arrow', 16));
+    form.append(field.root, actionBar([next, skipGoalButton(levels, mastery, 'btnGoalSkip')]));
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      goal = { ...goal, ...field.value() };
+      hoursQuestion(levels, mastery);
+    });
+    show(
+      host,
+      screenHead({ eyebrow: 'Your path · question 1 of 2', title: 'What are you aiming for?', mark: 'aiming for?', meta: 'This shapes the labs we line up for you.', steps: { current: 3, total: STEPS } }),
+      form
+    );
+    focusHeading(host);
+  }
+
+  function hoursQuestion(levels, mastery) {
+    const field = hoursField({ initial: goal, legend: 'How many hours a week can you give this?', legendClass: 'sr-only' });
+    const form = make('form', 'ob-form');
+    form.noValidate = true;
+    const done = button('See where to start', { kind: 'accent', type: 'submit', id: 'btnHoursNext' });
+    done.classList.add('btn-lg');
+    done.append(uiIcon('arrow', 16));
+    const back = button('Back', { kind: 'quiet', onClick: () => goalQuestion(levels, mastery), id: 'btnHoursBack' });
+    form.append(field.root, actionBar([done, back, skipGoalButton(levels, mastery, 'btnHoursSkip')]));
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (!field.validate()) return;
+      goal = { ...goal, hours_per_week: field.value() };
+      sendGoal(levels, mastery);
+    });
+    show(
+      host,
+      screenHead({ eyebrow: 'Your path · question 2 of 2', title: 'How many hours a week can you give this?', mark: 'can you give this?', meta: 'A rough number is fine. It sets how long your path is expected to take.', steps: { current: 3, total: STEPS } }),
+      form
+    );
+    focusHeading(host);
   }
 
   function summary(mastery) {
@@ -274,7 +344,7 @@ export function runOnboarding({ host, onboarding, store, post, onExit, areas = p
     go.append(uiIcon('arrow', 16));
     show(
       host,
-      screenHead({ eyebrow: 'Your starting point', title: 'Where to start', mark: 'start', steps: { current: 3, total: STEPS } }),
+      screenHead({ eyebrow: 'Your starting point', title: 'Where to start', mark: 'start', steps: { current: STEPS, total: STEPS } }),
       lede,
       list,
       note,

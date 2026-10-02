@@ -453,7 +453,7 @@ for (const [theme, tokens] of Object.entries(consoleThemes)) {
       .replace(/^:root\s*\{[^}]*\}/m, "")
       .replace(/:root\[data-theme="dark"\]\s*\{[^}]*\}/, "")
       .replace(/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root:not\(\[data-theme\]\)\s*\{[^}]*\}\s*\}/, "");
-  for (const file of ["styles.css", "learn.css", "session.css", "comic.css"]) {
+  for (const file of ["styles.css", "learn.css", "session.css", "comic.css", "profile.css"]) {
     const body = stripped(readFileSync(join(root, "dashboard/public", file), "utf8"));
     const strays = [];
     for (const m of body.matchAll(/\{([^{}]*)\}/g)) {

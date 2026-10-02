@@ -379,6 +379,12 @@ export function breadcrumbs(model, route, lab = null) {
   const items = [{ label: 'Home', route: { name: 'launcher' } }];
   const add = (label, to) => items.push({ label, route: to });
   switch (route?.name) {
+    case 'profile':
+      add('Profile', null);
+      break;
+    case 'my-path':
+      add('Your path', null);
+      break;
     case 'path': {
       const path = findPath(model, route.path);
       add(path?.title ?? humanize(route.path), null);

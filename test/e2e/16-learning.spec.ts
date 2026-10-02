@@ -440,14 +440,31 @@ async function enterSession(page: Page) {
 // the platform quiz: a short, branching probe
 // =========================================================================
 
-/** Ticks areas (by id) on the first screen, then presses Start. */
+/**
+ * The quiz's two last questions (what you are aiming for, how many hours a week), passed with what is
+ * chosen from the start. 22-profile.spec.ts is where they and the path they build are pinned.
+ */
+async function passGoalQuestions(page: Page) {
+  await expect(heading(page)).toHaveText('What are you aiming for?');
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(heading(page)).toHaveText('How many hours a week can you give this?');
+  await page.getByRole('button', { name: 'See where to start' }).click();
+}
+
+/** Ticks areas (by id) on the first screen, then presses Start; "None of these yet" has no area questions, so it goes straight on to the goal questions. */
 async function startQuiz(page: Page, ...areas: string[]) {
   for (const a of areas) await page.locator(`.ob-choice input[value="${a}"]`).check();
   await page.getByRole('button', { name: 'Start', exact: true }).click();
+  if (areas.length === 1 && areas[0] === 'none') await passGoalQuestions(page);
 }
 
-/** The button that moves past an answered question: "Next", or "See where to start" on the last. */
-const nextQuestion = (page: Page) => page.getByRole('button', { name: /^(Next|See where to start)$/ }).click();
+/** The button that moves past an answered question: "Next", or "Next: your goal" on the last (then the two goal questions are passed). */
+async function nextQuestion(page: Page) {
+  const button = page.getByRole('button', { name: /^(Next|Next: your goal)$/ });
+  const label = (await button.innerText()).trim();
+  await button.click();
+  if (label === 'Next: your goal') await passGoalQuestions(page);
+}
 
 /** Answers the question on screen (right or deliberately wrong), then moves on; returns it. */
 async function step(page: Page, right: boolean): Promise<Question> {
@@ -561,7 +578,7 @@ test.describe('the platform quiz', () => {
     expect((await currentQuestion(page, onboarding.questions)).id).toBe(probe('mcp', 'basic').id);
     await answer(page, onboarding.questions, false);
     // The last answer of the last area offers the summary.
-    await expect(page.getByRole('button', { name: 'See where to start' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Next: your goal' })).toBeVisible();
     await nextQuestion(page);
 
     await expect(heading(page)).toHaveText('Where to start');
@@ -594,7 +611,7 @@ test.describe('the platform quiz', () => {
     await expect(page.getByRole('button', { name: 'Skip for now' })).toBeVisible();
     await answer(page, onboarding.questions, true);
     asked.push((await currentQuestion(page, onboarding.questions)).id);
-    await expect(page.getByRole('button', { name: 'See where to start' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Next: your goal' })).toBeVisible();
     await nextQuestion(page);
     expect(asked).toEqual([probe('mcp', 'basic').id, probe('mcp', 'advanced').id]);
 
@@ -694,7 +711,7 @@ test.describe('the platform quiz', () => {
     expect(asked.some((q) => q.type === 'multi')).toBe(true);
   });
 
-  test('"None of these yet" goes straight to the summary with every area new, asking nothing', async ({ page }) => {
+  test('"None of these yet" asks no area question: the two goal questions, then the summary with every area new', async ({ page }) => {
     const s = await stub(page);
     await open(page);
     await startQuiz(page, 'none');
@@ -740,7 +757,7 @@ test.describe('the platform quiz', () => {
     await step(page, true);
     await expect(heading(page)).toHaveText(stepText('mcp', 2));
     await page.getByRole('button', { name: 'Not sure' }).click();
-    await expect(page.getByRole('button', { name: 'See where to start' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Next: your goal' })).toBeVisible();
     await nextQuestion(page);
 
     await expect(levelOf(page, 'gateway')).toHaveText('New');

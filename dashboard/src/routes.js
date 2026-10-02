@@ -8,6 +8,8 @@
  *   /paths/<path>                      one path: its modules, as cards
  *   /paths/<path>/modules/<n>          one module: its intro and its labs
  *   /onboarding                        the platform quiz
+ *   /profile                           the learner's skills, level and awards
+ *   /paths/mine                        the learner's own path (`mine` is reserved among the paths' slugs)
  *   /labs/<slug>                       the lab's own page: summary, objectives, prerequisites, Start
  *   /labs/<slug>/story|questions|lessons[?step=N]
  *                                      the steps before the lab starts: N is the step's place in the
@@ -50,6 +52,9 @@ export const VIEW_TAB_NAMES = ['terminal', 'editor'];
 
 const MAX_SEARCH = 2048;
 const MAX_NOT_FOUND_PATH = 200;
+
+/** `/paths/mine`: the learner's own path. The word is reserved among the paths' slugs. */
+export const MY_PATH_SLUG = 'mine';
 
 export const isSlug = (s) => typeof s === 'string' && SLUG.test(s);
 export const isOpaqueId = (s) => typeof s === 'string' && OPAQUE_ID.test(s);
@@ -108,6 +113,8 @@ const notFound = (pathname, search) => ({
  *   { name: 'path', path }
  *   { name: 'module', path, module }
  *   { name: 'onboarding' }
+ *   { name: 'profile' }
+ *   { name: 'my-path' }
  *   { name: 'lab', slug }
  *   { name: 'lab-step', slug, step, n? }   n: the `?step=N` place in the flow (1-based), when the address has a valid one
  *   { name: 'session', slug, userId?, sessionId?, tab?, service?, invalidTab? }
@@ -138,7 +145,12 @@ export function parseRoute(pathname, search = '') {
 
   if (head === 'onboarding') return rest.length === 0 ? { name: 'onboarding', search: q } : notFound(trimmed, q);
 
+  // The learner's skills and awards.
+  if (head === 'profile') return rest.length === 0 ? { name: 'profile', search: q } : notFound(trimmed, q);
+
   if (head === 'paths') {
+    // The learner's own path is /paths/mine: `mine` is reserved, not a learning path's slug.
+    if (rest[0] === MY_PATH_SLUG) return rest.length === 1 ? { name: 'my-path', search: q } : notFound(trimmed, q);
     if (!isSlug(rest[0])) return notFound(trimmed, q);
     if (rest.length === 1) return { name: 'path', path: rest[0], search: q };
     if (rest.length === 3 && rest[1] === 'modules' && MODULE_NUMBER.test(rest[2])) {
@@ -196,6 +208,12 @@ export function buildRoute(name, params = {}) {
       break;
     case 'onboarding':
       path = '/onboarding';
+      break;
+    case 'profile':
+      path = '/profile';
+      break;
+    case 'my-path':
+      path = `/paths/${MY_PATH_SLUG}`;
       break;
     case 'path':
     case 'module':
@@ -264,6 +282,10 @@ export function routeTitle(route, labTitle = null, titles = {}) {
       return [titles.module, titles.path, site].filter(Boolean).join(' · ');
     case 'onboarding':
       return `Platform quiz · ${site}`;
+    case 'profile':
+      return `Your profile · ${site}`;
+    case 'my-path':
+      return `Your path · ${site}`;
     case 'lab':
       return lab ? `${lab} · ${site}` : site;
     case 'lab-step': {

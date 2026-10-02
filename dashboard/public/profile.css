@@ -1,0 +1,328 @@
+/*
+ * The learner's progress: the profile page, the "Your progress" and "Your path" bands on Home, the page at
+ * /paths/mine, the goal questions, and the award toast.
+ *
+ * No colour is named here: everything reads a token from styles.css (scripts/contrast-check.mjs fails if a
+ * hex or rgb() value turns up outside a token block, and checks the pairs these rules use). A score is always
+ * a number and a level name beside its ring or bar, and an award's tier is always a word beside its colour,
+ * so no meaning rests on colour alone. Motion is limited to the confetti, which is only created when the
+ * learner has not asked for reduced motion, and the global rule in styles.css stops every animation then too.
+ */
+
+/* ---------- shared bits ---------- */
+.lab-list > .profile, .lab-list > .mypath { margin-top: 28px; }
+.lab-list > .home-bands { margin-top: 32px; display: flex; flex-direction: column; gap: 20px; }
+.lab-list > .home-bands:not(:has(> :not([hidden]))) { display: none; }
+.lab-list > .home-bands + .path-cards { margin-top: 28px; }
+
+.profile-title, .mypath-title {
+  margin: 0; font-size: clamp(34px, 3.6vw, 52px); font-weight: 700; letter-spacing: -0.045em; line-height: 1;
+}
+.profile-title:focus, .mypath-title:focus { outline: none; }
+.profile-title:focus-visible, .mypath-title:focus-visible { outline: 3px solid var(--accent); outline-offset: 6px; }
+.profile-lede { margin: 12px 0 0; max-width: 640px; color: var(--ink-2); font-size: 17px; line-height: 1.5; }
+.profile-section { margin-top: 40px; }
+.profile-section-title { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.15; }
+.profile-section-lede { margin: 6px 0 0; max-width: 62ch; color: var(--ink-2); font-size: 15px; line-height: 1.5; }
+.profile-error { margin: 0 0 var(--s2); }
+.profile-skeleton { height: 140px; margin-top: 20px; border-radius: var(--radius-xl); background: var(--surface-3); }
+
+/* A bar for a number out of a total (role="meter"): the number is always written beside it. */
+.meter { display: block; height: 10px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin: 0; }
+.meter > i { display: block; height: 100%; border-radius: inherit; background: var(--a, var(--accent)); }
+.meter-thin { height: 6px; }
+
+/* The ring: a track, a fill, and the score in the middle. */
+.score-ring {
+  --ring: 64px;
+  position: relative; display: inline-grid; place-items: center; flex: none;
+  width: var(--ring); height: var(--ring);
+}
+.score-ring-lg { --ring: 92px; }
+.score-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-track, .ring-fill { stroke-width: 7; }
+.ring-track { stroke: color-mix(in srgb, var(--a, var(--accent)) 18%, var(--surface)); }
+.ring-fill { stroke: var(--a, var(--accent)); }
+.ring-number { position: relative; font: 700 20px/1 var(--display); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--ink); }
+.score-ring-lg .ring-number { font-size: 30px; }
+
+/* A level name, in words. */
+.level-name {
+  display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 999px;
+  background: var(--a-soft, var(--accent-soft)); color: var(--a-ink, var(--accent-text));
+  font: 700 12.5px/1.3 var(--sans); white-space: nowrap;
+}
+.level-name[data-level="Not started"] { background: var(--surface-3); color: var(--ink-2); }
+.skill-score-note { color: var(--ink-muted); font: 500 12px/1.4 var(--mono); font-variant-numeric: tabular-nums; }
+
+.streak { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; color: var(--ink); font-size: 15px; }
+.streak-flame { display: inline-flex; color: var(--accent-amber); }
+.streak[data-days="0"] .streak-flame { color: var(--ink-muted); }
+.streak-best { color: var(--ink-muted); font-size: 13px; }
+
+/* ---------- the profile: head ---------- */
+.profile-head {
+  display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px 40px;
+  margin-top: 28px; padding: 28px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
+}
+.profile-level { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+.profile-level-name { margin: 0; font-size: clamp(26px, 2.6vw, 36px); font-weight: 700; letter-spacing: -0.04em; line-height: 1.1; }
+.profile-level-num { color: var(--accent-text); }
+.xp-bar { height: 12px; }
+.xp-line { margin: 0; color: var(--ink-2); font-size: 14px; font-variant-numeric: tabular-nums; }
+.xp-line b { color: var(--ink); }
+.profile-overall { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; padding-left: 40px; border-left: 1px solid var(--border); }
+.profile-overall-title { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.03em; }
+.profile-overall-row { display: flex; align-items: center; gap: 18px; }
+.profile-overall-words, .skill-score-words { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.overall-eval { margin: 0; color: var(--ink-2); font-size: 15px; line-height: 1.5; }
+
+/* ---------- the profile: skills ---------- */
+.skill-grid { display: grid; gap: 16px; margin-top: 20px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
+.skill-card {
+  display: flex; flex-direction: column; gap: var(--s3); min-width: 0; padding: 22px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.skill-top { display: flex; align-items: center; gap: 12px; }
+.skill-tile { width: 40px; height: 40px; border-radius: 12px; }
+.skill-title { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.2; overflow-wrap: anywhere; }
+.skill-score { display: flex; align-items: center; gap: 14px; }
+.skill-eval { margin: 0; color: var(--ink-2); font-size: 14.5px; line-height: 1.5; }
+.skill-labs { display: flex; flex-direction: column; gap: 6px; margin-top: auto; }
+.skill-labs-line { margin: 0; color: var(--a-ink); font: 500 12px/1.3 var(--mono); font-variant-numeric: tabular-nums; }
+.skill-card .meter-thin { background: color-mix(in srgb, var(--a) 18%, var(--surface)); }
+.skill-quiz { margin: 0; color: var(--ink-muted); font-size: 13px; }
+.skill-next { align-self: flex-start; }
+.skill-all-done { margin: 0; color: var(--accent-green-ink); font-weight: 600; font-size: 14px; }
+
+/* ---------- awards ---------- */
+.awards { display: flex; flex-direction: column; gap: 28px; margin-top: 20px; }
+.awards-subhead { margin: 0 0 12px; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.awards-empty { margin: 0; padding: 20px; border: 1px dashed var(--border-strong); border-radius: var(--radius-lg); color: var(--ink-2); }
+.award-list { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+
+[data-tier="bronze"] { --t: var(--accent-rose); --t-soft: var(--accent-rose-soft); --t-ink: var(--accent-rose-ink); }
+[data-tier="silver"] { --t: var(--accent-slate); --t-soft: var(--accent-slate-soft); --t-ink: var(--accent-slate-ink); }
+[data-tier="gold"] { --t: var(--accent-amber); --t-soft: var(--accent-amber-soft); --t-ink: var(--accent-amber-ink); }
+
+/* The badge: a round tile in the tier's tint inside a ring. Silver has a second ring and gold a third, so the tier
+   can be told apart without the colour. */
+.award-badge {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 48px; height: 48px; border-radius: 50%;
+  background: var(--t-soft); color: var(--t-ink); border: 2px solid var(--t);
+}
+[data-tier="silver"] > .award-badge, [data-tier="silver"] .award-badge { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--t); }
+[data-tier="gold"] > .award-badge, [data-tier="gold"] .award-badge { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--t), 0 0 0 8px var(--surface), 0 0 0 10px var(--t); }
+
+.award-card {
+  display: flex; align-items: flex-start; gap: 16px; min-width: 0; padding: 18px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.award-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.award-title { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+.award-desc { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 1.45; }
+.award-meta { margin: 0; color: var(--ink-muted); font-size: 12.5px; }
+.award-tier { color: var(--t-ink); font-weight: 700; }
+/* Locked: quiet, with a dashed edge and a plain badge. The words stay at full strength so they can be read. */
+.award-card[data-state="locked"] { background: var(--surface-2); border-style: dashed; border-color: var(--border-strong); }
+.award-card[data-state="locked"] .award-badge { background: var(--surface-3); color: var(--ink-muted); border-color: var(--border-input); box-shadow: none; }
+.award-card[data-state="locked"] .award-tier { color: var(--ink-2); }
+.award-progress { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.award-meter { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-3); overflow: hidden; min-width: 0; }
+.award-meter > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.award-count { color: var(--ink-2); font: 600 12.5px/1 var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ---------- Home bands ---------- */
+.progress-band, .path-band {
+  display: flex; flex-direction: column; gap: var(--s3); padding: 24px 28px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
+}
+.band-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; }
+.band-title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.035em; line-height: 1.15; }
+.band-sub { margin: 0 0 var(--s2); color: var(--ink-2); font: 700 12px/1.3 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; }
+.band-empty, .band-awards-empty { margin: 0; color: var(--ink-2); font-size: 15px; }
+.band-body { display: grid; gap: 24px 32px; grid-template-columns: auto minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; }
+.band-score { display: flex; align-items: center; gap: 14px; }
+.band-score-words { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.band-label { color: var(--ink-2); font: 700 12px/1.3 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; }
+.band-xp { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.band-level { margin: 0; font: 700 16px/1.2 var(--display); letter-spacing: -0.02em; }
+.band-xp-line { margin: 0; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.band-skill-list { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.band-skill { display: grid; grid-template-columns: minmax(0, 1fr) 36px; column-gap: 10px; row-gap: 4px; align-items: center; }
+.band-skill-name { grid-column: 1; font-size: 13.5px; color: var(--ink); overflow-wrap: anywhere; }
+.band-skill .meter { grid-column: 1; grid-row: 2; background: color-mix(in srgb, var(--a) 18%, var(--surface)); }
+.band-skill-score { grid-column: 2; grid-row: 1 / span 2; text-align: right; font: 700 14px/1 var(--mono); font-variant-numeric: tabular-nums; color: var(--a-ink); }
+.band-award-list, .result-awards-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.mini-award {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 4px 12px 4px 4px;
+  border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface-2); font-size: 13px;
+}
+.mini-award .award-badge { width: 30px; height: 30px; border-width: 2px; }
+.mini-award[data-tier="silver"] .award-badge, .mini-award[data-tier="gold"] .award-badge { box-shadow: none; }
+.mini-award[data-tier="gold"] .award-badge { border-width: 3px; }
+.mini-award-title { min-width: 0; overflow-wrap: anywhere; color: var(--ink); }
+
+/* Your path band: the next lab, big; what follows, small. */
+.path-goal { margin: 0; color: var(--ink-2); font-size: 15px; overflow-wrap: anywhere; }
+.path-band-body { display: grid; gap: 24px 32px; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: stretch; }
+.next-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--s3); min-width: 0; padding: 24px;
+  background: var(--a-soft, var(--accent-soft)); border: 1px solid color-mix(in srgb, var(--a, var(--accent)) 35%, var(--border)); border-radius: var(--radius-lg);
+}
+.next-eyebrow { margin: 0; color: var(--a-ink, var(--accent-text)); font: 700 12px/1.3 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; }
+.next-title { margin: 0; font-size: clamp(22px, 2.2vw, 30px); font-weight: 700; letter-spacing: -0.035em; line-height: 1.12; overflow-wrap: anywhere; }
+.next-title a { color: var(--ink); text-decoration: none; }
+.next-title a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.next-why { margin: 0; color: var(--ink); font-size: 16px; line-height: 1.5; max-width: 60ch; }
+.next-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.next-card .chip { background: var(--surface); }
+.mini-path { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.mini-steps { margin: 0; padding: 0 0 0 4px; list-style: none; display: flex; flex-direction: column; }
+.mini-step { position: relative; display: flex; gap: 12px; padding: 0 0 14px; min-width: 0; }
+.mini-step:last-child { padding-bottom: 0; }
+.mini-step::before { content: ''; position: absolute; left: 5px; top: 14px; bottom: -2px; width: 2px; background: var(--border-strong); }
+.mini-step:last-child::before { display: none; }
+.mini-dot { position: relative; flex: none; width: 12px; height: 12px; margin-top: 4px; border-radius: 50%; background: var(--surface); border: 2px solid var(--border-input); }
+.mini-step-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mini-step-title { color: var(--ink); font-weight: 600; font-size: 14.5px; text-decoration: none; overflow-wrap: anywhere; }
+.mini-step-title:hover { text-decoration: underline; text-underline-offset: 3px; }
+.mini-step-time { color: var(--ink-muted); font: 500 12px/1.3 var(--mono); }
+.path-totals { margin: auto 0 0; color: var(--ink-2); font: 500 13px/1.4 var(--mono); }
+.path-invite .band-link { flex: none; }
+
+/* ---------- /paths/mine ---------- */
+.mypath-summary {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3) var(--s5);
+  margin-top: 24px; padding: 20px 24px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
+}
+.mypath-facts { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mypath-goal { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+.mypath-goal-kind { font-weight: 700; }
+.mypath-totals { margin: 0; color: var(--ink-2); font: 500 13px/1.4 var(--mono); }
+.mypath-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.mypath-steps { margin-top: 32px; }
+.mypath-lede { margin: 12px 0 20px; max-width: 62ch; color: var(--ink-2); font-size: 16px; line-height: 1.5; }
+.goal-holder { margin-top: 16px; }
+
+.path-steps { display: flex; flex-direction: column; gap: 12px; margin: 16px 0 0; padding: 0; list-style: none; }
+.path-step {
+  display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 8px 16px; align-items: start;
+  padding: 18px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.path-step[data-status="next"] { border-color: var(--accent); border-width: 2px; padding: 17px 19px; }
+.path-step[data-status="locked"] { background: var(--surface-2); border-style: dashed; border-color: var(--border-strong); }
+.step-num {
+  display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--surface-3); color: var(--ink); font: 700 13px/1 var(--mono);
+}
+.path-step[data-status="done"] .step-num { background: var(--done-bg); color: var(--done-fg); }
+.path-step[data-status="next"] .step-num { background: var(--accent-fill); color: var(--on-accent); }
+.step-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.step-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.step-status { font: 700 12px/1.3 var(--sans); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
+.path-step[data-status="next"] .step-status { color: var(--accent-text); }
+.step-title { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.2; overflow-wrap: anywhere; }
+.step-title a { color: var(--ink); text-decoration: none; }
+.step-title a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.step-why { margin: 0; color: var(--ink-2); font-size: 14.5px; line-height: 1.5; }
+.step-act { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.step-lock { margin: 0; color: var(--ink-2); font-size: 13px; text-align: right; }
+.chip-area { background: var(--a-soft); color: var(--a-ink); border-color: transparent; font-family: var(--sans); font-weight: 600; }
+
+/* ---------- the goal questions (the quiz's two last screens, and "Change my goal") ---------- */
+.goal-form {
+  display: flex; flex-direction: column; gap: 22px; padding: 24px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
+}
+.goal-form-title { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.03em; }
+.goal-legend { padding: 0; margin: 0 0 var(--s3); font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.goal-field { display: flex; flex-direction: column; gap: var(--s2); }
+.goal-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.goal-choices .ob-choice input[type="radio"] { border-radius: 50%; }
+.goal-text-label { margin-top: var(--s3); font-weight: 600; font-size: 14.5px; }
+.goal-text, .hours-input {
+  min-height: 44px; padding: 0 14px; background: var(--surface); color: var(--ink);
+  border: 1.5px solid var(--border-input); border-radius: var(--radius); font: 16px/1.4 var(--sans);
+}
+.goal-text { width: 100%; max-width: 640px; }
+.goal-text-count { margin: 0; }
+.chip-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.chip-choice {
+  position: relative; display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px;
+  background: var(--surface); border: 1.5px solid var(--border-input); border-radius: 999px; cursor: pointer;
+  font: 600 15px/1 var(--sans); color: var(--ink);
+}
+.chip-choice:hover { background: var(--surface-2); }
+.chip-choice input[type="radio"] { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.chip-choice:has(input[type="radio"]:checked) { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
+.chip-choice:has(input[type="radio"]:checked)::before { content: '\2713'; margin-right: 8px; font-weight: 700; }
+.chip-choice:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 3px; }
+/* "Other": the radio covers the chip; the number box sits above it and takes the clicks meant for it. */
+.chip-choice-other { padding: 0 6px; }
+.chip-choice-other .hours-input { position: relative; z-index: 1; width: 100px; min-height: 36px; border-radius: 999px; cursor: text; }
+.goal-hours-message { margin: 0; min-height: 0; color: var(--ink-2); font-size: var(--fs-md); }
+.goal-hours-message:empty { display: none; }
+.goal-actions { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.goal-error { margin: 0; }
+
+/* ---------- the award toast ---------- */
+.award-toasts {
+  position: fixed; right: var(--s4); bottom: 96px; z-index: 41;
+  display: flex; flex-direction: column; gap: var(--s2); align-items: flex-end;
+  width: min(380px, calc(100vw - 32px)); pointer-events: none;
+}
+.award-toast {
+  position: relative; overflow: hidden; pointer-events: auto; display: flex; align-items: center; gap: 14px;
+  width: 100%; padding: 12px 8px 12px 14px;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border-strong); border-left: 4px solid var(--t, var(--accent)); border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.award-toast .award-badge { width: 44px; height: 44px; }
+.award-toast[data-tier="silver"] .award-badge, .award-toast[data-tier="gold"] .award-badge { box-shadow: none; }
+.award-toast[data-tier="gold"] .award-badge { border-width: 4px; }
+.award-toast-text { flex: 1; min-width: 0; }
+.award-toast-text p { margin: 0; }
+.award-toast-eyebrow { color: var(--ink-2); font: 700 11px/1.3 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; }
+.award-toast-title { font: 700 16px/1.25 var(--display); letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.award-toast-tier { color: var(--t-ink); font-weight: 700; font-size: 13px; }
+
+/* New awards on the lab's result card. */
+.result-awards { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.result-awards-label { margin: 0; color: var(--ink-2); font: 700 11px/1.3 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* ---------- the header, with its Profile link ---------- */
+/* Between the phone menu (760px) and a full desktop the pill has to make room for one more link. */
+@media (min-width: 761px) and (max-width: 1000px) {
+  .nav { gap: var(--s3); }
+  .nav-links { margin-left: 0; gap: 0; }
+  .nav-links a, .nav-links button { padding: 0 10px; }
+  .nav-account { gap: 2px; }
+}
+
+/* ---------- narrower screens ---------- */
+@media (max-width: 1079px) {
+  .band-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .band-score { grid-column: 1 / -1; }
+  .path-band-body { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .profile-head { grid-template-columns: minmax(0, 1fr); padding: 22px; }
+  .profile-overall { padding-left: 0; border-left: 0; padding-top: 20px; border-top: 1px solid var(--border); }
+  .progress-band, .path-band { padding: 20px; }
+  .band-body { grid-template-columns: minmax(0, 1fr); }
+  .band-link { min-height: 44px; }
+  .goal-choices { grid-template-columns: minmax(0, 1fr); }
+  .path-step { grid-template-columns: 32px minmax(0, 1fr); padding: 16px; }
+  .path-step[data-status="next"] { padding: 15px; }
+  .step-act { grid-column: 2; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
+  .step-lock { text-align: left; }
+  .skill-next, .mypath-actions .btn, .path-step .btn, .next-card .btn, .goal-actions .btn { min-height: 44px; }
+  .award-toasts { left: var(--s4); right: var(--s4); width: auto; bottom: 84px; }
+  .goal-form { padding: 20px; }
+  .mypath-summary { padding: 18px; }
+}

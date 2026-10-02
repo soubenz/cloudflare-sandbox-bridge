@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="/learn.css">
 <link rel="stylesheet" href="/session.css">
 <link rel="stylesheet" href="/comic.css">
+<link rel="stylesheet" href="/profile.css">
 </head>
 <body>
 
@@ -79,6 +80,7 @@
     <nav class="nav-links" id="navLinks" aria-label="Console">
       <a class="nav-launcher" href="/" id="navLabs" aria-current="page">Labs</a>
       <a class="nav-launcher" href="/" id="navPaths">Paths</a>
+      <a class="nav-launcher" href="/profile" id="navProfile">Profile</a>
       <button id="btnHelp" type="button" aria-haspopup="dialog" title="How this console works">Help</button>
     </nav>
 
@@ -299,6 +301,8 @@
                 <div><dt>Time</dt><dd id="resultTime"></dd></div>
                 <div><dt>Hints used</dt><dd id="resultHints"></dd></div>
               </dl>
+              <!-- Filled when the lab earns an award (progress-hub.js). -->
+              <div class="result-awards" id="resultAwards" hidden></div>
               <form class="result-feedback" id="feedbackForm">
                 <fieldset>
                   <legend>How was this lab?</legend>

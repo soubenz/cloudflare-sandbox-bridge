@@ -26,6 +26,7 @@ import { GUIDE_TAB_NAMES, buildRoute, isOpaqueId, routeTitle } from './routes.js
 import { icon, spriteIcon, uiIcon } from './icons.js';
 import { createMasteryStore, normalizeLearn, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
 import { runOnboarding } from './onboarding.js';
+import { createProgressHub } from './progress-hub.js';
 import { runBeforeYouBegin } from './before-you-begin.js';
 import { mountQuestionsForm } from './questions-form.js';
 import { SAFE_FILE } from './answers-file.js';
@@ -196,6 +197,24 @@ function lsSet(key, value) {
 /** What this browser knows about the learner's learning (learn-model.js); never sent anywhere. */
 const mastery = createMasteryStore();
 
+/**
+ * The learner's skills, awards and path (progress-hub.js): the profile page, the bands on Home, /paths/mine and the
+ * award toast. It is given what only this file knows; `progress` is how the rest of the file reaches it.
+ */
+const progress = createProgressHub({
+  api,
+  plainError,
+  getLevels: () => mastery.get().onboarding?.levels,
+  hasQuiz: () => Object.keys(mastery.get().onboarding?.levels ?? {}).length > 0,
+  isRunning: (slug) => slug === runningSlug,
+  labKnown: (slug) => labsBySlug.has(slug),
+  startLab: (slug, card) => {
+    const lab = labsBySlug.get(slug);
+    if (lab) beginLab(lab, card);
+  },
+  reducedMotion: () => matchMedia('(prefers-reduced-motion: reduce)').matches,
+});
+
 // ------------------------------------------------------------------ routes
 
 /*
@@ -217,7 +236,7 @@ let meReady = Promise.resolve();
 /** The tab a session URL asked for, applied once the lab is up and its guide is built. */
 let pendingTab = null;
 /** The pages that live inside #launcher: home, a path, a module and a lab's own page. */
-const BROWSE_ROUTES = new Set(['launcher', 'path', 'module', 'lab']);
+const BROWSE_ROUTES = new Set(['launcher', 'path', 'module', 'lab', 'profile', 'my-path']);
 /**
  * Set (per browser tab) when the learner leaves a running lab for the launcher, so a refresh of the
  * launcher does not walk them straight back in. A fresh tab has none, and "/" then rejoins as it always did.
@@ -330,6 +349,8 @@ async function applyRoute(route, { initial = false } = {}) {
       case 'path':
       case 'module':
       case 'lab':
+      case 'profile':
+      case 'my-path':
         showBrowseRoute(route, initial);
         break;
       case 'onboarding':
@@ -353,6 +374,7 @@ async function applyRoute(route, { initial = false } = {}) {
 function showBrowseRoute(route, initial = false) {
   if (!clearScreens()) return restoreSessionUrl();
   $('launcher').hidden = false;
+  syncNav(route);
   syncQuizButtons();
   renderBrowse(route, { initial });
   // Which lab is running decides Start or Resume on every page; the card itself is home's.
@@ -814,6 +836,10 @@ function resolveBrowse(route) {
   switch (route.name) {
     case 'launcher':
       return { kind: 'home' };
+    case 'profile':
+      return { kind: 'profile' };
+    case 'my-path':
+      return { kind: 'mypath' };
     case 'path': {
       const path = findPath(launcherModel, route.path);
       return path ? { kind: 'path', path } : { missing: 'path' };
@@ -878,7 +904,13 @@ function renderBrowse(route = router.current(), { quiet = false, initial = false
 
   switch (view.kind) {
     case 'home':
-      list.replaceChildren(homePage());
+      list.replaceChildren(progress.homeBands(), homePage());
+      break;
+    case 'profile':
+      list.replaceChildren(progress.profileScreen());
+      break;
+    case 'mypath':
+      list.replaceChildren(progress.pathScreen());
       break;
     case 'path':
       list.replaceChildren(pathPage(view.path, suggestedStart()));
@@ -900,17 +932,30 @@ function renderBrowse(route = router.current(), { quiet = false, initial = false
   const [target, said] =
     view.kind === 'home'
       ? [toPaths ? (list.querySelector('.path-card-title a') ?? $('heroTitle')) : $('heroTitle'), 'Labs']
-      : view.kind === 'path'
-        ? [list.querySelector('.group-head'), view.path.title]
-        : view.kind === 'module'
-          ? [list.querySelector('.module-title'), moduleLabel(view.module)]
-          : [list.querySelector('.lab-detail-title'), view.lab.title || view.lab.slug];
+      : view.kind === 'profile'
+        ? [list.querySelector('.profile-title'), 'Your profile']
+        : view.kind === 'mypath'
+          ? [list.querySelector('.mypath-title'), 'Your path']
+          : view.kind === 'path'
+            ? [list.querySelector('.group-head'), view.path.title]
+            : view.kind === 'module'
+              ? [list.querySelector('.module-title'), moduleLabel(view.module)]
+              : [list.querySelector('.lab-detail-title'), view.lab.title || view.lab.slug];
   target?.focus({ preventScroll: true });
   announceRoute(said);
 }
 
 /** The header's "Paths" asked for home with focus on the first path rather than on the heading. */
 let focusFirstPath = false;
+
+/** The header's links say which page is open: Profile on /profile, Labs on the others. */
+function syncNav(route) {
+  const profile = route.name === 'profile';
+  if (profile) $('navProfile').setAttribute('aria-current', 'page');
+  else $('navProfile').removeAttribute('aria-current');
+  if (profile) $('navLabs').removeAttribute('aria-current');
+  else $('navLabs').setAttribute('aria-current', 'page');
+}
 
 /** The trail above the page: Home > Path > Module > Lab, as a nav landmark; the page itself is the last item. */
 function renderCrumbs(route, lab) {
@@ -1910,11 +1955,22 @@ function showQuiz() {
     onboarding: onboardingOffer,
     store: mastery,
     post: (body) => api.postAnswers(body),
+    // The goal and the hours go to the server with the quiz result, which builds (or rebuilds) the learner's path.
+    // Silent when it fails: the path is then simply not shown, and a retake tries again.
+    onGoal: ({ levels, goal }) =>
+      progress.savePathInputs(goal, levels).catch((err) => {
+        progress.pathStore.invalidate();
+        throw err;
+      }),
     onExit: ({ completed }) => {
       // Done or skipped, the quiz is not somewhere Back should return to: home takes its place.
       router.navigate('launcher', {}, { replace: true });
       // The "Suggested start" badge follows the new levels.
-      if (completed) loadLabs();
+      if (completed) {
+        // The quiz result is the skills' starting point, and the path was just rebuilt from it.
+        progress.profileStore.invalidate();
+        loadLabs();
+      }
     },
   });
 }
@@ -2480,6 +2536,7 @@ function openEventStream() {
     ['check.result', 'info'],
     ['check.finished', 'info'],
     ['snapshot.created', 'good'],
+    ['award.earned', 'good'],
     ['cost', 'info'],
     ['llm.call', 'info'],
     ['alert', 'bad'],
@@ -2576,7 +2633,12 @@ function handleEvent(type, tone, data) {
   }
   if (type === 'hint') renderHint(data);
   if (type === 'solution.unlocked') onSolutionUnlocked();
-  if (type === 'check.finished' || type === 'check.result') refreshChecks();
+  if (type === 'check.finished' || type === 'check.result') {
+    refreshChecks();
+    // A run can change a skill score, the XP and the path: Home and the profile ask again next time.
+    progress.invalidate();
+  }
+  if (type === 'award.earned') progress.awardEarned(data);
   if (type === 'container.restarted') onContainerRestarted();
   if (type === 'service.health' && data?.service && data?.health) setServiceHealth(data.service, data.health);
 }
@@ -2642,6 +2704,7 @@ const LEARNER_NOTICES = {
   pressure: (d) => [d.title, d.message],
   hint: (d) => ['Hint', d.text],
   'solution.unlocked': () => ['The solution is now available', 'Compare it with your work from the Solution block.'],
+  'award.earned': (d) => ['Award earned', typeof d.title === 'string' ? d.title : ''],
   // The payload is {reason}, not a duration: the time left is what the
   // header's own timer counts down to.
   'session.expiring': () => {
@@ -4236,6 +4299,7 @@ function resetSessionFeedback() {
   state.result = null;
   $('resultCard').hidden = true;
   $('confetti').innerHTML = '';
+  progress.clearResultAwards();
   $('feedbackForm').reset();
   $('feedbackForm').hidden = false;
   $('btnFeedback').disabled = true;
@@ -4903,6 +4967,7 @@ $('nav').addEventListener('keydown', (event) => {
   }
 });
 $('btnHelp').addEventListener('click', () => setMenu(false));
+$('navProfile').addEventListener('click', () => setMenu(false));
 $('btnRetakeQuiz').addEventListener('click', () => setMenu(false));
 
 $('btnHelp').addEventListener('click', showOnboarding);

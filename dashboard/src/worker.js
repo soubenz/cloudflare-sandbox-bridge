@@ -297,6 +297,79 @@ async function readCapped(request, max) {
   return new TextEncoder().encode(text).length > max ? null : text;
 }
 
+/* ------------------------------------------------- skills, awards, path */
+
+// The learner's profile, awards and personal path. Every call is for the cookie's subject: the browser never
+// names a user, and nothing here reads a user id from the address or the body.
+
+/** One `area:level` pair of the quiz result the browser holds (the console's own `ok`, not the API's `familiar`). */
+const STARTING_PAIR = /^[a-z]{2,24}:(new|ok|strong)$/;
+const MAX_STARTING_PAIRS = 12;
+
+/** `gateway:ok,mcp:new` rebuilt from the pairs that fit, or '' (an unknown shape is dropped, never forwarded). */
+function cleanStarting(raw) {
+  if (typeof raw !== 'string' || raw.length > 400) return '';
+  return raw
+    .split(',')
+    .filter((pair) => STARTING_PAIR.test(pair))
+    .slice(0, MAX_STARTING_PAIRS)
+    .join(',');
+}
+
+const PATH_AREA = /^[a-z]{2,24}$/;
+const PATH_LEVELS = ['new', 'ok', 'familiar', 'strong'];
+const GOAL_KINDS = ['role-ready', 'specific-skill', 'explore'];
+const MAX_GOAL_TEXT = 200;
+const MAX_INPUTS_BYTES = 4 * 1024;
+
+/**
+ * Checks a PUT /api/path-inputs body and rebuilds it: { areas, goal_text?, goal_kind?, hours_per_week }.
+ * Returns { body } or { error } (plain words). Nothing but those four fields is copied across, so a user id
+ * in the body goes nowhere. The goal text is the learner's own free text: it is tidied here and never logged.
+ */
+function cleanPathInputs(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { error: 'path inputs must be an object' };
+  const allowed = new Set(['areas', 'goal_text', 'goal_kind', 'hours_per_week']);
+  if (Object.keys(raw).some((k) => !allowed.has(k))) return { error: 'path inputs have a field that is not allowed' };
+  const body = {};
+  if (!raw.areas || typeof raw.areas !== 'object' || Array.isArray(raw.areas)) return { error: 'areas must be an object' };
+  body.areas = {};
+  for (const [area, level] of Object.entries(raw.areas)) {
+    if (!PATH_AREA.test(area) || !PATH_LEVELS.includes(level)) return { error: 'areas hold an area or a level that is not allowed' };
+    body.areas[area] = level;
+  }
+  if (raw.goal_text !== undefined) {
+    if (typeof raw.goal_text !== 'string') return { error: 'goal_text must be text' };
+    const text = raw.goal_text.replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim();
+    if (text.length > MAX_GOAL_TEXT) return { error: 'goal_text is too long' };
+    body.goal_text = text;
+  }
+  if (raw.goal_kind !== undefined) {
+    if (!GOAL_KINDS.includes(raw.goal_kind)) return { error: 'goal_kind is not one of the allowed kinds' };
+    body.goal_kind = raw.goal_kind;
+  }
+  if (!Number.isInteger(raw.hours_per_week) || raw.hours_per_week < 1 || raw.hours_per_week > 20) return { error: 'hours_per_week must be a whole number from 1 to 20' };
+  body.hours_per_week = raw.hours_per_week;
+  return { body };
+}
+
+/**
+ * Asks the API for something about the signed-in learner and hands its answer on as it came (status and
+ * body), so the console can say what went wrong in its own plain words (api.js plainError reads the status).
+ * An API that cannot be reached at all is a 502 with a sentence, never a thrown error.
+ */
+async function relayForLearner(env, path, init) {
+  let res;
+  try {
+    res = await callApi(env, path, init);
+  } catch {
+    return json({ error: 'Your progress could not be loaded right now. Please try again in a moment.' }, 502);
+  }
+  return relay(res);
+}
+
+const learnerPath = (subject, tail) => `/users/${encodeURIComponent(subject)}/${tail}`;
+
 /* ---------------------------------------------------------------- headers */
 
 /**
@@ -575,6 +648,46 @@ async function route(request, env) {
           body: JSON.stringify(body),
         })
       );
+    }
+
+    // The learner's skills, XP, streak and awards. `starting` is the platform quiz result the browser holds
+    // (the quiz lives in localStorage), rebuilt from the pairs that fit; the user is the cookie's subject.
+    if (url.pathname === '/api/profile' && request.method === 'GET') {
+      const query = new URLSearchParams();
+      if (url.searchParams.get('compact') === '1') query.set('compact', '1');
+      const starting = cleanStarting(url.searchParams.get('starting'));
+      if (starting) query.set('starting', starting);
+      const qs = query.toString();
+      return relayForLearner(env, learnerPath(subject, `profile${qs ? `?${qs}` : ''}`));
+    }
+
+    if (url.pathname === '/api/awards' && request.method === 'GET') {
+      return relayForLearner(env, learnerPath(subject, 'awards'));
+    }
+
+    // The personal path: GET reads (building it when the inputs, labs or plan changed), POST rebuilds,
+    // and `?force=1` rebuilds even when nothing changed.
+    if (url.pathname === '/api/path' && (request.method === 'GET' || request.method === 'POST')) {
+      const force = request.method === 'POST' && url.searchParams.get('force') === '1';
+      return relayForLearner(env, learnerPath(subject, `path${force ? '?force=1' : ''}`), { method: request.method });
+    }
+
+    if (url.pathname === '/api/path-inputs' && request.method === 'PUT') {
+      const text = await readCapped(request, MAX_INPUTS_BYTES);
+      if (text === null) return json({ error: 'path inputs are too large' }, 413);
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        return json({ error: 'path inputs must be JSON' }, 400);
+      }
+      const { body, error } = cleanPathInputs(parsed);
+      if (!body) return json({ error }, 400);
+      return relayForLearner(env, learnerPath(subject, 'path-inputs'), {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
     }
 
     if (url.pathname.startsWith('/api/')) return json({ error: 'not found' }, 404);

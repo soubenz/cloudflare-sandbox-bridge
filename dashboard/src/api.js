@@ -161,6 +161,31 @@ export const api = {
     }),
 
   /**
+   * The learner's skills, XP, streak and awards (`compact` is the Home widget's slice). `starting` is the
+   * platform quiz result this browser holds, "gateway:ok,mcp:new"; the Worker names the learner, never this page.
+   */
+  profile: ({ compact = false, starting = '' } = {}) => {
+    const query = new URLSearchParams();
+    if (compact) query.set('compact', '1');
+    if (starting) query.set('starting', starting);
+    const qs = query.toString();
+    return sameOrigin(`/api/profile${qs ? `?${qs}` : ''}`);
+  },
+  /** `{earned, locked}`, the same two lists the profile carries. */
+  awards: () => sameOrigin('/api/awards'),
+  /** The learner's own path; a 404 means no goal has been given yet. */
+  path: () => sameOrigin('/api/path'),
+  /** Builds the path again (`force`: even when nothing changed, so the model orders it afresh). */
+  recomputePath: ({ force = false } = {}) => sameOrigin(`/api/path${force ? '?force=1' : ''}`, { method: 'POST' }),
+  /** Saves what the quiz and the goal questions said and returns the path built from it. */
+  savePathInputs: (body) =>
+    sameOrigin('/api/path-inputs', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  /**
    * Starting a session goes through this console's own Worker, which holds
    * the service key. The browser never sees that key, and the Worker knows
    * who is signed in, so it supplies the user id rather than this page
