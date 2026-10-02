@@ -129,10 +129,10 @@ test.describe('no free lab slot', () => {
     await page.route('**/api/start', (route) =>
       route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'pool exhausted' }) })
     );
-    // Go to the launcher itself, not a reload: a resumed session leaves the
-    // address at /labs/<slug>, and a lab's address starts that lab on load,
-    // which would hit the stubbed 503 before the picker was ever on screen.
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    // Go to a page of the launcher itself, not a reload: a resumed session leaves the address at a
+    // session's, which rejoins that lab on load, and the 503 would never be asked for. `hello` belongs to
+    // no path, so its row is on the page of the labs with none.
+    await page.goto('/paths/other', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
 
     await page.locator('.lab[data-slug="hello"] button').click();

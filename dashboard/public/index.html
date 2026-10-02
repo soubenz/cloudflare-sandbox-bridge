@@ -78,7 +78,7 @@
 
     <nav class="nav-links" id="navLinks" aria-label="Console">
       <a class="nav-launcher" href="/" id="navLabs" aria-current="page">Labs</a>
-      <a class="nav-launcher" href="#paths" id="navPaths">Paths</a>
+      <a class="nav-launcher" href="/" id="navPaths">Paths</a>
       <button id="btnHelp" type="button" aria-haspopup="dialog" title="How this console works">Help</button>
     </nav>
 
@@ -132,9 +132,12 @@
   </div>
 </header>
 
-<!-- No session yet: pick a lab -->
+<!-- No session yet: pick a lab. One page at a time: home (the paths), a path (its modules), a module
+     (its labs) or a lab (its own page). app.js fills #crumbs and #labList for the address that is open. -->
 <section class="launcher" id="launcher">
-  <div class="hello">
+  <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"><ol id="crumbList"></ol></nav>
+  <!-- The hero and the resume card belong to home. -->
+  <div class="hello" id="hello">
     <div class="hello-row">
       <div class="hello-copy">
         <h1 class="h-hero" id="heroTitle" tabindex="-1">Pick your next <span class="mark">lab.</span></h1>
@@ -144,10 +147,7 @@
       <aside class="resume" id="resumeCard" aria-label="Lab in progress" hidden></aside>
     </div>
   </div>
-  <!-- One link per learning path; built with the list, hidden when there is only one group. -->
-  <nav class="path-nav" id="pathNav" aria-label="Learning paths" hidden>
-    <ul class="path-nav-list" id="pathNavList"></ul>
-  </nav>
+  <!-- Search and filters act on the labs of the page that is open (every lab, a path's, or a module's). -->
   <div class="lab-filters" id="labFilters" hidden>
     <div class="filter-search">
       <label class="sr-only" for="labSearch">Search labs by title, summary or name</label>
@@ -208,6 +208,21 @@
       <p class="notice-lede" id="nfDetail">There is nothing at this address.</p>
       <div class="notice-actions">
         <a class="btn btn-accent" id="nfBack" href="/">Back to the labs</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- /u/<user>/labs/<lab>/session/<session> when that is not the learner's active session for the lab. -->
+<section class="notice-screen" id="sessionGone" aria-labelledby="sgTitle" hidden>
+  <div class="notice-wrap">
+    <div class="step-card notice-card">
+      <h1 id="sgTitle" tabindex="-1">This session is <span class="mark">not active.</span></h1>
+      <p class="notice-lede" id="sgDetail">It has ended, or it is not yours.</p>
+      <p class="notice notice-bad small" id="sgError" role="alert" hidden></p>
+      <div class="notice-actions">
+        <button class="btn btn-accent" id="sgRejoin" type="button" hidden>Rejoin</button>
+        <a class="btn btn-ghost" id="sgBack" href="/">Back to labs</a>
       </div>
     </div>
   </div>

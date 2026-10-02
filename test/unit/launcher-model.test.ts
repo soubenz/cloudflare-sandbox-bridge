@@ -642,3 +642,94 @@ describe('archived labs', () => {
     expect(learnModel.suggestStart(cardsOf(buildLauncherModel(unarchived, realMeta)), mastery)).toEqual({ path: 'ai-platform', number: 3 });
   });
 });
+
+const pages = (await import('../../dashboard/src/launcher-model.js' as string)) as {
+  pathId: (p: Path) => string;
+  findPath: (m: Model, id: string) => Path | null;
+  findModule: (p: Path | null, n: number) => Module | null;
+  moduleLabel: (m: Module) => string;
+  pathCardLine: (p: Path) => string;
+  breadcrumbs: (m: Model, route: Record<string, unknown>, lab?: Lab | null) => Array<{ label: string; route: Record<string, unknown> | null }>;
+  scopeEntries: (m: Model, route: Record<string, unknown>) => Entry[];
+};
+
+describe('the pages: paths, modules, trail and scope', () => {
+  const labs = [
+    lab('a1', { path: 'agents', order: 1, estimated_minutes: 60 }),
+    lab('a2', { path: 'agents', order: 2, estimated_minutes: 60 }),
+    lab('p1-a', { path: 'platform', module: 1, order: 1 }),
+    lab('p1-b', { path: 'platform', module: 1, order: 2 }),
+    lab('p2-a', { path: 'platform', module: 2, order: 1 }),
+    lab('loose'),
+    lab('hello', { archived: true }),
+  ];
+  const m = buildLauncherModel(labs, meta);
+
+  it('names a path by its slug in an address, and the labs with no path "other"', () => {
+    expect(pages.pathId(m.paths[0]!)).toBe('agents');
+    expect(pages.findPath(m, 'platform')!.title).toBe('Platform');
+    expect(pages.findPath(m, 'other')!.other).toBe(true);
+    expect(pages.findPath(m, 'nope')).toBeNull();
+    expect(pages.findPath(null as unknown as Model, 'agents')).toBeNull();
+  });
+
+  it('finds a module only on a path that draws module cards', () => {
+    const platform = pages.findPath(m, 'platform')!;
+    expect(pages.findModule(platform, 2)!.title).toBe('Tools');
+    expect(pages.findModule(platform, 3)).toBeNull();
+    // `agents` has one implicit module and "other" none with a number: neither has a module to address.
+    expect(pages.findModule(pages.findPath(m, 'agents'), 1)).toBeNull();
+    expect(pages.findModule(pages.findPath(m, 'other'), 1)).toBeNull();
+    expect(pages.findModule(null, 1)).toBeNull();
+  });
+
+  it('labels a module with its number and, when the metadata has one, its title', () => {
+    const platform = pages.findPath(m, 'platform')!;
+    expect(pages.moduleLabel(platform.modules[0]!)).toBe('Module 1: Gateway');
+    expect(pages.moduleLabel({ ...platform.modules[0]!, known: false, title: 'Module 1' })).toBe('Module 1');
+  });
+
+  it('prints a path card line: modules, labs and about how long, leaving out what is zero', () => {
+    expect(pages.pathCardLine(pages.findPath(m, 'platform')!)).toBe('2 modules · 3 labs · about 1 h 30 min');
+    expect(pages.pathCardLine(pages.findPath(m, 'agents')!)).toBe('2 labs · about 2 h');
+    const one = buildLauncherModel([lab('x', { path: 'platform', module: 1, estimated_minutes: 0 })], meta).paths[0]!;
+    expect(pages.pathCardLine(one)).toBe('1 module · 1 lab');
+  });
+
+  it('builds the trail Home > Path > Module > Lab, the page itself last and not a link', () => {
+    const labels = (route: Record<string, unknown>, l: Lab | null = null) => pages.breadcrumbs(m, route, l).map((c) => c.label);
+    expect(labels({ name: 'launcher' })).toEqual(['Home']);
+    expect(labels({ name: 'path', path: 'platform' })).toEqual(['Home', 'Platform']);
+    expect(labels({ name: 'module', path: 'platform', module: 2 })).toEqual(['Home', 'Platform', 'Module 2: Tools']);
+    expect(labels({ name: 'lab', slug: 'p2-a' }, labs[4]!)).toEqual(['Home', 'Platform', 'Module 2: Tools', 'Title of p2-a']);
+    // A path with no module cards has no module in the trail; "other" is still a path of the trail.
+    expect(labels({ name: 'lab', slug: 'a1' }, labs[0]!)).toEqual(['Home', 'Agents', 'Title of a1']);
+    expect(labels({ name: 'lab', slug: 'loose' }, labs[5]!)).toEqual(['Home', 'Other labs', 'Title of loose']);
+    // An archived lab is not in the model: Home > Lab.
+    expect(labels({ name: 'lab', slug: 'hello' }, labs[6]!)).toEqual(['Home', 'Title of hello']);
+    // Without a title it falls back to the slug; a path the catalogue does not know is humanised.
+    expect(labels({ name: 'lab', slug: 'hello' })).toEqual(['Home', 'hello']);
+    expect(labels({ name: 'path', path: 'new-things' })).toEqual(['Home', 'New things']);
+  });
+
+  it('links every crumb but the last to a route of the table', () => {
+    const trail = pages.breadcrumbs(m, { name: 'lab', slug: 'p2-a' }, labs[4]!);
+    expect(trail.map((c) => c.route)).toEqual([
+      { name: 'launcher' },
+      { name: 'path', path: 'platform' },
+      { name: 'module', path: 'platform', module: 2 },
+      null,
+    ]);
+    expect(pages.breadcrumbs(m, { name: 'launcher' })[0]!.route).toBeNull();
+  });
+
+  it('scopes search and filters to the labs of the page: all of them, a path\'s or a module\'s', () => {
+    expect(slugs(pages.scopeEntries(m, { name: 'launcher' }))).toEqual(['a1', 'a2', 'p1-a', 'p1-b', 'p2-a', 'loose']);
+    expect(slugs(pages.scopeEntries(m, { name: 'path', path: 'platform' }))).toEqual(['p1-a', 'p1-b', 'p2-a']);
+    expect(slugs(pages.scopeEntries(m, { name: 'module', path: 'platform', module: 1 }))).toEqual(['p1-a', 'p1-b']);
+    expect(pages.scopeEntries(m, { name: 'module', path: 'platform', module: 9 })).toEqual([]);
+    // A lab's own page has none, and neither does a page the catalogue does not know.
+    expect(pages.scopeEntries(m, { name: 'lab', slug: 'a1' })).toEqual([]);
+    expect(pages.scopeEntries(m, { name: 'path', path: 'nope' })).toEqual([]);
+  });
+});

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import { parse as parseYaml } from 'yaml';
 import { serveConsole } from './console-server';
+import { MODULE_PAGE, pressStart } from './browse';
 
 /**
  * The session screen's layout: the guide (Brief, Questions, Checks, Hints, Solution) beside the
@@ -170,7 +171,7 @@ async function stub(page: Page): Promise<Stub> {
     const url = new URL(route.request().url());
     const method = route.request().method();
     const path = url.pathname;
-    if (path === '/api/me') return json(route, { sub: 'console' });
+    if (path === '/api/me') return json(route, { sub: 'console', user_id: 'console' });
     if (path === '/api/labs') return json(route, LABS);
     if (path === '/api/onboarding') return json(route, { error: { code: 'no_onboarding', message: 'none' } }, 404);
     if (path.startsWith('/api/learn/') && method === 'GET') {
@@ -310,20 +311,20 @@ const test = base.extend<object, { staticServer: string }>({
 
 // -------------------------------------------------------------------- helpers
 
-/** Opens the console on the launcher, past the things that are other specs' business. */
+/** Opens the console on the module's page (where the labs' rows are), past the things that are other specs' business. */
 async function open(page: Page, { theme }: { theme?: 'light' | 'dark' } = {}) {
   await page.addInitScript((t) => {
     localStorage.setItem('opalixOnboarded', '1');
     localStorage.setItem('opalixLearn', JSON.stringify({ v: 1, onboarding: { status: 'skipped', at: 1, levels: {} } }));
     if (t) localStorage.setItem('opalixTheme', t);
   }, theme ?? null);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.goto(MODULE_PAGE, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('body[data-booted="1"]');
 }
 
-/** Starts a lab from its card (past "Before you begin" when it has one) and waits for the running session. */
+/** Starts a lab from its row (past "Before you begin" when it has one) and waits for the running session. */
 async function startLab(page: Page, slug: string) {
-  await page.locator(`.lab[data-slug="${slug}"] .lab-start`).click();
+  await pressStart(page, slug);
   const skip = page.getByRole('button', { name: 'Skip all, just start the lab' });
   if (LABS.find((l) => l.slug === slug)?.has_learn) await skip.click();
   await expect(page.locator('#workspace')).toBeVisible();
@@ -598,7 +599,7 @@ test.describe('the guide per lab', () => {
     await page.getByRole('tab', { name: 'Questions' }).click();
     await page.locator('#btnGuideHide').click();
     // The tab is in the address (in place), the guide being hidden is not.
-    await expect(page).toHaveURL(/\/labs\/[a-z0-9-]+\/session\/questions$/);
+    await expect(page).toHaveURL(/\/u\/console\/labs\/[a-z0-9-]+\/session\/[A-Za-z0-9_-]+\/questions$/);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('#guide')).toHaveAttribute('data-ready', 'true');
     await expect(guide(page)).toBeVisible();

@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import { serveConsole } from './console-server';
+import { MODULE_PAGE, pressStart } from './browse';
 import { MULTI as MULTI_PAGE, SINGLE, bundleOf, type FixtureBundle, type FixtureComic, type FixturePanel } from './comic-fixture';
 
 /**
@@ -116,7 +117,7 @@ async function stub(page: Page): Promise<Stub> {
     const url = new URL(route.request().url());
     const method = route.request().method();
     const path = url.pathname;
-    if (path === '/api/me') return json(route, { sub: 'console' });
+    if (path === '/api/me') return json(route, { sub: 'console', user_id: 'console' });
     if (path === '/api/labs') return json(route, LABS);
     if (path === '/api/onboarding') return json(route, { error: { code: 'no_onboarding', message: 'none' } }, 404);
     if (path.startsWith('/api/learn/') && method === 'GET') {
@@ -208,19 +209,19 @@ interface Timeline {
   pages: Array<{ index: number; start: number; end: number; panels: Array<{ number: number; start: number; end: number; bubbles: Array<{ start: number; end: number }>; sfxAt: number | null }> }>;
 }
 
-/** Opens the console on the launcher. `test` gives the comic its deterministic clock; `theme` pins light or dark. */
+/** Opens the console on the module's page, where the labs are. `test` gives the comic its deterministic clock; `theme` pins light or dark. */
 async function open(page: Page, { theme, test: comicTest = false }: { theme?: 'light' | 'dark'; test?: boolean } = {}) {
   await page.addInitScript((t) => {
     localStorage.setItem('opalixOnboarded', '1');
     localStorage.setItem('opalixLearn', JSON.stringify({ v: 1, onboarding: { status: 'skipped', at: 1, levels: {} } }));
     if (t) localStorage.setItem('opalixTheme', t);
   }, theme ?? null);
-  await page.goto(comicTest ? '/?comicTest=1' : '/', { waitUntil: 'domcontentloaded' });
+  await page.goto(comicTest ? `${MODULE_PAGE}?comicTest=1` : MODULE_PAGE, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('body[data-booted="1"]');
 }
 
-/** Presses Start on a lab's card: with learning content that opens Before you begin. */
-const startCard = (page: Page, slug: string) => page.locator(`.lab[data-slug="${slug}"] .lab-start`).click();
+/** Presses Start on a lab's row: with learning content that opens Before you begin. */
+const startCard = (page: Page, slug: string) => pressStart(page, slug);
 
 /** Opens Before you begin on a lab (the comic or not). */
 async function openBeforeYouBegin(page: Page, slug: string, opts: Parameters<typeof open>[1] = {}, size = { width: 1280, height: 900 }) {

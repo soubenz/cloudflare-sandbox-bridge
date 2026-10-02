@@ -140,8 +140,10 @@ const BUSY_RETRY_MS = 30_000;
 export const api = {
   /** The catalogue, each lab carrying `progress` for the signed-in subject (or null). */
   labs: () => sameOrigin('/api/labs'),
-  /** The console's signed-in subject: `{sub}`. */
+  /** The console's signed-in subject: `{sub, user_id}` (`user_id` is the opaque id addresses carry). */
   me: () => sameOrigin('/api/me'),
+  /** The learner's live sessions, `{sessions: [{id, lab, state}]}` (no tokens). A Worker without the route is a 404. */
+  activeSessions: () => sameOrigin('/api/sessions/active'),
 
   /** A lab's learning bundle, `{version, learn}`; a lab with none is a 404 (`err.status`). */
   learn: (slug) => sameOrigin(`/api/learn/${encodeURIComponent(slug)}`),

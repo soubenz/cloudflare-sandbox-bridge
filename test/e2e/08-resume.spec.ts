@@ -36,6 +36,6 @@ test.describe('session continuity', () => {
 
     // A dead session must not leave a dead workspace on screen.
     await expect(page.locator('#launcher')).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator('.lab').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.path-card').first()).toBeVisible({ timeout: 30_000 });
   });
 });

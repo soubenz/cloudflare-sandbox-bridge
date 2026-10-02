@@ -336,3 +336,87 @@ export function moduleViews(path, { suggested = null, running = null, open = [] 
   });
   return views;
 }
+
+// ---------------------------------------------------------------------------
+// The pages: home (paths), a path (modules), a module (labs), a lab.
+
+/** The id a path has in an address: its slug, or `other` for the labs that belong to none. */
+export const pathId = (path) => (path.other ? 'other' : path.slug);
+
+/** The path an address's id names (`other` is the group of labs with no path), or null. */
+export function findPath(model, id) {
+  return (model?.paths ?? []).find((p) => pathId(p) === id) ?? null;
+}
+
+/**
+ * The module with this number, or null. Only a path that draws module cards has addressable modules: a
+ * path with one implicit module is its labs, and the "Other labs" group has no numbers at all.
+ */
+export function findModule(path, number) {
+  if (!path?.cards) return null;
+  return path.modules.find((m) => m.number === number) ?? null;
+}
+
+/** "Module 3" or "Module 3: Retrieval", as a crumb or a heading says it. */
+export const moduleLabel = (module) => (module.known && module.title ? `${module.eyebrow}: ${module.title}` : module.eyebrow || 'Module');
+
+/** "7 modules · 31 labs · about 21 h": the line under a path's title on its card. */
+export function pathCardLine(path) {
+  const parts = [];
+  if (path.cards) parts.push(`${path.modules.length} ${path.modules.length === 1 ? 'module' : 'modules'}`);
+  parts.push(`${path.totals.labs} ${path.totals.labs === 1 ? 'lab' : 'labs'}`);
+  const approx = approxMinutes(path.totals.minutes);
+  if (approx) parts.push(`about ${approx}`);
+  return parts.join(' · ');
+}
+
+/**
+ * The trail of a page, Home first and the page itself last (its `route` is null: it is not a link).
+ * Each other item carries the route (`{ name, ...params }`) it links to. `lab` is the catalogue entry
+ * for a lab page (an archived lab, which the model leaves out, is Home > Lab).
+ */
+export function breadcrumbs(model, route, lab = null) {
+  const items = [{ label: 'Home', route: { name: 'launcher' } }];
+  const add = (label, to) => items.push({ label, route: to });
+  switch (route?.name) {
+    case 'path': {
+      const path = findPath(model, route.path);
+      add(path?.title ?? humanize(route.path), null);
+      break;
+    }
+    case 'module': {
+      const path = findPath(model, route.path);
+      const module = findModule(path, route.module);
+      add(path?.title ?? humanize(route.path), { name: 'path', path: route.path });
+      add(module ? moduleLabel(module) : `Module ${route.module}`, null);
+      break;
+    }
+    case 'lab': {
+      const at = locateLab(model, route.slug);
+      if (at) {
+        add(at.path.title, { name: 'path', path: pathId(at.path) });
+        if (at.path.cards) add(moduleLabel(at.module), { name: 'module', path: pathId(at.path), module: at.module.number });
+      }
+      add(lab?.title || route.slug, null);
+      break;
+    }
+    default:
+      break;
+  }
+  items[items.length - 1].route = null;
+  return items;
+}
+
+/** The labs a page is about, for its search and filters: every lab (home), a path's, or a module's. Empty for a page with none. */
+export function scopeEntries(model, route) {
+  switch (route?.name) {
+    case 'launcher':
+      return (model?.paths ?? []).flatMap((p) => p.labs);
+    case 'path':
+      return findPath(model, route.path)?.labs ?? [];
+    case 'module':
+      return findModule(findPath(model, route.path), route.module)?.labs ?? [];
+    default:
+      return [];
+  }
+}

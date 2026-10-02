@@ -8,9 +8,11 @@ type Route = { name: string; search: string; [k: string]: unknown };
 const r = (await import('../../dashboard/src/routes.js' as string)) as {
   parseRoute: (pathname: unknown, search?: unknown) => Route;
   buildRoute: (name: string, params?: Record<string, unknown>) => string;
-  routeTitle: (route: unknown, labTitle?: string | null) => string;
+  routeTitle: (route: unknown, labTitle?: string | null, titles?: { path?: string; module?: string }) => string;
   SLUG: RegExp;
+  OPAQUE_ID: RegExp;
   isSlug: (s: unknown) => boolean;
+  isOpaqueId: (s: unknown) => boolean;
 };
 
 const parse = (p: string, q = '') => r.parseRoute(p, q);
@@ -20,7 +22,7 @@ describe('parseRoute', () => {
   it('reads every route of the table', () => {
     expect(without(parse('/'))).toEqual({ name: 'launcher' });
     expect(without(parse('/paths/ai-platform'))).toEqual({ name: 'path', path: 'ai-platform' });
-    expect(without(parse('/paths/ai-platform/modules/3'))).toEqual({ name: 'path', path: 'ai-platform', module: 3 });
+    expect(without(parse('/paths/ai-platform/modules/3'))).toEqual({ name: 'module', path: 'ai-platform', module: 3 });
     expect(without(parse('/paths/other'))).toEqual({ name: 'path', path: 'other' });
     expect(without(parse('/onboarding'))).toEqual({ name: 'onboarding' });
     expect(without(parse('/labs/see-what-a-gateway-does'))).toEqual({ name: 'lab', slug: 'see-what-a-gateway-does' });
@@ -32,6 +34,24 @@ describe('parseRoute', () => {
       expect(without(parse(`/labs/x1/session/${tab}`))).toEqual({ name: 'session', slug: 'x1', tab });
     }
     expect(without(parse('/labs/x1/session/service/litellm'))).toEqual({ name: 'session', slug: 'x1', tab: 'service', service: 'litellm' });
+  });
+
+  it('reads the new session address: the learner\'s id, the lab, the session\'s id and the tab', () => {
+    const base = { name: 'session', slug: 'x1', userId: 'console', sessionId: '01j9zzzzzzzzzzzzzzzzzzzzzz' };
+    expect(without(parse('/u/console/labs/x1/session/01j9zzzzzzzzzzzzzzzzzzzzzz'))).toEqual(base);
+    for (const tab of ['brief', 'questions', 'hints', 'checks', 'solution', 'terminal', 'editor']) {
+      expect(without(parse(`/u/console/labs/x1/session/01j9zzzzzzzzzzzzzzzzzzzzzz/${tab}`))).toEqual({ ...base, tab });
+    }
+    expect(without(parse('/u/console/labs/x1/session/01j9zzzzzzzzzzzzzzzzzzzzzz/service/litellm'))).toEqual({ ...base, tab: 'service', service: 'litellm' });
+    // A tab that is nothing keeps the session, flagged, as in the old form.
+    expect(parse('/u/console/labs/x1/session/01j9zzzzzzzzzzzzzzzzzzzzzz/nope').invalidTab).toBe(true);
+    expect(parse('/u/console/labs/x1/session/01j9zzzzzzzzzzzzzzzzzzzzzz/service').invalidTab).toBe(true);
+  });
+
+  it('reads the old session address with no ids: it is the one that starts or rejoins', () => {
+    const route = parse('/labs/x1/session/hints');
+    expect(route.userId).toBeUndefined();
+    expect(route.sessionId).toBeUndefined();
   });
 
   it('round-trips every route through buildRoute', () => {
@@ -54,6 +74,9 @@ describe('parseRoute', () => {
       '/labs/see-what-a-gateway-does/session/editor',
       '/labs/see-what-a-gateway-does/session/service/echo',
       '/labs/see-what-a-gateway-does/session/service/my.svc_2-x',
+      '/u/console/labs/x1/session/01j9zzzzzzzzzzzzzzzzzzzzzz',
+      '/u/u-1a2b3c/labs/x1/session/01J9ZZZZZZZZZZZZZZZZZZZZZZ/hints',
+      '/u/console/labs/x1/session/s1/service/echo',
     ];
     for (const path of paths) {
       const { name, ...params } = parse(path);
@@ -119,6 +142,22 @@ describe('parseRoute', () => {
       '/paths/p1/modules/x',
       '/paths/p1/modules/1/extra',
       '/paths/p1/other',
+      '/u',
+      '/u/console',
+      '/u/console/labs',
+      '/u/console/labs/x1',
+      '/u/console/labs/x1/session',
+      '/u/console/labs/x1/lessons/s1',
+      '/u/console/labs/X1/session/s1',
+      '/u/console/lab/x1/session/s1',
+      '/u/console/labs/x1/sessions/s1',
+      '/u/con.sole/labs/x1/session/s1',
+      '/u/me@example.com/labs/x1/session/s1',
+      '/u/%40/labs/x1/session/s1',
+      '/u/console/labs/x1/session/-s1',
+      '/u/console/labs/x1/session/s1%2Fs2',
+      `/u/${'a'.repeat(65)}/labs/x1/session/s1`,
+      `/u/console/labs/x1/session/${'a'.repeat(65)}`,
       '/onboarding/x',
       '/Onboarding',
       '/api/labs',
@@ -157,10 +196,13 @@ describe('parseRoute', () => {
     expect((parse(`/${'z'.repeat(500)}`).path as string).length).toBeLessThanOrEqual(200);
   });
 
-  it('never puts a session id or a token where an address could hold one', () => {
-    // The route shapes have no slot for them: a session id (a ULID) is not a lab slug, so it is not a lab.
+  it('has no slot for a token, and a session id is only ever where the table puts it', () => {
+    // A session id (a ULID) is not a lab slug, so it is not a lab, and /sessions/<id> is nothing.
     expect(parse('/labs/01J9ZZZZZZZZZZZZZZZZZZZZZZ').name).toBe('not-found');
     expect(parse('/sessions/01j9zzzzzzzzzzzzzzzzzzzzzz').name).toBe('not-found');
+    expect(parse('/labs/x1/session/01j9zzzzzzzzzzzzzzzzzzzzzz').invalidTab).toBe(true);
+    // The token has no key in any route: whatever the query says is only a query.
+    expect(Object.keys(parse('/u/console/labs/x1/session/s1', '?token=secret'))).not.toContain('token');
   });
 });
 
@@ -190,12 +232,32 @@ describe('buildRoute', () => {
     expect(r.buildRoute('onboarding')).toBe('/onboarding');
     expect(r.buildRoute('path', { path: 'ai-platform' })).toBe('/paths/ai-platform');
     expect(r.buildRoute('path', { path: 'ai-platform', module: 2 })).toBe('/paths/ai-platform/modules/2');
+    expect(r.buildRoute('module', { path: 'ai-platform', module: 2 })).toBe('/paths/ai-platform/modules/2');
     expect(r.buildRoute('lab', { slug: 'x1' })).toBe('/labs/x1');
     expect(r.buildRoute('lab-step', { slug: 'x1', step: 'lessons' })).toBe('/labs/x1/lessons');
     expect(r.buildRoute('session', { slug: 'x1' })).toBe('/labs/x1/session');
     expect(r.buildRoute('session', { slug: 'x1', tab: 'hints' })).toBe('/labs/x1/session/hints');
     expect(r.buildRoute('session', { slug: 'x1', tab: 'service', service: 'echo' })).toBe('/labs/x1/session/service/echo');
     expect(r.buildRoute('launcher', { search: '?a=1' })).toBe('/?a=1');
+  });
+
+  it('builds the new session address when it has both ids, and the old one when it has neither', () => {
+    const ids = { userId: 'console', sessionId: '01j9zzzzzzzzzzzzzzzzzzzzzz' };
+    expect(r.buildRoute('session', { slug: 'x1', ...ids })).toBe('/u/console/labs/x1/session/01j9zzzzzzzzzzzzzzzzzzzzzz');
+    expect(r.buildRoute('session', { slug: 'x1', ...ids, tab: 'hints' })).toBe('/u/console/labs/x1/session/01j9zzzzzzzzzzzzzzzzzzzzzz/hints');
+    expect(r.buildRoute('session', { slug: 'x1', ...ids, tab: 'service', service: 'echo', search: '?comicTest=1' })).toBe(
+      '/u/console/labs/x1/session/01j9zzzzzzzzzzzzzzzzzzzzzz/service/echo?comicTest=1'
+    );
+    expect(r.buildRoute('session', { slug: 'x1', userId: null, sessionId: undefined })).toBe('/labs/x1/session');
+  });
+
+  it('refuses a session address with one id, or an id that is not opaque (an email, a path)', () => {
+    expect(() => r.buildRoute('session', { slug: 'x1', userId: 'console' })).toThrow(RangeError);
+    expect(() => r.buildRoute('session', { slug: 'x1', sessionId: 's1' })).toThrow(RangeError);
+    for (const bad of ['me@example.com', 'a/b', '../x', '', ' ', 'a b', 'x'.repeat(65)]) {
+      expect(() => r.buildRoute('session', { slug: 'x1', userId: bad || undefined, sessionId: 's1' }), bad).toThrow(RangeError);
+      expect(() => r.buildRoute('session', { slug: 'x1', userId: 'console', sessionId: bad || undefined }), bad).toThrow(RangeError);
+    }
   });
 
   it('puts the step of the flow in ?step=N, keeping other parameters, and carries it to no other route', () => {
@@ -212,9 +274,9 @@ describe('buildRoute', () => {
     expect(() => r.buildRoute('lab-step', { slug: 'x1', step: 'lessons', n: 1000 })).toThrow(RangeError);
   });
 
-  it('ignores params that do not belong to the route (a session id cannot ride along)', () => {
-    const url = r.buildRoute('session', { slug: 'x1', id: '01J9ZZZZZZZZZZZZZZZZZZZZZZ', token: 'secret' });
-    expect(url).toBe('/labs/x1/session');
+  it('ignores params that do not belong to the route (a token cannot ride along)', () => {
+    const url = r.buildRoute('session', { slug: 'x1', userId: 'console', sessionId: 's1', id: '01J9ZZZZZZZZZZZZZZZZZZZZZZ', token: 'secret' });
+    expect(url).toBe('/u/console/labs/x1/session/s1');
     expect(url).not.toMatch(/01J9|secret/);
   });
 
@@ -227,12 +289,22 @@ describe('buildRoute', () => {
     expect(() => r.buildRoute('session', { slug: 'x1', tab: 'service' })).toThrow(RangeError);
     expect(() => r.buildRoute('session', { slug: 'x1', tab: 'service', service: 'a/b' })).toThrow(RangeError);
     expect(() => r.buildRoute('path', { path: 'p1', module: 0 })).toThrow(RangeError);
+    expect(() => r.buildRoute('module', { path: 'p1' })).toThrow(RangeError);
+    expect(() => r.buildRoute('module', { path: 'p1', module: 1.5 })).toThrow(RangeError);
     expect(() => r.buildRoute('nope')).toThrow(RangeError);
   });
 
   it('drops a search that is not one', () => {
     expect(r.buildRoute('launcher', { search: 'x=1' })).toBe('/');
     expect(r.buildRoute('launcher', { search: '?' })).toBe('/');
+  });
+});
+
+describe('opaque ids', () => {
+  it('accepts letters, numerals, _ and inner -, to 64 characters, and nothing that names a person', () => {
+    for (const ok of ['console', 'u-1a2b3c4d', '01j9zzzzzzzzzzzzzzzzzzzzzz', '01J9ZZZZZZZZZZZZZZZZZZZZZZ', 'a', 'a'.repeat(64), 'a_b-c']) expect(r.isOpaqueId(ok), ok).toBe(true);
+    for (const bad of ['', '-a', '_a', 'me@example.com', 'a.b', 'a b', 'a/b', 'a'.repeat(65), 'café', 1, null, undefined]) expect(r.isOpaqueId(bad), String(bad)).toBe(false);
+    expect(r.OPAQUE_ID.source).toBe('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$');
   });
 });
 
@@ -250,6 +322,11 @@ describe('routeTitle', () => {
   it('names the screen, the lab and the site', () => {
     expect(r.routeTitle({ name: 'launcher' })).toBe('Opalix labs');
     expect(r.routeTitle({ name: 'path', path: 'ai-platform' })).toBe('Opalix labs');
+    expect(r.routeTitle({ name: 'path', path: 'ai-platform' }, null, { path: 'Building an AI platform' })).toBe('Building an AI platform · Opalix labs');
+    expect(r.routeTitle({ name: 'module', path: 'ai-platform', module: 2 }, null, { path: 'Building an AI platform', module: 'Tools and MCP' })).toBe(
+      'Tools and MCP · Building an AI platform · Opalix labs'
+    );
+    expect(r.routeTitle({ name: 'module', path: 'ai-platform', module: 2 })).toBe('Opalix labs');
     expect(t('lab')).toBe('See what a gateway does · Opalix labs');
     expect(t('lab-step', { step: 'story' })).toBe('See what a gateway does · Opalix labs');
     expect(t('lab-step', { step: 'questions' })).toBe('Quick questions · See what a gateway does · Opalix labs');

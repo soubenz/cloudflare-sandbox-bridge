@@ -5,7 +5,7 @@ import { test, expect, signIn } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /**
- * Path bands, module cards and lab rows on the launcher.
+ * Path cards, module cards and lab rows: the launcher's four pages (home, a path, a module, a lab).
  *
  * The API is stubbed (`/api/labs` returns a catalogue in the shape the console's
  * Worker serves, progress included), so every number below is derived from the
@@ -77,44 +77,66 @@ async function stubLabs(page: Page, labs: unknown[] = LABS) {
   await page.route('**/api/labs', (route) => route.fulfill({ json: labs }));
 }
 
-/** A signed-in page that has already read the first-run dialog, on the launcher. */
-async function openLauncher(page: Page, opts: { width?: number; height?: number } = {}) {
+const MARKER = '.path-card, .module-card, .module, .lab-rows, .lab-detail, #labList .empty-state, #labList .error, #signedOut';
+
+/** A signed-in page that has already read the first-run dialog, on a page of the launcher (home unless `at` says otherwise). */
+async function openLauncher(page: Page, opts: { width?: number; height?: number; at?: string } = {}) {
   await page.setViewportSize({ width: opts.width ?? 1440, height: opts.height ?? 900 });
   await signIn(page);
   await page.addInitScript(() => (localStorage.setItem('opalixOnboarded', '1'), localStorage.setItem('opalixLearn', '{"v":1,"onboarding":{"status":"skipped"}}')));
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.goto(opts.at ?? '/', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
-  await page.waitForSelector('.lab, #labList .empty-state', { timeout: 30_000 });
+  await page.waitForSelector(MARKER, { timeout: 30_000 });
 }
 
-const section = (page: Page, slug: string) => page.locator(slug ? `.lab-group[data-path="${slug}"]` : '.lab-group[data-path=""]');
-const card = (page: Page, path: string, n: number) => section(page, path).locator(`.module[data-module="${n}"]`);
-const row = (page: Page, slug: string) => page.locator(`.lab[data-slug="${slug}"]`);
+/** Moves to another page without leaving the app (what a link does). */
+async function goInApp(page: Page, url: string) {
+  await page.evaluate((u) => {
+    history.pushState(null, '', u);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, url);
+}
 
-test.describe('path bands', () => {
-  test('one band per path, in the order of the catalogue copy, each with its title, intro and totals', async ({ page }) => {
+const PA = '/paths/production-agents';
+const AI = '/paths/ai-platform';
+const moduleUrl = (n: number) => `${AI}/modules/${n}`;
+const pathCard = (page: Page, slug: string) => page.locator(`.path-card[data-path="${slug}"]`);
+const moduleCard = (page: Page, n: number) => page.locator(`.module-card[data-module="${n}"]`);
+const row = (page: Page, slug: string) => page.locator(`.lab[data-slug="${slug}"]`);
+const outline = (page: Page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('#launcher h1, #launcher h2, #launcher h3, #launcher h4, #launcher h5, #launcher h6')]
+      .filter((h) => (h as HTMLElement).offsetParent !== null)
+      .map((h) => ({ level: Number(h.tagName[1]), text: (h.textContent ?? '').trim() }))
+  );
+
+test.describe('home: path cards', () => {
+  test('one card per path, in the order of the catalogue copy, each with its title, intro, counts and progress', async ({ page }) => {
     await stubLabs(page);
     await openLauncher(page);
-    const groups = page.locator('.lab-group');
-    await expect(groups).toHaveCount(3);
-    await expect(groups.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.path))).resolves.toEqual(PATH_ORDER);
+    const cards = page.locator('.path-card');
+    await expect(cards).toHaveCount(3);
+    await expect(cards.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.path))).resolves.toEqual(PATH_ORDER);
 
     for (const slug of ['production-agents', 'ai-platform']) {
-      const band = section(page, slug);
-      await expect(band.locator('> h2.group-head')).toHaveText(pathMeta(slug).title);
-      await expect(band.locator('> .path-intro')).toHaveText(pathMeta(slug).intro);
-      await expect(band.locator('> .path-tile svg')).toBeVisible();
+      const c = pathCard(page, slug);
+      await expect(c.locator('h2.path-card-title')).toHaveText(pathMeta(slug).title);
+      await expect(c.locator('.path-card-intro')).toHaveText(pathMeta(slug).intro);
+      await expect(c.locator('.path-tile svg')).toBeVisible();
     }
-    await expect(section(page, 'production-agents').locator('.path-summary')).toHaveText('4 labs · about 2.5 h · 2 free · 1 done');
-    await expect(section(page, 'ai-platform').locator('.path-summary')).toHaveText('8 labs · about 4.5 h · 1 free · 2 done');
-    await expect(section(page, '').locator('> h2.group-head')).toHaveText('Other labs');
-    await expect(section(page, '').locator('> .path-intro')).toHaveCount(0);
+    await expect(pathCard(page, 'production-agents').locator('.path-card-line')).toHaveText('4 labs · about 2.5 h');
+    await expect(pathCard(page, 'ai-platform').locator('.path-card-line')).toHaveText('3 modules · 8 labs · about 4.5 h');
+    await expect(pathCard(page, 'production-agents').locator('.path-card-progress')).toHaveText('1 of 4 done');
+    await expect(pathCard(page, 'ai-platform').locator('.path-card-progress')).toHaveText('2 of 8 done');
+    await expect(pathCard(page, '').locator('h2.path-card-title')).toHaveText('Other labs');
+    await expect(pathCard(page, '').locator('.path-card-intro')).toHaveCount(0);
+    await expect(pathCard(page, '').locator('.path-card-line')).toHaveText('1 lab · about 15 min');
   });
 
-  test('the overall bar of a path counts the labs passed', async ({ page }) => {
+  test('the bar of a path counts the labs passed', async ({ page }) => {
     await stubLabs(page);
     await openLauncher(page);
-    const bar = section(page, 'ai-platform').locator('.path-stats .progress');
+    const bar = pathCard(page, 'ai-platform').locator('.progress');
     await expect(bar).toHaveAttribute('role', 'progressbar');
     await expect(bar).toHaveAttribute('aria-valuemax', '8');
     await expect(bar).toHaveAttribute('aria-valuenow', '2');
@@ -122,54 +144,78 @@ test.describe('path bands', () => {
     expect(fill / track).toBeCloseTo(2 / 8, 1);
   });
 
-  test('a single-module path shows its labs straight under the band, with no module card', async ({ page }) => {
+  test('home holds the path cards and nothing under them: no module, no lab', async ({ page }) => {
     await stubLabs(page);
     await openLauncher(page);
-    const band = section(page, 'production-agents');
-    await expect(band.locator('.module')).toHaveCount(0);
-    await expect(band.locator('.lab')).toHaveCount(4);
-    await expect(band.locator('.lab .lab-num')).toHaveText(['1', '2', '3', '4']);
-    // Labs with no path are the same: one plain list.
-    await expect(section(page, '').locator('.module')).toHaveCount(0);
-    await expect(section(page, '').locator('.lab')).toHaveCount(1);
+    for (const sel of ['.module', '.module-card', '.lab', '.lab-rows', '.lab-detail']) await expect(page.locator(sel), sel).toHaveCount(0);
+    // A card is one link, to its path's page.
+    await expect(pathCard(page, 'ai-platform').getByRole('link')).toHaveAttribute('href', AI);
   });
 });
 
-test.describe('module cards', () => {
-  test('a card per module of a multi-module path, with the eyebrow, title, intro and skills from the copy', async ({ page }) => {
+test.describe('a path\'s page', () => {
+  test('a single-module path shows its labs straight under the band, with no module card', async ({ page }) => {
     await stubLabs(page);
-    await openLauncher(page);
-    const modules = section(page, 'ai-platform').locator('.module');
-    await expect(modules).toHaveCount(3);
-    await expect(modules.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.module))).resolves.toEqual(['1', '2', '5']);
+    await openLauncher(page, { at: PA });
+    const band = page.locator('.lab-group[data-path="production-agents"]');
+    await expect(band.locator('> h1.group-head')).toHaveText(pathMeta('production-agents').title);
+    await expect(band.locator('> .path-intro')).toHaveText(pathMeta('production-agents').intro);
+    await expect(band.locator('> .path-tile svg')).toBeVisible();
+    await expect(band.locator('.path-summary')).toHaveText('4 labs · about 2.5 h · 2 free · 1 done');
+    await expect(page.locator('.module, .module-card')).toHaveCount(0);
+    await expect(band.locator('.lab')).toHaveCount(4);
+    await expect(band.locator('.lab .lab-num')).toHaveText(['1', '2', '3', '4']);
+    // Labs with no path are the same: one plain list, on /paths/other.
+    await page.goto('/paths/other', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('body[data-booted="1"]');
+    await expect(page.locator('.module, .module-card')).toHaveCount(0);
+    await expect(page.locator('.lab')).toHaveCount(1);
+    await expect(page.locator('.lab-group > h1.group-head')).toHaveText('Other labs');
+    await expect(page.locator('.lab-group > .path-intro')).toHaveCount(0);
+  });
 
+  test('the overall bar and totals of a path are on its page', async ({ page }) => {
+    await stubLabs(page);
+    await openLauncher(page, { at: AI });
+    await expect(page.locator('.path-summary')).toHaveText('8 labs · about 4.5 h · 1 free · 2 done');
+    const bar = page.locator('.path-stats .progress');
+    await expect(bar).toHaveAttribute('aria-valuemax', '8');
+    await expect(bar).toHaveAttribute('aria-valuenow', '2');
+  });
+
+  test('a card per module of a multi-module path, with the eyebrow, title and intro from the copy; the title opens the module', async ({ page }) => {
+    await stubLabs(page);
+    await openLauncher(page, { at: AI });
+    const cards = page.locator('.module-card');
+    await expect(cards).toHaveCount(3);
+    await expect(cards.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.module))).resolves.toEqual(['1', '2', '5']);
     for (const n of [1, 2, 5]) {
       const m = moduleMeta('ai-platform', n);
-      const c = card(page, 'ai-platform', n);
+      const c = moduleCard(page, n);
       await expect(c.locator('.module-eyebrow .module-num')).toHaveText(`Module ${n}`);
-      await expect(c.locator('h3.module-title')).toHaveText(m.title);
+      await expect(c.locator('h2.module-title')).toHaveText(m.title);
       await expect(c.locator('.module-intro')).toHaveText(m.intro);
-      await expect(c.locator('.skills-label')).toHaveText('You will learn to');
-      await expect(c.locator('.skill-list li')).toHaveText(m.skills);
-      expect(m.skills.length).toBeGreaterThanOrEqual(2);
-      expect(m.skills.length).toBeLessThanOrEqual(4);
       await expect(c.locator('.module-tile svg')).toBeVisible();
+      await expect(c.getByRole('link', { name: m.title })).toHaveAttribute('href', moduleUrl(n));
+      // The skills and the labs are on the module's own page.
+      await expect(c.locator('.skill-list, .lab')).toHaveCount(0);
     }
+    await expect(page.locator('.lab')).toHaveCount(0);
   });
 
   test('the Optional badge appears on the module the copy flags, and only there', async ({ page }) => {
     await stubLabs(page);
-    await openLauncher(page);
+    await openLauncher(page, { at: AI });
     expect(moduleMeta('ai-platform', 5).optional).toBe(true);
-    await expect(card(page, 'ai-platform', 5).locator('.badge-optional')).toHaveText('Optional');
-    await expect(card(page, 'ai-platform', 1).locator('.badge-optional')).toHaveCount(0);
-    await expect(card(page, 'ai-platform', 2).locator('.badge-optional')).toHaveCount(0);
+    await expect(moduleCard(page, 5).locator('.badge-optional')).toHaveText('Optional');
+    await expect(moduleCard(page, 1).locator('.badge-optional')).toHaveCount(0);
+    await expect(moduleCard(page, 2).locator('.badge-optional')).toHaveCount(0);
   });
 
   test('a module counts its labs, minutes, free labs and progress from the progress it is given', async ({ page }) => {
     await stubLabs(page);
-    await openLauncher(page);
-    const one = card(page, 'ai-platform', 1);
+    await openLauncher(page, { at: AI });
+    const one = moduleCard(page, 1);
     await expect(one.locator('.module-meta')).toHaveText('5 labs · ~2.5 h · 1 free');
     await expect(one.locator('.module-progress')).toHaveText('2 of 5 done');
     const bar = one.locator('.progress');
@@ -177,20 +223,44 @@ test.describe('module cards', () => {
     await expect(bar).toHaveAttribute('aria-valuemax', '5');
     const [fill, track] = await bar.evaluate((el) => [(el.firstElementChild as HTMLElement).getBoundingClientRect().width, el.getBoundingClientRect().width]);
     expect(fill / track).toBeCloseTo(0.4, 1);
+    await expect(moduleCard(page, 2).locator('.module-meta')).toHaveText('2 labs · ~1 h');
+    await expect(moduleCard(page, 2).locator('.module-progress')).toHaveText('0 of 2 done');
+    await expect(moduleCard(page, 5).locator('.module-meta')).toHaveText('1 lab · ~1 h');
+  });
+});
 
-    const two = card(page, 'ai-platform', 2);
-    await expect(two.locator('.module-meta')).toHaveText('2 labs · ~1 h');
-    await expect(two.locator('.module-progress')).toHaveText('0 of 2 done');
-    await expect(card(page, 'ai-platform', 5).locator('.module-meta')).toHaveText('1 lab · ~1 h');
+test.describe('a module\'s page', () => {
+  test('the panel on the left: number, title, intro and skills from the copy, the big number, the icon and a progress meter', async ({ page }) => {
+    await stubLabs(page);
+    await openLauncher(page, { at: moduleUrl(2) });
+    const m = moduleMeta('ai-platform', 2);
+    const panel = page.locator('.module-info');
+    await expect(panel.locator('.module-eyebrow .module-num')).toHaveText('Module 2');
+    await expect(panel.locator('h1.module-title')).toHaveText(m.title);
+    await expect(panel.locator('.module-intro')).toHaveText(m.intro);
+    await expect(panel.locator('.skills-label')).toHaveText('You will learn to');
+    await expect(panel.locator('.skill-list li')).toHaveText(m.skills);
+    expect(m.skills.length).toBeGreaterThanOrEqual(2);
+    expect(m.skills.length).toBeLessThanOrEqual(4);
+    await expect(panel.locator('.module-bignum')).toHaveText('02');
+    await expect(panel.locator('.module-bignum')).toHaveAttribute('aria-hidden', 'true');
+    await expect(panel.locator('.module-tile svg')).toBeVisible();
+    await expect(panel.locator('.module-progress')).toHaveText('0 of 2 done');
+    await expect(panel.getByRole('progressbar', { name: `Labs done in ${m.title}` })).toHaveAttribute('aria-valuemax', '2');
+    // The Optional badge is on the panel of the module the copy flags.
+    await goInApp(page, moduleUrl(5));
+    await expect(page.locator('.module-info .badge-optional')).toHaveText('Optional');
   });
 
-  test('a card lists its labs as numbered rows: title, type, minutes, difficulty and a Free chip for the free ones', async ({ page }) => {
+  test('a module counts its labs, minutes and free labs, with the labs as numbered rows: title, type, minutes, difficulty and a Free chip for the free ones', async ({ page }) => {
     await stubLabs(page);
-    await openLauncher(page);
-    const one = card(page, 'ai-platform', 1);
+    await openLauncher(page, { at: moduleUrl(1) });
+    const one = page.locator('.module');
+    await expect(one.locator('.module-meta')).toHaveText('5 labs · ~2.5 h · 1 free');
+    await expect(one.locator('.module-progress')).toHaveText('2 of 5 done');
     await expect(one.locator('.lab')).toHaveCount(5);
     await expect(one.locator('.lab .lab-num')).toHaveText(['1', '2', '3', '4', '5']);
-    await expect(one.locator('.lab h4.lab-title')).toHaveText(['See the gateway', 'One endpoint, one key', 'Hard budget', 'Add a model', 'Provider fails']);
+    await expect(one.locator('.lab h2.lab-title')).toHaveText(['See the gateway', 'One endpoint, one key', 'Hard budget', 'Add a model', 'Provider fails']);
 
     const first = row(page, 'g1');
     await expect(first.locator('.chip-type')).toHaveText('explore');
@@ -202,29 +272,34 @@ test.describe('module cards', () => {
     await expect(first.locator('.lab-sub')).toHaveText(/^g1@1\.0\.0 · agent · explore · intro · ~20 min · 60 min limit · Free$/);
   });
 
-  test('a lab row opens to its summary and objectives', async ({ page }) => {
+  test('"About this lab" is a link to the lab\'s own page, with its summary and objectives', async ({ page }) => {
     await stubLabs(page);
-    await openLauncher(page);
+    await openLauncher(page, { at: moduleUrl(1) });
     const r = row(page, 'g2');
-    await expect(r.locator('.lab-summary')).toBeHidden();
-    await r.locator('.lab-more > summary').click();
-    await expect(r.locator('.lab-summary')).toHaveText('About g2');
-    await expect(r.locator('.lab-objectives li').first()).toHaveText('do the thing');
+    await expect(r.locator('.lab-summary')).toHaveCount(0);
+    const about = r.getByRole('link', { name: 'About this lab' });
+    await expect(about).toHaveAttribute('href', '/labs/g2');
+    await about.click();
+    await expect(page.locator('.lab-detail .lab-summary')).toHaveText('About g2');
+    await expect(page.locator('.lab-detail .lab-objectives li').first()).toHaveText('do the thing');
+    await expect(page.locator('.lab-detail-title')).toHaveText('One endpoint, one key');
   });
 });
 
 test.describe('lab status', () => {
   test('done, in progress, not started and locked each say so', async ({ page }) => {
     await stubLabs(page);
-    await openLauncher(page);
+    await openLauncher(page, { at: moduleUrl(1) });
     await expect(row(page, 'g1')).toHaveClass(/lab-done/);
     await expect(row(page, 'g1').locator('.chip-done')).toHaveText('Done · best 92%');
     await expect(row(page, 'g4').locator('.lab-state')).toHaveText('In progress · best 40%');
     await expect(row(page, 'g5').locator('.lab-state')).toHaveText('Not started');
-    // g2 is passed, so g3 is open; t2 needs g3, which is not.
+    // g2 is passed, so g3 is open; t2 (module 2) needs g3, which is not.
     await expect(row(page, 'g3')).not.toHaveClass(/lab-locked/);
+    await goInApp(page, moduleUrl(2));
     await expect(row(page, 't2')).toHaveClass(/lab-locked/);
     await expect(row(page, 't2').locator('.lab-lock')).toHaveText('Locked until Hard budget passes');
+    await goInApp(page, PA);
     await expect(row(page, 'pa3').locator('.lab-lock')).toHaveText('Locked until Weekend bill passes');
   });
 
@@ -235,7 +310,7 @@ test.describe('lab status', () => {
       return route.fulfill({ status: 500, json: { error: 'no container in a stubbed test' } });
     });
     await stubLabs(page);
-    await openLauncher(page);
+    await openLauncher(page, { at: moduleUrl(2) });
     const locked = row(page, 't2').locator('button.lab-start');
     await expect(locked).toHaveAttribute('aria-disabled', 'true');
     await expect(locked).toHaveAttribute('title', /Locked until Hard budget passes/);
@@ -247,162 +322,91 @@ test.describe('lab status', () => {
     await expect(row(page, 't2').locator('.notice')).toBeHidden();
 
     // An open lab does start, and its failure is shown inside its own row.
+    await goInApp(page, moduleUrl(1));
     await row(page, 'g5').locator('button.lab-start').click();
     await expect(row(page, 'g5').locator('.notice')).toContainText('Could not start this lab');
     expect(starts).toBe(1);
   });
 });
 
-test.describe('path navigator', () => {
-  test('one pill per path with its lab count, and it does not displace the search and filters', async ({ page }) => {
+test.describe('getting from page to page', () => {
+  test('home -> path -> module -> lab by the links on the cards and rows, and the trail leads back up', async ({ page }) => {
     await stubLabs(page);
     await openLauncher(page);
-    const nav = page.getByRole('navigation', { name: 'Learning paths' });
-    await expect(nav).toBeVisible();
-    const pills = nav.locator('a.path-pill');
-    await expect(pills).toHaveCount(3);
-    await expect(pills.nth(0)).toContainText(pathMeta('production-agents').title);
-    await expect(pills.nth(0).locator('.pill-count')).toHaveText('4');
-    await expect(pills.nth(1).locator('.pill-count')).toHaveText('8');
-    await expect(pills.nth(2)).toContainText('Other labs');
-    await expect(pills.nth(2).locator('.pill-count')).toHaveText('1');
-    // The first path is in view at the top.
-    await expect(pills.nth(0)).toHaveAttribute('aria-current', 'true');
-    await expect(pills.nth(1)).not.toHaveAttribute('aria-current', 'true');
-    // Above the search row, which still works.
-    const [navBox, searchBox] = await Promise.all([nav.boundingBox(), page.locator('#labSearch').boundingBox()]);
-    expect(navBox!.y).toBeLessThan(searchBox!.y);
-    await page.locator('#labSearch').fill('Weekend');
-    await expect(page.locator('#labCount')).toHaveText(`1 of ${LABS.length} labs`);
-  });
-
-  test('a pill scrolls to its path and marks it, and scrolling on moves the mark', async ({ page }) => {
-    await stubLabs(page);
-    await openLauncher(page, { height: 700 });
-    const pills = page.locator('a.path-pill');
-    const launcherTop = () => page.evaluate(() => document.getElementById('launcher')!.getBoundingClientRect().top);
-    const topOf = (slug: string) => page.evaluate((s) => document.querySelector(`.lab-group[data-path="${s}"]`)!.getBoundingClientRect().top, slug);
-
-    await pills.nth(1).click();
-    await expect(pills.nth(1)).toHaveAttribute('aria-current', 'true');
-    await expect(pills.nth(0)).not.toHaveAttribute('aria-current', 'true');
-    // The path's band ends up just under the sticky navigator.
-    await expect.poll(async () => Math.round((await topOf('ai-platform')) - (await launcherTop())), { timeout: 5000 }).toBeLessThan(140);
-    await expect.poll(async () => Math.round((await topOf('ai-platform')) - (await launcherTop())), { timeout: 5000 }).toBeGreaterThanOrEqual(0);
-    // Focus moved to the heading, so a screen reader announces where it landed.
-    await expect(page.locator('.lab-group[data-path="ai-platform"] > h2.group-head')).toBeFocused();
-
-    // The reader's own scrolling takes over at once, without waiting for the jump to settle:
-    // to the end of the page, then back to the top.
-    await page.mouse.move(720, 400);
-    await page.mouse.wheel(0, 100_000);
-    await expect(pills.nth(2)).toHaveAttribute('aria-current', 'true');
-    await expect(pills.nth(1)).not.toHaveAttribute('aria-current', 'true');
-    await page.mouse.wheel(0, -100_000);
-    await expect(pills.nth(0)).toHaveAttribute('aria-current', 'true');
-    // Scrolling by script (no wheel, key or touch) moves it too once the page has settled.
-    await pills.nth(1).click();
-    await expect(pills.nth(1)).toHaveAttribute('aria-current', 'true');
-    // Let the smooth scroll finish (how long it takes depends on how far the path is), then the page has settled.
-    let last = -1;
-    for (let i = 0; i < 40; i++) {
-      const top = await page.evaluate(() => document.getElementById('launcher')!.scrollTop);
-      if (top === last) break;
-      last = top;
-      await page.waitForTimeout(150);
-    }
-    await page.waitForTimeout(400);
-    await page.evaluate(() => { document.getElementById('launcher')!.scrollTop = 0; });
-    await expect(pills.nth(0)).toHaveAttribute('aria-current', 'true');
-  });
-
-  test('works from the keyboard: Tab reaches a pill, Enter follows it', async ({ page }) => {
-    await stubLabs(page);
-    await openLauncher(page, { height: 700 });
-    const pill = page.locator('a.path-pill[data-path="ai-platform"]');
-    await pill.focus();
-    await expect(pill).toBeFocused();
-    // A visible focus ring, from the keyboard.
-    const outline = await pill.evaluate((el) => { const s = getComputedStyle(el); return { style: s.outlineStyle, width: parseFloat(s.outlineWidth) }; });
-    expect(outline.style).not.toBe('none');
-    expect(outline.width).toBeGreaterThan(0);
-    await page.keyboard.press('Enter');
-    await expect(page.locator('.lab-group[data-path="ai-platform"] > h2.group-head')).toBeFocused();
-    await expect(pill).toHaveAttribute('aria-current', 'true');
-    // Tab goes on to the next pill, not back to the top of the page.
-    await pill.focus();
-    await page.keyboard.press('Tab');
-    await expect(page.locator('a.path-pill[data-path=""]')).toBeFocused();
-  });
-
-  test('with reduced motion the jump is immediate', async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await stubLabs(page);
-    await openLauncher(page, { height: 700 });
-    await page.locator('a.path-pill[data-path="ai-platform"]').click();
-    const gap = await page.evaluate(() => document.querySelector('.lab-group[data-path="ai-platform"]')!.getBoundingClientRect().top - document.getElementById('launcher')!.getBoundingClientRect().top);
-    expect(gap).toBeLessThan(140);
-    expect(gap).toBeGreaterThanOrEqual(0);
-    // Nothing moves on its own: no animation or transition is left running on the launcher.
-    const moving = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running' && !((a as CSSAnimation).animationName ?? '').includes('spin')).length);
-    expect(moving).toBe(0);
-  });
-
-  test('a single group has no navigator', async ({ page }) => {
-    await stubLabs(page, [lab({ slug: 'only', title: 'Only lab' })]);
-    await openLauncher(page);
-    await expect(page.locator('#pathNav')).toBeHidden();
-    await expect(page.locator('.lab-group')).toHaveCount(1);
+    const here_ = () => new URL(page.url()).pathname;
+    await pathCard(page, 'ai-platform').getByRole('link', { name: pathMeta('ai-platform').title }).click();
+    expect(here_()).toBe(AI);
+    await moduleCard(page, 2).getByRole('link', { name: moduleMeta('ai-platform', 2).title }).click();
+    expect(here_()).toBe(moduleUrl(2));
+    await row(page, 't1').getByRole('link', { name: 'About this lab' }).click();
+    expect(here_()).toBe('/labs/t1');
+    const trail = page.getByRole('navigation', { name: 'Breadcrumb' });
+    await expect(trail.locator('li')).toHaveText(['Home', pathMeta('ai-platform').title, `Module 2: ${moduleMeta('ai-platform', 2).title}`, 'Tools reach an agent']);
+    await trail.getByRole('link', { name: /^Module 2/ }).click();
+    expect(here_()).toBe(moduleUrl(2));
+    await trail.getByRole('link', { name: pathMeta('ai-platform').title }).click();
+    expect(here_()).toBe(AI);
+    await trail.getByRole('link', { name: 'Home' }).click();
+    expect(here_()).toBe('/');
   });
 });
 
 test.describe('search and filters over paths and modules', () => {
-  test('hide the labs, then the modules and paths left empty, and say "n of N labs"', async ({ page }) => {
+  test('act on the page they are on: cards without a match are left out, and the count is "n of N labs" of that page', async ({ page }) => {
     await stubLabs(page);
     await openLauncher(page);
     await expect(page.locator('#labCount')).toHaveText(`${LABS.length} of ${LABS.length} labs`);
 
     await page.locator('#labSearch').fill('replicas');
     await expect(page.locator('#labCount')).toHaveText(`1 of ${LABS.length} labs`);
-    await expect(row(page, 'r1')).toBeVisible();
-    await expect(card(page, 'ai-platform', 5)).toBeVisible();
-    await expect(card(page, 'ai-platform', 1)).toBeHidden();
-    await expect(card(page, 'ai-platform', 2)).toBeHidden();
-    await expect(section(page, 'production-agents')).toBeHidden();
-    await expect(section(page, '')).toBeHidden();
-    await expect(section(page, 'ai-platform')).toBeVisible();
-    // The navigator follows: a hidden path loses its pill, the shown one counts what is shown.
-    await expect(page.locator('a.path-pill[data-path="production-agents"]')).toBeHidden();
-    await expect(page.locator('a.path-pill[data-path="ai-platform"] .pill-count')).toHaveText('1');
-    await expect(page.locator('a.path-pill[data-path="ai-platform"]')).toHaveAttribute('aria-current', 'true');
+    await expect(page.locator('.path-card')).toHaveCount(1);
+    await expect(pathCard(page, 'ai-platform')).toBeVisible();
+    await expect(pathCard(page, 'ai-platform').locator('.path-card-progress')).toHaveText('2 of 8 done · 1 match');
 
+    await pathCard(page, 'ai-platform').getByRole('link', { name: pathMeta('ai-platform').title }).click();
+    await expect(page.locator('#labCount')).toHaveText('1 of 8 labs');
+    await expect(page.locator('.module-card')).toHaveCount(1);
+    await expect(moduleCard(page, 5)).toBeVisible();
+
+    await moduleCard(page, 5).getByRole('link', { name: moduleMeta('ai-platform', 5).title }).click();
+    await expect(page.locator('#labCount')).toHaveText('1 of 1 labs');
+    await expect(row(page, 'r1')).toBeVisible();
+
+    await goInApp(page, moduleUrl(1));
+    await expect(page.locator('#labCount')).toHaveText('0 of 5 labs');
+    await expect(page.locator('#labNoMatch')).toBeVisible();
+    await expect(page.locator('.lab')).toHaveCount(0);
+
+    await goInApp(page, '/');
     await page.locator('#labSearch').fill('zzz nothing');
     await expect(page.locator('#labCount')).toHaveText(`0 of ${LABS.length} labs`);
     await expect(page.locator('#labNoMatch')).toBeVisible();
-    await expect(page.locator('.lab-group:visible')).toHaveCount(0);
-    await expect(page.locator('#pathNav')).toBeHidden();
+    await expect(page.locator('.path-card')).toHaveCount(0);
 
     await page.locator('#btnClearFilters').click();
-    await expect(page.locator('#pathNav')).toBeVisible();
     await expect(page.locator('#labCount')).toHaveText(`${LABS.length} of ${LABS.length} labs`);
-    await expect(page.locator('.lab-group:visible')).toHaveCount(3);
-    await expect(page.locator('.module:visible')).toHaveCount(3);
+    await expect(page.locator('.path-card')).toHaveCount(3);
   });
 
-  test('the status and difficulty chips filter across modules, and a module keeps its own totals', async ({ page }) => {
+  test('the status and difficulty chips filter across the page, and a module keeps its own totals', async ({ page }) => {
     await stubLabs(page);
     await openLauncher(page);
     await page.locator('button.filter-chip[data-filter="status"][data-value="done"]').click();
     // pa1, g1 and g2 are done.
     await expect(page.locator('#labCount')).toHaveText(`3 of ${LABS.length} labs`);
-    await expect(card(page, 'ai-platform', 1)).toBeVisible();
-    await expect(card(page, 'ai-platform', 1).locator('.lab:visible')).toHaveCount(2);
-    await expect(card(page, 'ai-platform', 2)).toBeHidden();
-    await expect(section(page, '')).toBeHidden();
-    // Hiding labs does not change what the module says about itself.
-    await expect(card(page, 'ai-platform', 1).locator('.module-meta')).toHaveText('5 labs · ~2.5 h · 1 free');
-    await expect(card(page, 'ai-platform', 1).locator('.module-progress')).toHaveText('2 of 5 done');
+    await expect(page.locator('.path-card')).toHaveCount(2);
+    await expect(pathCard(page, '')).toHaveCount(0);
 
+    await goInApp(page, moduleUrl(1));
+    await expect(row(page, 'g1')).toBeVisible();
+    await expect(page.locator('.lab')).toHaveCount(2);
+    // Leaving labs out does not change what the module says about itself.
+    await expect(page.locator('.module-meta')).toHaveText('5 labs · ~2.5 h · 1 free');
+    await expect(page.locator('.module-progress')).toHaveText('2 of 5 done');
+    await goInApp(page, moduleUrl(2));
+    await expect(page.locator('.lab')).toHaveCount(0);
+
+    await goInApp(page, '/');
     await page.locator('button.filter-chip[data-filter="difficulty"][data-value="advanced"]').click();
     await expect(page.locator('#labCount')).toHaveText(`0 of ${LABS.length} labs`);
   });
@@ -417,50 +421,51 @@ test.describe('search and filters over paths and modules', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
     await expect(page.locator('#labCount')).toHaveText(`1 of ${LABS.length} labs`);
-    await expect(section(page, 'production-agents')).toBeHidden();
+    await expect(pathCard(page, 'production-agents')).toHaveCount(0);
     await expect(page.locator('#labSearch')).toHaveValue('replicas');
   });
 });
 
 test.describe('headings', () => {
-  test('one h1, a path h2, a module h3 and a lab h4, with no level skipped', async ({ page }) => {
+  test('each page has one h1 and no level skipped: home h1 > path h2; a path h1 > module h2; a module h1 > lab h2', async ({ page }) => {
     await stubLabs(page);
     await openLauncher(page);
-    const outline = await page.evaluate(() =>
-      [...document.querySelectorAll('#launcher h1, #launcher h2, #launcher h3, #launcher h4, #launcher h5, #launcher h6')].map((h) => ({
-        level: Number(h.tagName[1]),
-        parent: (h.parentElement as HTMLElement).className,
-        text: (h.textContent ?? '').trim(),
-      })),
-    );
-    const levels = outline.map((h) => h.level);
-    expect(levels.filter((l) => l === 1)).toHaveLength(1);
-    expect(levels[0]).toBe(1);
-    // Going down the page a heading is at most one level deeper than the one before it.
-    levels.forEach((l, i) => {
-      if (i > 0) expect(l, `${outline[i]!.text} follows ${outline[i - 1]!.text}`).toBeLessThanOrEqual(levels[i - 1]! + 1);
-    });
-    expect(levels.filter((l) => l === 2)).toHaveLength(3);
-    expect(levels.filter((l) => l === 4)).toHaveLength(LABS.length);
-    // Path h2 sit directly in their section; module h3 are the cards' titles.
-    await expect(page.locator('.lab-group > h2')).toHaveCount(3);
-    await expect(page.locator('.module h3.module-title')).toHaveCount(3);
-    await expect(page.locator('.lab h4.lab-title')).toHaveCount(LABS.length);
-    await expect(page.locator('.lab h2, .lab h3, .module h2, .lab-group h5')).toHaveCount(0);
+    const check = async (label: string, expected: Array<[number, number]>) => {
+      const levels = (await outline(page)).map((h) => h.level);
+      expect(levels.filter((l) => l === 1), `${label}: one h1`).toHaveLength(1);
+      expect(levels[0], `${label}: it comes first`).toBe(1);
+      levels.forEach((l, i) => {
+        if (i > 0) expect(l, `${label}: a heading is at most one level deeper than the one before`).toBeLessThanOrEqual(levels[i - 1]! + 1);
+      });
+      for (const [level, count] of expected) expect(levels.filter((l) => l === level), `${label}: h${level}`).toHaveLength(count);
+    };
+    await check('home', [[2, 3]]);
+    await goInApp(page, AI);
+    await expect(page.locator('.module-card').first()).toBeVisible();
+    await check('a path', [[2, 3]]);
+    await goInApp(page, moduleUrl(1));
+    await expect(page.locator('.lab').first()).toBeVisible();
+    await check('a module', [[2, 5]]);
+    await goInApp(page, '/labs/g1');
+    await expect(page.locator('.lab-detail')).toBeVisible();
+    await check('a lab', [[2, 3]]);
   });
 
-  test('a section and a card are named by their heading', async ({ page }) => {
+  test('a path\'s band, a module\'s card and a lab\'s row are named by their heading', async ({ page }) => {
     await stubLabs(page);
-    await openLauncher(page);
+    await openLauncher(page, { at: AI });
     await expect(page.getByRole('region', { name: pathMeta('ai-platform').title })).toBeVisible();
-    await expect(page.getByRole('region', { name: moduleMeta('ai-platform', 2).title })).toBeVisible();
-    await expect(page.getByRole('heading', { level: 3, name: moduleMeta('ai-platform', 1).title })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: moduleMeta('ai-platform', 1).title })).toBeVisible();
     await expect(page.getByRole('progressbar', { name: `Labs done in ${moduleMeta('ai-platform', 1).title}` })).toHaveAttribute('aria-valuenow', '2');
+    await goInApp(page, moduleUrl(1));
+    await expect(page.getByRole('region', { name: moduleMeta('ai-platform', 1).title })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: moduleMeta('ai-platform', 1).title })).toBeVisible();
+    await expect(page.locator('.lab h2.lab-title')).toHaveCount(5);
   });
 });
 
 test.describe('states', () => {
-  test('shows skeletons while loading, without the navigator or filters', async ({ page }) => {
+  test('shows skeletons while loading, without the filters', async ({ page }) => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     await page.route('**/api/labs', async (route) => {
@@ -472,22 +477,20 @@ test.describe('states', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.lab-skeleton')).toHaveCount(3);
     await expect(page.locator('#labList')).toHaveAttribute('aria-busy', 'true');
-    await expect(page.locator('#pathNav')).toBeHidden();
     await expect(page.locator('#labFilters')).toBeHidden();
     release();
-    await expect(row(page, 'g1')).toBeVisible();
+    await expect(pathCard(page, 'ai-platform')).toBeVisible();
     await expect(page.locator('.lab-skeleton')).toHaveCount(0);
     await expect(page.locator('#labList')).not.toHaveAttribute('aria-busy', 'true');
-    await expect(page.locator('#pathNav')).toBeVisible();
+    await expect(page.locator('#labFilters')).toBeVisible();
   });
 
-  test('shows the signed-out state on a 401, with no navigator', async ({ page }) => {
+  test('shows the signed-out state on a 401', async ({ page }) => {
     await page.route('**/api/labs', (route) => route.fulfill({ status: 401, json: { error: 'not signed in' } }));
     await openLauncher(page);
     await expect(page.locator('#signedOut')).toContainText('You are signed out');
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
-    await expect(page.locator('.lab-group')).toHaveCount(0);
-    await expect(page.locator('#pathNav')).toBeHidden();
+    await expect(page.locator('.path-card')).toHaveCount(0);
   });
 
   test('shows the error state on a failure and recovers on Try again', async ({ page }) => {
@@ -495,18 +498,18 @@ test.describe('states', () => {
     await page.route('**/api/labs', (route) => (fail ? route.fulfill({ status: 500, json: { error: 'boom' } }) : route.fulfill({ json: LABS })));
     await openLauncher(page);
     await expect(page.locator('#labList .error')).toContainText('Could not load labs');
-    await expect(page.locator('#pathNav')).toBeHidden();
+    await expect(page.locator('#labFilters')).toBeHidden();
     fail = false;
     await page.getByRole('button', { name: 'Try again' }).click();
-    await expect(row(page, 'g1')).toBeVisible();
-    await expect(page.locator('#pathNav')).toBeVisible();
+    await expect(pathCard(page, 'ai-platform')).toBeVisible();
+    await expect(page.locator('#labFilters')).toBeVisible();
   });
 
   test('shows the empty state when nothing is published', async ({ page }) => {
     await stubLabs(page, []);
     await openLauncher(page);
     await expect(page.locator('#labList .empty-state')).toContainText('No labs are available yet');
-    await expect(page.locator('#pathNav')).toBeHidden();
+    await expect(page.locator('#labFilters')).toBeHidden();
   });
 
   test('copes with catalogue data the copy does not describe', async ({ page }) => {
@@ -517,11 +520,13 @@ test.describe('states', () => {
     ]);
     await openLauncher(page);
     // Known paths first, then the unknown; the humanised slug stands in for a title and there is no intro.
-    await expect(page.locator('.lab-group > h2')).toHaveText([pathMeta('ai-platform').title, 'Brand new path']);
-    await expect(section(page, 'brand-new-path').locator('.path-intro')).toHaveCount(0);
-    await expect(section(page, 'brand-new-path').locator('.module h3')).toHaveText(['Module 1', 'Module 2']);
-    await expect(card(page, 'ai-platform', 9).locator('h3')).toHaveText('Module 9');
-    await expect(card(page, 'ai-platform', 9).locator('.skills-label')).toHaveCount(0);
+    await expect(page.locator('.path-card h2')).toHaveText([pathMeta('ai-platform').title, 'Brand new path']);
+    await expect(pathCard(page, 'brand-new-path').locator('.path-card-intro')).toHaveCount(0);
+    await goInApp(page, '/paths/brand-new-path');
+    await expect(page.locator('.module-card h2')).toHaveText(['Module 1', 'Module 2']);
+    await goInApp(page, moduleUrl(9));
+    await expect(page.locator('.module-info h1')).toHaveText('Module 9');
+    await expect(page.locator('.module-info .skills-label')).toHaveCount(0);
   });
 });
 
@@ -531,18 +536,16 @@ test.describe('themes and small screens', () => {
       await page.emulateMedia({ colorScheme: scheme });
       await stubLabs(page);
       await openLauncher(page);
-      const band = section(page, 'ai-platform');
-      // The path band and each module carry an accent; the tint of the band's icon is not the page colour.
-      const accents = await page.locator('.lab-group[data-accent], .module[data-accent]').evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.accent));
-      expect(accents.length).toBe(3 + 3);
-      const bg = await band.locator('> .path-tile').evaluate((el) => getComputedStyle(el).backgroundColor);
-      const page_ = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-      expect(bg).not.toBe(page_);
-      // The module panel is on its family's tint too, not on the card colour.
-      const panel = await card(page, 'ai-platform', 1).locator('.module-info').evaluate((el) => getComputedStyle(el).backgroundColor);
-      expect(panel).not.toBe(page_);
-      // Body text on the tinted band is the console's normal text colour, never the accent.
-      const [intro, ink2, accentInk] = await band.locator('.path-intro').evaluate((el) => {
+      const bodyBg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+      // Each path card carries an accent; the tint of its icon is not the page colour.
+      const accents = await page.locator('.path-card[data-accent]').evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.accent));
+      expect(accents.length).toBe(3);
+      const tile = await pathCard(page, 'ai-platform').locator('.path-tile').evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(tile).not.toBe(await bodyBg());
+      // A path's page: the module cards carry theirs, and the band's text is the console's normal text colour, never the accent.
+      await goInApp(page, AI);
+      expect(await page.locator('.module-card[data-accent]').count()).toBe(3);
+      const [intro, ink2, accentInk] = await page.locator('.path-intro').evaluate((el) => {
         const colour = (value: string) => {
           const probe = document.createElement('span');
           probe.style.color = value;
@@ -555,15 +558,24 @@ test.describe('themes and small screens', () => {
       });
       expect(intro).toBe(ink2);
       expect(intro).not.toBe(accentInk);
+      // The module panel is on its family's tint too, not on the card colour.
+      await goInApp(page, moduleUrl(1));
+      const panel = await page.locator('.module-info').evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(panel).not.toBe(await bodyBg());
     });
   }
 
-  test('at phone width nothing overflows sideways, the header fits, and touch targets are 44px', async ({ page }) => {
+  test('at phone width nothing overflows sideways on any page, the header fits, and touch targets are 44px', async ({ page }) => {
     await stubLabs(page);
     await openLauncher(page, { width: 390, height: 844 });
-    const overflow = await page.evaluate(() => ({ page: document.documentElement.scrollWidth - window.innerWidth, body: document.body.scrollWidth - window.innerWidth }));
-    expect(overflow.page).toBeLessThanOrEqual(0);
-    expect(overflow.body).toBeLessThanOrEqual(0);
+    const overflow = () => page.evaluate(() => ({ page: document.documentElement.scrollWidth - window.innerWidth, body: document.body.scrollWidth - window.innerWidth }));
+    for (const url of ['/', AI, moduleUrl(1), '/labs/g1']) {
+      await goInApp(page, url);
+      await expect(page.locator(MARKER).first()).toBeVisible();
+      const o = await overflow();
+      expect(o.page, url).toBeLessThanOrEqual(0);
+      expect(o.body, url).toBeLessThanOrEqual(0);
+    }
 
     // The header is one slim pill: the brand and a menu button, which opens the rest inside the pill.
     const headerRight = () => page.evaluate(() => Math.max(...[...document.querySelectorAll('.bar *')].filter((el) => (el as HTMLElement).offsetParent !== null).map((el) => el.getBoundingClientRect().right)));
@@ -579,22 +591,28 @@ test.describe('themes and small screens', () => {
     // Every header control ends inside the viewport (the identity text is dropped below 520px).
     expect(await headerRight()).toBeLessThanOrEqual(390);
     await expect(page.locator('#identity')).toBeHidden();
-
-    const size = async (selector: string) => (await page.locator(selector).first().boundingBox())!;
-    for (const selector of ['.lab-start', 'a.path-pill', 'button.filter-chip', '#btnSignOut', '#btnTheme', '#btnHelp', '#btnMenu', '.lab-more > summary', '#labSearch']) {
-      const box = await size(selector);
-      expect(box.height, `${selector} height`).toBeGreaterThanOrEqual(44);
-    }
-    expect((await size('#btnTheme')).width).toBeGreaterThanOrEqual(44);
-    expect((await size('#btnMenu')).width).toBeGreaterThanOrEqual(44);
     // Escape closes the menu and puts focus back on its button.
     await page.keyboard.press('Escape');
     await expect(page.locator('#btnMenu')).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('#btnMenu')).toBeFocused();
     await expect(page.locator('#btnSignOut')).toBeHidden();
-    // A module card is one column, and a lab row keeps its Start button inside the card.
-    const c = card(page, 'ai-platform', 1);
-    await c.scrollIntoViewIfNeeded();
+
+    const size = async (selector: string) => (await page.locator(selector).first().boundingBox())!;
+    await goInApp(page, moduleUrl(1));
+    await expect(page.locator('.lab').first()).toBeVisible();
+    for (const selector of ['.lab-start', '.lab-about', '.crumbs a', 'button.filter-chip', '#btnMenu', '#labSearch']) {
+      const box = await size(selector);
+      expect(box.height, `${selector} height`).toBeGreaterThanOrEqual(44);
+    }
+    await page.locator('#btnMenu').click();
+    for (const selector of ['#btnSignOut', '#btnTheme', '#btnHelp']) {
+      const box = await size(selector);
+      expect(box.height, `${selector} height`).toBeGreaterThanOrEqual(44);
+    }
+    expect((await size('#btnTheme')).width).toBeGreaterThanOrEqual(44);
+    expect((await size('#btnMenu')).width).toBeGreaterThanOrEqual(44);
+    // The module is one column, and a lab row keeps its Start button inside the card.
+    const c = page.locator('.module');
     const [cardBox, startBox, titleBox] = await Promise.all([c.boundingBox(), c.locator('.lab-start').first().boundingBox(), c.locator('.module-title').boundingBox()]);
     expect(startBox!.x + startBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width);
     expect(titleBox!.x + titleBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width);
@@ -602,8 +620,8 @@ test.describe('themes and small screens', () => {
 
   test('at desktop width a module puts its labs beside its info; below ~1080px they stack', async ({ page }) => {
     await stubLabs(page);
-    await openLauncher(page, { width: 1440, height: 900 });
-    const c = card(page, 'ai-platform', 1);
+    await openLauncher(page, { width: 1440, height: 900, at: moduleUrl(1) });
+    const c = page.locator('.module');
     let [info, rows] = await Promise.all([c.locator('.module-info').boundingBox(), c.locator('.lab-rows').boundingBox()]);
     expect(rows!.x).toBeGreaterThan(info!.x + info!.width - 2);
     await page.setViewportSize({ width: 900, height: 900 });
@@ -615,28 +633,21 @@ test.describe('themes and small screens', () => {
 });
 
 test.describe('the launcher, as the landing page draws it', () => {
-  test('a row says Start, Open again or Locked, and the hero asks for the next lab when nothing is running', async ({ page }) => {
+  test('home asks for the next lab when nothing is running; a row says Start, Open again or Locked', async ({ page }) => {
     await stubLabs(page);
     await openLauncher(page);
     await expect(page.locator('#heroTitle')).toHaveText('Pick your next lab.');
     await expect(page.locator('#resumeCard')).toBeHidden();
     await expect(page.locator('#heroLede')).toHaveText(/^Two paths, each a run of hands-on labs\. Start with an explore lab/);
+    await goInApp(page, moduleUrl(1));
     await expect(row(page, 'g1').locator('.lab-start')).toHaveText('Open again');
     await expect(row(page, 'g5').locator('.lab-start')).toHaveText('Start');
+    await goInApp(page, moduleUrl(2));
     await expect(row(page, 't2').locator('.lab-start')).toHaveText('Locked');
     // A done row shows a check in its circle (the number stays in the markup), an open one its number.
+    await goInApp(page, moduleUrl(1));
     await expect(row(page, 'g1').locator('.lab-num')).toHaveText('1');
     await expect(row(page, 'g1')).toHaveClass(/lab-done/);
-  });
-
-  test('the big number, the icon tile and the skills sit on the module panel, and the path has its icon tile and totals', async ({ page }) => {
-    await stubLabs(page);
-    await openLauncher(page);
-    const c = card(page, 'ai-platform', 2);
-    await expect(c.locator('.module-bignum')).toHaveText('02');
-    await expect(c.locator('.module-bignum')).toHaveAttribute('aria-hidden', 'true');
-    await expect(c.locator('.module-tile svg')).toBeVisible();
-    await expect(section(page, 'ai-platform').locator('.path-summary b')).toHaveText('8 labs');
   });
 
   test('the header is the landing page\'s pill: brand, Labs, Paths, Help, theme, sign out', async ({ page }) => {
@@ -650,9 +661,9 @@ test.describe('the launcher, as the landing page draws it', () => {
     await expect(page.locator('#identityInitials')).toHaveText('CO');
     const radius = await page.locator('.nav').evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
     expect(parseFloat(radius)).toBeGreaterThan(40);
-    // Paths goes to the path navigator, and focus lands on its first pill.
+    // Paths is home, and focus lands on the first path.
     await nav.getByRole('link', { name: 'Paths' }).click();
-    await expect(page.locator('a.path-pill').first()).toBeFocused();
+    await expect(page.locator('.path-card-title a').first()).toBeFocused();
     // Help opens the existing dialog.
     await nav.getByRole('button', { name: 'Help' }).click();
     await expect(page.locator('dialog#onboarding[open]')).toBeVisible();
@@ -673,6 +684,8 @@ test.describe('the launcher, as the landing page draws it', () => {
     const family = (sel: string) => page.locator(sel).first().evaluate((el) => getComputedStyle(el).fontFamily);
     expect(await family('#heroTitle')).toContain('Funnel Display');
     expect(await family('.lede')).toContain('Funnel Sans');
+    await goInApp(page, moduleUrl(1));
+    await expect(page.locator('.lab').first()).toBeVisible();
     expect(await family('.lab-sub .chip')).toContain('JetBrains Mono');
   });
 });
@@ -680,39 +693,24 @@ test.describe('the launcher, as the landing page draws it', () => {
 test.describe('a path with many modules', () => {
   const MANY: Array<Record<string, unknown>> = [1, 2, 3, 4, 5, 6, 7].map((n) => lab({ slug: `m${n}`, title: `Lab of module ${n}`, path: 'ai-platform', module: n, order: 1, estimated_minutes: 20 }));
 
-  test('opens the first two modules, condenses the rest to cards, and opens one on demand', async ({ page }) => {
+  test('lists every module as a card (none is folded away) and each opens its own page', async ({ page }) => {
     await stubLabs(page, MANY);
-    await openLauncher(page);
-    await expect(page.locator('.module')).toHaveCount(7);
-    // Every module is still in the page; only the later ones show as a card.
-    await expect(page.locator('.module[data-collapsed="1"]')).toHaveCount(5);
-    await expect(card(page, 'ai-platform', 1).locator('.module-info')).toBeVisible();
-    await expect(card(page, 'ai-platform', 2).locator('.lab')).toBeVisible();
-    const mini = card(page, 'ai-platform', 5).getByRole('button', { name: /Module 5/ });
-    await expect(mini).toBeVisible();
-    await expect(mini).toHaveAttribute('aria-expanded', 'false');
-    await expect(card(page, 'ai-platform', 5).locator('.lab')).toBeHidden();
-    await mini.click();
-    await expect(card(page, 'ai-platform', 5).locator('.lab')).toBeVisible();
-    await expect(card(page, 'ai-platform', 5).locator('h3.module-title')).toBeFocused();
-    await expect(page.locator('.module[data-collapsed="1"]')).toHaveCount(4);
+    await openLauncher(page, { at: AI });
+    await expect(page.locator('.module-card')).toHaveCount(7);
+    await expect(page.locator('.lab, .module')).toHaveCount(0);
+    await moduleCard(page, 6).getByRole('link').click();
+    await expect(page.locator('.module .lab')).toHaveCount(1);
+    await expect(row(page, 'm6')).toBeVisible();
+    await expect(page.locator('.module-title')).toBeFocused();
   });
 
-  test('a search opens every module that has a match', async ({ page }) => {
+  test('a search leaves the modules without a match out of the path\'s page', async ({ page }) => {
     await stubLabs(page, MANY);
-    await openLauncher(page);
+    await openLauncher(page, { at: AI });
     await page.locator('#labSearch').fill('module 6');
-    await expect(card(page, 'ai-platform', 6)).toBeVisible();
-    await expect(card(page, 'ai-platform', 6).locator('.lab')).toBeVisible();
-    await expect(card(page, 'ai-platform', 4)).toBeHidden();
+    await expect(page.locator('.module-card')).toHaveCount(1);
+    await expect(moduleCard(page, 6)).toBeVisible();
     await page.locator('#btnClearFilters').click();
-    await expect(card(page, 'ai-platform', 6).locator('.lab')).toBeHidden();
-  });
-
-  test('a module with a lab under way opens by itself', async ({ page }) => {
-    await stubLabs(page, MANY.map((l) => (l.slug === 'm6' ? { ...l, progress: started } : l)) as unknown[]);
-    await openLauncher(page);
-    await expect(card(page, 'ai-platform', 6).locator('.lab')).toBeVisible();
-    await expect(card(page, 'ai-platform', 5).locator('.lab')).toBeHidden();
+    await expect(page.locator('.module-card')).toHaveCount(7);
   });
 });

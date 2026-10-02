@@ -7,60 +7,99 @@ password gate is passed (`assets.not_found_handling: "single-page-application"`)
 
 The table lives in `dashboard/src/routes.js` (`parseRoute`, `buildRoute`, `routeTitle`, all pure and
 unit tested), the History API glue in `dashboard/src/router.js`, and what each route shows in
-`applyRoute` in `dashboard/src/app.js`.
+`applyRoute` in `dashboard/src/app.js`. What the pages are made of (paths, modules, trail, scope of
+the filters) is `dashboard/src/launcher-model.js`.
 
 ## The table
 
 | Address | Screen |
 | --- | --- |
-| `/` | The launcher (all paths). Also: a bare `/` walks back into the lab this browser was in (see below). |
-| `/paths/<path>` | The launcher scrolled to that learning path. `<path>` is the path's slug from the catalogue (`other` for labs that belong to none). |
-| `/paths/<path>/modules/<n>` | ... or to module `n` of it (opened, if it was condensed). |
+| `/` | **Home**: one card per learning path (title, a line about it, module and lab counts, progress) and nothing else: no modules, no lab list. Carries the "lab running" card. Also: a bare `/` walks back into the lab this browser was in (see below). |
+| `/paths/<path>` | **A path**: its modules as cards, each opening the module's page. `<path>` is the path's slug from the catalogue (`other` for labs that belong to none). A path with no module cards (one implicit module) lists its labs here instead. |
+| `/paths/<path>/modules/<n>` | **A module**: on the left its number, title, intro, "You will learn to" and a progress meter; on the right its labs as rows (number, title, level and time chips, Start / Resume / Locked with its reason, and an "About this lab" link). For a path with no module cards the address leads to the path's page. |
 | `/onboarding` | The platform quiz. With no quiz published it becomes `/`. |
-| `/labs/<slug>` | The lab's entry: its first "Before you begin" step. A lab with nothing to read lands on the launcher at its card (nothing is started). |
-| `/labs/<slug>/story` `/questions` `/lessons` | The steps before the lab starts: the story, then rounds of questions (`/questions`) alternating with chunks of lessons (`/lessons`). Without `?step=` each is the first step of its kind. A kind the lab does not have falls to the closest one it does. |
+| `/labs/<slug>` | **A lab's own page**: title, chips, summary, objectives, prerequisites (and whether each is passed), and Start / Resume / Locked. Archived labs have one too (they are only left out of the lists). |
+| `/labs/<slug>/story` `/questions` `/lessons` | The steps before the lab starts: the story, then rounds of questions (`/questions`) alternating with chunks of lessons (`/lessons`). Without `?step=` each is the first step of its kind. A kind the lab does not have falls to the closest one it does. A lab with nothing to read has no steps: these addresses become `/labs/<slug>`. |
 | `/labs/<slug>/questions?step=N` `/lessons?step=N` | The N-th step of the whole flow (1-based, as in "Step N of M"; the story is step 1 when there is one): a later round or lesson chunk. A number in range wins over the path word; one that is not a plain number from 1 to 999, or is past the last step, opens the first step. The address is corrected to the step actually shown. The first step of a kind has no `?step=` (so the simple labs keep `/story`, `/questions`, `/lessons`). `step` is the flow's own parameter: it is never carried to another screen, and other query parameters are kept. |
-| `/labs/<slug>/session` | Starts the lab, or rejoins it when it is running (same as Start / Rejoin). Boot and ended states live here too. |
-| `/labs/<slug>/session/brief` `questions` `hints` `checks` `solution` | The guide's tabs. |
-| `/labs/<slug>/session/terminal` `editor` | The workspace window's tabs. |
-| `/labs/<slug>/session/service/<name>` | A service's tab. |
+| `/u/<user>/labs/<slug>/session/<session>` | **A session**: the lab's workspace, as the learner whose id is `<user>` has it, for the session `<session>`. |
+| `/u/<user>/labs/<slug>/session/<session>/brief` `questions` `hints` `checks` `solution` | The guide's tabs. |
+| `/u/<user>/labs/<slug>/session/<session>/terminal` `editor` | The workspace window's tabs. |
+| `/u/<user>/labs/<slug>/session/<session>/service/<name>` | A service's tab. |
+| `/labs/<slug>/session[/<tab>]` | The **old** session address, still honoured: it starts the lab, or rejoins it when it is running (same as Start / Resume), and, once the session's id is known, is replaced (not pushed) with the new address, keeping its tab and its query. |
 | anything else | An in-app "Page not found" screen with a link back to the labs. The HTTP status stays 200 (the SPA fallback); `document.title` says "Not found". |
 
-A tab the lab does not have, or one that does not exist (`/session/nope`), replaces the address
-with `/labs/<slug>/session`. An unknown lab, at any of its addresses, is "not found".
+Every page below Home has a breadcrumb trail, a `nav` landmark labelled "Breadcrumb":
+Home > Path > Module > Lab (a lab on a path with no module cards, or an archived lab, skips what it
+does not have). The page itself is the last item, `aria-current="page"` and not a link.
+
+A tab the lab does not have, or one that does not exist (`.../session/<session>/nope`), replaces the
+address with the session's own. An unknown path, module or lab, at any of its addresses, is "not found".
 
 Slugs are `^[a-z0-9][a-z0-9-]{0,80}$`; anything that does not fit (`..`, `%2e%2e`, `a//b`,
-unicode, 82 characters) is "not found", never an error. Trailing slashes mean nothing. The query
-string is kept from one address to the next.
+unicode, 82 characters) is "not found", never an error. `<user>` and `<session>` are opaque ids,
+`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`. Trailing slashes mean nothing. The query string is kept from one
+address to the next.
 
-**An address names a lab and a place in it, never a session.** No session id and no token is ever
-put in one, so a link is safe to share: with no running session it starts the lab, with one
-running it rejoins it. (If a different lab is running, you land in that one, with its own address
-and a toast saying so; that is what Start has always done.)
+## Search and filters
+
+Search and the difficulty / family / status chips act on **the labs of the page that is open**: every
+lab on Home, a path's on its page, a module's on its page; there are none on a lab's own page. A card
+(or a row) with nothing that matches is left out, the count line reads "x of y labs" for that page,
+and a card says how many of its labs match. The choice is one per browser (`localStorage`,
+`opalixFilters`), as before, so it follows the learner from page to page. A deep link whose labs a
+saved search would hide opens with the search cleared. Archived labs are in no list, count or match.
+
+## The learner and the session in an address
+
+`GET /api/me` answers `{ sub, user_id }`. `user_id` is the **opaque id** the Worker hands out for the
+cookie's subject: the subject itself when it is already a plain token (today the console's one
+subject is `console`), otherwise `u-` and 24 hex digits of its SHA-256, so an email never reaches a URL.
+It is a label, not a credential: the API is still called with the subject, and the session token (held
+in memory and `localStorage`, never in an address) is what every session call carries.
+
+A session address is honoured only when:
+
+1. its `<user>` is the signed-in learner's `user_id` (any other id, or no id, is "not found" and nothing
+   is asked of the API);
+2. its `<session>` is the learner's active session for that lab. This browser's own session is checked
+   against the API with its token. Otherwise (a fresh browser, a link sent over) `GET /api/sessions/active`
+   (`{ sessions: [{ id, lab, state }] }`, no tokens, no user) says which sessions are the learner's, and if
+   the address names one for this lab, `POST /api/start` (which rejoins) hands out a token.
+
+Anything else shows **"This session is not active"** with **Back to labs** (`/`) and, when the learner
+has a *different* active session for that lab, **Rejoin**. Rejoin replaces the address with that
+session's id. A phone is told labs need a desktop first, as for any start.
+
+A refresh on a session address re-enters the same session (the remembered token is used; nothing is
+started). A session's tabs replace the address in place and keep both ids.
 
 ## History
 
-- Entering a step, the session, or the launcher from a button **pushes** an address.
+- Entering a step, the session, or a page from a link or a button **pushes** an address.
 - Tabs inside the session **replace** it in place, so Back does not step through every tab. Only a
   tab the learner chose is written; the guide's first tab and the explore lab's landing service are not.
 - Every step of the flow pushes its own address, so the browser's Back walks the flow back one step (a round at its first unanswered question, or at its last when everything is answered) and Forward walks on; the answers are kept, so nothing is asked twice. A refresh on a step comes back to that step with the plan and answers this tab had (`sessionStorage`, `opalix.flow.<slug>`); with none (a new tab, a link sent to someone else) the flow is planned afresh and the step number is read against the new plan.
-- Back out of a running lab goes to wherever the learner came from (the lessons, or the launcher).
-  The lab is **not** ended: the launcher shows its "Pick up where you left off" card with Rejoin.
-  Forward rejoins it without starting another.
-- Ending the lab, "Back to labs" and the boot failure screen **replace** the session address with
-  `/`, so Back cannot lead to a lab that is gone.
+- "Back to labs" in the steps goes to the lab's page (a step on in history). Start on a lab's page (or row)
+  pushes the first step, so Back from it is the lab's page.
+- Back out of a running lab goes to wherever the learner came from (the lessons, or the lab's or module's page).
+  The lab is **not** ended: its row and page say **Resume**, and Home shows its "Pick up where you left
+  off" card with Rejoin. Forward rejoins it without starting another. The header's "← Back to labs" in a
+  running lab does the same, to the lab's page.
+- Ending the lab, "Back to labs" on an ended session and the boot failure screen **replace** the session
+  address with the lab's page (`/labs/<slug>`), so Back cannot lead to a session that is gone.
 - A bare `/` with a remembered running lab (a fresh tab, a bookmark) walks back into it, as it always
-  did; the lab's address is then pushed one step on from `/`. A learner who just left a lab with Back
-  stays on the launcher on refresh (a per-tab flag, `opalix.leftSession` in sessionStorage).
+  did; the session's address is then pushed one step on from `/`. A learner who just left a lab with
+  Back stays on Home on refresh (a per-tab flag, `opalix.leftSession` in sessionStorage).
 - `/labs/<slug>/session` when the remembered session has *ended* does not start a new container on a
-  refresh: it lands on the lab's card at `/labs/<slug>`.
+  refresh: it lands on the lab's page at `/labs/<slug>`.
+- A session address whose session has ended is "not active" (its record is dropped), never a restart.
 
 ## Phones
 
-Starting or rejoining a lab is gated on a wide screen (`device.js`). On a phone, `/labs/<slug>/session`
-shows the desktop notice, whose email and copy links are that lab's own address
-(`/labs/<slug>`; the console's `/` when no lab is involved). Reading (the steps, the launcher) works.
-Widening the window brings the address's own screen (the lab starts).
+Starting or rejoining a lab is gated on a wide screen (`device.js`). On a phone, a session address
+shows the desktop notice, whose email and copy links are that lab's own page (`/labs/<slug>`; the
+console's `/` when no lab is involved). Reading (the pages, the steps) works. Widening the window brings
+the address's own screen (the lab starts).
 
 ## Signing in
 
@@ -81,21 +120,26 @@ cases (`test/unit/console-return-path.test.ts`, `test/unit/console-worker.test.t
 
 | Screen | `document.title` |
 | --- | --- |
-| launcher, paths | `Opalix labs` |
-| lab entry, story | `<Lab title> · Opalix labs` |
+| home | `Opalix labs` |
+| a path | `<Path title> · Opalix labs` |
+| a module | `<Module title> · <Path title> · Opalix labs` |
+| a lab's page, the story | `<Lab title> · Opalix labs` |
 | questions (every round) | `Quick questions · <Lab title> · Opalix labs` |
 | lessons (every chunk) | `Lessons · <Lab title> · Opalix labs` |
 | session | `Session · <Lab title> · Opalix labs` |
+| session not active | `Session not active · Opalix labs` |
 | not found | `Not found · Opalix labs` |
 
 Each screen moves focus to its heading (the steps through `before-you-begin.js`, which also says
-"Step n of m" in a polite live region; the launcher's hero heading; the not-found heading; the
-desktop notice's heading). Route changes the steps do not announce themselves (the launcher, a
-session, not found) are said through `#routeLive`.
+"Step n of m" in a polite live region; Home's hero heading, a path's, a module's and a lab's `h1`; the
+not-found and not-active headings; the desktop notice's heading). Route changes the steps do not
+announce themselves are said through `#routeLive` (Home says "Labs", the other pages their title).
+The first page of a load is not focused or announced: nothing moves under a reader who has just arrived.
 
 ## Files
 
 `index.html` references every asset with an absolute path (`/dist/app.js`, `/styles.css`): a relative
 one would resolve under `/labs/<slug>/` and be answered with the app's own HTML by the fallback.
 Specs 16 to 20 serve the files through `test/e2e/console-server.ts`, which has the same fallback
-(and can put the real Worker in front for the password gate).
+(and can put the real Worker in front for the password gate). `test/e2e/browse.ts` has what they share
+for getting around the pages.

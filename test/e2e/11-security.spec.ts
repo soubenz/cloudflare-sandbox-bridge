@@ -100,10 +100,10 @@ test.describe('console auth surface', () => {
     await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
 
     await expect(page.locator('#launcher')).toBeVisible();
-    // Labs sit in modules that start collapsed; open one so a lab card is on screen.
-    const collapsed = page.locator('.module[data-collapsed="1"] .module-mini').first();
-    if (await collapsed.count()) await collapsed.click();
-    await expect(page.locator('.lab:visible').first()).toBeVisible({ timeout: 30_000 });
+    // Home is the path cards; open the first path so its modules (or labs) are drawn too.
+    await expect(page.locator('.path-card:visible').first()).toBeVisible({ timeout: 30_000 });
+    await page.locator('.path-card-title a').first().click();
+    await expect(page.locator('.module-card, .lab').first()).toBeVisible({ timeout: 30_000 });
     expect(violations, violations.join('\n')).toEqual([]);
   });
 

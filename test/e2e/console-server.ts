@@ -81,6 +81,8 @@ export interface WorkerApi {
   labs: unknown[];
   /** The bundle GET /labs/:slug/learn answers (null: no learning content). */
   learn: (slug: string) => unknown | null;
+  /** The rows GET /users/:uid/sessions?active=1 answers (none by default). */
+  sessions?: unknown[];
 }
 
 /**
@@ -109,6 +111,7 @@ export async function serveWorker(api: WorkerApi): Promise<{ url: string; server
         const { pathname } = new URL(url);
         if (pathname === '/labs') return json(api.labs);
         if (pathname.startsWith('/users/') && pathname.endsWith('/progress')) return json({ labs: [] });
+        if (/^\/users\/[^/]+\/sessions$/.test(pathname)) return json(api.sessions ?? []);
         const learn = /^\/labs\/([^/]+)\/learn$/.exec(pathname);
         if (learn) {
           const bundle = api.learn(decodeURIComponent(learn[1]!));

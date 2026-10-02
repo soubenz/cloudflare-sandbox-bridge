@@ -380,6 +380,76 @@ describe('POST /api/prepare and /api/prepare/cancel', () => {
   });
 });
 
+describe('GET /api/me', () => {
+  it('says who is signed in and the opaque id the console\'s addresses carry', async () => {
+    const res = await call('/api/me', { cookie });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ sub: 'console', user_id: 'console' });
+  });
+
+  it('needs the cookie', async () => {
+    const res = await call('/api/me');
+    expect(res.status).toBe(401);
+  });
+
+  it('never lets an email (or anything that is not a plain token) reach an address: it is hashed', async () => {
+    // A cookie for a subject that is an email, minted the way the Worker mints one (same secret, same construction).
+    const mint = async (sub: string) => {
+      const b64 = (s: string) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const payload = b64(JSON.stringify({ sub, exp: Math.floor(Date.now() / 1000) + 3600 }));
+      const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('cookie-secret'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
+      return `__Host-opx_console=${payload}.${b64(String.fromCharCode(...sig))}`;
+    };
+    const res = await call('/api/me', { cookie: await mint('Ada.Lovelace@example.com') });
+    const body = (await res.json()) as { sub: string; user_id: string };
+    expect(body.sub).toBe('Ada.Lovelace@example.com');
+    expect(body.user_id).toMatch(/^u-[0-9a-f]{24}$/);
+    expect(body.user_id).not.toMatch(/ada|example|@/i);
+    // Stable, and different for another subject.
+    const again = (await (await call('/api/me', { cookie: await mint('Ada.Lovelace@example.com') })).json()) as { user_id: string };
+    const other = (await (await call('/api/me', { cookie: await mint('grace@example.com') })).json()) as { user_id: string };
+    expect(again.user_id).toBe(body.user_id);
+    expect(other.user_id).not.toBe(body.user_id);
+  });
+});
+
+describe('GET /api/sessions/active', () => {
+  it('lists the learner\'s live sessions from the API with the service key, as ids, labs and states only', async () => {
+    replies.push((u) =>
+      u.endsWith('/users/console/sessions?active=1')
+        ? { body: [{ id: 's1', user_id: 'console', lab_slug: 'hello', state: 'running', created_at: 1, secret: 'x' }, { nope: true }] }
+        : undefined
+    );
+    const res = await call('/api/sessions/active', { cookie });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ sessions: [{ id: 's1', lab: 'hello', state: 'running' }] });
+    expect(calls.at(-1)!.headers.get('authorization')).toBe('Bearer svc-key');
+    expect(calls.at(-1)!.url).toContain('/users/console/sessions?active=1');
+  });
+
+  it('says so when there are none', async () => {
+    replies.push((u) => (u.includes('/sessions?active=1') ? { body: [] } : undefined));
+    expect(await (await call('/api/sessions/active', { cookie })).json()).toEqual({ sessions: [] });
+  });
+
+  it('is a 502 when the API cannot say (an API from before the route, or a body that is not a list)', async () => {
+    replies.push((u) => (u.includes('/sessions?active=1') ? { status: 404, body: { error: 'nope' } } : undefined));
+    expect((await call('/api/sessions/active', { cookie })).status).toBe(502);
+    replies.length = 0;
+    replies.push((u) => (u.includes('/sessions?active=1') ? { body: { not: 'a list' } } : undefined));
+    expect((await call('/api/sessions/active', { cookie })).status).toBe(502);
+    replies.length = 0;
+    replies.push((u) => (u.includes('/sessions?active=1') ? { raw: '<html>' } : undefined));
+    expect((await call('/api/sessions/active', { cookie })).status).toBe(502);
+  });
+
+  it('needs the cookie, and only answers GET', async () => {
+    expect((await call('/api/sessions/active')).status).toBe(401);
+    expect((await call('/api/sessions/active', { cookie, method: 'POST', body: '{}' })).status).toBe(404);
+  });
+});
+
 describe('GET /api/labs', () => {
   it('passes has_learn through to the launcher', async () => {
     replies.push((u) =>
@@ -426,7 +496,7 @@ describe('deep links and signing in', () => {
   const returnTo = async (res: Response) => /<meta name="return-to" content="([^"]*)">/.exec(await res.text())?.[1];
 
   it('serves the sign-in form (200) at the address that was asked for, naming that page to return to', async () => {
-    for (const path of ['/labs/x1/session', '/labs/x1/lessons', '/paths/ai-platform', '/onboarding', '/labs/x1/session/service/echo']) {
+    for (const path of ['/labs/x1/session', '/labs/x1/lessons', '/paths/ai-platform', '/paths/ai-platform/modules/2', '/onboarding', '/labs/x1/session/service/echo', '/u/console/labs/x1/session/01j9zzzzzzzzzzzzzzzzzzzzzz', '/u/console/labs/x1/session/s1/service/echo']) {
       const res = await call(path);
       expect(res.status, path).toBe(200);
       expect(res.headers.get('content-type')).toMatch(/text\/html/);

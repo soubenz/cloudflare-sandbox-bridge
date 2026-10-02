@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import { serveConsole } from './console-server';
+import { MODULE_PAGE, pressStart } from './browse';
 import { MULTI as MULTI_COMIC, SINGLE, bundleOf, narrationOf, oldShapeNarrationOf, type FixtureAudio, type FixtureBundle } from './comic-fixture';
 
 /**
@@ -118,7 +119,7 @@ async function stub(page: Page): Promise<Stub> {
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
-    if (path === '/api/me') return json(route, { sub: 'console' });
+    if (path === '/api/me') return json(route, { sub: 'console', user_id: 'console' });
     if (path === '/api/labs') return json(route, LABS);
     if (path === '/api/onboarding') return json(route, { error: { code: 'no_onboarding', message: 'none' } }, 404);
     if (path.startsWith('/api/learn/') && route.request().method() === 'GET') {
@@ -195,7 +196,7 @@ async function open(page: Page, { query = 'comicTest=1' }: { query?: string } = 
     localStorage.setItem('opalixOnboarded', '1');
     localStorage.setItem('opalixLearn', JSON.stringify({ v: 1, onboarding: { status: 'skipped', at: 1, levels: {} } }));
   });
-  await page.goto(query ? `/?${query}` : '/', { waitUntil: 'domcontentloaded' });
+  await page.goto(query ? `${MODULE_PAGE}?${query}` : MODULE_PAGE, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('body[data-booted="1"]');
 }
 
@@ -204,7 +205,7 @@ async function beforeYouBegin(page: Page, slug: string, opts: Parameters<typeof 
   const s = await stub(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, opts);
-  await page.locator(`.lab[data-slug="${slug}"] .lab-start`).click();
+  await pressStart(page, slug);
   await expect(page.locator('#learnHost .cm')).toBeVisible();
   return s;
 }
@@ -521,7 +522,7 @@ test.describe('a clip that cannot be loaded', () => {
     const list = audio.lines;
     s.missing.add(list[1]!.clip + '.mp3');
     await open(page);
-    await page.locator(`.lab[data-slug="${VOICED}"] .lab-start`).click();
+    await pressStart(page, VOICED);
     await expect(cm(page)).toBeVisible();
     await expect.poll(async () => (await audioState(page)).failed, { timeout: 8000 }).toEqual([list[1]!.clip]);
     const c = await clips(page);
@@ -621,7 +622,7 @@ test.describe('a lab with no narration', () => {
     await page.route('**/api/learn/**', (route) => json(route, { version: '1.0.0', learn: bundle }));
     await page.setViewportSize({ width: 1280, height: 900 });
     await open(page);
-    await page.locator(`.lab[data-slug="${VOICED}"] .lab-start`).click();
+    await pressStart(page, VOICED);
     await expect(cm(page)).toBeVisible();
     await expect(soundBtn(page)).toHaveCount(0);
     expect(s.clipRequests).toEqual([]);
@@ -718,7 +719,7 @@ test.describe('a narrated comic of several pages', () => {
       const s = await stub(page);
       await page.setViewportSize({ width, height: 900 });
       await open(page);
-      await page.locator(`.lab[data-slug="${MULTI}"] .lab-start`).click();
+      await pressStart(page, MULTI);
       await expect(cm(page)).toBeVisible();
       const tl = await timeline(page);
       for (const t of [tl.pages[0]!.panels[1]!.start + 2, tl.pages[1]!.panels[0]!.start + 2, tl.total]) {

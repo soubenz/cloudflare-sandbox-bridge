@@ -25,7 +25,7 @@ const t = (href: string | null, link: Partial<Link> = {}, ev: Ev = {}) => m.link
 
 describe('isAppPath', () => {
   it('is true for the app addresses and false for what the Worker or the file server answers', () => {
-    for (const ok of ['/', '/labs/x', '/labs/x/session/checks', '/paths/p', '/onboarding', '/no-such-page', '/labs/x/']) expect(m.isAppPath(ok), ok).toBe(true);
+    for (const ok of ['/', '/labs/x', '/labs/x/session/checks', '/paths/p', '/onboarding', '/no-such-page', '/labs/x/', '/u/console/labs/x/session/s1', '/u/console/labs/x/session/s1/service/echo', '/paths/p/modules/2']) expect(m.isAppPath(ok), ok).toBe(true);
     for (const no of ['/api/labs', '/api', '/auth/logout', '/auth', '/dist/app.js', '/login.js', '/styles.css', '/diagrams-demo.html', '/x/y.map', '//evil.example', '', 'labs/x', null, undefined, 3]) {
       expect(m.isAppPath(no as string), String(no)).toBe(false);
     }

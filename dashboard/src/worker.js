@@ -91,6 +91,21 @@ async function subjectFrom(request, env) {
   }
 }
 
+/**
+ * The id a console address carries for a subject (`/u/<user_id>/labs/...`): the subject itself when it is
+ * already a plain opaque token (today the console's one subject is `console`), else a short hash of it, so
+ * an email or anything else that names a person never reaches a URL. It is a label for the address bar,
+ * not a credential, and the API never sees it: calls to the API still carry the subject.
+ */
+const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+async function userIdFor(subject) {
+  if (OPAQUE_ID.test(subject)) return subject;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(subject));
+  let hex = '';
+  for (const b of new Uint8Array(digest).slice(0, 12)) hex += b.toString(16).padStart(2, '0');
+  return `u-${hex}`;
+}
+
 /* -------------------------------------------------------------------- api */
 
 /**
@@ -195,6 +210,29 @@ async function labsWithProgress(env, subject) {
       };
     })
   );
+}
+
+/** The learner's live sessions from `GET /users/:uid/sessions?active=1`, reduced to what an address needs. */
+async function activeSessions(env, subject) {
+  let res;
+  try {
+    res = await callApi(env, `/users/${encodeURIComponent(subject)}/sessions?active=1`);
+  } catch {
+    return json({ error: 'your running labs could not be checked just now' }, 502);
+  }
+  if (!res.ok) return json({ error: 'your running labs could not be checked just now' }, 502);
+  let rows;
+  try {
+    rows = await res.json();
+  } catch {
+    return json({ error: 'your running labs could not be read just now' }, 502);
+  }
+  if (!Array.isArray(rows)) return json({ error: 'your running labs could not be read just now' }, 502);
+  return json({
+    sessions: rows
+      .filter((r) => r && typeof r.id === 'string' && typeof r.lab_slug === 'string')
+      .map((r) => ({ id: r.id, lab: r.lab_slug, state: typeof r.state === 'string' ? r.state : 'running' })),
+  });
 }
 
 const json = (body, status = 200) =>
@@ -427,9 +465,17 @@ async function route(request, env) {
     }
 
     // Who the console thinks you are: the cookie's subject, so the header
-    // can say so. Nothing secret -- the browser already holds the cookie.
+    // can say so, and `user_id`, the opaque id the console's addresses carry
+    // (/u/<user_id>/labs/...). Nothing secret -- the browser already holds the cookie.
     if (url.pathname === '/api/me' && request.method === 'GET') {
-      return json({ sub: subject });
+      return json({ sub: subject, user_id: await userIdFor(subject) });
+    }
+
+    // The sessions this learner has live, to say whether an address names one of them:
+    // `{ sessions: [{ id, lab, state }] }`. No token and no user: a session id is not a credential,
+    // and the way into a session is still POST /api/start, which hands back its token.
+    if (url.pathname === '/api/sessions/active' && request.method === 'GET') {
+      return activeSessions(env, subject);
     }
 
     if (url.pathname === '/api/labs' && request.method === 'GET') {

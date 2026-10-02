@@ -2,20 +2,27 @@ import { api, plainError, configureAuth, eventsUrl, serviceUrl, serviceBaseUrl }
 import { attachTerminal } from './terminal.js';
 import { diffLines, collapseContext } from './diff.js';
 import {
+  breadcrumbs,
   buildLauncherModel,
+  findModule,
+  findPath,
   heroLede,
   labStatus,
   locateLab,
+  moduleLabel,
   moduleMetaLine,
-  moduleViews,
   passedSlugs,
+  pathCardLine,
+  pathId,
+  scopeEntries,
   summaryLine,
+  unmetPrerequisite,
   visibleLabs,
 } from './launcher-model.js';
 import { isPhoneLike, readDevice } from './device.js';
 import { createRouter } from './router.js';
 import { installCodeCopy } from './code-copy.js';
-import { GUIDE_TAB_NAMES, buildRoute, routeTitle } from './routes.js';
+import { GUIDE_TAB_NAMES, buildRoute, isOpaqueId, routeTitle } from './routes.js';
 import { icon, spriteIcon, uiIcon } from './icons.js';
 import { createMasteryStore, normalizeLearn, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
 import { runOnboarding } from './onboarding.js';
@@ -54,7 +61,8 @@ const SESSION_STORAGE = 'opalix.session';
 
 function rememberSession(session) {
   try {
-    localStorage.setItem(SESSION_STORAGE, JSON.stringify(session));
+    // Whose it is rides along, so a session this browser kept for one learner is never taken up by another.
+    localStorage.setItem(SESSION_STORAGE, JSON.stringify({ ...session, userId: state.userId ?? session.userId }));
   } catch {
     // Private mode or blocked storage: the console still works for this tab.
   }
@@ -71,13 +79,17 @@ function forgetSession() {
 function rememberedSession() {
   try {
     const raw = localStorage.getItem(SESSION_STORAGE);
-    return raw ? JSON.parse(raw) : null;
+    const saved = raw ? JSON.parse(raw) : null;
+    if (saved?.userId && state.userId && saved.userId !== state.userId) return null;
+    return saved;
   } catch {
     return null;
   }
 }
 
 const state = {
+  /** The signed-in learner's opaque id (GET /api/me), the `<user>` of a session's address; null until it is known. */
+  userId: null,
   session: null, // { id, token, lab, urls }
   terminal: null,
   events: null, // EventSource
@@ -190,8 +202,8 @@ const mastery = createMasteryStore();
  * Every screen has an address (routes.js has the table, docs/console-routes.md the story). The URL
  * decides what shows: on load, on Back and Forward and on a link click `applyRoute` shows the route's
  * screen; the screens a learner moves between themselves (a step, a tab, Start) keep the address in
- * step through `setRoute`, which never re-renders. An address names a lab and a place in it, never a
- * session: no id and no token is ever put in one.
+ * step through `setRoute`, which never re-renders. A session's address is /u/<user>/labs/<lab>/session/<session>:
+ * the ids are labels, not credentials, and the session token is never put in an address.
  */
 const router = createRouter();
 /** Above zero while a route is being shown: a step or tab that comes on screen then only corrects the address. */
@@ -200,8 +212,12 @@ let applying = 0;
 let routeToken = 0;
 /** The first catalogue load: a route that names a lab waits for it. */
 let labsReady = Promise.resolve();
+/** Who is signed in (GET /api/me): a session's address names the learner, so a route to one waits for this too. */
+let meReady = Promise.resolve();
 /** The tab a session URL asked for, applied once the lab is up and its guide is built. */
 let pendingTab = null;
+/** The pages that live inside #launcher: home, a path, a module and a lab's own page. */
+const BROWSE_ROUTES = new Set(['launcher', 'path', 'module', 'lab']);
 /**
  * Set (per browser tab) when the learner leaves a running lab for the launcher, so a refresh of the
  * launcher does not walk them straight back in. A fresh tab has none, and "/" then rejoins as it always did.
@@ -235,8 +251,18 @@ function updateTitle() {
     document.title = routeTitle({ name: 'not-found' });
     return;
   }
+  if (!$('sessionGone').hidden) {
+    document.title = 'Session not active · Opalix labs';
+    return;
+  }
   const route = router.current();
-  document.title = routeTitle(route, route.slug ? (labsBySlug.get(route.slug)?.title ?? null) : null);
+  const titles = {};
+  if (route.name === 'path' || route.name === 'module') {
+    const path = findPath(launcherModel, route.path);
+    titles.path = path?.title;
+    if (route.name === 'module') titles.module = findModule(path, route.module)?.title;
+  }
+  document.title = routeTitle(route, route.slug ? (labsBySlug.get(route.slug)?.title ?? null) : null, titles);
 }
 
 /** Said to screen readers when the URL, not a click on the page, changed the screen. */
@@ -255,14 +281,29 @@ function showTransient(text) {
   $('learnHost').replaceChildren(note);
 }
 
+/**
+ * The params of a session's address: the lab, and (once the learner's id and the session's own are known) the
+ * two ids, so the address is /u/<user>/labs/<lab>/session/<session>. Without them it is the old form.
+ */
+function sessionParams(slug, tab, service, session = state.session) {
+  const params = { slug };
+  if (tab) params.tab = tab;
+  if (tab === 'service' && service) params.service = service;
+  if (isOpaqueId(state.userId) && isOpaqueId(session?.id)) {
+    params.userId = state.userId;
+    params.sessionId = session.id;
+  }
+  return params;
+}
+
 /** After a refused navigation (unsaved edits kept), the address goes back to the session. */
 function restoreSessionUrl() {
-  if (state.session) setRoute('session', { slug: state.session.lab });
+  if (state.session) setRoute('session', sessionParams(state.session.lab));
 }
 
 /**
  * Takes down whatever screen is up so a route's own can show. A running lab is left running (its
- * record stays, so the launcher offers Rejoin). Returns false when the learner chose to stay
+ * record stays, so the lab's page offers Resume). Returns false when the learner chose to stay
  * because of unsaved edits.
  */
 function clearScreens() {
@@ -271,6 +312,7 @@ function clearScreens() {
     leaveSessionScreen(false);
   }
   $('notFound').hidden = true;
+  $('sessionGone').hidden = true;
   hideLearnScreen();
   closeNotice();
   return true;
@@ -280,20 +322,21 @@ function clearScreens() {
 async function applyRoute(route, { initial = false } = {}) {
   const mine = ++routeToken;
   const stale = () => mine !== routeToken;
-  await labsReady;
+  await Promise.all([labsReady, meReady]);
   if (stale()) return;
   try {
     switch (route.name) {
       case 'launcher':
       case 'path':
-        showLauncherRoute(route, initial);
+      case 'module':
+      case 'lab':
+        showBrowseRoute(route, initial);
         break;
       case 'onboarding':
         await openOnboardingRoute(stale, initial);
         break;
-      case 'lab':
       case 'lab-step':
-        await openLabRoute(route, stale, initial);
+        await openLabStepRoute(route, stale);
         break;
       case 'session':
         await openSessionRoute(route, stale);
@@ -307,46 +350,26 @@ async function applyRoute(route, { initial = false } = {}) {
   if (!stale()) updateTitle();
 }
 
-function showLauncherRoute(route, initial) {
+function showBrowseRoute(route, initial = false) {
   if (!clearScreens()) return restoreSessionUrl();
   $('launcher').hidden = false;
   syncQuizButtons();
-  if (route.name === 'path' && labsBySlug.size) {
-    if (!scrollToPathRoute(route)) showNotFound('path');
-    return;
-  }
-  if (initial) return;
-  renderResumeCard();
-  $('heroTitle').focus({ preventScroll: true });
-  announceRoute('Labs');
-}
-
-/** Scrolls the launcher to a path (or one of its modules); false when the catalogue has no such thing. */
-function scrollToPathRoute(route) {
-  const id = route.path === 'other' ? 'path-other' : `path-${safeId(route.path)}`;
-  const section = document.getElementById(id);
-  if (!section || !section.classList.contains('lab-group')) return false;
-  // A filter the learner saved earlier may be hiding exactly what the link is about.
-  if (section.hidden) clearFilters();
-  if (route.module === undefined) {
-    goToPath(id);
-    return true;
-  }
-  const card = document.getElementById(`${id}-module-${route.module}`);
-  if (!card) return false;
-  openedModules.add(`${section.dataset.path}#${route.module}`);
-  delete card.dataset.collapsed;
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  card.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
-  card.querySelector('.module-title')?.focus({ preventScroll: true });
-  return true;
+  renderBrowse(route, { initial });
+  // Which lab is running decides Start or Resume on every page; the card itself is home's.
+  if (!initial) renderResumeCard();
 }
 
 function showNotFound(kind) {
   clearScreens();
   $('launcher').hidden = true;
   $('nfDetail').textContent =
-    kind === 'lab' ? 'This console has no lab at this address.' : kind === 'path' ? 'This console has no learning path at this address.' : 'There is nothing at this address.';
+    kind === 'lab'
+      ? 'This console has no lab at this address.'
+      : kind === 'path'
+        ? 'This console has no learning path at this address.'
+        : kind === 'module'
+          ? 'This learning path has no module at this address.'
+          : 'There is nothing at this address.';
   $('notFound').hidden = false;
   $('notFound').scrollTop = 0;
   window.scrollTo(0, 0);
@@ -362,17 +385,18 @@ async function openOnboardingRoute(stale, initial) {
   if (!onboardingOffer) {
     // No quiz is published: the address has nothing to show, so it becomes the launcher's.
     setRoute('launcher', {}, { replace: true });
-    return showLauncherRoute({ name: 'launcher' }, initial);
+    return showBrowseRoute({ name: 'launcher' }, initial);
   }
   if (!clearScreens()) return restoreSessionUrl();
   showQuiz();
 }
 
-async function openLabRoute(route, stale) {
+/** The steps before a lab (/labs/<slug>/story ...). A lab with nothing to read has none: its own page is the address. */
+async function openLabStepRoute(route, stale) {
   const lab = labsBySlug.get(route.slug);
   if (!lab) {
     // No catalogue at all (it failed to load) is the launcher's error to show, not a missing lab.
-    return labsBySlug.size ? showNotFound('lab') : showLauncherRoute({ name: 'launcher' }, true);
+    return labsBySlug.size ? showNotFound('lab') : showBrowseRoute({ name: 'launcher' }, true);
   }
   // Already reading this lab's steps: Back and Forward only move between them.
   if (learnFlow?.goto && learnFlowLab === lab.slug && !$('learnScreen').hidden) {
@@ -389,40 +413,35 @@ async function openLabRoute(route, stale) {
   const entry = lab.has_learn ? await fetchLearn(lab.slug) : null;
   if (stale()) return;
   const hasScreen = entry && (entry.learn.story || entry.learn.concepts.length > 0);
-  if (!hasScreen) return showLabLanding(lab, route);
+  if (!hasScreen) return landOnLabPage(lab.slug);
   openLearnFlow(lab, entry, route.step, { fromRoute: true, n: route.n });
 }
 
-/**
- * A lab with nothing to read before it starts has no steps to show: its address lands on the
- * launcher at its card (Start is one press away) rather than starting a container for a link.
- */
-function showLabLanding(lab, route) {
-  hideLearnScreen();
-  $('launcher').hidden = false;
-  syncQuizButtons();
-  if (route.name !== 'lab') setRoute('lab', { slug: lab.slug }, { replace: true });
-  const row = [...$('labList').querySelectorAll('.lab')].find((el) => el.dataset.slug === lab.slug);
-  if (row?.hidden) clearFilters();
-  const module = row?.closest('.module');
-  if (module?.dataset.collapsed) delete module.dataset.collapsed;
-  row?.scrollIntoView({ block: 'center' });
-  row?.querySelector('.lab-start')?.focus({ preventScroll: true });
-  updateTitle();
-  announceRoute(lab.title || lab.slug);
+/** The lab's own page, with its address corrected to it (in place: the address that led here was not a page). */
+function landOnLabPage(slug) {
+  setRoute('lab', { slug }, { replace: true });
+  showBrowseRoute({ name: 'lab', slug, search: '' }, false);
 }
 
-/** The lab's address: starts it, or rejoins it when it is running. */
+/**
+ * A session's address. The new form (/u/<user>/labs/<lab>/session/<session>) names a learner and one of their
+ * sessions: another learner's id is "not found", and a session that is not the learner's active one for the lab
+ * is the "not active" page. The old form (/labs/<lab>/session) starts the lab or rejoins it, as it always did;
+ * either way the address becomes the new form once the session's id is known.
+ */
 async function openSessionRoute(route, stale) {
   const { slug } = route;
+  const modern = Boolean(route.sessionId);
+  if (modern && (!state.userId || route.userId !== state.userId)) return showNotFound('page');
   if (labsBySlug.size && !labsBySlug.has(slug)) return showNotFound('lab');
   if (route.invalidTab) {
     // /session/whatever: the session itself, not a dead end.
-    setRoute('session', { slug }, { replace: true });
-    route = { name: 'session', slug };
+    setRoute('session', modern ? { slug, userId: route.userId, sessionId: route.sessionId } : { slug }, { replace: true });
+    route = { ...route, tab: undefined, service: undefined, invalidTab: false };
   }
-  if (state.session && state.session.lab === slug) {
+  if (state.session && state.session.lab === slug && (!modern || state.session.id === route.sessionId)) {
     // Back and Forward only moved between this lab's tabs.
+    if (!modern) ensureSessionUrl(slug);
     applySessionTab(route);
     return;
   }
@@ -430,7 +449,7 @@ async function openSessionRoute(route, stale) {
   // A phone cannot run a lab: the notice says so, with this lab's own link.
   if (guardDesktop(slug)) return;
   showTransient('Opening your lab…');
-  const lab = labsBySlug.get(slug) ?? { slug, title: slug };
+  if (modern) return openSessionById(route, stale);
 
   const saved = rememberedSession();
   if (saved?.id && saved?.token) {
@@ -447,25 +466,108 @@ async function openSessionRoute(route, stale) {
     if (live === 'ended') {
       // A refresh at the end of a session must not buy a new container: the lab is one press away.
       toast('That lab has ended. Start it again when you are ready.');
-      return showLabLanding(lab, route);
+      return landOnLabPage(slug);
     }
   }
 
-  const row = [...$('labList').querySelectorAll('.lab')].find((el) => el.dataset.slug === slug);
-  if (row?.classList.contains('lab-locked')) {
-    toast(row.querySelector('.lab-start')?.title || 'This lab is locked.');
-    return showLabLanding(lab, route);
+  const at = locateLab(launcherModel, slug);
+  if (at?.entry.locked) {
+    toast(`Locked until ${at.entry.lockedByTitle ?? at.entry.lockedBy} passes. Pass every check of that lab to unlock this one.`);
+    return landOnLabPage(slug);
   }
 
   pendingTab = route.tab ? route : null;
   if (await startSession(slug)) return;
-  // It could not start (the reason is on screen as a toast): the launcher, where Start can be tried again.
+  // It could not start (the reason is on screen as a toast): home, where Start can be tried again.
   pendingTab = null;
-  hideLearnScreen();
-  $('launcher').hidden = false;
-  syncQuizButtons();
-  setRoute('launcher', {}, { replace: true });
+  router.navigate('launcher', {}, { replace: true });
 }
+
+/** A session address of the new form: this browser's own session, or the learner's active one, or "not active". */
+async function openSessionById(route, stale) {
+  const { slug, sessionId } = route;
+  const saved = rememberedSession();
+  if (saved?.id === sessionId && saved?.token) {
+    let status = null;
+    try {
+      status = await api.status(saved.id, saved.token, { recover: false });
+    } catch {
+      /* gone: the record is dropped below */
+    }
+    if (stale()) return;
+    const live = status?.meta?.state;
+    if ((live === 'running' || live === 'starting') && (status.meta.lab_slug ?? saved.lab) === slug) return rejoinRemembered(saved, status, route);
+    forgetSession();
+  }
+  // Not a session this browser holds (a fresh browser, a link someone sent): ask which are the learner's.
+  const active = await fetchActiveSessions();
+  if (stale()) return;
+  const mine = active?.find((s) => s.lab === slug) ?? null;
+  if (mine && mine.id === sessionId) {
+    // The learner's active session for this lab, and this browser has no token for it: rejoining hands one out.
+    pendingTab = route.tab ? route : null;
+    sessionUrlReplace = true;
+    if (await startSession(slug)) return;
+    sessionUrlReplace = false;
+    pendingTab = null;
+  }
+  showSessionGone(slug, mine);
+}
+
+/** The learner's live sessions as the Worker lists them (`[{ id, lab, state }]`), or null when it cannot say. */
+async function fetchActiveSessions() {
+  try {
+    const body = await api.activeSessions();
+    return Array.isArray(body?.sessions) ? body.sessions : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What the "not active" page offers: Rejoin when the learner has a (different) active session for this lab. */
+let goneFor = null;
+
+function showSessionGone(slug, mine) {
+  hideLearnScreen();
+  $('launcher').hidden = true;
+  $('notFound').hidden = true;
+  goneFor = { slug, mine };
+  const title = labsBySlug.get(slug)?.title ?? slug;
+  $('sgDetail').textContent = mine
+    ? `This address names a session that has ended, or one that is not yours. You do have a session running for ${title}: rejoin it to carry on.`
+    : `This address names a session that has ended, or one that is not yours. Go back to the labs to start ${title} again.`;
+  $('sgError').hidden = true;
+  const rejoin = $('sgRejoin');
+  rejoin.hidden = !mine;
+  rejoin.disabled = false;
+  rejoin.removeAttribute('aria-busy');
+  $('sessionGone').hidden = false;
+  $('sessionGone').scrollTop = 0;
+  window.scrollTo(0, 0);
+  syncQuizButtons();
+  updateTitle();
+  $('sgTitle').focus();
+  announceRoute('This session is not active');
+}
+
+$('sgRejoin').addEventListener('click', async () => {
+  if (!goneFor?.mine) return;
+  const { slug } = goneFor;
+  if (guardDesktop(slug)) return;
+  const button = $('sgRejoin');
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  $('sgError').hidden = true;
+  // The address is replaced with the active session's own, not pushed beside this one.
+  sessionUrlReplace = true;
+  const ok = await startSession(slug);
+  if (ok) return;
+  sessionUrlReplace = false;
+  button.disabled = false;
+  button.removeAttribute('aria-busy');
+  $('sgError').textContent = 'Could not rejoin the session. Try again, or go back to the labs.';
+  $('sgError').hidden = false;
+});
 
 /** Takes the lab this browser remembers (the API says it is up) as the session. */
 function rejoinRemembered(saved, status, route) {
@@ -473,7 +575,7 @@ function rejoinRemembered(saved, status, route) {
   const same = actual === route.slug;
   state.session = saved;
   state.lab = labsBySlug.get(actual) ?? null;
-  setRoute('session', same ? { slug: actual, tab: route.tab, service: route.service } : { slug: actual }, { replace: true });
+  setRoute('session', same ? sessionParams(actual, route.tab, route.service) : sessionParams(actual), { replace: true });
   pendingTab = same && route.tab ? route : null;
   enterSession();
   if (!same) toast('You already had a lab running, so you are back in it. End it to start another.');
@@ -516,27 +618,48 @@ function showRouteTab(route) {
       shown = true;
     }
   }
-  if (!shown) setRoute('session', { slug: route.slug }, { replace: true });
+  if (!shown) setRoute('session', sessionParams(route.slug), { replace: true });
 }
 
 /** A tab the learner chose: the address follows, in place (Back does not step through every tab). */
 function syncTabUrl(tab, service) {
   const slug = state.session?.lab;
   if (!slug || router.current().name !== 'session') return;
-  setRoute('session', { slug, tab, service }, { replace: true });
+  setRoute('session', sessionParams(slug, tab, service), { replace: true });
 }
 
-/** The session's address, for a session that came on screen some other way (Start, a rejoin from the launcher). */
+/** Set by a caller that wants the session's address replaced rather than pushed (Rejoin on a fresh browser). */
+let sessionUrlReplace = false;
+
+/**
+ * The session's address, for a session that came on screen some other way (Start on a lab's page, a rejoin from home,
+ * an old-form address). An address that is already a session address of this lab is corrected in place: the old form
+ * gains the ids, and a session address with another session's id takes the one that is open.
+ */
 function ensureSessionUrl(slug) {
   const route = router.current();
-  if (route.name === 'session' && route.slug === slug) return;
-  setRoute('session', { slug });
+  const same = route.name === 'session' && route.slug === slug;
+  const params = sessionParams(slug, same ? route.tab : undefined, same ? route.service : undefined);
+  const replace = sessionUrlReplace || same;
+  sessionUrlReplace = false;
+  let wanted = null;
+  try {
+    wanted = buildRoute('session', { ...params, search: location.search });
+  } catch {
+    /* an address this console cannot spell: the bar stays as it is */
+  }
+  if (wanted === null || wanted === location.pathname + location.search) return;
+  setRoute('session', params, { replace });
 }
 
 // ---------------------------------------------------------------- launcher
 
 /** The catalogue, kept so a running session can show its lab's context. */
 const labsBySlug = new Map();
+/** Slugs the learner has passed every check of (the whole catalogue: a visible lab may name an archived prerequisite). */
+let passedLabs = new Set();
+/** The first catalogue load failed (and there is no earlier one to keep showing): the list says why. */
+let catalogueFailed = false;
 
 const DIFFICULTY_LEVEL = { intro: 1, core: 2, advanced: 3 };
 const DIFFICULTIES = ['intro', 'core', 'advanced'];
@@ -564,32 +687,35 @@ function showLabSkeleton() {
     '<div class="lab-skeleton" aria-hidden="true"></div>'.repeat(3) + '<p class="sr-only">Loading labs…</p>';
 }
 
+/**
+ * Reads the catalogue and the learner's progress, and draws the page that is open. Asked again after a lab (so its
+ * progress shows): the page stays as it is until the answer is in, and a failed refresh keeps what was drawn.
+ */
 async function loadLabs() {
   const list = $('labList');
   parkLaunchError();
-  $('labCount').textContent = '';
-  $('labFilters').hidden = true;
-  $('pathNav').hidden = true;
-  if (!list.querySelector('.lab-skeleton')) showLabSkeleton();
+  const refreshing = Boolean(launcherModel) && !catalogueFailed;
+  if (!refreshing) {
+    $('labCount').textContent = '';
+    $('labFilters').hidden = true;
+    if (!list.querySelector('.lab-skeleton')) showLabSkeleton();
+  }
   try {
     const labs = await api.labs();
-    list.innerHTML = '';
+    catalogueFailed = false;
     // Every lab is known before any card is drawn: a card names its
     // prerequisite by title, and that lab may sit in a later group. This map
     // holds the archived labs too: an address, the resume card and Start look
     // a lab up here, and an archived lab must still resolve. Only what the
     // learner is shown (cards, counts, filters, suggestions) leaves them out.
     for (const lab of labs) labsBySlug.set(lab.slug, lab);
-    updateTitle();
+    passedLabs = passedSlugs(labs);
     const visible = visibleLabs(labs);
-    if (!visible.length) {
-      list.innerHTML =
-        '<div class="empty-state"><p>No labs are available yet.</p><p class="muted small">Please check back soon.</p></div>';
-      return;
-    }
-    renderLauncher(buildLauncherModel(labs, pathMeta, { passed: passedSlugs(labs) }));
+    launcherModel = buildLauncherModel(labs, pathMeta, { passed: passedLabs });
     renderFilters(visible);
-    applyFilters();
+    list.removeAttribute('aria-busy');
+    if (!refreshing || !$('launcher').hidden) renderBrowseIfShown(true);
+    updateTitle();
   } catch (err) {
     if (/^401:/.test(err.message)) {
       // The console cookie is gone (expired, or signed out in another tab).
@@ -600,8 +726,11 @@ async function loadLabs() {
           <button class="btn btn-primary" id="btnSignIn">Sign in</button>
         </div>`;
       list.querySelector('#btnSignIn').addEventListener('click', () => location.reload());
+      catalogueFailed = true;
       return;
     }
+    if (refreshing) return;
+    catalogueFailed = true;
     list.innerHTML = `
       <div class="empty-state">
         <p class="error"></p>
@@ -618,12 +747,15 @@ async function loadLabs() {
   }
 }
 
-// ------------------------------------------------ paths, modules and lab rows
+// ------------------------------------------------ pages: paths, modules, labs
 
 /*
  * What is drawn comes from buildLauncherModel (launcher-model.js): the labs
  * grouped by path and module, with every total. Text from the catalogue and
  * from packages/catalogue/paths.json always goes in through textContent.
+ *
+ * One page at a time, inside #launcher: home (a card per path), a path (a card per module), a module (its intro
+ * beside its labs) and a lab (its own page). Search and filters act on the labs of the page that is open.
  */
 
 function node(tag, className, text) {
@@ -649,33 +781,210 @@ function progressBar(done, total, label) {
 /** An id-safe form of a slug from the catalogue. */
 const safeId = (slug) => String(slug).replace(/[^a-z0-9_-]+/gi, '-');
 
-/** The model the launcher is drawn from, kept so the resume card can say where its lab sits. */
+/** A link to a route of the console: a real address, so it can be opened in a new tab, and a click stays in the app. */
+function routeLink(className, text, route) {
+  const link = node('a', className, text);
+  link.href = buildRoute(route.name, route);
+  return link;
+}
+
+/** The model the pages are drawn from, kept so the resume card can say where its lab sits. */
 let launcherModel = null;
-/** Modules the learner opened from a condensed card, by path and number, for this page load. */
-const openedModules = new Set();
-/** The slug of the lab that is still running (verified by renderResumeCard), so its row says Rejoin. */
+/** The slug of the lab that is still running (verified by renderResumeCard), so its row says Resume. */
 let runningSlug = null;
 
-function renderLauncher(model) {
-  launcherModel = model;
-  const list = $('labList');
-  list.innerHTML = '';
-  // Where the platform quiz says to begin: the first module card whose area
-  // is new to this learner. Nothing is suggested before the quiz is taken.
-  const cards = model.paths.flatMap((p) => (p.cards ? p.modules.map((m) => ({ path: p.slug, number: m.number })) : []));
-  const suggested = suggestStart(cards, mastery.get());
-  for (const path of model.paths) list.append(pathSection(path, suggested));
-  $('heroLede').textContent = heroLede(model.paths.filter((p) => !p.other).length);
-  renderPathNav(model);
+/** The entries of `entries` the search and filters let through. */
+const shown = (entries) => entries.filter((e) => labMatches(e.lab));
+
+/** Where the platform quiz says to begin: the first module card whose area is new to this learner (none before the quiz). */
+function suggestedStart() {
+  const cards = (launcherModel?.paths ?? []).flatMap((p) => (p.cards ? p.modules.map((m) => ({ path: p.slug, number: m.number })) : []));
+  return suggestStart(cards, mastery.get());
+}
+
+/** Redraws the page that is on screen (the catalogue or the filters changed). */
+function renderBrowseIfShown(quiet = true) {
+  if ($('launcher').hidden || state.session) return;
+  const route = router.current();
+  if (BROWSE_ROUTES.has(route.name)) renderBrowse(route, { quiet });
+}
+
+/** What a browse route stands for in the catalogue: `{ kind, ... }`, `{ redirect }` or `{ missing }`. */
+function resolveBrowse(route) {
+  switch (route.name) {
+    case 'launcher':
+      return { kind: 'home' };
+    case 'path': {
+      const path = findPath(launcherModel, route.path);
+      return path ? { kind: 'path', path } : { missing: 'path' };
+    }
+    case 'module': {
+      const path = findPath(launcherModel, route.path);
+      if (!path) return { missing: 'path' };
+      const module = findModule(path, route.module);
+      if (module) return { kind: 'module', path, module };
+      // A path with no module cards is its labs: its one implicit module is the path's own page.
+      if (!path.cards && path.modules.some((m) => m.number === route.module)) return { redirect: { name: 'path', path: route.path } };
+      return { missing: 'module' };
+    }
+    case 'lab': {
+      const lab = labsBySlug.get(route.slug);
+      return lab ? { kind: 'lab', lab } : { missing: 'lab' };
+    }
+    default:
+      return { missing: 'page' };
+  }
 }
 
 /**
- * One path: a band with its icon, title, intro and totals, then its modules
- * as cards, or (a single-module path) its labs straight underneath. The
- * heading is a direct child of the section, and every part of the band is a
- * grid item of it.
+ * Draws the page a browse route names into #launcher: the trail, then home's paths, a path's modules, a module's
+ * labs or a lab's own page. `quiet` redraws what is on screen (a filter changed, the catalogue came in again):
+ * no scrolling, focus or announcement. `initial` is the first page of this load: nothing is moved or said.
  */
-function pathSection(path, suggested = null) {
+function renderBrowse(route = router.current(), { quiet = false, initial = false } = {}) {
+  const list = $('labList');
+  if (catalogueFailed || !launcherModel) {
+    // Nothing to draw: the list already says why the catalogue is not here.
+    $('hello').hidden = false;
+    $('crumbs').hidden = true;
+    return;
+  }
+  const view = resolveBrowse(route);
+  if (view.missing) return showNotFound(view.missing);
+  if (view.redirect) {
+    setRoute(view.redirect.name, view.redirect, { replace: true });
+    return renderBrowse(router.current(), { quiet, initial });
+  }
+
+  const entries = scopeEntries(launcherModel, route);
+  const matching = shown(entries);
+  // A filter saved earlier may hide everything a link is about: a deep link opens with them cleared.
+  if (initial && view.kind !== 'lab' && entries.length && !matching.length && filtersActive()) {
+    resetFilters();
+    return renderBrowse(route, { quiet, initial });
+  }
+
+  parkLaunchError();
+  list.removeAttribute('aria-busy');
+  const home = view.kind === 'home';
+  $('hello').hidden = !home;
+  renderCrumbs(route, view.kind === 'lab' ? view.lab : null);
+  const filterable = view.kind !== 'lab' && entries.length > 0;
+  $('labFilters').hidden = !filterable;
+  $('labCount').textContent = filterable ? `${matching.length} of ${entries.length} labs` : '';
+  $('labNoMatch').hidden = !filterable || matching.length > 0;
+  $('btnClearFilters').hidden = !filtersActive();
+  list.className = `lab-list lab-page-${view.kind}`;
+
+  switch (view.kind) {
+    case 'home':
+      list.replaceChildren(homePage());
+      break;
+    case 'path':
+      list.replaceChildren(pathPage(view.path, suggestedStart()));
+      break;
+    case 'module':
+      list.replaceChildren(moduleCard(view.path, view.module, suggestedStart()));
+      break;
+    default:
+      list.replaceChildren(labPage(view.lab));
+  }
+  syncQuizButtons();
+  if (quiet) return;
+
+  $('launcher').scrollTo({ top: 0, behavior: 'auto' });
+  window.scrollTo(0, 0);
+  if (initial) return;
+  const toPaths = focusFirstPath;
+  focusFirstPath = false;
+  const [target, said] =
+    view.kind === 'home'
+      ? [toPaths ? (list.querySelector('.path-card-title a') ?? $('heroTitle')) : $('heroTitle'), 'Labs']
+      : view.kind === 'path'
+        ? [list.querySelector('.group-head'), view.path.title]
+        : view.kind === 'module'
+          ? [list.querySelector('.module-title'), moduleLabel(view.module)]
+          : [list.querySelector('.lab-detail-title'), view.lab.title || view.lab.slug];
+  target?.focus({ preventScroll: true });
+  announceRoute(said);
+}
+
+/** The header's "Paths" asked for home with focus on the first path rather than on the heading. */
+let focusFirstPath = false;
+
+/** The trail above the page: Home > Path > Module > Lab, as a nav landmark; the page itself is the last item. */
+function renderCrumbs(route, lab) {
+  const items = breadcrumbs(launcherModel, route, lab);
+  const trail = $('crumbList');
+  trail.replaceChildren();
+  for (const item of items) {
+    const li = document.createElement('li');
+    if (item.route) {
+      li.append(routeLink('', item.label, item.route));
+    } else {
+      const here = node('span', '', item.label);
+      here.setAttribute('aria-current', 'page');
+      li.append(here);
+    }
+    trail.append(li);
+  }
+  $('crumbs').hidden = false;
+}
+
+/** Home: one card per path with its title, a line about it, how many modules and labs, and how far along the learner is. */
+function homePage() {
+  const model = launcherModel;
+  if (!model.paths.length) {
+    const empty = node('div', 'empty-state');
+    empty.append(node('p', '', 'No labs are available yet.'));
+    empty.append(node('p', 'muted small', 'Please check back soon.'));
+    $('heroLede').textContent = heroLede(0);
+    return empty;
+  }
+  $('heroLede').textContent = heroLede(model.paths.filter((p) => !p.other).length);
+  const cards = node('div', 'path-cards');
+  const suggested = suggestedStart();
+  for (const path of model.paths) {
+    if (shown(path.labs).length) cards.append(pathCard(path, suggested));
+  }
+  return cards;
+}
+
+function pathCard(path, suggested = null) {
+  const id = path.other ? 'path-other' : `path-${safeId(path.slug)}`;
+  const card = node('article', 'path-card');
+  card.id = id;
+  card.dataset.path = path.slug;
+  card.dataset.accent = path.accent;
+  card.setAttribute('aria-labelledby', `${id}-title`);
+
+  const tile = node('span', 'tile path-tile');
+  tile.setAttribute('aria-hidden', 'true');
+  tile.append(icon(path.icon || 'grid', 28));
+
+  const title = node('h2', 'path-card-title');
+  title.id = `${id}-title`;
+  title.append(routeLink('', path.title, { name: 'path', path: pathId(path) }));
+
+  // Where the platform quiz says to begin sits in this path: the badge here, the module's own on its page.
+  const top = node('div', 'path-card-top');
+  top.append(tile);
+  if (suggested && suggested.path === path.slug) top.append(node('span', 'badge badge-suggested', 'Suggested start'));
+  card.append(top, title);
+  if (path.intro) card.append(node('p', 'path-card-intro', path.intro));
+  card.append(node('p', 'path-card-line', pathCardLine(path)));
+  card.append(progressBar(path.totals.done, path.totals.labs, `Labs done in ${path.title}`));
+  const match = filtersActive() ? ` · ${shown(path.labs).length} match` : '';
+  card.append(node('p', 'path-card-progress', `${path.totals.done} of ${path.totals.labs} done${match}`));
+  return card;
+}
+
+/**
+ * One path: a band with its icon, title, intro and totals, then its modules as cards that open the module's page,
+ * or (a path with no module cards) its labs straight underneath. The heading is a direct child of the section,
+ * and every part of the band is a grid item of it.
+ */
+function pathPage(path, suggested = null) {
   const id = path.other ? 'path-other' : `path-${safeId(path.slug)}`;
   const section = node('section', 'lab-group path');
   section.id = id;
@@ -687,7 +996,7 @@ function pathSection(path, suggested = null) {
   tile.setAttribute('aria-hidden', 'true');
   tile.append(icon(path.icon || 'grid', 32));
 
-  const head = node('h2', 'group-head');
+  const head = node('h1', 'group-head');
   head.id = `${id}-title`;
   head.tabIndex = -1;
   head.append(node('span', 'group-title', path.title));
@@ -705,31 +1014,70 @@ function pathSection(path, suggested = null) {
 
   const body = node('div', 'path-body');
   if (path.cards) {
-    const modules = node('div', 'modules');
-    const views = moduleViews(path, {
-      suggested,
-      running: runningSlug,
-      open: [...openedModules].filter((k) => k.startsWith(`${path.slug}#`)).map((k) => Number(k.split('#')[1])),
-    });
-    for (const module of path.modules) modules.append(moduleCard(path, module, id, suggested, views.get(module.number) === 'mini'));
+    const modules = node('div', 'module-cards');
+    for (const module of path.modules) {
+      if (shown(module.labs).length) modules.append(moduleSummaryCard(path, module, suggested));
+    }
     body.append(modules);
   } else {
-    // No module card, so no h3 of its own: an invisible one keeps h2 -> h3 -> h4 unbroken.
-    body.append(node('h3', 'sr-only', path.other ? 'Labs' : `Labs in ${path.title}`));
-    body.append(labRows(path.modules[0].labs, 'lab-rows lab-rows-flat'));
+    // No module cards, so no module page: the labs are on the path's own page.
+    body.append(labRows(shown(path.modules[0].labs), 'lab-rows lab-rows-flat'));
   }
   section.append(body);
   return section;
 }
 
-function moduleCard(path, module, pathId, suggested = null, collapsed = false) {
-  const id = `${pathId}-module-${module.number}`;
+/** A module on its path's page: number, title, intro, size and progress; the title opens the module's page. */
+function moduleSummaryCard(path, module, suggested = null) {
+  const id = `${path.other ? 'path-other' : `path-${safeId(path.slug)}`}-module-${module.number}`;
+  const card = node('article', 'module-card');
+  card.id = id;
+  card.dataset.module = String(module.number);
+  card.dataset.accent = module.accent;
+  if (module.optional) card.dataset.optional = '1';
+  card.setAttribute('aria-labelledby', `${id}-title`);
+
+  const tile = node('span', 'tile module-tile');
+  tile.setAttribute('aria-hidden', 'true');
+  tile.append(icon(module.icon || 'grid', 24));
+  card.append(tile, moduleEyebrow(path, module, suggested));
+
+  const title = node('h2', 'module-title');
+  title.id = `${id}-title`;
+  title.append(routeLink('', module.title, { name: 'module', path: pathId(path), module: module.number }));
+  card.append(title);
+  if (module.intro) card.append(node('p', 'module-intro', module.intro));
+
+  const { totals } = module;
+  const match = filtersActive() ? ` · ${shown(module.labs).length} match` : '';
+  card.append(node('p', 'module-meta', moduleMetaLine(totals)));
+  card.append(progressBar(totals.done, totals.labs, `Labs done in ${module.title}`));
+  card.append(node('p', 'module-progress', `${totals.done} of ${totals.labs} done${match}`));
+  return card;
+}
+
+/** "Module 3", with its Optional and Suggested start badges. */
+function moduleEyebrow(path, module, suggested) {
+  const eyebrow = node('p', 'module-eyebrow');
+  if (module.known) eyebrow.append(node('span', 'module-num', module.eyebrow));
+  if (module.optional) eyebrow.append(node('span', 'badge badge-optional', 'Optional'));
+  if (suggested && suggested.path === path.slug && suggested.number === module.number) {
+    eyebrow.append(node('span', 'badge badge-suggested', 'Suggested start'));
+  }
+  return eyebrow;
+}
+
+/**
+ * One module, as its own page: on the left its number, title, intro, what you will learn and a progress meter;
+ * on the right its labs as rows, each with a way in and a link to the lab's page.
+ */
+function moduleCard(path, module, suggested = null) {
+  const id = `${path.other ? 'path-other' : `path-${safeId(path.slug)}`}-module-${module.number}`;
   const card = node('section', 'module');
   card.id = id;
   card.dataset.module = String(module.number);
   card.dataset.accent = module.accent;
   if (module.optional) card.dataset.optional = '1';
-  if (collapsed) card.dataset.collapsed = '1';
   card.setAttribute('aria-labelledby', `${id}-title`);
 
   const info = node('div', 'module-info');
@@ -744,15 +1092,10 @@ function moduleCard(path, module, pathId, suggested = null, collapsed = false) {
   tile.append(icon(module.icon || 'grid', 24));
   info.append(tile);
 
-  const eyebrow = node('p', 'module-eyebrow');
-  if (module.known) eyebrow.append(node('span', 'module-num', module.eyebrow));
-  if (module.optional) eyebrow.append(node('span', 'badge badge-optional', 'Optional'));
-  if (suggested && suggested.path === path.slug && suggested.number === module.number) {
-    eyebrow.append(node('span', 'badge badge-suggested', 'Suggested start'));
-  }
+  const eyebrow = moduleEyebrow(path, module, suggested);
   if (eyebrow.childElementCount) info.append(eyebrow);
 
-  const title = node('h3', 'module-title', module.title);
+  const title = node('h1', 'module-title', module.title);
   title.id = `${id}-title`;
   title.tabIndex = -1;
   info.append(title);
@@ -772,30 +1115,7 @@ function moduleCard(path, module, pathId, suggested = null, collapsed = false) {
   info.append(progressBar(totals.done, totals.labs, `Labs done in ${module.title}`));
   info.append(node('p', 'module-progress', `${totals.done} of ${totals.labs} done`));
 
-  card.append(info, labRows(module.labs, 'lab-rows'));
-
-  // The condensed face: the same module as a card that opens in place. It is a
-  // button, so the keyboard reaches it, and opening moves focus to the title.
-  const mini = node('button', 'module-mini');
-  mini.type = 'button';
-  mini.setAttribute('aria-expanded', 'false');
-  mini.setAttribute('aria-controls', id);
-  const miniTile = node('span', 'tile');
-  miniTile.setAttribute('aria-hidden', 'true');
-  miniTile.append(icon(module.icon || 'grid', 22));
-  const text = node('span', 'module-mini-text');
-  text.append(
-    node('span', 'module-mini-eyebrow', `${module.eyebrow}${module.optional ? ' · optional' : ''}`),
-    node('span', 'module-mini-title', module.title),
-    node('span', 'module-mini-meta', moduleMetaLine(totals))
-  );
-  mini.append(miniTile, text);
-  mini.addEventListener('click', () => {
-    openedModules.add(`${path.slug}#${module.number}`);
-    delete card.dataset.collapsed;
-    title.focus({ preventScroll: true });
-  });
-  card.append(mini);
+  card.append(info, labRows(shown(module.labs), 'lab-rows'));
   return card;
 }
 
@@ -808,61 +1128,11 @@ function labRows(entries, className) {
 /** best_score is a 0-1 fraction of the weighted points. */
 const percent = (score) => Math.round((Number(score) <= 1 ? Number(score) * 100 : Number(score)) || 0);
 
-function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
-  const row = document.createElement('article');
-  row.className = `lab${done ? ' lab-done' : ''}${locked ? ' lab-locked' : ''}`;
-  // The slug is the lab's identity. It is rendered inside .lab-sub as
-  // prose, where "hello" is also a substring of "gateway-hello", so
-  // carry it as an attribute too: that is what lets anything selecting
-  // a row — a test, a deep link — name one lab rather than a family of
-  // labs whose names happen to overlap.
-  row.dataset.slug = lab.slug;
-  const titleId = `lab-title-${lab.slug}`;
-  row.setAttribute('aria-labelledby', titleId);
-  row.innerHTML = `
-    <span class="lab-num" aria-hidden="true"></span>
-    <div class="lab-meta">
-      <h4 class="lab-title"></h4>
-      <div class="lab-sub"></div>
-    </div>
-    <div class="lab-act">
-      <div class="lab-status"></div>
-      <button class="btn lab-start">Start</button>
-    </div>
-    <details class="lab-more">
-      <summary>About this lab</summary>
-      <p class="lab-summary"></p>
-      <div class="lab-objectives-wrap">
-        <p class="lab-objectives-label">You will practise</p>
-        <ul class="lab-objectives"></ul>
-      </div>
-    </details>`;
-  row.querySelector('.lab-num').textContent = String(index);
-  const title = row.querySelector('.lab-title');
-  title.id = titleId;
-  title.textContent = lab.title;
-
-  // Enough to choose a lab without spending a container to find out what
-  // it is — "Hello, sandbox" says nothing about what you would actually do —
-  // one click away so the row itself stays a single line of facts.
-  const summary = row.querySelector('.lab-summary');
-  summary.textContent = lab.summary ?? '';
-  summary.hidden = !lab.summary;
-
-  const objectives = row.querySelector('.lab-objectives');
-  for (const objective of lab.objectives ?? []) {
-    const li = document.createElement('li');
-    li.textContent = objective;
-    objectives.append(li);
-  }
-  row.querySelector('.lab-objectives-wrap').hidden = !(lab.objectives ?? []).length;
-  row.querySelector('.lab-more').hidden = !lab.summary && !(lab.objectives ?? []).length;
-
-  // One fact per chip, but the row's text stays the plain
-  // "slug@version · family · type · difficulty · N min" line that support
-  // and the browser suite read: the separators are real text, only hidden
-  // visually, so nothing that reads .lab-sub sees a different string. The
-  // chips are shown in a different order (type first) by CSS `order`.
+/** The chips of a lab's facts, in the one text line support and the browser suite read ("slug@version · family · …"). */
+function fillFacts(sub, lab) {
+  // One fact per chip, but the text stays the plain line: the separators are
+  // real text, only hidden visually, so nothing that reads .lab-sub sees a
+  // different string. The chips are shown in a different order (type first) by CSS `order`.
   const facts = [
     ['id', `${lab.slug}@${lab.version}`],
     ['family', lab.family],
@@ -877,7 +1147,6 @@ function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
     facts.push(['time', `${lab.timeout_minutes} min`]);
   }
   if (lab.tier === 'free') facts.push(['tier', 'Free']);
-  const sub = row.querySelector('.lab-sub');
   facts.forEach(([kind, text, limit], i) => {
     if (i) {
       const sep = document.createElement('span');
@@ -898,11 +1167,13 @@ function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
     if (limit) chip.append(node('span', 'chip-limit', limit));
     sub.append(chip);
   });
+}
 
-  // Where this person stands: done with the best score, locked until a
-  // named lab passes, in progress, or not started.
-  const status = row.querySelector('.lab-status');
-  const button = row.querySelector('.lab-start');
+/**
+ * Where this person stands on a lab: done with the best score, locked until a named lab passes, in progress, or
+ * not started; and the button's state to match. Shared by a lab's row and its page.
+ */
+function fillStanding(status, button, lab, { done, locked, lockedBy, lockedByTitle }) {
   if (done) {
     status.append(node('span', 'chip chip-done', `Done · best ${percent(lab.progress.best_score)}%`));
   } else if (locked) {
@@ -920,6 +1191,45 @@ function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
   } else {
     status.append(node('span', 'lab-state', 'Not started'));
   }
+}
+
+function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
+  const row = document.createElement('article');
+  row.className = `lab${done ? ' lab-done' : ''}${locked ? ' lab-locked' : ''}`;
+  // The slug is the lab's identity. It is rendered inside .lab-sub as
+  // prose, where "hello" is also a substring of "gateway-hello", so
+  // carry it as an attribute too: that is what lets anything selecting
+  // a row — a test, a deep link — name one lab rather than a family of
+  // labs whose names happen to overlap.
+  row.dataset.slug = lab.slug;
+  const titleId = `lab-title-${lab.slug}`;
+  row.setAttribute('aria-labelledby', titleId);
+  row.innerHTML = `
+    <span class="lab-num" aria-hidden="true"></span>
+    <div class="lab-meta">
+      <h2 class="lab-title"></h2>
+      <div class="lab-sub"></div>
+    </div>
+    <div class="lab-act">
+      <div class="lab-status"></div>
+      <button class="btn lab-start">Start</button>
+    </div>
+    <a class="lab-about">About this lab</a>`;
+  row.querySelector('.lab-num').textContent = String(index);
+  const title = row.querySelector('.lab-title');
+  title.id = titleId;
+  title.textContent = lab.title;
+
+  // The summary and objectives are one click away, on the lab's own page.
+  const about = row.querySelector('.lab-about');
+  about.href = buildRoute('lab', { slug: lab.slug });
+  about.setAttribute('aria-describedby', titleId);
+
+  fillFacts(row.querySelector('.lab-sub'), lab);
+
+  const status = row.querySelector('.lab-status');
+  const button = row.querySelector('.lab-start');
+  fillStanding(status, button, lab, { done, locked, lockedBy, lockedByTitle });
   button.addEventListener('click', () => {
     if (button.getAttribute('aria-disabled') === 'true') return;
     beginLab(lab, row);
@@ -930,20 +1240,108 @@ function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
 }
 
 /**
- * What the row's button says and how it looks: Start (the dark one), Open again
- * for a lab already passed, Rejoin for the lab that is running, and a quiet
- * Locked while a prerequisite stands in the way.
+ * A lab's own page: what it is (summary, objectives, prerequisites) on the left, and where this learner stands on
+ * it and the way in (Start, Resume or Locked, with the reason) on the right. An archived lab has one too.
+ */
+function labPage(lab) {
+  const at = locateLab(launcherModel, lab.slug);
+  const lockedBy = at ? at.entry.lockedBy : unmetPrerequisite(lab, passedLabs);
+  const standing = {
+    done: at ? at.entry.done : passedLabs.has(lab.slug),
+    locked: lockedBy !== null,
+    lockedBy,
+    lockedByTitle: lockedBy === null ? null : (labsBySlug.get(lockedBy)?.title ?? lockedBy),
+  };
+  const page = node('article', `lab-detail${standing.done ? ' lab-done' : ''}${standing.locked ? ' lab-locked' : ''}`);
+  page.dataset.slug = lab.slug;
+  if (at) page.dataset.accent = at.module.known ? at.module.accent : at.path.accent;
+  const titleId = `lab-title-${lab.slug}`;
+  page.setAttribute('aria-labelledby', titleId);
+
+  const main = node('div', 'lab-detail-main');
+  const head = node('header', 'lab-detail-head');
+  if (at && at.path.cards) head.append(node('p', 'lab-detail-where', `${at.module.known ? at.module.title : at.path.title} · lab ${at.position} of ${at.total}`));
+  const title = node('h1', 'lab-detail-title', lab.title || lab.slug);
+  title.id = titleId;
+  title.tabIndex = -1;
+  const sub = node('div', 'lab-sub');
+  fillFacts(sub, lab);
+  head.append(title, sub);
+  main.append(head);
+
+  if (lab.summary) {
+    const section = node('section');
+    section.append(node('h2', '', 'About this lab'), node('p', 'lab-summary', lab.summary));
+    main.append(section);
+  }
+  const objectives = (lab.objectives ?? []).filter((o) => typeof o === 'string' && o.trim());
+  if (objectives.length) {
+    const section = node('section');
+    const items = node('ul', 'lab-objectives');
+    for (const objective of objectives) items.append(node('li', '', objective));
+    section.append(node('h2', '', 'You will practise'), items);
+    main.append(section);
+  }
+
+  const prerequisites = node('section', 'lab-prereq-section');
+  prerequisites.append(node('h2', '', 'Prerequisites'));
+  const needs = (lab.prerequisites ?? []).filter((s) => typeof s === 'string' && s);
+  if (!needs.length) {
+    prerequisites.append(node('p', 'lab-detail-note', 'None. You can start right away.'));
+  } else {
+    const items = node('ul', 'lab-prereqs');
+    for (const slug of needs) {
+      const li = document.createElement('li');
+      const known = labsBySlug.get(slug);
+      li.append(known ? routeLink('', known.title || slug, { name: 'lab', slug }) : node('span', '', slug));
+      const met = passedLabs.has(slug);
+      const state = node('span', 'prereq-state', met ? 'Passed' : 'Not passed yet');
+      state.dataset.met = met ? '1' : '0';
+      li.append(state);
+      items.append(li);
+    }
+    prerequisites.append(items);
+  }
+  main.append(prerequisites);
+
+  const side = node('aside', 'lab-detail-side');
+  side.setAttribute('aria-label', 'Your progress and the way in');
+  const status = node('div', 'lab-status');
+  const button = node('button', 'btn lab-start');
+  button.type = 'button';
+  button.textContent = 'Start';
+  fillStanding(status, button, lab, standing);
+  button.addEventListener('click', () => {
+    if (button.getAttribute('aria-disabled') === 'true') return;
+    beginLab(lab, page);
+  });
+  side.append(status, button);
+  if (standing.locked) {
+    side.append(node('p', 'lab-detail-note', `Pass every check of ${standing.lockedByTitle} first, then this lab opens.`));
+  } else if (lab.estimated_minutes) {
+    side.append(node('p', 'lab-detail-note', `About ${lab.estimated_minutes} min${lab.timeout_minutes ? `; the session ends after ${lab.timeout_minutes} min.` : '.'}`));
+  }
+  page.append(main, side);
+  styleStartButton(page);
+  if (lab.slug === runningSlug && !standing.locked) applyRunning(page, true);
+  return page;
+}
+
+/**
+ * What the button says and how it looks: Start (the dark one), Open again
+ * for a lab already passed, Resume for the lab that is running, and a quiet
+ * Locked while a prerequisite stands in the way. `row` is a lab's row or its page.
  */
 function styleStartButton(row) {
   const button = row.querySelector('.lab-start');
   const running = row.classList.contains('lab-running');
   const locked = row.classList.contains('lab-locked');
   const done = row.classList.contains('lab-done');
-  button.textContent = locked ? 'Locked' : running ? 'Rejoin' : done ? 'Open again' : 'Start';
+  button.textContent = locked ? 'Locked' : running ? 'Resume' : done ? 'Open again' : 'Start';
   button.className = `btn lab-start ${locked ? 'btn-ghost' : running ? 'btn-accent' : done ? 'btn-ghost' : 'btn-strong'}`;
 }
 
-/** Marks a row as the lab that is running (or clears it), keeping the status line and the button in step. */
+/** Marks a row (or a lab's page) as the lab that is running (or clears it), keeping the status line and the button in step. */
 function applyRunning(row, on) {
   row.classList.toggle('lab-running', on);
   const status = row.querySelector('.lab-status');
@@ -953,154 +1351,11 @@ function applyRunning(row, on) {
   styleStartButton(row);
 }
 
-/** The launcher learns which lab is running once the resume card has asked the API. */
+/** The pages learn which lab is running once the resume card has asked the API. */
 function setRunningLab(slug) {
   runningSlug = slug;
-  for (const row of $('labList').querySelectorAll('.lab')) applyRunning(row, row.dataset.slug === slug && !row.classList.contains('lab-locked'));
-  // The module holding it opens, if the path had condensed it.
-  const row = slug ? $('labList').querySelector(`.lab[data-slug="${CSS.escape(slug)}"]`) : null;
-  const module = row?.closest('.module');
-  if (module?.dataset.collapsed) delete module.dataset.collapsed;
+  for (const row of $('labList').querySelectorAll('.lab, .lab-detail')) applyRunning(row, row.dataset.slug === slug && !row.classList.contains('lab-locked'));
 }
-
-// ------------------------------------------------------------ path navigator
-
-/**
- * The strip of pills above the filters: one per path, with its lab count.
- * A pill scrolls to its path and moves focus to the heading; the pill of the
- * path in view is marked aria-current. They are real links (#path-…), so
- * they work by keyboard and without this code.
- */
-function renderPathNav(model) {
-  const nav = $('pathNav');
-  const items = $('pathNavList');
-  items.innerHTML = '';
-  pathPin = null;
-  // One group needs no signpost.
-  nav.hidden = model.paths.length < 2;
-  for (const path of model.paths) {
-    const id = path.other ? 'path-other' : `path-${safeId(path.slug)}`;
-    const li = document.createElement('li');
-    const link = document.createElement('a');
-    link.href = `#${id}`;
-    link.className = 'path-pill';
-    link.dataset.path = path.slug;
-    link.dataset.accent = path.accent;
-    const glyph = node('span', 'pill-icon');
-    glyph.append(icon(path.icon || 'grid', 14));
-    // "6 labs" in words on a wide screen; the unit is dropped on a phone (styles.css).
-    const meta = node('span', 'pill-meta');
-    meta.append(node('span', 'pill-count', String(path.totals.labs)), document.createTextNode(' '), node('span', 'pill-unit', path.totals.labs === 1 ? 'lab' : 'labs'));
-    link.append(glyph, node('span', 'pill-title', path.title), meta);
-    link.addEventListener('click', (event) => {
-      event.preventDefault();
-      goToPath(id);
-      // The address names the path in view (in place: the pills are not steps).
-      setRoute('path', { path: path.other ? 'other' : path.slug }, { replace: true });
-    });
-    li.append(link);
-    items.append(li);
-  }
-  updatePathNav();
-}
-
-/** After a click the clicked pill stays marked until the page has settled and then moves again. */
-let pathPin = null;
-
-function goToPath(id) {
-  const section = document.getElementById(id);
-  if (!section || section.hidden) return;
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  pathPin = { id, settled: false, timer: setTimeout(() => pathPin && (pathPin.settled = true), 300) };
-  section.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
-  section.querySelector('.group-head').focus({ preventScroll: true });
-  markActivePath();
-}
-
-/** Filters change which paths and how many labs are shown; the pills follow. */
-function updatePathNav() {
-  const pills = [...$('pathNavList').querySelectorAll('.path-pill')];
-  let visible = 0;
-  for (const link of pills) {
-    const section = document.getElementById(link.getAttribute('href').slice(1));
-    const shown = section ? section.querySelectorAll('.lab:not([hidden])').length : 0;
-    link.parentElement.hidden = !section || section.hidden;
-    if (!link.parentElement.hidden) visible++;
-    link.querySelector('.pill-count').textContent = String(shown);
-    link.querySelector('.pill-unit').textContent = shown === 1 ? 'lab' : 'labs';
-  }
-  // One group needs no signpost, and neither does a list with nothing in it.
-  $('pathNav').hidden = pills.length < 2 || visible === 0;
-  markActivePath();
-}
-
-function markActivePath() {
-  const nav = $('pathNav');
-  if (nav.hidden) return;
-  const sections = [...$('labList').querySelectorAll('.lab-group')].filter((s) => !s.hidden);
-  if (!sections.length) return;
-  let active = sections[0];
-  if (pathPin && sections.some((s) => s.id === pathPin.id)) {
-    active = sections.find((s) => s.id === pathPin.id);
-  } else {
-    // The last path whose top has passed just under the navigator.
-    const line = nav.getBoundingClientRect().bottom + 24;
-    for (const section of sections) if (section.getBoundingClientRect().top <= line) active = section;
-    // A short last path can never reach the line; the end of the page is it.
-    const launcher = $('launcher');
-    const scroller = launcher.scrollHeight > launcher.clientHeight + 1 ? launcher : document.scrollingElement;
-    const scrolled = scroller.scrollTop > 0;
-    if (scrolled && Math.ceil(scroller.scrollTop + scroller.clientHeight) >= scroller.scrollHeight - 2) {
-      active = sections[sections.length - 1];
-    }
-  }
-  const list = $('pathNavList');
-  for (const link of list.querySelectorAll('.path-pill')) {
-    if (link.getAttribute('href') !== `#${active.id}`) {
-      link.removeAttribute('aria-current');
-      continue;
-    }
-    if (link.getAttribute('aria-current') === 'true') continue;
-    link.setAttribute('aria-current', 'true');
-    // The strip scrolls sideways on a narrow screen: keep the current pill in it.
-    const strip = list.getBoundingClientRect();
-    const pill = link.getBoundingClientRect();
-    if (pill.left < strip.left) list.scrollLeft += pill.left - strip.left - 8;
-    else if (pill.right > strip.right) list.scrollLeft += pill.right - strip.right + 8;
-  }
-}
-
-let activeFrame = 0;
-function onLauncherScroll() {
-  // Any scroll after the page has settled on a clicked pill is the reader's own.
-  if (pathPin) {
-    if (pathPin.settled) pathPin = null;
-    else {
-      clearTimeout(pathPin.timer);
-      pathPin.timer = setTimeout(() => pathPin && (pathPin.settled = true), 150);
-    }
-  }
-  if (activeFrame) return;
-  activeFrame = requestAnimationFrame(() => {
-    activeFrame = 0;
-    markActivePath();
-  });
-}
-// The reader's own input ends a clicked pill's hold at once, wherever it scrolls.
-const releasePathPin = () => {
-  pathPin = null;
-};
-for (const target of [$('launcher'), window]) {
-  target.addEventListener('wheel', releasePathPin, { passive: true });
-  target.addEventListener('touchmove', releasePathPin, { passive: true });
-}
-window.addEventListener('keydown', (event) => {
-  if (['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', ' '].includes(event.key)) releasePathPin();
-});
-// The launcher scrolls itself on a desktop and the page scrolls on a phone.
-$('launcher').addEventListener('scroll', onLauncherScroll, { passive: true });
-window.addEventListener('scroll', onLauncherScroll, { passive: true });
-window.addEventListener('resize', onLauncherScroll);
 
 // ------------------------------------------------------------ filters
 
@@ -1178,7 +1433,6 @@ function renderFilters(labs) {
     host.append(group);
   }
   $('labSearch').value = filters.q;
-  $('labFilters').hidden = false;
 }
 
 function labMatches(lab) {
@@ -1190,29 +1444,13 @@ function labMatches(lab) {
   return true;
 }
 
-/** Hides what does not match rather than rebuilding, so a launch error inside a card survives typing. */
+/** The page on screen is drawn again with what the search and filters let through (a launch error inside a card is parked and put back). */
 function applyFilters() {
-  const list = $('labList');
-  const cards = [...list.querySelectorAll('.lab')];
-  let shown = 0;
-  for (const card of cards) {
-    const lab = labsBySlug.get(card.dataset.slug);
-    const match = Boolean(lab) && labMatches(lab);
-    card.hidden = !match;
-    if (match) shown++;
-  }
-  // A module or a path with nothing left to show goes too, and the navigator follows.
-  for (const module of list.querySelectorAll('.module')) module.hidden = !module.querySelector('.lab:not([hidden])');
-  for (const group of list.querySelectorAll('.lab-group')) group.hidden = !group.querySelector('.lab:not([hidden])');
-  updatePathNav();
-  // A module the path had condensed opens for a search or filter, so a match is never out of sight.
-  list.classList.toggle('is-filtering', filtersActive());
-  $('labCount').textContent = `${shown} of ${cards.length} labs`;
-  $('labNoMatch').hidden = shown > 0 || !cards.length;
-  $('btnClearFilters').hidden = !filtersActive();
+  renderBrowseIfShown(true);
 }
 
-function clearFilters() {
+/** No search, no filters: state, saved copy and the controls. */
+function resetFilters() {
   filters.q = '';
   filters.difficulty.clear();
   filters.family.clear();
@@ -1220,6 +1458,10 @@ function clearFilters() {
   saveFilters();
   $('labSearch').value = '';
   for (const chip of $('filterChips').querySelectorAll('.filter-chip')) chip.setAttribute('aria-pressed', 'false');
+}
+
+function clearFilters() {
+  resetFilters();
   applyFilters();
 }
 
@@ -1284,9 +1526,9 @@ async function renderResumeCard() {
   host.hidden = true;
   host.replaceChildren();
   setHero(false);
-  setRunningLab(null);
   const found = await fetchRunning();
-  if (!found || mine !== resumeToken || state.session) return;
+  if (mine !== resumeToken || state.session) return;
+  if (!found) return setRunningLab(null);
   const { saved, status, slug, title } = found;
 
   const live = node('span', 'resume-live');
@@ -1389,6 +1631,7 @@ function noticeUrl() {
 async function showDesktopNotice(slug) {
   hideLearnScreen();
   $('notFound').hidden = true;
+  $('sessionGone').hidden = true;
   $('launcher').hidden = true;
   noticeSlug = slug || null;
   const url = noticeUrl();
@@ -1427,16 +1670,16 @@ function hideDesktopNotice({ focus = true } = {}) {
   // The launcher's own card ticks again.
   renderResumeCard();
   syncQuizButtons();
-  if (focus) {
-    const heading = $('heroTitle');
-    heading.focus({ preventScroll: true });
-  }
+  // The page the address names is back (its heading takes focus unless the window was only resized).
+  const route = router.current();
+  if (BROWSE_ROUTES.has(route.name)) renderBrowse(route, { quiet: !focus });
 }
 
 $('dnBrowse').addEventListener('click', () => {
+  closeNotice();
+  // From a lab's own session address (a phone opened a link to it) the way out is home.
+  if (!BROWSE_ROUTES.has(router.current().name)) setRoute('launcher', {}, { replace: true });
   hideDesktopNotice();
-  // From a lab's own address (a phone opened a link to /labs/x/session) the way out is the launcher's.
-  if (!['launcher', 'path'].includes(router.current().name)) setRoute('launcher', {}, { replace: true });
 });
 
 /** Copies the link; where the clipboard cannot be written, shows it selected instead. */
@@ -1465,7 +1708,7 @@ function reevaluateDevice() {
   hideDesktopNotice({ focus: false });
   // An address that was waiting for a wide screen (a lab's session, its lessons) now has one.
   const route = router.current();
-  if (!['launcher', 'path'].includes(route.name)) applyRoute(route);
+  if (!BROWSE_ROUTES.has(route.name)) applyRoute(route);
 }
 window.addEventListener('resize', reevaluateDevice);
 window.addEventListener('orientationchange', reevaluateDevice);
@@ -1506,6 +1749,7 @@ let learnFlowLab = null;
 function showLearnScreen() {
   $('launcher').hidden = true;
   $('notFound').hidden = true;
+  $('sessionGone').hidden = true;
   $('learnScreen').hidden = false;
   $('learnScreen').scrollTop = 0;
   syncQuizButtons();
@@ -1518,17 +1762,6 @@ function hideLearnScreen() {
   $('learnScreen').hidden = true;
   $('learnHost').replaceChildren();
   syncQuizButtons();
-}
-
-/** Back to the lab list from a learning screen, with focus on the page's heading. */
-function leaveLearnScreen() {
-  hideLearnScreen();
-  $('launcher').hidden = false;
-  const heading = $('launcher').querySelector('h1');
-  if (heading) {
-    heading.tabIndex = -1;
-    heading.focus();
-  }
 }
 
 /** A lab's bundle, kept a few minutes so Before you begin and the session share one fetch. */
@@ -1559,10 +1792,10 @@ async function beginLab(lab, card) {
   // Start, Open again and Rejoin all come through here: on a phone they show the desktop notice.
   if (guardDesktop(lab.slug)) return;
   // A running lab is rejoined by Start, whatever was clicked: nothing to prepare for.
-  const resuming = !$('resumeCard').hidden;
+  const resuming = runningSlug !== null || !$('resumeCard').hidden;
   if (!lab.has_learn || resuming) return startSession(lab.slug, card);
   beginning = true;
-  const buttons = document.querySelectorAll('.lab button, .resume button');
+  const buttons = document.querySelectorAll('.lab button, .lab-detail button, .resume button');
   buttons.forEach((b) => (b.disabled = true));
   const button = card?.querySelector('.lab-start');
   const label = button?.textContent;
@@ -1613,10 +1846,8 @@ function openLearnFlow(lab, entry, initial, { fromRoute = false, n } = {}) {
       // The container is warmed while the last steps are read, so Start is instant; a phone cannot run a lab, so it warms nothing.
       prepare: () => (isPhoneLike(readDevice()) ? undefined : api.prepareLab(lab.slug)),
       cancelPrepare: (opts) => api.cancelPrepare(lab.slug, opts),
-      onBack: () => {
-        leaveLearnScreen();
-        setRoute('launcher');
-      },
+      // Start was on the lab's page, so that is where Back to labs goes (a step on in history, as before).
+      onBack: () => router.navigate('lab', { slug: lab.slug }),
     });
   } finally {
     if (fromRoute) applying--;
@@ -1662,7 +1893,7 @@ function ensureOnboardingOffer() {
 
 /** The two "Retake the quiz" controls show only when a quiz exists and the learner is at the launcher. */
 function syncQuizButtons() {
-  const atLauncher = !state.session && $('learnScreen').hidden && $('desktopNotice').hidden && $('notFound').hidden;
+  const atLauncher = !state.session && $('learnScreen').hidden && $('desktopNotice').hidden && $('notFound').hidden && $('sessionGone').hidden;
   $('btnRetakeQuiz').hidden = !(onboardingOffer && atLauncher);
   $('btnOnboardingRetake').hidden = !(onboardingOffer && atLauncher);
 }
@@ -1680,10 +1911,9 @@ function showQuiz() {
     store: mastery,
     post: (body) => api.postAnswers(body),
     onExit: ({ completed }) => {
-      leaveLearnScreen();
-      // Done or skipped, the quiz is not somewhere Back should return to.
-      setRoute('launcher', {}, { replace: true });
-      // The launcher's "Suggested start" follows the new levels.
+      // Done or skipped, the quiz is not somewhere Back should return to: home takes its place.
+      router.navigate('launcher', {}, { replace: true });
+      // The "Suggested start" badge follows the new levels.
       if (completed) loadLabs();
     },
   });
@@ -2072,7 +2302,7 @@ async function startSession(slug, card) {
   const error = $('launchError');
   error.hidden = true;
   error.className = 'notice notice-bad';
-  const buttons = document.querySelectorAll('.lab button, .resume button');
+  const buttons = document.querySelectorAll('.lab button, .lab-detail button, .resume button, #sgRejoin');
   buttons.forEach((b) => (b.disabled = true));
   const button = card?.querySelector('button');
   // The resume card's button says "Rejoin", a lab card's says "Start".
@@ -2197,6 +2427,7 @@ function enterSession() {
   resetGuide();
   hideLearnScreen();
   $('notFound').hidden = true;
+  $('sessionGone').hidden = true;
   // The task, not an empty terminal: the guide opens on the brief, and the workspace on the files.
   showView('editor');
   showBoot('Getting your lab ready…');
@@ -2564,7 +2795,7 @@ function setSessionLab(slug) {
     rememberSession(state.session);
     // The start route may have rejoined another lab than the one asked for: the address names the one that is open.
     const route = router.current();
-    if (route.name === 'session' && route.slug !== slug) setRoute('session', { slug }, { replace: true });
+    if (route.name === 'session' && route.slug !== slug) setRoute('session', sessionParams(slug), { replace: true });
   }
   const lab = labsBySlug.get(slug) ?? null;
   if (state.lab?.slug !== slug) state.lab = lab;
@@ -2985,16 +3216,19 @@ function teardownSession() {
   setServicesOpen(false);
 }
 
-/** An ended session leaves a dead workspace on screen; this is the way out. The address becomes the launcher's. */
+/** An ended session leaves a dead workspace on screen; this is the way out. The address becomes the lab's page. */
 function backToLabs() {
+  const slug = state.session?.lab;
   leaveSessionScreen(true);
-  // Replaced, not pushed: Back must not lead to the address of a lab that is gone (it would start another).
-  setRoute('launcher', {}, { replace: true });
+  // Replaced, not pushed: Back must not lead to the address of a session that is gone (it would start another).
+  if (slug) router.navigate('lab', { slug }, { replace: true });
+  else router.navigate('launcher', {}, { replace: true });
 }
 
 /**
  * The session screen taken down. `forget` ends the console's claim on the lab (the record is dropped);
- * without it the lab keeps running and the launcher offers Rejoin, which is what Back out of a lab does.
+ * without it the lab keeps running and its page offers Resume, which is what Back out of a lab does.
+ * The page that follows is the caller's to show.
  */
 function leaveSessionScreen(forget) {
   resetSolution();
@@ -3009,10 +3243,10 @@ function leaveSessionScreen(forget) {
   $('sessionBar').hidden = true;
   $('sessionActions').hidden = true;
   $('workspace').hidden = true;
-  $('launcher').hidden = false;
   $('expiryTimer').textContent = '';
   $('btnNewFile').disabled = false;
   syncQuizButtons();
+  // Progress may have moved while the lab was open: the catalogue is read again, and the page redrawn.
   loadLabs();
 }
 
@@ -3168,10 +3402,14 @@ $('btnTheme').addEventListener('click', () => {
 });
 applyTheme(currentTheme());
 
-/** Who the console thinks you are — the cookie's subject, asked of the Worker. */
-async function showIdentity() {
+/**
+ * Who the console thinks you are — the cookie's subject, asked of the Worker — and the opaque id a session's
+ * address names you by. A route to a session waits for this (`meReady`).
+ */
+async function loadIdentity() {
   try {
-    const { sub } = await api.me();
+    const { sub, user_id: userId } = await api.me();
+    if (isOpaqueId(userId)) state.userId = userId;
     if (typeof sub !== 'string' || !sub) return;
     $('identityName').textContent = sub;
     // Two letters in the circle, as the landing page's account chip has.
@@ -4621,33 +4859,33 @@ function wireTablist(list, tabs, activate) {
 
 // ---------------------------------------------------------------- wiring
 
-// The header's own links. Labs (and the brand) go home: the launcher from a learning or
-// notice screen, the top of it from the launcher. Paths goes to the path navigator.
+// The header's own links. Labs (and the brand) go home: the top of it when it is open, else home as
+// a step forward in history. Paths is home too, with focus on the first path.
 function goHome(event) {
   event.preventDefault();
   setMenu(false);
   if (state.session) return;
-  if (!$('launcher').hidden) {
+  if (!$('launcher').hidden && router.current().name === 'launcher') {
     $('launcher').scrollTo({ top: 0, behavior: 'auto' });
     window.scrollTo(0, 0);
-    // From a path's address, the top of the launcher is "/".
-    if (router.current().name !== 'launcher') setRoute('launcher', {}, { replace: true });
     return;
   }
-  // From a learning, notice or not-found screen: the launcher, as a step forward in history.
   router.navigate('launcher');
 }
 $('brandLink').addEventListener('click', goHome);
 $('navLabs').addEventListener('click', goHome);
 $('navPaths').addEventListener('click', (event) => {
+  const first = $('labList').querySelector('.path-card-title a');
+  if (state.session || $('launcher').hidden || router.current().name !== 'launcher' || !first) {
+    // From another page: home, with focus on the first path once it is drawn.
+    focusFirstPath = !state.session;
+    return goHome(event);
+  }
   event.preventDefault();
   setMenu(false);
-  if (state.session || $('launcher').hidden) return;
-  const nav = $('pathNav');
-  const first = nav.hidden ? null : nav.querySelector('.path-pill');
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  (first ?? $('labList')).scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
-  first?.focus({ preventScroll: true });
+  $('labList').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  first.focus({ preventScroll: true });
 });
 
 // On a phone the links and account controls live behind a menu button inside the pill.
@@ -4769,7 +5007,8 @@ $('btnImHere').addEventListener('click', imHere);
 
 $('btnBackToLabs').addEventListener('click', () => {
   if ($('statePill').dataset.state === 'ended') backToLabs();
-  else setRoute('launcher', {});
+  // The lab keeps running: its page is where the learner left from, and offers Resume.
+  else if (state.session) router.navigate('lab', { slug: state.session.lab });
 });
 $('btnSignOut')?.addEventListener('click', async () => {
   // POST-only on the Worker; a GET is refused. The page reload lands on the
@@ -4933,6 +5172,8 @@ function showSignedOut() {
   $('sessionActions').hidden = true;
   $('btnBackToLabs').hidden = true;
   $('launcher').hidden = false;
+  // The session's address is not a page of the launcher: home is drawn under the notice.
+  if (launcherModel && !catalogueFailed) renderBrowse({ name: 'launcher' }, { quiet: true });
   parkLaunchError();
   const error = $('launchError');
   error.className = 'notice notice-warn';
@@ -4947,7 +5188,7 @@ function showSignedOut() {
   syncQuizButtons();
 }
 
-showIdentity();
+meReady = loadIdentity();
 $('saveShortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘S' : 'Ctrl+S';
 router.onRoute((route) => applyRoute(route));
 router.start();
@@ -4961,10 +5202,10 @@ boot();
 async function boot() {
   const route = router.current();
   // An address that is not the launcher's should not flash the launcher while the catalogue loads.
-  if (route.name !== 'launcher' && route.name !== 'path') showTransient('Opening…');
+  if (!BROWSE_ROUTES.has(route.name)) showTransient('Opening…');
   try {
     labsReady = loadLabs();
-    await labsReady;
+    await Promise.all([labsReady, meReady]);
     if (!(await resumeOnLoad(route))) await applyRoute(route, { initial: true });
   } catch (err) {
     console.error('The console could not start', err);

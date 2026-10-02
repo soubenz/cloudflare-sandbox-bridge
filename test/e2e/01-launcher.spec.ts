@@ -1,11 +1,29 @@
-import { test, expect, openConsole, signIn, LAB } from './fixtures';
+import type { Page } from '@playwright/test';
+import { test, expect, openConsole, signIn, API, LAB } from './fixtures';
+
+/**
+ * From home (a card per path) to a page that lists labs: the first path's page, and, when it draws
+ * module cards, the first module's page. The rows are there.
+ */
+async function openFirstLabList(page: Page) {
+  await openConsole(page);
+  await page.waitForSelector('.path-card', { timeout: 30_000 });
+  await page.locator('.path-card-title a').first().click();
+  await page.waitForSelector('.lab, .module-card', { timeout: 30_000 });
+  if (await page.locator('.module-card').count()) await page.locator('.module-card .module-title a').first().click();
+  await page.waitForSelector('.lab', { timeout: 30_000 });
+}
 
 test.describe('lab launcher', () => {
-  test('lists published labs once signed in', async ({ page }) => {
+  test('lists the learning paths once signed in, and a path leads to its labs', async ({ page }) => {
     await openConsole(page);
-    const labs = page.locator('.lab');
-    await expect(labs.first()).toBeVisible({ timeout: 30_000 });
-    expect(await labs.count()).toBeGreaterThan(0);
+    const cards = page.locator('.path-card');
+    await expect(cards.first()).toBeVisible({ timeout: 30_000 });
+    expect(await cards.count()).toBeGreaterThan(0);
+    // Home is the path cards: no lab rows on it.
+    await expect(page.locator('.lab')).toHaveCount(0);
+    await openFirstLabList(page);
+    expect(await page.locator('.lab').count()).toBeGreaterThan(0);
   });
 
   test('shows nothing at all without signing in', async ({ browser }) => {
@@ -41,8 +59,7 @@ test.describe('lab launcher', () => {
   });
 
   test('shows each lab with its slug, version and family', async ({ page }) => {
-    await openConsole(page);
-    await page.waitForSelector('.lab');
+    await openFirstLabList(page);
     const sub = await page.locator('.lab .lab-sub').first().textContent();
     // e.g. "hello@1.0.0 · agent · build · intro · 60 min", or with the newer
     // manifest fields "… · ~20 min · 60 min limit · Free". Difficulty, the
@@ -57,18 +74,18 @@ test.describe('lab launcher', () => {
     // The card used to carry only a title and taxonomy words, which say
     // nothing about what you would actually do. A learner should not have
     // to spend a container to find that out.
-    await openConsole(page);
-    // The first card on the page: the fixture labs are archived and have none.
-    await page.waitForSelector('.lab', { timeout: 30_000 });
+    await openFirstLabList(page);
+    // The first row on the page: the fixture labs are archived and have none. The summary and the
+    // objectives are on the lab's own page, one link away.
     const lab = page.locator('.lab').first();
-    await expect(lab.locator('.lab-summary')).not.toBeEmpty();
-    await lab.locator('.lab-more > summary').click();
-    await expect(lab.locator('.lab-objectives li').first()).toBeVisible();
+    await lab.getByRole('link', { name: 'About this lab' }).click();
+    await expect(page.locator('.lab-detail .lab-summary')).not.toBeEmpty();
+    await expect(page.locator('.lab-detail .lab-objectives li').first()).toBeVisible();
   });
 
   test('keeps archived labs out of the launcher, but in the catalogue', async ({ page }) => {
     await openConsole(page);
-    await page.waitForSelector('.lab', { timeout: 30_000 });
+    await page.waitForSelector('.path-card', { timeout: 30_000 });
     // The catalogue API still lists every lab; the learner launcher draws only the ones that are not archived.
     const res = await page.request.get('/api/labs');
     expect(res.ok()).toBe(true);
@@ -77,10 +94,13 @@ test.describe('lab launcher', () => {
     const hello = labs.find((l) => l.slug === LAB);
     expect(hello, `the catalogue lists ${LAB}`).toBeTruthy();
     expect(hello!.archived, `${LAB} is archived`).toBe(true);
-    for (const l of labs) {
-      await expect(page.locator(`.lab[data-slug="${l.slug}"]`)).toHaveCount(l.archived ? 0 : 1);
-    }
+    // Home counts the labs of every path: the learner's, not the archived ones.
     await expect(page.locator('#labCount')).toHaveText(new RegExp(`^${labs.filter((l) => !l.archived).length} of ${labs.filter((l) => !l.archived).length} labs$`));
+    // And no page lists an archived lab: not home, and not the first path's.
+    await expect(page.locator('.lab')).toHaveCount(0);
+    await page.locator('.path-card-title a').first().click();
+    await page.waitForSelector('.lab, .module-card', { timeout: 30_000 });
+    for (const l of labs.filter((x) => x.archived)) await expect(page.locator(`.lab[data-slug="${l.slug}"]`)).toHaveCount(0);
   });
 
   test('surfaces a failing catalogue instead of hanging', async ({ page }) => {
@@ -97,19 +117,21 @@ test.describe('lab launcher', () => {
 
   test('counts the labs it shows as "N of M labs"', async ({ page }) => {
     await openConsole(page);
-    await page.waitForSelector('.lab');
+    await page.waitForSelector('.path-card');
+    // Home counts every lab of every path.
+    await expect(page.locator('#labCount')).toHaveText(/^(\d+) of \1 labs$/);
+    await openFirstLabList(page);
     const total = await page.locator('.lab').count();
     await expect(page.locator('#labCount')).toHaveText(`${total} of ${total} labs`);
   });
 
-  test('puts every card inside a group with a heading', async ({ page }) => {
+  test('puts every path in a card with a heading', async ({ page }) => {
     await openConsole(page);
-    await page.waitForSelector('.lab');
-    // Labs the manifests have not yet placed in a path and module all land
-    // under one "All labs" group, so this holds for either catalogue.
-    expect(await page.locator('.lab-group').count()).toBeGreaterThan(0);
-    expect(await page.locator('.lab-group > h2.group-head').count()).toBe(await page.locator('.lab-group').count());
-    expect(await page.locator('.lab:not(.lab-group .lab)').count()).toBe(0);
+    await page.waitForSelector('.path-card');
+    // Labs the manifests have not yet placed in a path land under one "All labs" card, so this holds for either catalogue.
+    expect(await page.locator('.path-card').count()).toBeGreaterThan(0);
+    expect(await page.locator('.path-card > h2.path-card-title').count()).toBe(await page.locator('.path-card').count());
+    expect(await page.locator('.lab').count()).toBe(0);
   });
 
   test('does not show where the API lives: the footer is just the links', async ({ page }) => {

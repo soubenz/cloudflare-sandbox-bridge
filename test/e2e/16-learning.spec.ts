@@ -211,7 +211,7 @@ async function stub(page: Page, opts: StubOptions = {}): Promise<Stub> {
     const url = new URL(route.request().url());
     const method = route.request().method();
     const path = url.pathname;
-    if (path === '/api/me') return json(route, { sub: 'console' });
+    if (path === '/api/me') return json(route, { sub: 'console', user_id: 'console' });
     if (path === '/api/labs') return json(route, LABS);
     if (path === '/api/onboarding') {
       s.onboardingFetches++;
@@ -620,7 +620,11 @@ test.describe('the platform quiz', () => {
     await expect(screen(page)).toBeHidden();
     // The first module that is new gets the chip: module 1, not the strong module 2.
     await expect(page.locator('.badge-suggested')).toHaveCount(1);
-    await expect(page.locator('.module[data-module="1"] .badge-suggested')).toHaveText('Suggested start');
+    // Home marks the path that holds it; the path's page marks the module: module 1, not the strong module 2.
+    await expect(page.locator('#path-ai-platform .badge-suggested')).toHaveText('Suggested start');
+    await onPath(page);
+    await expect(page.locator('.badge-suggested')).toHaveCount(1);
+    await expect(page.locator('.module-card[data-module="1"] .badge-suggested')).toHaveText('Suggested start');
 
     // Stored in this browser, and never shown again by itself.
     const m = await stored(page);
@@ -628,7 +632,7 @@ test.describe('the platform quiz', () => {
     expect(m.onboarding.levels).toEqual({ gateway: 'new', mcp: 'strong', rag: 'new', otel: 'new', platform: 'new', sovereignty: 'new' });
     await page.reload();
     await page.waitForSelector('body[data-booted="1"]');
-    await expect(page.locator('.lab').first()).toBeVisible();
+    await expect(page.locator('.module-card').first()).toBeVisible();
     await expect(screen(page)).toBeHidden();
     expect(s.errors).toEqual([]);
   });
@@ -706,7 +710,8 @@ test.describe('the platform quiz', () => {
     expect(m.onboarding.status).toBe('done');
     expect(Object.values(m.onboarding.levels)).toEqual(AREAS.map(() => 'new'));
     await page.getByRole('button', { name: 'Go to the labs' }).click();
-    await expect(page.locator('.module[data-module="1"] .badge-suggested')).toHaveCount(1);
+    await onPath(page);
+    await expect(page.locator('.module-card[data-module="1"] .badge-suggested')).toHaveCount(1);
     await page.reload();
     await page.waitForSelector('body[data-booted="1"]');
     await expect(screen(page)).toBeHidden();
@@ -777,7 +782,7 @@ test.describe('the platform quiz', () => {
 
     await page.reload();
     await page.waitForSelector('body[data-booted="1"]');
-    await expect(page.locator('.lab').first()).toBeVisible();
+    await expect(page.locator('.path-card').first()).toBeVisible();
     await expect(screen(page)).toBeHidden();
     // Give a late offer the time it would need.
     await page.waitForTimeout(500);
@@ -807,7 +812,7 @@ test.describe('the platform quiz', () => {
     const levels = { gateway: 'strong', mcp: 'ok', rag: 'new' };
     const s = await stub(page);
     await open(page, { mastery: { onboarding: { status: 'done', at: 5, levels } } });
-    await expect(page.locator('.lab').first()).toBeVisible();
+    await expect(page.locator('.path-card').first()).toBeVisible();
     await expect(screen(page)).toBeHidden();
 
     // Next to the help control.
@@ -846,7 +851,8 @@ test.describe('the platform quiz', () => {
   test('a finished retake replaces the levels and moves the suggestion', async ({ page }) => {
     await stub(page);
     await open(page, { mastery: { onboarding: { status: 'done', at: 5, levels: { gateway: 'new', mcp: 'strong' } } } });
-    await expect(page.locator('.module[data-module="1"] .badge-suggested')).toHaveCount(1);
+    await onPath(page);
+    await expect(page.locator('.module-card[data-module="1"] .badge-suggested')).toHaveCount(1);
     await page.locator('#btnRetakeQuiz').click();
     await startQuiz(page, 'gateway');
     await probeAll(page, () => true);
@@ -857,7 +863,8 @@ test.describe('the platform quiz', () => {
     await page.getByRole('button', { name: 'Go to the labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
     await expect(page.locator('.badge-suggested')).toHaveCount(1);
-    await expect(page.locator('.module[data-module="2"] .badge-suggested')).toHaveCount(1);
+    await onPath(page);
+    await expect(page.locator('.module-card[data-module="2"] .badge-suggested')).toHaveCount(1);
     const m = await stored(page);
     expect(m.onboarding.levels.gateway).toBe('strong');
     expect(m.onboarding.levels.mcp).toBe('new');
@@ -868,7 +875,7 @@ test.describe('the platform quiz', () => {
       const p = await page.context().newPage();
       const s = await stub(p, { onboarding: mode });
       await open(p);
-      await expect(p.locator('.lab').first()).toBeVisible();
+      await expect(p.locator('.path-card').first()).toBeVisible();
       await p.waitForTimeout(300);
       await expect(screen(p)).toBeHidden();
       await expect(p.locator('#btnRetakeQuiz')).toBeHidden();
@@ -943,8 +950,28 @@ test.describe('the platform quiz', () => {
 // Before you begin
 // =========================================================================
 
-/** Starts the gateway lab from its card. */
-const startCard = (page: Page) => page.locator(`.lab[data-slug="${GATEWAY}"] .lab-start`).click();
+/**
+ * Moves to a page of the launcher without leaving the app (what a link does): the history gets the
+ * address, and the console shows it. The pages are home, a path and a module.
+ */
+async function goToPage(page: Page, url: string, marker: string) {
+  await page.evaluate((u) => {
+    history.pushState(null, '', u);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, url);
+  await expect(page.locator(marker).first()).toBeVisible();
+}
+const onPath = (page: Page) => goToPage(page, '/paths/ai-platform', '.module-card');
+
+/** Presses Start on a lab's row, on the page of the module that holds it. */
+async function startLab(page: Page, slug: string) {
+  const row = page.locator(`.lab[data-slug="${slug}"] .lab-start`);
+  if (!(await row.count())) await goToPage(page, `/paths/ai-platform/modules/${(LABS as unknown as Array<{ slug: string; module: number }>).find((l) => l.slug === slug)!.module}`, '.module .lab');
+  await row.click();
+}
+
+/** Starts the gateway lab from its row. */
+const startCard = (page: Page) => startLab(page, GATEWAY);
 
 test.describe('Before you begin', () => {
   test('shows the story first, and does not start the session until Start the lab is pressed', async ({ page }) => {
@@ -1175,7 +1202,7 @@ test.describe('Before you begin', () => {
   test("a 'strong' platform area starts the lessons folded when the lab asks no questions of its own", async ({ page }) => {
     const s = await stub(page);
     await open(page, { mastery: { onboarding: { status: 'done', at: 1, levels: { gateway: 'strong' } } } });
-    await page.locator(`.lab[data-slug="${NOQUIZ}"] .lab-start`).click();
+    await startLab(page, NOQUIZ);
     await page.getByRole('button', { name: 'Continue' }).click();
     // No question to ask: the lessons are next, folded because the quiz said this area is strong.
     await expect(heading(page)).toHaveText('Lessons for this lab');
@@ -1454,7 +1481,7 @@ test.describe('a lab without learning content', () => {
   test('goes straight to the boot, fetches no bundle and adds no tabs', async ({ page }) => {
     const s = await stub(page);
     await open(page, { mastery: SKIPPED });
-    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await startLab(page, PLAIN);
     await enterSession(page);
     expect(s.starts).toEqual([PLAIN]);
     expect(s.learnFetches).toEqual([]);
@@ -1471,7 +1498,7 @@ test.describe('a lab without learning content', () => {
     test(`a lab marked has_learn whose bundle ${what} also goes straight to the boot`, async ({ page }) => {
       const s = await stub(page);
       await open(page, { mastery: SKIPPED });
-      await page.locator(`.lab[data-slug="${slug}"] .lab-start`).click();
+      await startLab(page, slug);
       await enterSession(page);
       expect(s.learnFetches).toContain(slug);
       expect(s.starts).toEqual([slug]);
@@ -1520,7 +1547,7 @@ test.describe('the desktop notice', () => {
     const requests = watchSessionRequests(page);
     await page.setViewportSize(PHONE);
     await open(page, { mastery: SKIPPED });
-    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await startLab(page, PLAIN);
 
     await expect(notice(page)).toBeVisible();
     await expect(page.locator('#dnTitle')).toHaveText('Labs work best on a desktop.');
@@ -1552,7 +1579,7 @@ test.describe('the desktop notice', () => {
     await stub(page);
     await page.setViewportSize(PHONE);
     await open(page, { mastery: SKIPPED });
-    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await startLab(page, PLAIN);
     const origin = new URL(page.url()).origin;
 
     const email = page.getByRole('link', { name: 'Email me the link' });
@@ -1573,8 +1600,9 @@ test.describe('the desktop notice', () => {
     await page.getByRole('button', { name: 'Browse the labs anyway' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
     await expect(notice(page)).toBeHidden();
-    await expect(page.locator('.lab').first()).toBeVisible();
-    await expect(page.locator('#heroTitle')).toBeFocused();
+    // The page the learner was on (the module's) is back, and its heading takes the focus.
+    await expect(page.locator('.module .lab').first()).toBeVisible();
+    await expect(page.locator('.module-title')).toBeFocused();
   });
 
   test('where the clipboard cannot be written the link is shown selected', async ({ page }) => {
@@ -1582,7 +1610,7 @@ test.describe('the desktop notice', () => {
     await stub(page);
     await page.setViewportSize(PHONE);
     await open(page, { mastery: SKIPPED });
-    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await startLab(page, PLAIN);
     await page.getByRole('button', { name: 'Copy the link' }).click();
     const field = page.getByLabel('Link to this console');
     await expect(field).toBeVisible();
@@ -1607,7 +1635,11 @@ test.describe('the desktop notice', () => {
     await expect(page.locator('#heroTitle')).toHaveText('Pick up where you left off.');
     await expect(resume).toContainText('See how requests are routed');
     await expect(resume).toContainText('left');
-    await expect(page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`)).toHaveText('Rejoin');
+    // Its row, on the module's page, says Resume.
+    await goToPage(page, '/paths/ai-platform/modules/2', '.module .lab');
+    await expect(page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`)).toHaveText('Resume');
+    await goToPage(page, '/', '.path-card');
+    await expect(resume).toBeVisible();
 
     await page.getByRole('button', { name: /Rejoin the lab/ }).click();
     await expect(notice(page)).toBeVisible();
@@ -1627,7 +1659,7 @@ test.describe('the desktop notice', () => {
     const s = await stub(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, { mastery: SKIPPED });
-    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await startLab(page, PLAIN);
     await enterSession(page);
     expect(s.starts).toEqual([PLAIN]);
     await expect(notice(page)).toBeHidden();
@@ -1637,14 +1669,14 @@ test.describe('the desktop notice', () => {
     const s = await stub(page);
     await page.setViewportSize({ width: 759, height: 900 });
     await open(page, { mastery: SKIPPED });
-    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await startLab(page, PLAIN);
     await expect(notice(page)).toBeVisible();
     expect(s.starts).toEqual([]);
     // Widening the window brings the launcher back by itself.
     await page.setViewportSize({ width: 760, height: 900 });
     await expect(notice(page)).toBeHidden();
     await expect(page.locator('#launcher')).toBeVisible();
-    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+    await startLab(page, PLAIN);
     await enterSession(page);
     expect(s.starts).toEqual([PLAIN]);
   });
@@ -1667,7 +1699,7 @@ test.describe('the desktop notice', () => {
     try {
       const s = await stub(page);
       await open(page, { mastery: SKIPPED });
-      await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+      await startLab(page, PLAIN);
       await expect(notice(page)).toBeVisible();
       expect(s.starts).toEqual([]);
       await page.setViewportSize({ width: 1180, height: 820 });
@@ -1686,7 +1718,11 @@ test.describe('the desktop notice', () => {
     await page.getByRole('button', { name: 'Skip for now' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
     await page.locator('#labSearch').fill('routed');
-    await expect(page.locator(`.lab[data-slug="${PLAIN}"]`)).toBeVisible();
+    await expect(page.locator('#labCount')).toHaveText(`1 of ${LABS.length} labs`);
+    await expect(page.locator('.path-card')).toHaveCount(1);
+    await onPath(page);
+    await expect(page.locator('.module-card')).toHaveCount(1);
+    await expect(page.locator('.module-card')).toHaveAttribute('data-module', '2');
     await noHorizontalScroll(page);
     expect(s.starts).toEqual([]);
   });
@@ -1749,7 +1785,7 @@ test.describe('screenshots', () => {
       await page.locator('#launcher').evaluate((el) => { el.scrollTop = 0; window.scrollTo(0, 0); });
       await shot('launcher');
       if (v.width < 760) {
-        await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
+        await startLab(page, PLAIN);
         await expect(page.locator('#desktopNotice')).toBeVisible();
         await shot('desktop-notice');
         await page.getByRole('button', { name: 'Browse the labs anyway' }).click();

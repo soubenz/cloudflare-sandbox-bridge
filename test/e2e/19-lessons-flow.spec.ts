@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import { parse as parseYaml } from 'yaml';
 import { serveConsole } from './console-server';
+import { MODULE_PAGE, pressStart } from './browse';
 
 /**
  * The flow before a lab starts, and what the session screen no longer has.
@@ -184,7 +185,7 @@ async function stub(page: Page, { lab: rejoined = EXPLORE }: { lab?: string } = 
     const url = new URL(route.request().url());
     const method = route.request().method();
     const path = url.pathname;
-    if (path === '/api/me') return json(route, { sub: 'console' });
+    if (path === '/api/me') return json(route, { sub: 'console', user_id: 'console' });
     if (path === '/api/labs') return json(route, LABS);
     if (path === '/api/onboarding') return json(route, { error: { code: 'no_onboarding', message: 'none' } }, 404);
     if (path === '/api/learn/answers' && method === 'POST') {
@@ -280,11 +281,11 @@ interface OpenOptions {
   comicTest?: boolean;
   /** A session this browser remembers, as it would after a reload. */
   remembered?: string;
-  /** The address to open instead of the launcher (a deep link). */
+  /** The address to open instead of the module's page (a deep link). */
   url?: string;
 }
 
-/** Opens the console on the launcher, past the things that are other specs' business. */
+/** Opens the console on the module's page (where the labs' rows are), past the things that are other specs' business. */
 async function open(page: Page, { theme, mastery = SKIPPED, comicTest = false, remembered, url }: OpenOptions = {}) {
   await page.addInitScript(
     ([t, m, r]) => {
@@ -299,14 +300,14 @@ async function open(page: Page, { theme, mastery = SKIPPED, comicTest = false, r
     },
     [theme ?? null, JSON.stringify({ v: 1, ...mastery }), remembered ? { id: SESSION_ID, lab: remembered } : null] as const
   );
-  await page.goto(url ?? (comicTest ? '/?comicTest=1' : '/'), { waitUntil: 'domcontentloaded' });
+  await page.goto(url ?? (comicTest ? `${MODULE_PAGE}?comicTest=1` : MODULE_PAGE), { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('body[data-booted="1"]');
 }
 
 /** Every concept of the lab already known, so no question is asked and every lesson starts folded. */
 const ALL_KNOWN: Mastery = { ...SKIPPED, concepts: Object.fromEntries(full.concepts.map((c) => [c.id, { known: true }])) };
 
-const startCard = (page: Page, slug: string) => page.locator(`.lab[data-slug="${slug}"] .lab-start`).click();
+const startCard = (page: Page, slug: string) => pressStart(page, slug);
 const screen = (page: Page) => page.locator('#learnScreen');
 const host = (page: Page) => page.locator('#learnHost');
 const heading = (page: Page) => host(page).locator('[data-learn-heading]');
@@ -864,7 +865,7 @@ test.describe('rejoining', () => {
   test('a reload of a running lab goes straight to the session: no story, no lessons, no learn screen', async ({ page }) => {
     const s = await stub(page, { lab: BUILD });
     await page.setViewportSize({ width: 1440, height: 900 });
-    await open(page, { remembered: BUILD });
+    await open(page, { remembered: BUILD, url: '/' });
     await expect(page.locator('#workspace')).toBeVisible();
     await expect(screen(page)).toBeHidden();
     await expect(page.locator('#guide')).toHaveAttribute('data-ready', 'true');
@@ -882,7 +883,7 @@ test.describe('rejoining', () => {
   test('the explore lab too: its guide has Brief and Questions straight away', async ({ page }) => {
     await stub(page);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await open(page, { remembered: EXPLORE });
+    await open(page, { remembered: EXPLORE, url: '/' });
     await expect(page.locator('#workspace')).toBeVisible();
     await expect(screen(page)).toBeHidden();
     await expect(page.locator('#guide')).toHaveAttribute('data-ready', 'true');
