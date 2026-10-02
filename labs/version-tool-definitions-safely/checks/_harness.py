@@ -91,6 +91,11 @@ STATE_PATH = os.path.join(WORKSPACE_DIR, "rollout", "state.yaml")
 
 CF = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744")
 V2_TOOL_SERVER_URL = os.environ.get("TOOL_SERVER_V2_URL", "http://127.0.0.1:65102/mcp")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call the /v1/*
+# management routes. Sent on the grader's own management calls only
+# (admin=True in _http below) -- never with a token (the witness's MCP calls).
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 REGISTRATION_POLL_TIMEOUT_S = 60   # generous: covers a slow register_v2()
 # Was 2.0. Live verification (27 Sep 2026) found this reproducibly too short:
@@ -123,9 +128,13 @@ def _load_state():
     return json.loads("\n".join(lines))
 
 
-def _http(method, path, body=None, token=None, timeout=10, extra_headers=None):
+def _http(method, path, body=None, token=None, timeout=10, extra_headers=None, admin=False):
+    """admin=True sends the trusted-proxy admin header (the grader acting as
+    the platform); every call made with a token leaves it off."""
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Content-Type": "application/json"}
+    if admin:
+        headers["X-Authenticated-User"] = ADMIN_USER
     if token:
         headers["Authorization"] = "Bearer %s" % token
     if extra_headers:
@@ -204,6 +213,7 @@ def _mint_witness_token(server_id):
     status, resp = _http(
         "POST", "/v1/tokens",
         {"name": "grader-witness-%d" % int(time.time()), "expires_in_days": 1, "scope": {"server_id": server_id, "permissions": ["tools.read", "tools.execute"]}},
+        admin=True,
     )
     if status != 201:
         raise RuntimeError("could not mint a witness token for server %s: %r" % (server_id, resp))
@@ -248,7 +258,7 @@ def _sample_associated_tools(server_id, samples, stop_event):
     rollback (never 0, never 2) and to catch v2 reaching the shared server
     during registration/testing (should only ever be v1's tool name)."""
     while not stop_event.is_set():
-        status, server = _http("GET", "/v1/servers/%s" % server_id)
+        status, server = _http("GET", "/v1/servers/%s" % server_id, admin=True)
         if status == 200 and isinstance(server, dict):
             samples.append(list(server.get("associatedTools") or []))
         # No sleep: back-to-back requests maximize sampling density during
@@ -277,7 +287,7 @@ def _build_results():
         return results
     results["original_server_id"] = original_server_id
 
-    status, v1_tool = _http("GET", "/v1/tools/%s" % original_state["v1_tool_id"])
+    status, v1_tool = _http("GET", "/v1/tools/%s" % original_state["v1_tool_id"], admin=True)
     if status != 200 or not isinstance(v1_tool, dict):
         results["setup_error"] = "could not read v1's own tool (%s) from ContextForge: %r" % (original_state["v1_tool_id"], v1_tool)
         return results
@@ -324,11 +334,11 @@ def _build_results():
 
     # Independent confirmation straight from ContextForge's own API --
     # never from state.yaml or the learner's bookkeeping.
-    status, gateways = _http("GET", "/v1/gateways")
+    status, gateways = _http("GET", "/v1/gateways", admin=True)
     gw = next((g for g in (gateways or []) if g.get("url") in (V2_TOOL_SERVER_URL, V2_TOOL_SERVER_URL.replace("127.0.0.1", "localhost"))), None) if status == 200 else None
     v2_confirmed = bool(gw and gw.get("enabled") and gw.get("reachable"))
     if v2_confirmed:
-        status, tools = _http("GET", "/v1/tools")
+        status, tools = _http("GET", "/v1/tools", admin=True)
         v2_confirmed = any(t.get("gatewayId") == gw["id"] for t in (tools or [])) if status == 200 else False
     results["v2_confirmed_via_api"] = v2_confirmed
 

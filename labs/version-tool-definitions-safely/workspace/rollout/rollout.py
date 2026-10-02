@@ -16,6 +16,16 @@ traffic split, no built-in history table. What it does have, for real:
   * GET /v1/export and POST /v1/import move a whole config snapshot in
     and out.
 
+Every one of those calls is a management call, and ContextForge needs no
+login and no key for them in this lab: it takes the admin identity from the
+X-Authenticated-User header (ADMIN_USER below), so each request you make to
+$CONTEXTFORGE_URL's /v1/* routes -- export included -- sends that header.
+(caller.py is different: it calls a virtual server's own endpoint with a
+scoped token, and no header.) One catch on export: by default it also asks
+for ContextForge's roots, which only a full-scope admin may read, so a
+header-authenticated admin gets 403 "Access denied" for the whole call until
+the export leaves them out (`exclude_types=roots` -- nothing here uses roots).
+
 state.yaml (written by ../contextforge/seed.py, in this same directory)
 is YOUR bookkeeping: it names the one stable server_id every caller talks
 to, records which tool id is v1 and (once you've registered it) which is
@@ -31,6 +41,10 @@ import os
 
 STATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.yaml")
 SNAPSHOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapshots")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call the management
+# routes. Send it as X-Authenticated-User on every one of them.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 
 def load_state():

@@ -21,6 +21,11 @@ ROLES_FILE = os.path.join(HERE, "roles.yaml")
 KEYS_FILE = os.path.join(HERE, "keys.json")
 
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call the management
+# routes. A call made *with a role's token* leaves it off: the token is what
+# is being tried.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 
 def _request(method, path, body=None, token=None):
@@ -30,6 +35,8 @@ def _request(method, path, body=None, token=None):
         headers["Content-Type"] = "application/json"
     if token:
         headers["Authorization"] = "Bearer %s" % token
+    else:
+        headers["X-Authenticated-User"] = ADMIN_USER
     req = urllib.request.Request(CONTEXTFORGE_URL + path, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:

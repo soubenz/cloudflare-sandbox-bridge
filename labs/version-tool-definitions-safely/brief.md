@@ -44,6 +44,7 @@ if it turns out to be a mistake. Three things have to hold the whole time:
 | `contextforge/seed.py` | Already run once at session start -- registered v1, created the `price-lookup` server, wrote `rollout/state.yaml`. |
 | `rollout/state.yaml` | Your bookkeeping: the stable server id, v1's ids, and (once you've registered it) v2's. Nothing updates this after the first write except you. |
 | `rollout/rollout.py` | A skeleton: `register_v2`, `snapshot`, `cutover_to`, `rollback` -- all `NotImplementedError` right now. |
+| **ContextForge** tab | ContextForge's own admin pages, already signed in: MCP servers (the registered gateways), virtual servers, tools. Management calls from `rollout.py` or `curl` need an `X-Authenticated-User: admin@example.com` header instead. |
 | **view** tab | Read-only: every registered gateway and tool, and which tool `price-lookup` currently serves. |
 
 ## Checking your work

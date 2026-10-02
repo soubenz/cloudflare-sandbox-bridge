@@ -70,59 +70,81 @@
 #     tool the caller needs -- or one that restores it under a new server
 #     id.
 #
-#  4. GET /v1/export and POST /v1/import need a REAL admin login, unlike
-#     every other endpoint this design touches. Confirmed live: an
-#     unauthenticated GET /v1/export returns 403 "Access denied", where the
-#     identical unauthenticated request against /v1/gateways, /v1/servers,
-#     /v1/tools or /v1/tokens succeeds with no Authorization header at
-#     all. Traced to source: those routes are decorated
+#  4. GET /v1/export and POST /v1/import need an admin with a real role,
+#     unlike the plain management routes: they are decorated
 #     `@require_permission("admin.export"/"admin.import")`
-#     (mcpgateway/main.py), and that decorator's own admin bypass is not
-#     the same code path as the plain `get_current_user` dependency the
-#     other management routes use -- ALLOW_UNAUTHENTICATED_ADMIN does not
-#     reach it. `POST /v1/auth/login` (PLATFORM_ADMIN_EMAIL/
-#     PLATFORM_ADMIN_PASSWORD, both manifest-level env so a learner's own
-#     terminal has them) is what a real snapshot needs; solution/
-#     rollout/rollout.py's `snapshot()` does exactly that.
+#     (mcpgateway/main.py), and with ALLOW_UNAUTHENTICATED_ADMIN an
+#     unauthenticated GET /v1/export was a 403 "Access denied" where the
+#     identical request against /v1/gateways, /v1/servers, /v1/tools or
+#     /v1/tokens succeeded -- which is why earlier versions of this lab had
+#     the learner log in (POST /v1/auth/login with a manifest-level
+#     PLATFORM_ADMIN_PASSWORD) just for the snapshot. Under trusted-proxy
+#     mode (next paragraph) the platform_admin role is assigned to the
+#     admin user at boot, and the same X-Authenticated-User header that opens
+#     every other route opens export too, so there is nothing to log in to:
+#     solution/rollout/rollout.py's `snapshot()` sends the header like every
+#     other call. A bearer token minted by a login is NOT honoured on the
+#     management routes in this mode, so the login path is gone, not
+#     optional; PLATFORM_ADMIN_PASSWORD moved from the learner's env to the
+#     contextforge service's own. One difference found live: a default
+#     export also includes ContextForge's roots, and
+#     _require_unrestricted_root_admin (mcpgateway/main.py) refuses a
+#     header-authenticated admin for those (403 "Access denied" for the
+#     whole call, role or not), so snapshot() asks for
+#     `exclude_types=roots`, which this lab never uses; the skeleton's
+#     docstring says so too.
 #
-# One more real thing worth recording since it changes a stated deliverable:
-# ContextForge's OWN admin UI cannot be `ui: true` as literally asked, for
-# TWO independent, confirmed reasons -- my first pass here only found the
-# second one; re-read a sibling agent's own lab in this same module
-# (one-endpoint-for-every-tool vs. see-how-tools-reach-an-agent disagree
-# with each other on exactly this point) and re-verified from source
-# before trusting either:
-#  a. ALLOW_UNAUTHENTICATED_ADMIN=true does NOT bypass login for a real
-#     browser tab. Read from the installed source
-#     (mcpgateway/middleware/rbac.py, get_current_user): a request is
-#     treated as "browser-shaped" whenever its Accept header contains
-#     `text/html`, or it's an HTMX request, or its Referer is same-origin
-#     under /admin -- and for a browser-shaped request with no token, it is
-#     302-redirected to a real `/admin/login` form BEFORE the
-#     allow_unauthenticated_admin bypass is ever reached; that bypass only
-#     fires for a request that does NOT look like a browser. A plain `curl`
-#     with no `Accept` header (what my own first pass here used) never
-#     triggers the browser branch at all, which is exactly why it looked
-#     like "no login screen ever renders" -- true for curl, not true for an
-#     actual browser tab, which always sends `Accept: text/html`.
-#  b. Independently, its HTML hard-codes absolute asset paths (e.g.
-#     `/static/js/password-validator.js`) and it has no reverse-proxy
-#     path-prefix support of its own (its `APP_ROOT_PATH` setting only
-#     feeds FastAPI's OpenAPI/link generation, confirmed by reading
-#     mcpgateway/main.py -- there is no middleware that strips or mounts
-#     under an arbitrary prefix). Confirmed live: a request shaped like this
-#     platform's own proxy would send it
-#     (`/sessions/<id>/services/contextforge/admin`) 404s against a real
-#     running instance, where the unprefixed `/admin` 200s.
-# Either one alone already rules out a bare `ui: true` on ContextForge
-# itself under this platform's no-login rule. Per docs/lab-authoring.md's
-# own established fallback for exactly this shape
-# of problem ("the tool's own UI is not exposed as a tab and the lab ships
-# a small page of its own instead" -- the same pattern this repo already
-# uses for LiteLLM's always-login-gated UI, just for a different
-# underlying reason here), `contextforge` stays `ui: false` and `view`
-# (workspace/services/view.py) is this lab's tab: read-only, no login,
-# renders correctly under the prefix because it strips it itself.
+# ContextForge is in trusted-proxy mode (MCP_CLIENT_AUTH_ENABLED=false,
+# TRUST_PROXY_AUTH=true, TRUST_PROXY_AUTH_DANGEROUSLY=true): a request
+# carrying X-Authenticated-User: <PLATFORM_ADMIN_EMAIL> is an admin request,
+# browser or not (is_proxy_auth_trust_active in utils/verify_credentials.py).
+# The whole /v1/* management API -- registering a gateway, creating and
+# updating a virtual server, minting a token, exporting -- works with that
+# one header and no bearer token; rollout/rollout.py, contextforge/seed.py,
+# services/view.py and the grader's own admin-plane calls all send it
+# (CONTEXTFORGE_ADMIN_USER overrides the value). A request with no header is
+# anonymous and gets 403 there. The tool-calling surface is a different
+# thing: caller.py and the grader's witness call /servers/{id}/mcp with a
+# scoped Bearer token and NO header, and that is checked exactly as before
+# (confirmed live: the token lists and calls the one tool; the header is
+# never sent with it).
+#
+# ContextForge's own admin UI is a `ui: true` tab here (service `admin`),
+# with no login form, by the same trusted-proxy header. Confirmed live with a
+# real browser (Playwright + chromium) through a /sessions/<id>/services/
+# admin/ path, no cookies:
+#  - Without it, ALLOW_UNAUTHENTICATED_ADMIN=true grants admin only to a
+#    request that doesn't look like a browser; a real tab hitting /admin is
+#    redirected to a "Sign In" form (mcpgateway/middleware/rbac.py's
+#    get_current_user checks for a token before it reaches that bypass).
+#    That is why earlier versions of this lab kept ContextForge `ui: false`
+#    and shipped only the `view` page. This lab no longer sets that flag.
+#  - The session proxy cannot add a header, so workspace/admin_proxy.py (the
+#    `admin` service) is a tiny stdlib reverse proxy that sets
+#    X-Authenticated-User on every request, after discarding whatever the
+#    client sent. It is the same file as in
+#    labs/see-how-tools-reach-an-agent, port 8964.
+#  - The admin pages are gated by a role, not just by is_admin, and the
+#    platform_admin role is only assigned to the admin user at boot when
+#    EMAIL_AUTH_ENABLED=true. So email auth is on, with two fixed lab-only
+#    passwords (the default "changeme" fails its own strength check).
+#    Nobody ever types them: there is no login page in reach (the proxy turns
+#    /admin/login and the Logout button into a redirect to the dashboard).
+#  - MCPGATEWAY_UI_ENABLED and MCPGATEWAY_ADMIN_API_ENABLED (both default
+#    false) must be true, or /admin is a 404.
+#  - APP_ROOT_PATH is set to the admin tab's own prefix. The session proxy
+#    forwards the full path unchanged, and with APP_ROOT_PATH ContextForge
+#    both accepts it and writes the prefix into every asset URL, htmx URL
+#    and redirect itself, so the proxy rewrites nothing in a page body. It
+#    also still answers unprefixed paths, so the scripts and the healthcheck
+#    are unaffected. (An earlier note here said APP_ROOT_PATH only feeds
+#    OpenAPI links and that the admin pages 404 under a prefix; that was
+#    wrong once the setting is on, confirmed live.)
+#
+# Ports: the lab's own 65101/65102 (tool servers) and 65103 (view) plus the
+# canonical contextforge 4744; the admin proxy is 8964, the same as in
+# labs/see-how-tools-reach-an-agent. This lab's checks run against the live
+# gateway, so they start nothing of their own.
 #
 # No Postgres: ContextForge's SQLite backend is real and sufficient for
 # this lab (per the investigation; Redis is optional and unused here too).
@@ -153,16 +175,6 @@ env:
   CONTEXTFORGE_URL: "http://127.0.0.1:4744"
   TOOL_SERVER_V1_URL: "http://127.0.0.1:65101/mcp"
   TOOL_SERVER_V2_URL: "http://127.0.0.1:65102/mcp"
-  # Manifest-level (not just contextforge's own service env) so a learner's
-  # terminal -- where rollout.py actually runs -- has it too. Needed only
-  # for GET /v1/export: unlike registering a gateway or cutting a server
-  # over, `admin.export`/`admin.import` are NOT covered by
-  # ALLOW_UNAUTHENTICATED_ADMIN's bypass -- confirmed live, an
-  # unauthenticated GET /v1/export 403s ("Access denied") where the same
-  # request against /v1/gateways or /v1/servers succeeds with no token at
-  # all. A real login (POST /v1/auth/login) is what a snapshot needs.
-  PLATFORM_ADMIN_EMAIL: "admin@example.com"
-  PLATFORM_ADMIN_PASSWORD: "ph6RqKFKVHa5Dq8Mt2YJVYVh2cAMpH35O-wAiAC3QxA"
 
 services:
   - name: tool-server-v1
@@ -210,16 +222,33 @@ services:
       JWT_SECRET_KEY: "M4iA8Pp-TGSbFIVwV8PNFsEsrmSfQTs2Ua6BD60kz0U"
       AUTH_ENCRYPTION_SECRET: "Yh4LCbuiYm_pvOflb8unP1ZNGwm32sJ2s6nMmLNUCv0"
       BASIC_AUTH_PASSWORD: "6QjTBJi8u5LGRqOoojlIylDE9yEJdu4F21ADjtv7V1o"
-      # PLATFORM_ADMIN_PASSWORD comes from manifest-level env above (a
-      # learner's terminal needs it too, for snapshot()'s admin login).
+      # Needed so the platform_admin role is assigned to PLATFORM_ADMIN_EMAIL
+      # at boot (the admin routes, export included, check that role). The
+      # two passwords only have to pass ContextForge's strength check; no
+      # login page is reachable and nothing logs in, so nobody types them.
+      # Fixed lab-only values.
+      EMAIL_AUTH_ENABLED: "true"
+      PLATFORM_ADMIN_PASSWORD: "ph6RqKFKVHa5Dq8Mt2YJVYVh2cAMpH35O-wAiAC3QxA"
       DEFAULT_USER_PASSWORD: "btnQvQPFWHmyL4MEqYv0-VfgObdqliKNfi_2DtQ42q8"
-      # Confirmed live: AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true
-      # gives a real, working, un-gated management API (gateways, servers,
-      # tools, tokens all work with zero Authorization header) -- but NOT a
-      # real, working, un-gated browser UI; see the header comment above
-      # for why the admin UI is still not this lab's tab regardless.
+      # No login, ever (docs/lab-authoring.md's no-login rule). Trusted-proxy
+      # authentication: the admin identity comes from the X-Authenticated-User
+      # header (PROXY_USER_HEADER's default), and only the value
+      # PLATFORM_ADMIN_EMAIL makes an admin. See the header comment.
+      MCP_CLIENT_AUTH_ENABLED: "false"
+      TRUST_PROXY_AUTH: "true"
+      TRUST_PROXY_AUTH_DANGEROUSLY: "true"
+      PLATFORM_ADMIN_EMAIL: "admin@example.com"
+      # false, not true: a request with no header is then anonymous (403)
+      # instead of being sent to a /admin/login form.
       AUTH_REQUIRED: "false"
-      ALLOW_UNAUTHENTICATED_ADMIN: "true"
+      # The admin pages, and the admin API routes they call.
+      MCPGATEWAY_UI_ENABLED: "true"
+      MCPGATEWAY_ADMIN_API_ENABLED: "true"
+      # The admin tab's own prefix: the session proxy forwards the full path
+      # (/sessions/<id>/services/admin/...) unchanged, and with this set
+      # ContextForge accepts that path and puts the prefix into every URL it
+      # writes. Must match the `admin` service's name below.
+      APP_ROOT_PATH: "/sessions/{{session.id}}/services/admin"
       # Both tool servers are on 127.0.0.1 in this same container --
       # without this, registering either one 422s (see header comment #1).
       SSRF_ALLOW_LOCALHOST: "true"
@@ -249,11 +278,41 @@ services:
       # running) reported healthy in ~8s. 60s leaves real room for a slower
       # container without hiding an actual failure.
       timeout_s: 60
+    # ui: false, on purpose: this port is the raw gateway, which trusts the
+    # X-Authenticated-User header from whoever sends it. The learner reaches
+    # its admin pages only through the `admin` service below, which sets
+    # that header itself.
     ui: false
     depends_on: [tool-server-v1, tool-server-v2]
+  - name: admin
+    label: ContextForge
+    about: ContextForge's own admin pages, already signed in. Watch price-tool-v2 get registered, and the price-lookup server's tool change at cutover and rollback.
+    # A tiny stdlib reverse proxy (workspace/admin_proxy.py) in front of
+    # ContextForge on 127.0.0.1:4744. It sets X-Authenticated-User to
+    # PLATFORM_ADMIN_EMAIL on every request (replacing any value the client
+    # sent), which is what ContextForge's trusted-proxy mode takes as the
+    # admin -- so the real admin pages open with no login form. See the
+    # header comment. ADMIN_PREFIX must equal this service's own prefix and
+    # the contextforge service's APP_ROOT_PATH.
+    argv: ["python3", "-B", "/workspace/admin_proxy.py"]
+    cwd: /workspace
+    env:
+      ADMIN_PORT: "8964"
+      ADMIN_PREFIX: "{{service.prefix}}"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+      ADMIN_USER: "admin@example.com"
+    port: 8964
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: true
+    depends_on: [contextforge]
   - name: view
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
+    # A small read-only stdlib page, services/view.py, next to the admin tab:
+    # which gateways and tools exist, and which one price-lookup serves.
     argv: ["python3", "-B", "/workspace/services/view.py"]
     cwd: /workspace
     env:

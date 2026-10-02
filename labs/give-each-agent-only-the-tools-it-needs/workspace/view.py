@@ -2,27 +2,19 @@
 """Read-only platform view: every registered tool, and which virtual
 server(s) expose it.
 
-This is this lab's substitute for ContextForge's own admin UI. That UI
-looks anonymous under AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=
-true -- and genuinely is, for a plain script -- but a real browser tab is
-a different story: ContextForge's own RBAC middleware redirects any
-browser-shaped request (an `Accept: text/html` header, among others) to a
-real `/admin/login` form BEFORE that unauthenticated-admin bypass is ever
-reached (confirmed live: `curl -H "Accept: text/html" .../admin/` 302s to
-`/admin/login`). The session console's tab is exactly that kind of
-request, so `contextforge` stays `ui: false` and this page is the tab
-instead -- same pattern as LiteLLM in every Module 1 (and gateway-family
-Module 2) lab.
+Next to ContextForge's own admin pages (the `admin` tab, see
+admin_proxy.py), this is the compact one.
 
-Everything below is read server-side, unauthenticated (the same bypass
-that makes this safe: no login, but also nothing here that isn't already
-just as visible to anyone who can read platform/keys.json or
-platform/ungoverned_token.txt directly). Nothing here is editable, and no
-token's own secret value is ever shown -- only which virtual server(s)
-each tool belongs to, which is exactly the shape of the lesson: before
-you fix anything, every tool -- including the admin-only one -- sits in
-one bucket, "ungoverned-bundle". After, each role's own virtual server
-should show only its own slice of roles.yaml.
+Everything below is read server-side, as the platform admin: ContextForge
+runs in trusted-proxy mode (see manifest.yaml), so every call sends the
+X-Authenticated-User header, and nothing here is more than anyone who can
+read platform/keys.json or platform/ungoverned_token.txt directly could
+already see. Nothing here is editable, and no token's own secret value is
+ever shown -- only which virtual server(s) each tool belongs to, which is
+exactly the shape of the lesson: before you fix anything, every tool --
+including the admin-only one -- sits in one bucket, "ungoverned-bundle".
+After, each role's own virtual server should show only its own slice of
+roles.yaml.
 """
 import json
 import os
@@ -33,6 +25,9 @@ from urllib.parse import urlsplit
 
 PORT = int(os.environ.get("VIEW_PORT", "4748"))
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 ROUTES = ("/api/state", "/healthz")
 
@@ -48,10 +43,9 @@ def _route(path):
 def _get_json(path):
     """GET CONTEXTFORGE_URL+path, return parsed JSON or {"error": ...}.
     Never raises -- a gateway hiccup should show up as an empty section on
-    the page, not crash the view. No Authorization header: this is exactly
-    the unauthenticated-admin-context bypass, called the way a plain
-    script calls it (never the way a browser does)."""
-    req = urllib.request.Request(CONTEXTFORGE_URL + path)
+    the page, not crash the view. No Authorization header: the admin
+    header is the whole credential."""
+    req = urllib.request.Request(CONTEXTFORGE_URL + path, headers={"X-Authenticated-User": ADMIN_USER})
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             raw = resp.read()

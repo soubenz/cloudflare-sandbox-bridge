@@ -31,6 +31,9 @@ CLIENT_FILE = os.path.join(HERE, "client.json")
 
 # Never hard-code these -- the grader points them at its own instances.
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 
 def env_url(name):
@@ -44,12 +47,12 @@ def _request(method, path, body=None, base=CONTEXTFORGE_URL, timeout=30):
     """Minimal JSON HTTP helper. Returns (status, parsed_body_or_text).
     Never raises on a non-2xx response -- ContextForge's management API
     answers plenty of deliberate 4xxs, and those are data, not exceptions.
-    No Authorization header anywhere: AUTH_REQUIRED=false +
-    ALLOW_UNAUTHENTICATED_ADMIN=true means a script/server-side call like
-    this one reaches the full management API with none -- confirmed live,
-    and there is no master key in this lab to hold."""
+    No Authorization header anywhere: the trusted-proxy admin header below
+    is the whole credential for the management API, and there is no master
+    key in this lab to hold."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(base + path, data=data, method=method)
+    req.add_header("X-Authenticated-User", ADMIN_USER)
     if data is not None:
         req.add_header("Content-Type", "application/json")
     try:

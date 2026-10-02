@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 """Read-only platform view: gateways, the one virtual server, and tokens.
 
-This is the lab's substitute for ContextForge's own admin dashboard.
-AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true gives a real
-unauthenticated-admin bypass for a script or server-side call (confirmed
-live, and exactly what platform/setup.py and this page both rely on) --
-but a browser-shaped request (an `Accept: text/html` header, which any
-real browser tab sends, and which the session console's own iframe sends
-too) is redirected to a genuine `/admin/login` form before that bypass is
-ever reached (mcpgateway/middleware/rbac.py). So ContextForge's own
-dashboard can never be a `ui: true` tab under the no-login rule, and this
-page is instead: everything it shows comes from server-side calls this
-process itself makes to ContextForge's own API (never from the browser),
-so the browser tab itself never hits a login screen.
+Next to ContextForge's own admin pages (the `admin` tab, see
+../admin_proxy.py), this is the compact one: everything it shows comes
+from server-side calls this process itself makes to ContextForge's own
+API (never from the browser), so the browser never has to hold a
+credential.
+
+ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+admin identity from the X-Authenticated-User header, and only an admin may
+call these routes, so every call below sends it.
 
 Nothing here is editable -- it only calls ContextForge's own read
 endpoints (GET /v1/gateways/, GET /v1/servers/, GET /v1/tokens) and hands
@@ -33,6 +30,9 @@ from urllib.parse import urlsplit
 
 PORT = int(os.environ.get("VIEW_PORT", "8904"))
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 ROUTES = ("/api/state", "/healthz")
 
@@ -48,10 +48,9 @@ def _route(path):
 def _get_json(path, timeout=5):
     """GET CONTEXTFORGE_URL+path, return parsed JSON or an {"error": ...}
     dict. Never raises -- a gateway hiccup should show up as an empty
-    section on the page, not crash the view. No Authorization header and
-    no Accept: text/html -- exactly the shape ContextForge's own
-    unauthenticated-admin bypass expects from a script, not a browser."""
-    req = urllib.request.Request(CONTEXTFORGE_URL + path)
+    section on the page, not crash the view. No Authorization header: the
+    admin header is the whole credential."""
+    req = urllib.request.Request(CONTEXTFORGE_URL + path, headers={"X-Authenticated-User": ADMIN_USER})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()

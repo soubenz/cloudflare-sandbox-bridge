@@ -43,11 +43,14 @@ against whatever it's told, not just against what's running in your own
 session.
 
 You are the platform here, setting the gateway up before anyone else
-touches it -- ContextForge's own admin surface needs no credential in this
-session (see the manifest for why), so nothing above requires a bearer
-token of its own. The one token this script DOES have to produce is the
-client token above, and it must not be able to do anything the master
-control plane can do.
+touches it -- ContextForge's own admin surface needs no login and no key in
+this session: it takes the admin identity from the X-Authenticated-User
+header (ADMIN_USER below), so every management call you make (registering a
+gateway, creating a virtual server, minting a token) sends that header and
+nothing else. The one token this script DOES have to produce is the client
+token above, and it must not be able to do anything the master control plane
+can do. (When you try the client token out, send it on its own, without
+that header: the token is what is being tested.)
 """
 
 import json
@@ -62,6 +65,10 @@ CLIENT_FILE = os.path.join(HERE, "client.json")
 
 # Never hard-code these -- the grader points them at its own instances.
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call the management
+# routes. Send it as X-Authenticated-User on every one of them.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 
 def load_catalogue():

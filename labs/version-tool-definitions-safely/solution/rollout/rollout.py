@@ -13,12 +13,13 @@ Built entirely on real ContextForge primitives:
     removes the old tool and then adds the new one -- that two-step shape
     is exactly what would let a caller see zero tools (a moment with no
     answer at all) or two tools (an ambiguous one) live at once.
-  * GET /v1/export is the timestamped record rollback reads from. It
-    requires a real admin login (`admin.export` is NOT covered by
-    ALLOW_UNAUTHENTICATED_ADMIN's bypass, unlike the gateway/server/tool/
-    token endpoints above -- confirmed live: an unauthenticated GET
-    /v1/export returns 403 "Access denied", where the same request against
-    /v1/gateways or /v1/servers succeeds with no token at all).
+  * GET /v1/export is the timestamped record rollback reads from. Like every
+    other management call here it goes out as the platform admin: ContextForge
+    runs in trusted-proxy mode (see ../../manifest.yaml), takes the admin
+    identity from the X-Authenticated-User header, and needs no login and no
+    key -- export included (`admin.export` is checked against the
+    platform_admin role the admin user holds, and a request with no header
+    gets 403 "Access denied").
     POST /v1/import is NOT used here: re-importing a whole-config export
     over a server that already exists silently fails to update its tool
     association (a real bug -- the response reports a warning,
@@ -40,8 +41,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(HERE, "state.yaml")
 SNAPSHOTS_DIR = os.path.join(HERE, "snapshots")
 
-PLATFORM_ADMIN_EMAIL = os.environ.get("PLATFORM_ADMIN_EMAIL", "admin@example.com")
-PLATFORM_ADMIN_PASSWORD = os.environ.get("PLATFORM_ADMIN_PASSWORD", "")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 
 def load_state():
@@ -58,11 +60,9 @@ def save_state(state):
         f.write("\n")
 
 
-def _http(cf_url, method, path, body=None, token=None, timeout=15):
+def _http(cf_url, method, path, body=None, timeout=15):
     data = json.dumps(body).encode() if body is not None else None
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = "Bearer %s" % token
+    headers = {"Content-Type": "application/json", "X-Authenticated-User": ADMIN_USER}
     req = urllib.request.Request(cf_url.rstrip("/") + path, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -122,24 +122,14 @@ def register_v2():
     save_state(state)
 
 
-def _login():
-    if not PLATFORM_ADMIN_PASSWORD:
-        raise RuntimeError("PLATFORM_ADMIN_PASSWORD is not set -- needed to authenticate for /v1/export (admin.export is not covered by the unauthenticated-admin bypass)")
-    state = load_state()
-    status, body = _http(
-        state["contextforge_url"], "POST", "/v1/auth/login",
-        {"email": PLATFORM_ADMIN_EMAIL, "password": PLATFORM_ADMIN_PASSWORD},
-    )
-    if status != 200:
-        raise RuntimeError("admin login failed: %r" % (body,))
-    return body["access_token"]
-
-
 def snapshot():
     state = load_state()
     cf_url = state["contextforge_url"]
-    token = _login()
-    status, config = _http(cf_url, "GET", "/v1/export?include_inactive=true", token=token)
+    # exclude_types=roots: a default export also asks for ContextForge's
+    # roots, which only a full-scope admin may read, and a header-
+    # authenticated admin is refused with 403 "Access denied" for the whole
+    # export. Nothing in this lab uses roots.
+    status, config = _http(cf_url, "GET", "/v1/export?include_inactive=true&exclude_types=roots")
     if status != 200:
         raise RuntimeError("export failed: %r" % (config,))
 

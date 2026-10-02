@@ -40,18 +40,20 @@ scoped to -- never something a client-side wrapper decides not to send.
 Two facts worth knowing before you reach for curl:
 
   - ContextForge's admin/management API (the calls that create things --
-    gateways, virtual servers, tokens) needs no login in this lab
-    (AUTH_REQUIRED=false, ALLOW_UNAUTHENTICATED_ADMIN=true): an
-    unauthenticated call is answered as admin@example.com. That is a
-    different surface from the one that actually calls a tool
-    (/servers/{id}/mcp), which does require a real token -- two different
-    rules for two different surfaces, not a contradiction.
+    gateways, virtual servers, tokens) needs no login and no key in this
+    lab: it takes the admin identity from the X-Authenticated-User header
+    (ADMIN_USER below), so every management call you make sends that
+    header. That is a different surface from the one that actually calls a
+    tool (/servers/{id}/mcp), which does require a real token -- and a
+    role's own token is tried on its own, without that header. Two
+    different rules for two different surfaces, not a contradiction.
   - Every tool from all three tool servers is already registered as a
     gateway on this ContextForge (bootstrap_ungoverned.py did that before
     you ever opened this file) -- what you're missing is which tools ended
-    up with which registered names and ids. $CONTEXTFORGE_URL's own admin
-    UI, or a plain GET against its tools listing, will tell you; nothing
-    in roles.yaml or this file hard-codes that mapping for you.
+    up with which registered names and ids. The ContextForge tab, or a
+    plain GET against $CONTEXTFORGE_URL's tools listing (with the header),
+    will tell you; nothing in roles.yaml or this file hard-codes that
+    mapping for you.
 
 It should be safe to run this more than once -- creating something that
 already exists with the same shape is not an error you need to handle
@@ -80,6 +82,11 @@ KEYS_FILE = os.path.join(HERE, "keys.json")
 # been testing against, so this script has to work against whatever it's
 # told, not just against your own session's gateway.
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call the management
+# routes. A call made *with a role's token* leaves it off: the token is what
+# is being tried.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 
 def _request(method, path, body=None, token=None):
@@ -94,6 +101,8 @@ def _request(method, path, body=None, token=None):
         headers["Content-Type"] = "application/json"
     if token:
         headers["Authorization"] = "Bearer %s" % token
+    else:
+        headers["X-Authenticated-User"] = ADMIN_USER
     req = urllib.request.Request(CONTEXTFORGE_URL + path, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:

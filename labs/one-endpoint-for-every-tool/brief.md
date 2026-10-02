@@ -24,12 +24,11 @@ the wire marking it as dangerous.
 | `platform/catalogue.yaml` | What should exist: which tool servers, and exactly which tools belong in the one public bundle. You don't edit it; you make the gateway match it. |
 | **`platform/setup.py`** | Yours. Reads catalogue.yaml, must reconcile ContextForge with it, then write `platform/client.json`. Its docstring says what it must leave behind; none of it is implemented yet. |
 | `services/*.py` | The teams' own tool servers: the given scenario, not yours to edit. |
+| **ContextForge** tab | Its own admin pages, already signed in. Management calls (`setup.py`, `curl`) send `X-Authenticated-User: admin@example.com` instead |
 | **view** tab | Read-only: every registered gateway, the virtual server(s) and what each bundles, and every client token (never a usable secret). |
 
 `CONTEXTFORGE_URL`, `INVENTORY_URL`, `BILLING_URL` and `SEARCH_URL` are in
 your environment; `setup.py` reads them, and so can you with `curl`.
-ContextForge's admin dashboard is not a tab here (it needs a login), but
-its documented management API is all `setup.py` needs.
 
 ## Your task
 

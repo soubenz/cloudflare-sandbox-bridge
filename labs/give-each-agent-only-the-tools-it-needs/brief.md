@@ -17,10 +17,8 @@ it (`platform/ungoverned_token.txt`) reaches all nine.
 | `platform/roles.yaml` | Which role should see which tools: `support-agent` (read-only), `ops-agent` (read + write, no admin), `admin` (everything). You don't edit it; you make ContextForge match it. |
 | `platform/bootstrap_ungoverned.py` | Already ran once, automatically: it built `ungoverned-bundle` and its token. Not yours to edit. |
 | **`platform/setup.py`** | Yours. Reads `roles.yaml` and must reconcile ContextForge with it, one virtual server and one scoped token per role. Its docstring says what it must leave behind; none of it is implemented yet. |
+| **ContextForge** tab | Its own admin pages, already signed in. `curl` and `setup.py` need no login either, only an `X-Authenticated-User: admin@example.com` header on admin calls |
 | **view** tab | Read-only: every gateway with its tool count, and every virtual server with the tool names it exposes. |
-
-`curl` against `$CONTEXTFORGE_URL` works with no login; its admin UI is
-not a tab here.
 
 ## Your task
 

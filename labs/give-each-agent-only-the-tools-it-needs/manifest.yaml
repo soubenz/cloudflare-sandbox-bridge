@@ -52,26 +52,34 @@
 # virtual server" to bind to.
 #
 # MCP_REQUIRE_AUTH=true is set EXPLICITLY below. mcp-contextforge-gateway
-# derives it from AUTH_REQUIRED when unset (both default false here, for
-# the unauthenticated-admin bypass a plain script gets -- see next
-# paragraph), which would leave the actual tool-calling surface,
+# derives it from AUTH_REQUIRED when unset (AUTH_REQUIRED is false here, so
+# a request with no header is anonymous rather than sent to a login form --
+# see next paragraph), which would leave the actual tool-calling surface,
 # /servers/{id}/mcp, wide open to anyone with no token at all: fact 3
 # above is what an explicit MCP_REQUIRE_AUTH=true buys, confirmed by
 # booting once with it unset and once with it set and diffing the
 # anonymous-call result (401 only in the second case).
 #
 # The admin/management API (POST /gateways, /v1/servers, /v1/tokens, GET
-# /v1/tools) is a DIFFERENT surface and stays unauthenticated on purpose:
-# confirmed live, an unauthenticated POST to any of those is answered as
-# admin@example.com (AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=
-# true) as long as the CALLER isn't browser-shaped (see the ui:false note
-# below for the one case where it is). That is what lets
-# bootstrap_ungoverned.py, the learner's own platform/setup.py, and
-# view.py's own server-side reads all skip a login step entirely -- and it
-# is genuinely a different rule from fact 3, not a contradiction: one
-# surface creates/reads things as the platform, the other calls a tool as
-# some caller, and only the second one is what a role's own token has to
-# be checked against.
+# /v1/tools) is a DIFFERENT surface, and it needs no login and no key: the
+# gateway is in trusted-proxy mode (MCP_CLIENT_AUTH_ENABLED=false,
+# TRUST_PROXY_AUTH=true, TRUST_PROXY_AUTH_DANGEROUSLY=true), so a request
+# carrying X-Authenticated-User: <PLATFORM_ADMIN_EMAIL> is answered as that
+# admin, browser or not (is_proxy_auth_trust_active in
+# utils/verify_credentials.py). That is what lets bootstrap_ungoverned.py,
+# the learner's own platform/setup.py, view.py's own server-side reads and
+# the grader's admin-plane calls skip a login step entirely: each sends that
+# one header (CONTEXTFORGE_ADMIN_USER overrides the value) and nothing else.
+# A request with no header is anonymous and gets 403 on that surface. It is
+# genuinely a different rule from fact 3, not a contradiction: one surface
+# creates/reads things as the platform, the other calls a tool as some
+# caller, and only the second one is what a role's own token has to be
+# checked against. Confirmed live that trusted-proxy mode leaves that second
+# surface alone: on /servers/{id}/mcp a call with no header and no token is
+# still 401, and a role's own scoped token is still checked against its own
+# server_id (403 elsewhere), tool set and the admin plane (403 on /v1/*).
+# The header is only ever sent on the platform's own calls, never with a
+# role's token, so every probe of a role is that token alone.
 #
 # Env quirks, each hit live standing this exact manifest up (the first
 # three are the same three labs/write-a-tool-server-the-platform-can-host
@@ -93,20 +101,39 @@
 #    bootstrap_ungoverned.py already gets this right; it is exactly the
 #    kind of thing setup.py's docstring deliberately does not spell out
 #    for the learner.
-#  - ContextForge's own admin UI is NOT a safe ui:true tab, despite
-#    AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true: confirmed
-#    live with a plain, non-browser-shaped GET (curl, no Accept header),
-#    the page renders and every static asset link is correctly rewritten
-#    under APP_ROOT_PATH -- but a BROWSER-shaped request (confirmed with
-#    curl -H "Accept: text/html") gets 302'd to a real /admin/login form
-#    by mcpgateway's own RBAC middleware BEFORE the unauthenticated-admin
-#    bypass is ever reached. The session console's tab sends exactly that
-#    header, so `contextforge` stays `ui: false` (same as LiteLLM in every
-#    Module 1 / gateway-family lab) and `view.py` -- a small stdlib page
-#    that only ever makes plain, non-browser-shaped calls to ContextForge
-#    server-side -- is the `ui: true` tab instead. The unauthenticated-
-#    admin bypass is still real and still useful for exactly that: a
-#    script's own calls, never a browser's.
+#  - ContextForge's own admin UI is a `ui: true` tab (service `admin`), with
+#    no login form, by the same trusted-proxy header. Confirmed live with a
+#    real browser (Playwright + chromium) through a
+#    /sessions/<id>/services/admin/ path, no cookies:
+#     - Without it, ALLOW_UNAUTHENTICATED_ADMIN=true grants admin only to a
+#       request that doesn't look like a browser; a real tab hitting /admin
+#       is redirected to a "Sign In" form (mcpgateway/middleware/rbac.py's
+#       get_current_user checks for a token before it reaches that bypass).
+#       That is why earlier versions of this lab kept ContextForge
+#       `ui: false` and shipped only the `view` page. This lab no longer
+#       sets that flag.
+#     - The session proxy cannot add a header, so workspace/admin_proxy.py
+#       (the `admin` service) is a tiny stdlib reverse proxy that sets
+#       X-Authenticated-User on every request, after discarding whatever
+#       the client sent. It is the same file as in
+#       labs/see-how-tools-reach-an-agent, port 8964.
+#     - The admin pages are gated by a role, not just by is_admin, and the
+#       platform_admin role is only assigned to the admin user at boot when
+#       EMAIL_AUTH_ENABLED=true. So email auth is on, with the two fixed
+#       lab-only passwords below (the default "changeme" fails its own
+#       strength check). Nobody ever types them: there is no login page in
+#       reach (the proxy turns /admin/login and the Logout button into a
+#       redirect to the dashboard).
+#     - APP_ROOT_PATH is set to the admin tab's own prefix. The session
+#       proxy forwards the full path unchanged, and with APP_ROOT_PATH
+#       ContextForge both accepts it and writes the prefix into every asset
+#       URL, htmx URL and redirect itself. It also still answers unprefixed
+#       paths, so the scripts and the healthcheck are unaffected.
+#
+# Ports: the lab's own 4745-4747 (tool servers) and 4748 (view) plus the
+# canonical contextforge 4744; the admin proxy is 8964, the same as in
+# labs/see-how-tools-reach-an-agent. The grader's own gateway and tool
+# servers run on 63744-63747, clear of all of them.
 #
 # No Postgres: SQLite is enough (ContextForge falls back to it cleanly;
 # the ContextForge investigation's FINDINGS.md already established this).
@@ -195,12 +222,32 @@ services:
     cwd: /workspace
     env:
       DATABASE_URL: "sqlite:////tmp/contextforge-lab/mcp.db"
+      # No login, ever (docs/lab-authoring.md's no-login rule). Trusted-proxy
+      # authentication: the admin identity comes from the X-Authenticated-User
+      # header (PROXY_USER_HEADER's default), and only the value
+      # PLATFORM_ADMIN_EMAIL makes an admin. See the header comment.
+      MCP_CLIENT_AUTH_ENABLED: "false"
+      TRUST_PROXY_AUTH: "true"
+      TRUST_PROXY_AUTH_DANGEROUSLY: "true"
+      PLATFORM_ADMIN_EMAIL: "admin@example.com"
+      # false, not true: a request with no header is then anonymous (403)
+      # instead of being sent to a /admin/login form.
       AUTH_REQUIRED: "false"
-      ALLOW_UNAUTHENTICATED_ADMIN: "true"
+      # The admin pages, and the admin API routes they call.
       MCPGATEWAY_UI_ENABLED: "true"
       # Default false -- without this, POST /gateways (and every other
       # admin API route) 404s even though the UI itself loads fine.
       MCPGATEWAY_ADMIN_API_ENABLED: "true"
+      # Needed so the platform_admin role is assigned to PLATFORM_ADMIN_EMAIL
+      # at boot (the admin routes check that role). The two passwords below
+      # only have to pass ContextForge's strength check; no login page is
+      # reachable, so nobody types them. Fixed lab-only values.
+      EMAIL_AUTH_ENABLED: "true"
+      # The admin tab's own prefix: the session proxy forwards the full path
+      # (/sessions/<id>/services/admin/...) unchanged, and with this set
+      # ContextForge accepts that path and puts the prefix into every URL it
+      # writes. Must match the `admin` service's name below.
+      APP_ROOT_PATH: "/sessions/{{session.id}}/services/admin"
       # Without this, registering any of the three tool servers below
       # 422s -- ContextForge's own SSRF guard, and every tool server here
       # is 127.0.0.1 by construction.
@@ -208,10 +255,10 @@ services:
       # THE decoupling this whole lab depends on: unset, this defaults
       # from AUTH_REQUIRED (false), and /servers/{id}/mcp would accept an
       # anonymous call same as the admin API does. Set explicitly, the
-      # admin/management API stays open (bootstrap_ungoverned.py and
-      # platform/setup.py never log in) while the actual tool-calling
-      # surface still refuses a call with no token -- confirmed live, see
-      # the header comment above.
+      # admin/management API stays open to the admin header
+      # (bootstrap_ungoverned.py and platform/setup.py never log in) while
+      # the actual tool-calling surface still refuses a call with no token
+      # -- confirmed live, see the header comment above.
       MCP_REQUIRE_AUTH: "true"
       # Helpful, not sensitive: a lab-only gateway with disposable data,
       # and every mistake made proving this design out first showed up as
@@ -232,17 +279,42 @@ services:
       type: http
       path: /health
       timeout_s: 60
-    # ContextForge's own admin UI 302s a browser-shaped request to a real
-    # /admin/login form (see header comment) -- ui:false, same as LiteLLM
-    # in every Module 1 / gateway-family lab. `view` below is the tab.
+    # ui: false, on purpose: this port is the raw gateway, which trusts the
+    # X-Authenticated-User header from whoever sends it. The learner reaches
+    # its admin pages only through the `admin` service below, which sets
+    # that header itself.
     ui: false
     depends_on: [knowledge-tools, tickets-tools, accounts-tools]
+  - name: admin
+    label: ContextForge
+    about: ContextForge's own admin pages, already signed in. See the three tool servers' tools, the ungoverned bundle, and the role servers your setup.py creates.
+    # A tiny stdlib reverse proxy (workspace/admin_proxy.py) in front of
+    # ContextForge on 127.0.0.1:4744. It sets X-Authenticated-User to
+    # PLATFORM_ADMIN_EMAIL on every request (replacing any value the client
+    # sent), which is what ContextForge's trusted-proxy mode takes as the
+    # admin -- so the real admin pages open with no login form. See the
+    # header comment. ADMIN_PREFIX must equal this service's own prefix and
+    # the contextforge service's APP_ROOT_PATH.
+    argv: ["python3", "-B", "/workspace/admin_proxy.py"]
+    cwd: /workspace
+    env:
+      ADMIN_PORT: "8964"
+      ADMIN_PREFIX: "{{service.prefix}}"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+      ADMIN_USER: "admin@example.com"
+    port: 8964
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: true
+    depends_on: [contextforge]
   - name: view
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
-    # This lab's substitute for ContextForge's own (browser-gated) admin
-    # UI: a small read-only stdlib page, workspace/view.py. It never
-    # accepts a write and never shows a token's own usable value.
+    # A small read-only stdlib page, workspace/view.py, next to the admin
+    # tab: the same facts in one compact page. It never accepts a write and
+    # never shows a token's own usable value.
     argv: ["python3", "-B", "/workspace/view.py"]
     cwd: /workspace
     env:
@@ -305,10 +377,10 @@ hints:
   - after_minutes: 27
     text: >-
       Every tool from all three tool servers is already registered and
-      already has a real ContextForge id -- the view tab's "Registered
-      tool servers" table, or a plain GET against ContextForge's own
-      tools listing, will show you every one of them, and which gateway
-      each came from. roles.yaml's "server"/"tool" pairs are the
+      already has a real ContextForge id -- the ContextForge tab's Tools
+      page, the view tab's "Registered tool servers" table, or a plain GET
+      against ContextForge's own tools listing, will show you every one of
+      them, and which gateway each came from. roles.yaml's "server"/"tool" pairs are the
       platform's own names for them, not whatever ContextForge itself
       decided to call them once registered -- matching the two up is a
       lookup, not a guess.

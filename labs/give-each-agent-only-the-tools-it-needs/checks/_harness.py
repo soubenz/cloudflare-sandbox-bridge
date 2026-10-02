@@ -72,12 +72,23 @@ GRADER_TICKETS_PORT = os.environ.get("GRADER_TICKETS_PORT", "63746")
 GRADER_ACCOUNTS_PORT = os.environ.get("GRADER_ACCOUNTS_PORT", "63747")
 GRADER_CF_URL = "http://127.0.0.1:%s" % GRADER_CF_PORT
 
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call the /v1/*
+# management routes. Sent on the grader's own admin-plane calls only
+# (admin=True in _http below) -- never with a role's token or the anonymous
+# probe, so every probe of what a token (or no token) can reach is that alone.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
+
 # Fixed lab-only secrets -- identical shape to the manifest's own
 # contextforge service, satisfy ContextForge's minimum length/entropy
 # checks. Never real credentials.
 CF_ENV = {
+    "MCP_CLIENT_AUTH_ENABLED": "false",
+    "TRUST_PROXY_AUTH": "true",
+    "TRUST_PROXY_AUTH_DANGEROUSLY": "true",
+    "PLATFORM_ADMIN_EMAIL": "admin@example.com",
     "AUTH_REQUIRED": "false",
-    "ALLOW_UNAUTHENTICATED_ADMIN": "true",
+    "EMAIL_AUTH_ENABLED": "true",
     "MCPGATEWAY_UI_ENABLED": "true",
     "MCPGATEWAY_ADMIN_API_ENABLED": "true",
     "SSRF_ALLOW_LOCALHOST": "true",
@@ -143,10 +154,14 @@ def _finish(passed, message):
     sys.exit(0 if passed else 1)
 
 
-def _http(method, path, token=None, body=None, base=GRADER_CF_URL, timeout=PROBE_TIMEOUT_S):
-    """Returns (status_or_None, parsed_body_or_text). Never raises."""
+def _http(method, path, token=None, body=None, base=GRADER_CF_URL, timeout=PROBE_TIMEOUT_S, admin=False):
+    """Returns (status_or_None, parsed_body_or_text). Never raises.
+    admin=True sends the trusted-proxy admin header (the grader acting as the
+    platform); every call made with a role's token, or with none, leaves it off."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Accept": "application/json, text/event-stream"}
+    if admin:
+        headers["X-Authenticated-User"] = ADMIN_USER
     if token:
         headers["Authorization"] = "Bearer %s" % token
     req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
@@ -387,7 +402,7 @@ def _build_results():
         # check is about whether MCP_REQUIRE_AUTH is in effect, a manifest-
         # level fact setup.py has no control over either way, so it must
         # not be gated behind setup.py succeeding.
-        status, servers = _http("GET", "/v1/servers")
+        status, servers = _http("GET", "/v1/servers", admin=True)
         ungoverned_id = None
         if status == 200 and isinstance(servers, list):
             bundle = next((s for s in servers if s.get("name") == "ungoverned-bundle"), None)

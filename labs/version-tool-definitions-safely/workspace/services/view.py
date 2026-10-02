@@ -2,24 +2,13 @@
 """Read-only tab: every gateway and tool ContextForge knows about, and --
 front and center -- exactly which tool `price-lookup` currently serves.
 
-ContextForge's OWN admin UI is not this lab's tab, and that needs a word:
-ALLOW_UNAUTHENTICATED_ADMIN=true does NOT bypass login for a real browser
-tab -- confirmed from source (mcpgateway/middleware/rbac.py,
-get_current_user): a request whose Accept header contains `text/html` (any
-real browser navigation) is 302-redirected to a real `/admin/login` form
-before that bypass is ever reached; it only fires for a request that
-doesn't look like a browser. Independently, its templates also hard-code
-absolute asset paths (e.g. `/static/js/...`) and it has no reverse-proxy
-path-prefix support of its own -- confirmed live, by asking a running
-instance for its own admin page under a `/sessions/<id>/services/...`
--shaped path: 404, where the unprefixed path 200s. Either fact alone rules
-out a bare `ui: true` on ContextForge itself under this platform's
-no-login rule, so it stays `ui: false`, and this page is the substitute,
-same pattern this repo already uses for LiteLLM's own always-login-gated
-UI.
+Next to ContextForge's own admin pages (the `admin` tab, see
+../admin_proxy.py), this is the compact one.
 
-Everything here is read server-side with no credential the learner needs
-to hold; nothing here accepts a write.
+Everything here is read server-side, as the platform admin: ContextForge
+runs in trusted-proxy mode (see manifest.yaml), so every call sends the
+X-Authenticated-User header and the learner needs no credential of their
+own to see it. Nothing here accepts a write.
 """
 import html
 import json
@@ -36,14 +25,18 @@ PORT = int(os.environ.get("VIEW_PORT", "65103"))
 # {{service.prefix}}) before routing. A healthcheck hits the port
 # directly, with no prefix, so both forms have to work.
 VIEW_PREFIX = os.environ.get("VIEW_PREFIX", "").rstrip("/")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(os.path.dirname(HERE), "rollout", "state.yaml")
 
 
 def _get(path):
+    req = urllib.request.Request(CF.rstrip("/") + path, headers={"X-Authenticated-User": ADMIN_USER})
     try:
-        with urllib.request.urlopen(CF.rstrip("/") + path, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read().decode("utf-8") or "null")
     except (urllib.error.URLError, ValueError):
         return None

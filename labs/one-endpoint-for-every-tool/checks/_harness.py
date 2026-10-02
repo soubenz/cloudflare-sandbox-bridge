@@ -60,12 +60,23 @@ GRADER_BILLING_PORT = os.environ.get("GRADER_BILLING_PORT", "18902")
 GRADER_SEARCH_PORT = os.environ.get("GRADER_SEARCH_PORT", "18903")
 GRADER_CF_URL = "http://127.0.0.1:%s" % GRADER_CF_PORT
 
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call the /v1/*
+# management routes. Sent on the grader's own admin-plane calls only
+# (admin=True in _http below) -- never with a client token, so every probe of
+# what a token can reach is the token alone.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
+
 # Fixed lab-only secrets -- identical to the manifest's own contextforge
 # service, satisfy ContextForge's minimum length/entropy checks. Never
 # real credentials.
 CF_ENV = {
+    "MCP_CLIENT_AUTH_ENABLED": "false",
+    "TRUST_PROXY_AUTH": "true",
+    "TRUST_PROXY_AUTH_DANGEROUSLY": "true",
+    "PLATFORM_ADMIN_EMAIL": "admin@example.com",
     "AUTH_REQUIRED": "false",
-    "ALLOW_UNAUTHENTICATED_ADMIN": "true",
+    "EMAIL_AUTH_ENABLED": "true",
     "MCPGATEWAY_UI_ENABLED": "true",
     "MCPGATEWAY_ADMIN_API_ENABLED": "true",
     "SSRF_ALLOW_LOCALHOST": "true",
@@ -95,13 +106,17 @@ def _finish(passed, message):
     sys.exit(0 if passed else 1)
 
 
-def _http(method, path, token=None, body=None, base=GRADER_CF_URL, timeout=PROBE_TIMEOUT_S):
-    """Returns (status_or_None, parsed_body_or_text). Never raises."""
+def _http(method, path, token=None, body=None, base=GRADER_CF_URL, timeout=PROBE_TIMEOUT_S, admin=False):
+    """Returns (status_or_None, parsed_body_or_text). Never raises.
+    admin=True sends the trusted-proxy admin header (the grader acting as the
+    platform); every call made with a client token leaves it off."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     # The streamable-http MCP transport (the /servers/{id}/mcp endpoints)
     # refuses with 406 unless the client also accepts text/event-stream --
     # confirmed live. Harmless to send on every plain /v1/* call too.
     headers = {"Accept": "application/json, text/event-stream"}
+    if admin:
+        headers["X-Authenticated-User"] = ADMIN_USER
     if token:
         headers["Authorization"] = "Bearer %s" % token
     req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
@@ -251,11 +266,10 @@ def _read_client_json():
         return None, "platform/client.json is not valid JSON: %s" % e
 
 
-def _all_tools_unauthenticated():
-    """The grader's own admin-plane read -- ContextForge's anonymous-admin
-    mode means this needs no bearer token, same as the learner's own
-    setup.py never needing one."""
-    status, body = _http("GET", "/v1/tools/")
+def _all_tools_as_admin():
+    """The grader's own admin-plane read -- the trusted-proxy admin header,
+    no bearer token, same as the learner's own setup.py sends."""
+    status, body = _http("GET", "/v1/tools/", admin=True)
     return body if status == 200 and isinstance(body, list) else []
 
 
@@ -275,6 +289,7 @@ def _find_or_create_decoy_server(refund_tool_id):
     status, body = _http(
         "POST", "/v1/servers",
         body={"server": {"name": "grader-decoy-admin-only", "associated_tools": [refund_tool_id]}},
+        admin=True,
     )
     if status not in (200, 201):
         raise RuntimeError("grader could not create its own decoy server: %s %s" % (status, body))
@@ -350,10 +365,10 @@ def _build_results():
         results["charge_lookup"] = call_matching(DESC_CHARGE_LOOKUP, {"charge_id": "ch_1001"}, exact=True)
         results["search_docs"] = call_matching(DESC_SEARCH_DOCS_PREFIX, {"query": "shipping"})
 
-        # --- the excluded tool: find it via the grader's own unauthenticated
-        # admin-plane read (never via the learner's code), then try to reach
+        # --- the excluded tool: find it via the grader's own admin-plane read
+        # (never via the learner's code), then try to reach
         # it through the *same* virtual server the client token is scoped to ---
-        all_tools = _all_tools_unauthenticated()
+        all_tools = _all_tools_as_admin()
         refund_tool = _find_by_description(all_tools, DESC_REFUND_PREFIX)
         results["refund_tool_found_on_gateway"] = refund_tool is not None
         if refund_tool is not None:
@@ -384,8 +399,8 @@ def _build_results():
             results["decoy_server_refused"] = (status != 200) or not isinstance(body, dict) or "result" not in body
 
         # --- anti-cheat: the client token against the gateway's own
-        # admin-plane -- must be refused, even though NO token at all would
-        # succeed under this gateway's anonymous-admin mode ---
+        # admin-plane -- must be refused, even though the same calls succeed
+        # for the trusted-proxy admin header ---
         status, _ = _http("GET", "/v1/gateways/", token=token)
         results["gateways_list_with_client_token_status"] = status
         status, _ = _http(

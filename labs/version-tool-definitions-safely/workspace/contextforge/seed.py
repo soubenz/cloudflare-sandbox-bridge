@@ -5,7 +5,8 @@ serving real traffic, nothing about v2 touched yet.
 Idempotent -- safe to run again (e.g. if the contextforge service
 restarts): it checks what already exists before creating anything.
 
-What it does, using only real ContextForge API calls:
+What it does, using only real ContextForge API calls (as the platform admin,
+by the X-Authenticated-User header -- see manifest.yaml):
   1. Waits for ContextForge to report healthy.
   2. Registers price-tool-v1 (the v1 tool server on port 65101) as a
      gateway, which makes ContextForge federate its one tool.
@@ -31,6 +32,9 @@ import urllib.request
 
 CF = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744")
 V1_URL = os.environ.get("TOOL_SERVER_V1_URL", "http://127.0.0.1:65101/mcp")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(os.path.dirname(HERE), "rollout", "state.yaml")
@@ -40,7 +44,10 @@ READY_TIMEOUT_S = 60
 
 def _http(method, path, body=None, timeout=15):
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(CF + path, data=data, method=method, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        CF + path, data=data, method=method,
+        headers={"Content-Type": "application/json", "X-Authenticated-User": ADMIN_USER},
+    )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()

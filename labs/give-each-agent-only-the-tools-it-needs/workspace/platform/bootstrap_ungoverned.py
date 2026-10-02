@@ -7,8 +7,8 @@ labs/hard-budget-per-team uses for its own seed_teams.py. It polls
 ContextForge's own /health until the gateway answers, then:
 
   1. registers all three tool servers in tool_servers/ as ContextForge
-     gateways (POST /gateways -- no auth needed; see setup.py's docstring
-     for why);
+     gateways (POST /gateways -- as the platform admin, by the trusted-proxy
+     header below; see setup.py's docstring for why);
   2. creates ONE virtual server, "ungoverned-bundle", exposing every tool
      every one of those three gateways reported -- support tools, writer
      tools, and the one admin tool, all in the same bucket;
@@ -38,6 +38,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.join(HERE, "ungoverned_token.txt")
 
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 TOOL_SERVERS = {
     "knowledge": os.environ.get("KNOWLEDGE_TOOL_URL", "http://127.0.0.1:4745/mcp"),
@@ -48,10 +51,10 @@ TOOL_SERVERS = {
 
 def _request(method, path, body=None):
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(
-        CONTEXTFORGE_URL + path, data=data, method=method,
-        headers={"Content-Type": "application/json"} if data is not None else {},
-    )
+    headers = {"X-Authenticated-User": ADMIN_USER}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(CONTEXTFORGE_URL + path, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             raw = resp.read()
