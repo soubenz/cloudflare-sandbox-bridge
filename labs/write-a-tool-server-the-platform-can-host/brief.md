@@ -15,9 +15,10 @@ their names, everything.
 | `register.py` | Registers your running tool server with ContextForge. Run it once your server is up and correct. |
 | **view** tab | Read-only: every gateway ContextForge has registered (yours, once you run register.py), the tools it discovered on each and their real input schemas, and any virtual server exposing them. |
 
-ContextForge's own admin UI isn't a tab here -- it redirects a browser to a
-login form -- so `view` stands in for it. Its REST API works from a terminal
-with `curl` any time (`curl http://127.0.0.1:4744/gateways`, `.../tools`).
+The **ContextForge** tab is the gateway's own admin UI, already signed in. Its
+REST API works from a terminal too, if you send the header
+`X-Authenticated-User: admin@example.com` (`curl -H 'X-Authenticated-User:
+admin@example.com' http://127.0.0.1:4744/gateways`, `.../tools`).
 
 ## Your task
 

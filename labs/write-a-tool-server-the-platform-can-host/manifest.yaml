@@ -4,26 +4,46 @@
 # lab's own report for the transcript) and against the real
 # checks/_harness.py grader below.
 #
-# CORRECTED after part 1: AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true
-# does NOT give a real anonymous admin UI for a browser tab. Reproduced
-# live with `curl -H "Accept: text/html" -L .../admin/` -- it 302s to a
-# real /admin/login form with a <form>, a Login field and a Password
-# field. mcpgateway/middleware/rbac.py only takes the unauthenticated-
-# admin bypass path when the request does NOT look like a browser (no
-# `text/html` in Accept, no htmx header, no same-origin /admin referer);
-# a plain non-browser call (register.py's urllib request, or curl with no
-# special headers, which sends no Accept at all) does bypass cleanly, but
-# the console's iframe always sends a real browser Accept header, so a
-# `ui: true` contextforge tab would show a learner a login screen. Fixed:
-# contextforge is `ui: false` here, same as LiteLLM in every Module 1
-# lab, and `view` (workspace/view.py) is the `ui: true` tab instead -- a
-# small stdlib read-only page that calls ContextForge's own REST API the
-# same non-browser way register.py does. (A second, independent reason
-# ContextForge's admin UI could never be the tab anyway, per the same
-# investigation's later finding while building lab 5: its templates
-# hard-code absolute asset paths with no reverse-proxy path-prefix
-# support, so a request shaped like this platform's own proxied path
-# 404s regardless of the login redirect.)
+# ContextForge's own admin UI is a `ui: true` tab here (service `admin`), with
+# no login form, by trusted-proxy authentication -- the same approach, and
+# the same reasons, as labs/see-how-tools-reach-an-agent (read its manifest
+# header for the live proof; nothing below re-derives it):
+#
+#  - AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true only grants admin
+#    to a request that does not look like a browser, so a real tab hitting
+#    /admin was redirected to a "Sign In" form. That is why earlier versions
+#    of this lab kept ContextForge `ui: false` and shipped only `view`. This
+#    lab no longer sets that flag.
+#  - MCP_CLIENT_AUTH_ENABLED=false, TRUST_PROXY_AUTH=true and
+#    TRUST_PROXY_AUTH_DANGEROUSLY=true make a request carrying
+#    X-Authenticated-User: <PLATFORM_ADMIN_EMAIL> an admin request, browser or
+#    not. The session proxy cannot add a header, so workspace/admin_proxy.py
+#    (the `admin` service) is a tiny stdlib reverse proxy that sets it on
+#    every request, after discarding whatever the client sent. Every script
+#    that talks to ContextForge directly -- register.py, view.py and the
+#    grader's checks/_harness.py -- sends the same header: with trusted proxy
+#    mode on, a request with no header is anonymous and gets 403.
+#  - The admin pages are gated by a role, so EMAIL_AUTH_ENABLED=true (the
+#    platform_admin role is assigned at boot only then), with the two fixed
+#    lab-only passwords below. Nobody types them: the proxy turns
+#    /admin/login and the Logout button into a redirect to the dashboard.
+#  - APP_ROOT_PATH is the admin tab's own prefix, so ContextForge writes it
+#    into every URL itself and the proxy rewrites nothing in a page. It still
+#    answers unprefixed paths, so register.py, the grader and the
+#    healthcheck are unaffected.
+#
+# The learner's own tool server is untouched by this: still a plain MCP
+# endpoint. register.py is still the one POST /gateways call -- it carries the
+# header, and first removes an earlier registration of the same name (a
+# gateway name is unique, so a second run used to answer 409). What it
+# registers shows up under Gateways and Tools in the ContextForge tab as well
+# as in `view`. The tab is for looking: a write made from the page itself (a
+# browser POST, e.g. the Delete button) is refused by ContextForge's admin
+# CSRF origin check (403 "CSRF origin validation failed", seen live: the proxy
+# talks to ContextForge under its own Host, the browser sends its own
+# Origin). Reads, and every scripted call, are unaffected.
+# The grader (checks/_harness.py) boots its own throwaway ContextForge with
+# this same trusted-proxy env, so what it grades is what the learner runs.
 #
 # Settled: what "a health check" means here (catalogue: "Typed inputs,
 # real errors, pagination, and a health check").
@@ -139,16 +159,39 @@ services:
     argv: ["mcpgateway", "--host", "0.0.0.0", "--port", "4744"]
     cwd: /workspace
     env:
+      # No login, ever (docs/lab-authoring.md's no-login rule). Trusted-proxy
+      # authentication: the admin identity comes from the X-Authenticated-User
+      # header (PROXY_USER_HEADER's default), and only the value
+      # PLATFORM_ADMIN_EMAIL makes an admin. See the note above.
+      MCP_CLIENT_AUTH_ENABLED: "false"
+      TRUST_PROXY_AUTH: "true"
+      TRUST_PROXY_AUTH_DANGEROUSLY: "true"
+      PLATFORM_ADMIN_EMAIL: "admin@example.com"
+      # false, not true: a request with no header is then anonymous (403)
+      # instead of being sent to a /admin/login form.
       AUTH_REQUIRED: "false"
-      ALLOW_UNAUTHENTICATED_ADMIN: "true"
       MCPGATEWAY_UI_ENABLED: "true"
       # Default false -- without this, POST /gateways (and every other
       # admin API route) 404s even though the UI itself loads fine.
       MCPGATEWAY_ADMIN_API_ENABLED: "true"
+      # Needed so the platform_admin role is assigned to PLATFORM_ADMIN_EMAIL
+      # at boot (the admin routes check that role). The two passwords below
+      # only have to pass ContextForge's strength check; no login page is
+      # reachable, so nobody types them.
+      EMAIL_AUTH_ENABLED: "true"
+      # The admin tab's own prefix: the session proxy forwards the full path
+      # (/sessions/<id>/services/admin/...) unchanged, and with this set
+      # ContextForge accepts that path and puts the prefix into every URL it
+      # writes. Must match the `admin` service's name below.
+      APP_ROOT_PATH: "/sessions/{{session.id}}/services/admin"
       # Without this, POST /gateways 422s on any 127.0.0.1/localhost URL
       # -- ContextForge's own SSRF guard, and every tool server here is
       # local by construction.
       SSRF_ALLOW_LOCALHOST: "true"
+      # Off so the admin pages' own polling, register.py's polling and the
+      # grader can never trip ContextForge's real rate limiter and its
+      # 15-minute account lockout.
+      RATE_LIMITING_ENABLED: "false"
       DATABASE_URL: "sqlite:////tmp/contextforge-lab/mcp.db"
       JWT_SECRET_KEY: "_DnBwb7LmRkX3QZaMLEGngj9VTVjt67ASCS2d3GBMRE"
       AUTH_ENCRYPTION_SECRET: "eHBjKPY21ol8QWstof0PHefa7-PVTZE2fr_ICOvTVhw"
@@ -160,9 +203,10 @@ services:
       type: http
       path: /health
       timeout_s: 60
-    # ui: false -- ContextForge's own admin UI always redirects a real
-    # browser to a login form (see the header comment). `view` below is
-    # the tab instead.
+    # ui: false, on purpose: this port is the raw gateway, which trusts the
+    # X-Authenticated-User header from whoever sends it. The learner reaches
+    # its admin pages only through the `admin` service below, which sets that
+    # header itself.
     ui: false
     depends_on: []
   # The learner's own tool server. `ui: false` -- an MCP streamable-http
@@ -188,10 +232,34 @@ services:
       timeout_s: 30
     ui: false
     depends_on: []
-  # This lab's substitute for ContextForge's own (login-gated) admin UI:
-  # a small read-only stdlib page, workspace/view.py. It never accepts a
-  # write and calls ContextForge's REST API the same non-browser way
-  # register.py does.
+  - name: admin
+    label: ContextForge
+    about: ContextForge's own admin pages, already signed in. After you run register.py, look for your tool server under Gateways and Tools here.
+    # A tiny stdlib reverse proxy (workspace/admin_proxy.py) in front of
+    # ContextForge on 127.0.0.1:4744. It sets X-Authenticated-User to
+    # PLATFORM_ADMIN_EMAIL on every request (replacing any value the client
+    # sent), which is what ContextForge's trusted-proxy mode takes as the
+    # admin -- so the real admin pages open with no login form. See the note
+    # at the top. ADMIN_PREFIX must equal this service's own prefix and the
+    # contextforge service's APP_ROOT_PATH.
+    argv: ["python3", "-B", "/workspace/admin_proxy.py"]
+    cwd: /workspace
+    env:
+      ADMIN_PORT: "8964"
+      ADMIN_PREFIX: "{{service.prefix}}"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+      ADMIN_USER: "admin@example.com"
+    port: 8964
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: true
+    depends_on: [contextforge]
+  # A small read-only stdlib page next to the admin tab, workspace/view.py:
+  # a compact version of the same facts that reloads itself every few
+  # seconds. It never accepts a write and calls ContextForge's REST API the
+  # same way register.py does, with the same trusted-proxy header.
   - name: view
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.

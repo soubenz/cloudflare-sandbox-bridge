@@ -31,13 +31,49 @@
 #
 # Postgres is mandatory for LiteLLM's team/key/budget layer, same as every
 # other LiteLLM-based lab (Prisma schema hard-coded to
-# provider = "postgresql"). Neither gateway's own admin UI is a safe
-# `ui: true` tab under the no-login rule -- LiteLLM's always requires a
-# login, and a browser-shaped request to ContextForge's dashboard is
-# redirected to a real /admin/login form even with the anonymous-admin
-# bypass on for scripts (see one-endpoint-for-every-tool's manifest for the
-# live proof of that second one) -- so both are `ui: false` and `view`
-# (workspace/services/view.py) is this lab's own read-only substitute.
+# provider = "postgresql"). LiteLLM's own admin UI always requires a login, so
+# it stays `ui: false` and `view` (workspace/services/view.py) is this lab's
+# read-only page for it.
+#
+# ContextForge's own admin UI is a `ui: true` tab here (service `admin`), with
+# no login form, by trusted-proxy authentication -- copied from
+# labs/see-how-tools-reach-an-agent (read its manifest header for the live
+# proof; nothing below re-derives it):
+#  - MCP_CLIENT_AUTH_ENABLED=false, TRUST_PROXY_AUTH=true and
+#    TRUST_PROXY_AUTH_DANGEROUSLY=true make a request carrying
+#    X-Authenticated-User: <PLATFORM_ADMIN_EMAIL> an admin request, browser or
+#    not. The session proxy cannot add a header, so
+#    workspace/services/admin_proxy.py (the `admin` service) is a tiny stdlib
+#    reverse proxy that sets it on every request, after discarding whatever
+#    the client sent. Every admin-plane call in this lab -- platform/onboard.py,
+#    services/view.py and checks/_harness.py -- sends the same header: with
+#    trusted proxy mode on, a request with no header is anonymous and gets 403.
+#    (This lab used to run AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true
+#    for those scripts; that only grants admin to a request that does not look
+#    like a browser, so a real tab hitting /admin got a "Sign In" form.)
+#  - A team's own client token is NOT an admin call and does not carry that
+#    header: the token alone must still be scoped to its one virtual server,
+#    which is what the graded checks probe. Confirmed live in this mode: the
+#    token reaches its own server and its own tools, a tool outside its bundle
+#    answers "Tool not found", another team's server and GET /v1/gateways/ and
+#    POST /v1/servers all answer 403, with or without the admin header added.
+#    platform/example_template.py (what a new team member runs) therefore
+#    sends the token and nothing else.
+#  - The admin pages are gated by a role, so EMAIL_AUTH_ENABLED=true (the
+#    platform_admin role is assigned at boot only then), with the two fixed
+#    lab-only passwords below. Nobody types them: the proxy turns
+#    /admin/login and the Logout button into a redirect to the dashboard.
+#  - APP_ROOT_PATH is the admin tab's own prefix, so ContextForge writes it
+#    into every URL itself and the proxy rewrites nothing in a page. It still
+#    answers unprefixed paths, so the scripts, the grader and the healthcheck
+#    are unaffected. (This manifest used to set SERVER_ROOT_PATH on the
+#    contextforge service; that is a LiteLLM setting ContextForge ignores.)
+#  - The tab is for looking: a write made from the page itself (a browser
+#    POST) is refused by ContextForge's admin CSRF origin check (403, seen
+#    live: the proxy talks to ContextForge under its own Host, the browser
+#    sends its own Origin). Reads, and every scripted call, are unaffected.
+#  - The grader (checks/_harness.py) boots its own throwaway ContextForge with
+#    this same trusted-proxy env, so what it grades is what the learner runs.
 
 slug: onboard-a-new-team-in-an-hour
 version: 1.0.0
@@ -62,7 +98,7 @@ objectives:
 timeout_minutes: 90
 idle_minutes: 10
 x-ports-exempt: true
-x-ports-exempt-reason: "wiki (8901) and tickets (8902) are two teams' own MCP tool servers with no canonical port; provider and view use the canonical 8961/8962"
+x-ports-exempt-reason: "wiki (8901) and tickets (8902) are two teams' own MCP tool servers and admin (8964) is the ContextForge admin proxy, none with a canonical port; provider and view use the canonical 8961/8962"
 
 env:
   LITELLM_URL: "http://127.0.0.1:4000"
@@ -150,19 +186,37 @@ services:
     ui: false
     depends_on: [postgres, provider]
   - name: contextforge
-    # ui: false -- its own admin dashboard redirects a browser to a real
-    # login form even with the anonymous-admin bypass on (see
-    # one-endpoint-for-every-tool's manifest for the live proof); `view` is
-    # the tab instead. The bypass IS real for a script/server-side call
-    # with no browser-shaped Accept header -- exactly what
-    # platform/onboard.py and services/view.py both rely on.
+    # ui: false, on purpose: this port is the raw gateway, which trusts the
+    # X-Authenticated-User header from whoever sends it. The learner reaches
+    # its admin pages only through the `admin` service below, which sets that
+    # header itself. Team client tokens (platform/onboard.py mints one per
+    # team) are a separate path: bearer token, no header.
     argv: ["mcpgateway", "--host", "0.0.0.0", "--port", "4744"]
     cwd: /workspace
     env:
+      # No login, ever (docs/lab-authoring.md's no-login rule). Trusted-proxy
+      # authentication: the admin identity comes from the X-Authenticated-User
+      # header (PROXY_USER_HEADER's default), and only the value
+      # PLATFORM_ADMIN_EMAIL makes an admin. See the note above.
+      MCP_CLIENT_AUTH_ENABLED: "false"
+      TRUST_PROXY_AUTH: "true"
+      TRUST_PROXY_AUTH_DANGEROUSLY: "true"
+      PLATFORM_ADMIN_EMAIL: "admin@example.com"
+      # false, not true: a request with no header is then anonymous (403)
+      # instead of being sent to a /admin/login form.
       AUTH_REQUIRED: "false"
-      ALLOW_UNAUTHENTICATED_ADMIN: "true"
       MCPGATEWAY_UI_ENABLED: "true"
       MCPGATEWAY_ADMIN_API_ENABLED: "true"
+      # Needed so the platform_admin role is assigned to PLATFORM_ADMIN_EMAIL
+      # at boot (the admin routes check that role). The two passwords below
+      # only have to pass ContextForge's strength check; no login page is
+      # reachable, so nobody types them.
+      EMAIL_AUTH_ENABLED: "true"
+      # The admin tab's own prefix: the session proxy forwards the full path
+      # (/sessions/<id>/services/admin/...) unchanged, and with this set
+      # ContextForge accepts that path and puts the prefix into every URL it
+      # writes. Must match the `admin` service's name below.
+      APP_ROOT_PATH: "/sessions/{{session.id}}/services/admin"
       # Every tool server in this lab is loopback, inside this same
       # container -- SSRF protection blocks that by default.
       SSRF_ALLOW_LOCALHOST: "true"
@@ -171,7 +225,6 @@ services:
       # should show the real field-level message instead.
       EXPOSE_ERROR_DETAILS: "true"
       DATABASE_URL: "sqlite:////tmp/contextforge/mcp.db"
-      SERVER_ROOT_PATH: "{{service.prefix}}"
       # Fixed, lab-only secrets (this gateway holds no real credentials) --
       # each satisfies ContextForge's own minimum-length/entropy checks.
       # Never reused outside this lab.
@@ -191,12 +244,37 @@ services:
       timeout_s: 60
     ui: false
     depends_on: [wiki, tickets]
+  - name: admin
+    label: ContextForge
+    about: ContextForge's own admin pages, already signed in. Compare the tools it has federated with what each team's virtual server bundles.
+    # A tiny stdlib reverse proxy (workspace/services/admin_proxy.py) in front
+    # of ContextForge on 127.0.0.1:4744. It sets X-Authenticated-User to
+    # PLATFORM_ADMIN_EMAIL on every request (replacing any value the client
+    # sent), which is what ContextForge's trusted-proxy mode takes as the
+    # admin -- so the real admin pages open with no login form. See the note
+    # at the top. ADMIN_PREFIX must equal this service's own prefix and the
+    # contextforge service's APP_ROOT_PATH.
+    argv: ["python3", "-B", "/workspace/services/admin_proxy.py"]
+    cwd: /workspace
+    env:
+      ADMIN_PORT: "8964"
+      ADMIN_PREFIX: "{{service.prefix}}"
+      CONTEXTFORGE_URL: "http://127.0.0.1:4744"
+      ADMIN_USER: "admin@example.com"
+    port: 8964
+    healthcheck:
+      type: http
+      path: /healthz
+      timeout_s: 30
+    ui: true
+    depends_on: [contextforge]
   - name: view
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
-    # This lab's read-only substitute for both gateways' own (login-gated
-    # or bypass-unsafe) admin surfaces -- services/view.py. Never accepts a
-    # write and never returns a usable key or token.
+    # This lab's compact read-only page for both gateways at once, next to the
+    # ContextForge tab -- services/view.py. LiteLLM's own admin UI always
+    # requires a login, so this is the only view of it. Never accepts a write
+    # and never returns a usable key or token.
     argv: ["python3", "-B", "/workspace/services/view.py"]
     cwd: /workspace
     env:

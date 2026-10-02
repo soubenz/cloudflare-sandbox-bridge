@@ -3,12 +3,11 @@
 servers, for whichever teams have been onboarded so far.
 
 This is this lab's substitute for LiteLLM's own admin UI (always requires
-a login) and ContextForge's own admin dashboard (a browser-shaped request
-is redirected to a real /admin/login form even with the anonymous-admin
-bypass on for scripts -- see manifest.yaml's header comment). Nothing here
-is editable -- it only ever calls each gateway's own read endpoints,
+a login), and a compact companion to ContextForge's own admin pages (the
+`admin` tab, see admin_proxy.py and manifest.yaml's header comment). Nothing
+here is editable -- it only ever calls each gateway's own read endpoints,
 server side, and hands the browser back a summary. Neither gateway's
-master key/bypass is ever sent to the browser, and no usable LiteLLM key
+master key/admin header is ever sent to the browser, and no usable LiteLLM key
 or ContextForge token is ever shown -- LiteLLM never returns a key's real
 secret again after creation (only its masked "sk-...<last4>"), and this
 page only ever reads ContextForge's own *listings* (never a token's
@@ -28,6 +27,10 @@ PORT = int(os.environ.get("VIEW_PORT", "8962"))
 LITELLM_URL = os.environ.get("LITELLM_URL", "http://127.0.0.1:4000").rstrip("/")
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
+CONTEXTFORGE_AUTH = {"X-Authenticated-User": ADMIN_USER}
 
 ROUTES = ("/api/state", "/healthz")
 
@@ -83,7 +86,7 @@ def build_state():
     else:
         keys_error = (keys_raw or {}).get("error", "could not read /key/list")
 
-    servers_raw = _get_json(CONTEXTFORGE_URL + "/v1/servers/")
+    servers_raw = _get_json(CONTEXTFORGE_URL + "/v1/servers/", CONTEXTFORGE_AUTH)
     servers = []
     if isinstance(servers_raw, list):
         for s in servers_raw:
@@ -95,7 +98,7 @@ def build_state():
     else:
         servers_error = (servers_raw or {}).get("error", "could not read /v1/servers/")
 
-    tools_raw = _get_json(CONTEXTFORGE_URL + "/v1/tools/")
+    tools_raw = _get_json(CONTEXTFORGE_URL + "/v1/tools/", CONTEXTFORGE_AUTH)
     tools = []
     if isinstance(tools_raw, list):
         for t in tools_raw:

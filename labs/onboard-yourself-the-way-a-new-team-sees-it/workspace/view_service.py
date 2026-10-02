@@ -3,13 +3,11 @@
 LiteLLM's teams, keys and model aliases, and ContextForge's registered
 tool servers, discovered tools and virtual servers, all on one page.
 
-Neither gateway's own admin UI can be a `ui: true` tab under this
-catalogue's no-login rule: LiteLLM's always asks for a login
-(one-endpoint-one-key, hard-budget-per-team), and ContextForge's redirects
-a real browser to a "Sign In" form even with AUTH_REQUIRED=false
-(see-how-tools-reach-an-agent) -- so this page, called the same
-server-side, unauthenticated-script way onboard.py itself calls both, is
-the substitute for both admin UIs at once. It never accepts a write and
+LiteLLM's own admin UI always asks for a login (one-endpoint-one-key,
+hard-budget-per-team), so this page is the only view of LiteLLM; ContextForge's
+own admin pages are the `admin` tab next to it (see admin_proxy.py). This page
+calls both gateways server-side, the same way onboard.py itself does, for a
+compact picture of the two on one screen. It never accepts a write and
 never returns a usable LiteLLM key -- GET /key/list only ever gives back
 `key_alias` and `key_name` ("sk-...<last 4>"), LiteLLM's own masked display
 value computed once at key creation; there is no usable secret to leak.
@@ -36,6 +34,10 @@ LITELLM_URL = os.environ.get("LITELLM_URL", "http://127.0.0.1:4000").rstrip("/")
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
 GATEWAY_CONFIG_PATH = os.environ.get("GATEWAY_CONFIG_PATH", "/workspace/gateway/config.yaml")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
+CONTEXTFORGE_AUTH = {"X-Authenticated-User": ADMIN_USER}
 
 ROUTES = ("/api/state", "/healthz")
 
@@ -114,15 +116,15 @@ def build_litellm_state():
 
 
 def build_contextforge_state():
-    gateways_raw = _get_json(CONTEXTFORGE_URL, "/v1/gateways")
+    gateways_raw = _get_json(CONTEXTFORGE_URL, "/v1/gateways", CONTEXTFORGE_AUTH)
     gateways = gateways_raw if isinstance(gateways_raw, list) else []
     gateways_error = None if isinstance(gateways_raw, list) else (gateways_raw or {}).get("error", "could not read /v1/gateways")
 
-    tools_raw = _get_json(CONTEXTFORGE_URL, "/v1/tools/")
+    tools_raw = _get_json(CONTEXTFORGE_URL, "/v1/tools/", CONTEXTFORGE_AUTH)
     tools = tools_raw if isinstance(tools_raw, list) else []
     tools_error = None if isinstance(tools_raw, list) else (tools_raw or {}).get("error", "could not read /v1/tools/")
 
-    servers_raw = _get_json(CONTEXTFORGE_URL, "/v1/servers")
+    servers_raw = _get_json(CONTEXTFORGE_URL, "/v1/servers", CONTEXTFORGE_AUTH)
     servers = servers_raw if isinstance(servers_raw, list) else []
     servers_error = None if isinstance(servers_raw, list) else (servers_raw or {}).get("error", "could not read /v1/servers")
 

@@ -30,6 +30,11 @@ EXAMPLE_SOURCE = os.path.join(HERE, "example_template.py")
 LITELLM_URL = os.environ.get("LITELLM_URL", "http://127.0.0.1:4000").rstrip("/")
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call its admin API
+# (gateways, virtual servers, tokens). A team's own client token never carries
+# it -- see example_template.py.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 DEMO_ARGUMENTS = {
     "search_wiki": {"query": "onboarding"},
@@ -45,6 +50,8 @@ def _request(method, path, base, key=None, body=None, timeout=30):
     headers = {"Accept": "application/json, text/event-stream"}
     if key:
         headers["Authorization"] = "Bearer %s" % key
+    if base == CONTEXTFORGE_URL:
+        headers["X-Authenticated-User"] = ADMIN_USER
     req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
     if data is not None:
         req.add_header("Content-Type", "application/json")

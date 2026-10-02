@@ -14,9 +14,14 @@ you can write in this file to make ContextForge "notice" a server that
 isn't registered.
 
 This step is exactly that one API call: POST /gateways with this tool
-server's streamable-http URL. Re-running it after you fix a bug is safe
--- it registers a fresh gateway pointing at the same URL, and you can see
-both in the ContextForge tab under Gateways.
+server's streamable-http URL. A gateway's name must be unique, so before it
+registers, this script removes any earlier registration under the same name.
+Re-running it after you fix a bug is safe, and the ContextForge tab (under
+Gateways and Tools) always shows the latest one.
+
+ContextForge runs in trusted-proxy mode here (see the manifest): it takes the
+admin identity from the X-Authenticated-User header, and only an admin may
+register a gateway. That header is the only "credential" this script needs.
 """
 import json
 import os
@@ -29,12 +34,18 @@ CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744")
 TOOL_SERVER_PORT = os.environ.get("TOOL_SERVER_PORT", "8990")
 TOOL_SERVER_URL = os.environ.get("TOOL_SERVER_URL", f"http://127.0.0.1:{TOOL_SERVER_PORT}/mcp")
 GATEWAY_NAME = "orders-tool-server"
+# The admin identity ContextForge's trusted-proxy mode expects in the
+# X-Authenticated-User header.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 
 def _request(method: str, path: str, body: dict | None = None):
     url = f"{CONTEXTFORGE_URL}{path}"
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        url, data=data, method=method,
+        headers={"Content-Type": "application/json", "X-Authenticated-User": ADMIN_USER},
+    )
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return resp.status, json.loads(resp.read() or b"{}")
@@ -42,7 +53,18 @@ def _request(method: str, path: str, body: dict | None = None):
         return e.code, json.loads(e.read() or b"{}")
 
 
+def _remove_earlier_registration() -> None:
+    status, gateways = _request("GET", "/gateways")
+    if status != 200 or not isinstance(gateways, list):
+        return
+    for g in gateways:
+        if g.get("name") == GATEWAY_NAME:
+            status, _ = _request("DELETE", f"/gateways/{g.get('id')}")
+            print(f"removed the earlier registration of '{GATEWAY_NAME}' ({g.get('id')}, status {status})")
+
+
 def main() -> int:
+    _remove_earlier_registration()
     status, body = _request(
         "POST",
         "/gateways",
@@ -86,7 +108,7 @@ def main() -> int:
         )
         return 1
 
-    print(f"\nOpen {CONTEXTFORGE_URL}/admin/ and look under Gateways to see it.")
+    print("\nOpen the ContextForge tab and look under Gateways and Tools to see it.")
     return 0
 
 

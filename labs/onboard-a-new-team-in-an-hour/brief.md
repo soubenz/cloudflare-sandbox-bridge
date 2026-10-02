@@ -48,7 +48,8 @@ When it's right:
   succeeding.
 
 Every call `onboard.py` makes is documented by LiteLLM's or ContextForge's
-own management API. Try one by hand with `curl` if its shape isn't obvious.
+own management API. Try one by hand with `curl` if its shape isn't obvious
+(ContextForge's admin calls need `X-Authenticated-User: admin@example.com`).
 
 ## Checking your work
 

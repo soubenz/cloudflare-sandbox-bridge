@@ -52,6 +52,8 @@ def call_model():
 
 
 def _mcp_call(method, params=None, id_=None):
+    # Just this team's own token: no admin header. What this call can reach is
+    # whatever the team's virtual server bundles, and nothing else.
     body = {"jsonrpc": "2.0", "method": method}
     if id_ is not None:
         body["id"] = id_

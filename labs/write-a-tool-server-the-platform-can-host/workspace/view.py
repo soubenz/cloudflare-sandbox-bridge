@@ -1,17 +1,11 @@
 #!/usr/bin/env python3
 """A small read-only page for this lab's `view` tab.
 
-ContextForge's own admin UI always redirects a real browser to a login
-form -- AUTH_REQUIRED=false + ALLOW_UNAUTHENTICATED_ADMIN=true only
-bypasses auth for a request that doesn't look like a browser (no
-`Accept: text/html`, no htmx, no same-origin /admin referer); a real
-browser tab always sends `Accept: text/html`, so under this catalogue's
-no-login rule ContextForge itself stays `ui: false` and this page is the
-tab instead. It calls ContextForge's own REST API server-side, the same
-non-browser way register.py does (no special header needed -- just not
-one that says "browser"), and shows what's actually registered: your
-tool server as a gateway, the tools ContextForge discovered on it, and
-any virtual server exposing them.
+Next to ContextForge's own admin pages (the `admin` tab, see
+admin_proxy.py), this is the compact one. It calls ContextForge's own REST
+API server-side, the same way register.py does, and shows what's actually
+registered: your tool server as a gateway, the tools ContextForge
+discovered on it, and any virtual server exposing them.
 
 Plain stdlib http.server, no external assets: the container has no
 internet, and nothing here needs a framework. The page rebuilds itself
@@ -33,16 +27,18 @@ VIEW_PORT = int(os.environ.get("VIEW_PORT", "8992"))
 # Healthchecks come straight to the port, without it.
 VIEW_PREFIX = os.environ.get("VIEW_PREFIX", "").rstrip("/")
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 REFRESH_SECONDS = 5
 
 
 def _get_json(path):
-    """Returns (ok, data_or_error_message). No token needed, and no Accept
-    header that would make this look like a browser request -- see the
+    """Returns (ok, data_or_error_message). No token needed -- see the
     module docstring."""
     url = CONTEXTFORGE_URL + path
-    req = urllib.request.Request(url)
+    req = urllib.request.Request(url, headers={"X-Authenticated-User": ADMIN_USER})
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             raw = resp.read()
@@ -126,12 +122,9 @@ PAGE_TEMPLATE = """<!doctype html>
 <body>
 <h1>What ContextForge has registered</h1>
 <p class="note">
-  Read-only. Reloads every %(refresh)ss. ContextForge's own admin UI
-  always redirects a real browser tab to a login form, even with
-  AUTH_REQUIRED=false, so this page stands in for it -- everything below
-  comes straight from ContextForge's own REST API, called the same
-  non-browser way register.py does. You can call that same API yourself
-  from a terminal with curl; it's only a browser tab that gets redirected.
+  Read-only. Reloads every %(refresh)ss. Everything below comes straight
+  from ContextForge's own REST API, called the same way register.py does.
+  The ContextForge tab shows the same facts in its own admin pages.
 </p>
 
 <h2>Registered gateways (your tool server)</h2>

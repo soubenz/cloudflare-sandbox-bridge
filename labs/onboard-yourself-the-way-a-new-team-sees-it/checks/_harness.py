@@ -34,6 +34,9 @@ LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
 WEATHER_TOOL_URL = os.environ.get("WEATHER_TOOL_URL", "http://127.0.0.1:7745/mcp")
 ANSWERS_PATH = os.environ.get("ANSWERS_FILE", "/workspace/answers.json")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 # The platform's own pre-existing facts (seed_litellm.py / seed_contextforge.py).
 LEGACY_ALIAS = "legacy-writer"
@@ -98,7 +101,7 @@ def _contextforge(method, path, body=None, timeout=15):
         CONTEXTFORGE_URL + path,
         data=json.dumps(body).encode("utf-8") if body is not None else None,
         method=method,
-        headers={"Accept": "application/json, text/event-stream"},
+        headers={"Accept": "application/json, text/event-stream", "X-Authenticated-User": ADMIN_USER},
     )
     if body is not None:
         req.add_header("Content-Type", "application/json")

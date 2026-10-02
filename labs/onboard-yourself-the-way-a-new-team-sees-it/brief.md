@@ -8,6 +8,7 @@ Nothing is broken here. Play a brand new team joining today, and walk the platfo
 |---|---|
 | `litellm` | The gateway. `platform-core` already exists, scoped to the `legacy-writer` alias. `fast-draft`, the second alias in `gateway/config.yaml`, is granted to nobody yet. |
 | `contextforge` | The tool side. `calculator-tools` is already registered and exposed as `legacy-tools`. `weather-tools` is not registered yet. |
+| **ContextForge** tab | ContextForge's own admin pages, already signed in. Look at its gateways and virtual servers before and after you run `onboard.py`. |
 | **view** tab | Read-only: LiteLLM's teams, keys and aliases on the left, ContextForge's tool servers, tools and virtual servers on the right. Open it before you run anything, and again after. |
 
 ## Run the onboarding

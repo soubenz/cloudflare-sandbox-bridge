@@ -39,6 +39,9 @@ LITELLM_URL = os.environ.get("LITELLM_URL", "http://127.0.0.1:4000").rstrip("/")
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 CONTEXTFORGE_URL = os.environ.get("CONTEXTFORGE_URL", "http://127.0.0.1:4744").rstrip("/")
 WEATHER_TOOL_URL = os.environ.get("WEATHER_TOOL_URL", "http://127.0.0.1:7745/mcp")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call these routes.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(HERE, "onboard_state.json")
@@ -89,7 +92,7 @@ def _contextforge(method, path, body=None, timeout=15):
         CONTEXTFORGE_URL + path,
         data=json.dumps(body).encode("utf-8") if body is not None else None,
         method=method,
-        headers={"Accept": "application/json, text/event-stream"},
+        headers={"Accept": "application/json, text/event-stream", "X-Authenticated-User": ADMIN_USER},
     )
     if body is not None:
         req.add_header("Content-Type", "application/json")
@@ -213,10 +216,10 @@ def step_3_register_tool_server(state):
 def step_4_expose_virtual_server(state):
     """ContextForge: expose the new team's tool(s) through one virtual
     server of their own. This IS the access grant in this lab -- ContextForge
-    here runs unauthenticated (AUTH_REQUIRED=false, same as
-    see-how-tools-reach-an-agent), so there is no separate per-key ACL call
-    to make on this side; a tool reaches a caller by being in the virtual
-    server they ask, and nowhere else. (LiteLLM's equivalent access grant
+    here takes every caller as the platform admin (trusted-proxy mode, same
+    as see-how-tools-reach-an-agent), so there is no separate per-key ACL
+    call to make on this side; a tool reaches a caller by being in the
+    virtual server they ask, and nowhere else. (LiteLLM's equivalent access grant
     already happened in step 1 -- a team's `models` list IS its grant.)"""
     existing = _find_by_name(_contextforge("GET", "/v1/servers"), VIRTUAL_SERVER_NAME)
     if existing is not None:

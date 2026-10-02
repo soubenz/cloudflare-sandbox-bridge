@@ -83,6 +83,12 @@ PYTHON_BIN = os.environ.get("PYTHON_BIN", sys.executable)
 # belongs to a run that died; it is removed rather than failing every later run.
 LOCK_STALE_S = 120
 
+# The grader's ContextForge runs in the same trusted-proxy mode as the
+# manifest's own (see manifest.yaml): it takes the admin identity from this
+# header, and only an admin may call these routes. A request with no header is
+# anonymous and gets 403.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
+
 READY_TIMEOUT_S = 60
 TOOL_SERVER_READY_TIMEOUT_S = 20
 REGISTER_POLL_TIMEOUT_S = 15
@@ -137,6 +143,7 @@ def _http(method, path, body=None, base=GRADER_CONTEXTFORGE_URL, timeout=PROBE_T
     """Returns (status_or_None, parsed_body_or_text). Never raises."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(base + path, data=data, method=method)
+    req.add_header("X-Authenticated-User", ADMIN_USER)
     if data is not None:
         req.add_header("Content-Type", "application/json")
     # ContextForge's own MCP endpoint (/servers/{id}/mcp) 406s without this
@@ -267,19 +274,27 @@ def _start_grader_contextforge(db_path, log_path):
     env = dict(os.environ)
     env.update(
         {
+            # Same trusted-proxy mode as the manifest's contextforge service.
+            "MCP_CLIENT_AUTH_ENABLED": "false",
+            "TRUST_PROXY_AUTH": "true",
+            "TRUST_PROXY_AUTH_DANGEROUSLY": "true",
+            "PLATFORM_ADMIN_EMAIL": ADMIN_USER,
             "AUTH_REQUIRED": "false",
-            "ALLOW_UNAUTHENTICATED_ADMIN": "true",
+            "EMAIL_AUTH_ENABLED": "true",
             "MCPGATEWAY_UI_ENABLED": "true",
             "MCPGATEWAY_ADMIN_API_ENABLED": "true",
             "SSRF_ALLOW_LOCALHOST": "true",
+            "RATE_LIMITING_ENABLED": "false",
             "DATABASE_URL": "sqlite:///%s" % db_path,
             # Fresh, disposable, this-process-only secrets -- a throwaway
-            # instance never needs to share these with anything.
+            # instance never needs to share these with anything. The
+            # "Aa_" prefix is there to pass ContextForge's own password
+            # strength check (upper, lower and a special character).
             "JWT_SECRET_KEY": os.urandom(32).hex(),
             "AUTH_ENCRYPTION_SECRET": os.urandom(32).hex(),
-            "PLATFORM_ADMIN_PASSWORD": os.urandom(16).hex(),
-            "BASIC_AUTH_PASSWORD": os.urandom(16).hex(),
-            "DEFAULT_USER_PASSWORD": os.urandom(16).hex(),
+            "PLATFORM_ADMIN_PASSWORD": "Aa_" + os.urandom(16).hex(),
+            "BASIC_AUTH_PASSWORD": "Aa_" + os.urandom(16).hex(),
+            "DEFAULT_USER_PASSWORD": "Aa_" + os.urandom(16).hex(),
         }
     )
     return _start_proc(

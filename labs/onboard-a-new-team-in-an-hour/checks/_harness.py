@@ -87,12 +87,22 @@ GRADER_LITELLM_URL = "http://127.0.0.1:%s" % GRADER_LITELLM_PORT
 GRADER_CF_URL = "http://127.0.0.1:%s" % GRADER_CF_PORT
 
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
+# ContextForge runs in trusted-proxy mode (see manifest.yaml): it takes the
+# admin identity from this header, and only an admin may call its admin API.
+# The grader sends it on its own admin-plane reads only -- never with a team's
+# client token, which has to stand on its own.
+ADMIN_USER = os.environ.get("CONTEXTFORGE_ADMIN_USER", "admin@example.com")
 
-# Identical to the manifest's own contextforge service -- fixed, lab-only
-# secrets that satisfy ContextForge's minimum length/entropy checks.
+# Identical to the manifest's own contextforge service -- trusted-proxy
+# authentication, and fixed, lab-only secrets that satisfy ContextForge's
+# minimum length/entropy checks.
 CF_ENV = {
+    "MCP_CLIENT_AUTH_ENABLED": "false",
+    "TRUST_PROXY_AUTH": "true",
+    "TRUST_PROXY_AUTH_DANGEROUSLY": "true",
+    "PLATFORM_ADMIN_EMAIL": ADMIN_USER,
     "AUTH_REQUIRED": "false",
-    "ALLOW_UNAUTHENTICATED_ADMIN": "true",
+    "EMAIL_AUTH_ENABLED": "true",
     "MCPGATEWAY_UI_ENABLED": "true",
     "MCPGATEWAY_ADMIN_API_ENABLED": "true",
     "SSRF_ALLOW_LOCALHOST": "true",
@@ -127,12 +137,16 @@ def _finish(passed, message):
     sys.exit(0 if passed else 1)
 
 
-def _http(method, path, base, token=None, body=None, timeout=PROBE_TIMEOUT_S):
-    """Returns (status_or_None, parsed_body_or_text). Never raises."""
+def _http(method, path, base, token=None, body=None, timeout=PROBE_TIMEOUT_S, admin=False):
+    """Returns (status_or_None, parsed_body_or_text). Never raises.
+
+    admin=True adds the trusted-proxy admin header (ContextForge only)."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Accept": "application/json, text/event-stream"}
     if token:
         headers["Authorization"] = "Bearer %s" % token
+    if admin:
+        headers["X-Authenticated-User"] = ADMIN_USER
     req = urllib.request.Request(base + path, data=data, method=method, headers=headers)
     if data is not None:
         req.add_header("Content-Type", "application/json")
@@ -360,10 +374,10 @@ def _load_gateway_model_names():
 
 
 def _all_federated_tools_unauthenticated():
-    """The grader's own admin-plane read -- ContextForge's anonymous-admin
-    mode means this needs no token, same as the learner's own onboard.py
-    never needing one."""
-    status, body = _http("GET", "/v1/tools/", GRADER_CF_URL)
+    """The grader's own admin-plane read -- trusted-proxy mode means this
+    needs no token, only the admin header, same as the learner's own
+    onboard.py never needing a token."""
+    status, body = _http("GET", "/v1/tools/", GRADER_CF_URL, admin=True)
     return body if status == 200 and isinstance(body, list) else []
 
 
