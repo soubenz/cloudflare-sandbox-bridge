@@ -7,6 +7,7 @@ import { insertCheckRun, bestEffort } from './d1';
 import { scoreRun } from './progress';
 import { ensureStageDir, stagePath, archiveGuard, removeStaged } from './hydrate';
 import { tryEmitSolutionUnlocked } from './solution';
+import { announceNewAwards } from '../profile/notify';
 
 /**
  * Runs the lab's checker scripts and returns structured, per-criterion
@@ -76,13 +77,15 @@ export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?
   await tryEmitSolutionUnlocked(rt, manifest);
 
   const meta = await rt.requireMeta();
+  // The awards are recomputed only once the run is in D1, because they are
+  // derived from `check_runs`. Both stay off the critical path: this is not awaited.
   bestEffort(
     insertCheckRun(rt.env, meta.id, run, {
       user_id: meta.user_id,
       lab_slug: meta.lab_slug,
       lab_version: meta.lab_version,
       total_checks: manifest.checks.length,
-    }),
+    }).then(() => announceNewAwards(rt, meta.user_id, meta.id)),
     'insertCheckRun'
   );
   return run;

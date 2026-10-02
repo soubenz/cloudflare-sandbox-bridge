@@ -13,6 +13,7 @@ export type EventType =
   | 'pressure'
   | 'hint'
   | 'solution.unlocked'
+  | 'award.earned'
   | 'check.started'
   | 'check.result'
   | 'check.finished'

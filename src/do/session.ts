@@ -129,7 +129,7 @@ export class Session extends DurableObject<Env> {
     // `session.state: ended` against status() before believing it.
     const known: EventType[] = [
       'cost', 'llm.call', 'alert',
-      'pressure', 'hint', 'solution.unlocked', 'session.idle_warning', 'session.expiring', 'session.state', 'service.health',
+      'pressure', 'hint', 'solution.unlocked', 'award.earned', 'session.idle_warning', 'session.expiring', 'session.state', 'service.health',
     ];
     if (!known.includes(type as EventType)) throw ApiError.badRequest('unknown_event_type', `Unknown event type "${type}"`);
     if (type === 'llm.call' && typeof (data as { cost_usd?: number })?.cost_usd === 'number') {

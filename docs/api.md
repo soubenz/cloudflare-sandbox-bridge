@@ -88,6 +88,8 @@ minutes are usable now.
 | DELETE | `/sessions/:id?snapshot=0` | session | ends the session; snapshots by default |
 | GET | `/users/:uid/progress` | service | per-lab standing from D1 `check_runs` → `{ labs: [{ slug, attempts, best_score, passed_all, last_run_at, sessions }] }`, most recently attempted first. `best_score` is the best weighted share of checks passed in one run (0-1); `passed_all` is true if any run passed every check of the lab; `sessions` counts distinct sessions that ran checks |
 | GET | `/users/:uid/checks?lab=&limit=&before=` | service | a user's runs across sessions, newest first → `{ runs: [...] }` (same shape as the session route, plus `session_id` and `lab_slug`). `lab` filters to one lab; `before` is an epoch-ms cursor (pass the last `started_at` you saw); `limit` default 20, max 100 |
+| GET | `/users/:uid/profile?compact=&starting=` | service | the learner's skill scores, XP, streak and awards → see [Profile, XP and awards](#profile-xp-and-awards). `compact=1` returns only what the Home widget needs; `starting=gateway:ok,mcp:new` echoes the onboarding quiz result. `400 bad_user_id`; an unknown user is a `200` with an empty profile |
+| GET | `/users/:uid/awards` | service | `{ user_id, earned, locked }`, the same two lists as `profile.awards` |
 | GET | `/users/:uid/sessions?active=1` | service | D1-backed history/active check; capped at 50 rows without `active=1` |
 
 ¹ Service key required. Nothing opens these.
@@ -207,6 +209,7 @@ the RPC boundary.
 | 500 | `solution_unreadable` | `GET /sessions/{id}/solution` when the stored archive is corrupt or holds an unsafe path (a publish defect, not the learner's) |
 | 404 | `unknown_service` | restart, cookie route or proxy for a service not in the lab |
 | 400 | `bad_feedback` | `POST /sessions/{id}/feedback` with a `rating` that is not an integer 1-5, a `text` that is not a string or is over 2000 characters, or a body that is not an object |
+| 400 | `bad_user_id` | `GET /users/{uid}/profile` or `/awards` with an id that is empty, over 128 characters, or holds a control character |
 | 400 | `bad_cursor` | `GET /users/{uid}/checks` with a `before` that is not a number |
 | 409 | `active_session_exists` | the user already has a live session (the D1 unique index) |
 | 409 | `cannot_resume` | `POST /sessions/{id}/resume` on a session that is not `ended` |
@@ -221,6 +224,151 @@ the RPC boundary.
 | 503 | `container_unavailable` | SDK `ContainerUnavailableError`; `details.retry_after_ms` when the SDK supplies it |
 | 503 | `sdk_transient` | SDK `OperationInterruptedError` / `RPCTransportError` |
 | 500 | `internal_error` | anything unrecognised; `details.error_name` carries the original class name |
+
+## Profile, XP and awards
+
+A learner's skill scores, XP, streak and awards, for the profile page and the
+Home widget. Service key only, like the other `/users/:uid/*` routes; the
+console Worker calls them for the signed-in learner. Everything is a pure
+function of the learner's facts: skill scores and XP are recomputed from D1
+`check_runs` and `sessions` on every read (never stored, never incremented), and
+only the awards are stored, in `awards(user_id, award_id, earned_at, session_id)`
+(migration `0009_awards.sql`), so a date never moves once written. The code is
+in `src/profile/`; `computeProfile(facts, catalogue)` is the pure core.
+
+`GET /users/:uid/profile`
+
+```json
+{
+  "user_id": "u1",
+  "xp": 275,
+  "level": { "n": 3, "title": "Apprentice", "xp_into": 25, "xp_needed": 250 },
+  "streak": { "days": 2, "best": 4, "last_active": "2026-01-06" },
+  "skills": [
+    {
+      "area": "gateway", "title": "LLM gateway", "score": 67, "level": "Proficient",
+      "evaluation": "You are confident in LLM gateway: 3 of 6 labs finished, with strong results. Next up: \"One endpoint, one key\".",
+      "labs_done": 3, "labs_total": 6,
+      "next_lab": { "slug": "one-endpoint-one-key", "title": "One endpoint, one key" },
+      "starting_level": null
+    }
+  ],
+  "awards": {
+    "earned": [{ "id": "first-lab", "title": "First steps", "description": "Finish your first lab.", "icon": "flag", "tier": "bronze", "earned_at": 1767700000000, "session_id": "…" }],
+    "locked": [{ "id": "ten-labs", "title": "Ten down", "description": "Finish ten labs.", "icon": "trophy", "tier": "silver", "progress": { "have": 3, "need": 10 } }]
+  },
+  "overall": { "score": 11, "level": "Foundations", "evaluation": "Overall you are at Foundations level. …" },
+  "updated_at": 1767700000000
+}
+```
+
+- `skills` has the six areas of the onboarding quiz, always, in the quiz's order
+  (`gateway`, `mcp`, `rag`, `otel`, `platform`, `sovereignty`). A lab feeds an
+  area through its catalogue `path` and `module`; the single mapping is
+  `src/profile/areas.ts`. A lab in no area (the optional runtime module, the
+  other paths) feeds no skill but still earns XP and counts for awards.
+  Archived labs, and labs the catalogue does not list, count for nothing.
+- `level` on a skill and on `overall` is a name: `Not started` (0),
+  `Foundations` (1-29), `Practitioner` (30-59), `Proficient` (60-84), `Expert`
+  (85-100). `overall.score` is the mean of the six area scores, rounded.
+- `evaluation` is plain sentences chosen by fixed rules (a strength for the
+  level, then the next lab to do in that area in catalogue order, preferring one
+  whose prerequisites are done). No model is involved.
+- `next_lab` is `null` when the area has no labs or all are finished.
+- `starting_level` (`new`, `ok`, `strong`, or `null`) is the onboarding quiz
+  result for the area, a starting point only and never part of a score. The
+  quiz result lives in the browser, so the caller passes it as
+  `?starting=gateway:strong,mcp:new`; unknown areas and levels are ignored.
+- `level` (top level) is the XP level: ten titled levels (Newcomer, Explorer,
+  Apprentice, Builder, Engineer, Specialist, Architect, Mentor, Master, Legend)
+  starting at 0, 100, 250, 500, 850, 1300, 1900, 2600, 3500 and 4600 XP.
+  `xp_into` is XP past the level's start and `xp_needed` is the width of the
+  level's band (`0` at level 10).
+- `streak` counts consecutive UTC calendar days with a passing run (so every
+  completed lab counts). `days` is the streak now: it stays alive through the
+  end of the day after the last active day, then drops to 0. `best` is the
+  longest ever. `last_active` is `YYYY-MM-DD` (UTC) or `null`.
+- `awards.earned` is newest first; `awards.locked` is in display order and
+  every entry has `progress: { have, need }`. `icon` is one of `flag`,
+  `target`, `feather`, `stack`, `trophy`, `flame`, `bolt`, `refresh`, `puzzle`,
+  `map`, `star`, `medal`, `compass`.
+- `updated_at` is the epoch ms the profile was computed.
+
+`GET /users/:uid/profile?compact=1` is the Home widget's slice:
+
+```json
+{
+  "user_id": "u1",
+  "overall": { "score": 11, "level": "Foundations", "evaluation": "…" },
+  "level": { "n": 3, "title": "Apprentice", "xp_into": 25, "xp_needed": 250 },
+  "xp": 275,
+  "streak": { "days": 2, "best": 4, "last_active": "2026-01-06" },
+  "top_skills": [{ "area": "gateway", "title": "LLM gateway", "score": 67, "level": "Proficient" }],
+  "recent_awards": [],
+  "updated_at": 1767700000000
+}
+```
+
+`top_skills` is the three highest scores (ties in area order; a new learner gets
+three `Not started` areas); `recent_awards` is the three most recently earned.
+
+`GET /users/:uid/awards` returns `{ user_id, earned, locked }`, the same lists as
+`profile.awards`.
+
+**Errors.** `401 unauthorized` without the service key; `400 bad_user_id` for an
+id that is empty, longer than 128 characters or holds a control character. A
+user with no activity is not an error: it is a `200` with zero scores, level 1
+and every award locked. A D1 failure is a `500`.
+
+### How a lab is scored
+
+A lab's score, 0-100, comes from the learner's best run of it (highest share of
+check weight passed; a run that passed every check beats an equal partial one;
+ties keep the earliest):
+
+```
+raw     = best run's score x 100
+hinted  = max(raw x 0.6, raw - 5 x hints)         each hint costs 5 points, never below 60% of raw
+factor  = max(0.8, 1 - 0.03 x (attempts - 1))     first try is full; 3% per extra run, floor 80%
+lab     = hinted x factor
+```
+
+`hints` is how many hints had unlocked in the best run's session and `attempts`
+is how many runs of that lab it took to reach the best run. An area's score is
+the average of its labs weighted by difficulty (`intro` 1, `core` 2, `advanced`
+3; no difficulty counts as `core`) over ALL the area's non-archived labs, an
+unattempted lab counting as 0, rounded to a whole number (any score above 0
+shows as at least 1).
+
+**XP.** A completed lab (a run that passed every check; only the first counts)
+earns `intro` 50, `core` 100 or `advanced` 150, plus 25 if no hint had unlocked
+in the completing session, plus 25 if the very first run of the lab passed.
+
+**Awards** (`earned_at` is when the learner qualified, taken from the facts
+where they say so, and is stored the first time and never changed; an earned
+award is never taken back):
+
+| id | tier | earned when |
+|---|---|---|
+| `first-lab` | bronze | one lab completed |
+| `first-try-pass` | bronze | a lab's first run passed everything |
+| `no-hints-finish` | bronze | a lab completed in a session with no hint unlocked |
+| `three-labs` / `ten-labs` | bronze / silver | 3 / 10 labs completed |
+| `streak-3-days` / `streak-7-days` | bronze / silver | best streak of 3 / 7 UTC days |
+| `module-complete-{path}-{module}` | silver | every lab of a module completed; only for paths with more than one module (a one-module path is its module, and gets `path-complete-*` instead) |
+| `path-complete-{path}` | gold | every lab of a path completed |
+| `area-proficient-{area}` | silver | area score at least 60 |
+| `area-expert-{area}` | gold | area score at least 85 |
+| `speed-run` | silver | a lab completed in under 50% of its `estimated_minutes`, measured from its session starting |
+| `comeback` | bronze | a passing run after a run with a failing check, in the same session |
+| `all-six-areas` | gold | every area at Foundations (score 1) or better |
+
+Awards are stored after each finished check run (the run's session id goes in
+`awards.session_id`), and each new one is announced on that session's event
+stream as `award.earned`. A profile read also stores any award the learner has
+already qualified for but nothing announced (learners from before awards
+existed), without an event. Storing is `INSERT ... ON CONFLICT DO NOTHING`, so
+recomputing any number of times is idempotent.
 
 ## Learn bundle
 
@@ -437,6 +585,7 @@ one, the last 50 events are replayed. The log is capped at the most recent
 | `pressure` | `{ event_id, title, message }` |
 | `hint` | `{ index, after_minutes, text }` — one per `hints[]` entry, on its own timer |
 | `solution.unlocked` | `{}` — once per session, when the [solution reveal](#solution-reveal) rule first becomes true and the lab has a solution |
+| `award.earned` | `{ id, title, tier }` — once per award, right after the check run that earned it is stored. Tier is `bronze`, `silver` or `gold`. Best effort: a failure to compute awards never fails the run, it only means no toast. See [Profile, XP and awards](#profile-xp-and-awards) |
 | `check.started` | `{ run_id, total }` |
 | `check.result` | one `CheckResultEntry`: `{ name, pass, message, duration_ms, exit_code, timed_out, weight }` |
 | `check.finished` | `{ run_id, passed, total, score }` — `score` is pass-weight over total weight |

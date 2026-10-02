@@ -20,6 +20,9 @@ import { queryUsage, resolveWindow } from './session/usage';
 import { readSolutionFiles } from './session/solution';
 import { TarError } from './lib/tar';
 import { mountAdmin } from './admin';
+import { loadProfile } from './profile/store';
+import { compactProfile } from './profile/compute';
+import { parseUserId, parseStartingLevels } from './profile/request';
 
 export function createRouter(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
@@ -496,6 +499,24 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     const before = q.before === undefined || q.before === '' ? undefined : Number(q.before);
     if (before !== undefined && !Number.isFinite(before)) throw ApiError.badRequest('bad_cursor', '`before` must be an epoch-ms number');
     return c.json(await userChecks(c.env, c.req.param('uid'), { lab: q.lab || undefined, limit: clampLimit(q.limit), before }));
+  });
+
+  // --- Profile: skill scores, XP and awards (service auth; the app backend proxies these to learners) ---
+
+  // Everything the profile page shows; `?compact=1` is the slice the Home widget needs.
+  // `?starting=gateway:ok,mcp:new` echoes the browser-held onboarding result as each skill's `starting_level`.
+  app.get('/users/:uid/profile', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const uid = parseUserId(c.req.param('uid'));
+    const profile = await loadProfile(c.env, uid, { starting: parseStartingLevels(c.req.query('starting')) });
+    return c.json(c.req.query('compact') === '1' ? compactProfile(profile) : profile);
+  });
+
+  app.get('/users/:uid/awards', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const uid = parseUserId(c.req.param('uid'));
+    const { awards } = await loadProfile(c.env, uid);
+    return c.json({ user_id: uid, earned: awards.earned, locked: awards.locked });
   });
 
   // The admin panel's routes (service key only), kept in their own module.
