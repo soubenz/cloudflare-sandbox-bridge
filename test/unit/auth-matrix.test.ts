@@ -48,6 +48,9 @@ const SERVICE_KEY_ONLY: Array<[string, string]> = [
   ['get', '/users/:uid/checks'],
   ['get', '/users/:uid/profile'],
   ['get', '/users/:uid/awards'],
+  ['put', '/users/:uid/path-inputs'],
+  ['post', '/users/:uid/path'],
+  ['get', '/users/:uid/path'],
 ];
 
 /** The admin panel's routes live in src/admin.ts and are service-key only. */

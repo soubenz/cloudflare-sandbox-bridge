@@ -91,6 +91,9 @@ minutes are usable now.
 | GET | `/users/:uid/profile?compact=&starting=` | service | the learner's skill scores, XP, streak and awards → see [Profile, XP and awards](#profile-xp-and-awards). `compact=1` returns only what the Home widget needs; `starting=gateway:ok,mcp:new` echoes the onboarding quiz result. `400 bad_user_id`; an unknown user is a `200` with an empty profile |
 | GET | `/users/:uid/awards` | service | `{ user_id, earned, locked }`, the same two lists as `profile.awards` |
 | GET | `/users/:uid/sessions?active=1` | service | D1-backed history/active check; capped at 50 rows without `active=1` |
+| PUT | `/users/:uid/path-inputs` | service | store the learner's quiz levels, goal and hours, then recompute their [learning path](#personal-learning-path). Body `{ areas, goal_text?, goal_kind?, hours_per_week }` → the path. `400 invalid_path_inputs` on a bad body |
+| POST | `/users/:uid/path` | service | recompute the path from the stored inputs (a cache hit when nothing changed); `?force=1` skips the cache → the path. `404 no_inputs` |
+| GET | `/users/:uid/path` | service | the path, from cache or built on the spot → the path. `404 no_inputs` when the user never sent inputs |
 
 ¹ Service key required. Nothing opens these.
 
@@ -211,6 +214,9 @@ the RPC boundary.
 | 400 | `bad_feedback` | `POST /sessions/{id}/feedback` with a `rating` that is not an integer 1-5, a `text` that is not a string or is over 2000 characters, or a body that is not an object |
 | 400 | `bad_user_id` | `GET /users/{uid}/profile` or `/awards` with an id that is empty, over 128 characters, or holds a control character |
 | 400 | `bad_cursor` | `GET /users/{uid}/checks` with a `before` that is not a number |
+| 400 | `invalid_path_inputs` | `PUT /users/{uid}/path-inputs` with a body that fails validation; `details.issues` lists `{ path, message }` |
+| 400 | `invalid_user_id` | a learning-path route whose `:uid` is empty or over 128 characters |
+| 404 | `no_inputs` | `GET`/`POST /users/{uid}/path` for a user who never sent path inputs |
 | 409 | `active_session_exists` | the user already has a live session (the D1 unique index) |
 | 409 | `cannot_resume` | `POST /sessions/{id}/resume` on a session that is not `ended` |
 | 409 | `no_snapshot` | resume with no snapshot to restore from |
@@ -444,6 +450,167 @@ unreferenced or missing clip is refused). They are stored at `labs/{slug}/{versi
 and served by `GET /labs/:slug/audio/:file` (service key; `Range` supported so a clip can seek). A
 forced re-publish leaves exactly that publish's clips. Nothing from `checks/` or `solution/` is
 reachable through the route.
+
+## Personal learning path
+
+Turns the platform quiz into an ordered list of labs for one learner. The
+design is **the rules choose the labs, a model may order them, the server
+checks the order.** All three routes take the service key (the console Worker
+calls them for a signed-in learner); nothing here is reachable with a session
+token.
+
+### Inputs: `PUT /users/:uid/path-inputs`
+
+```json
+{
+  "areas": { "gateway": "new", "mcp": "familiar", "rag": "strong" },
+  "goal_text": "Run our company's AI gateway",
+  "goal_kind": "role-ready",
+  "hours_per_week": 4
+}
+```
+
+| Field | Rule |
+|---|---|
+| `areas` | required object; keys are quiz areas from `packages/catalogue/concepts.json` (`gateway`, `mcp`, `rag`, `otel`, `platform`, `sovereignty`), values `new`, `familiar` or `strong`. The console's own `ok` is accepted and stored as `familiar`. An area left out has no adjustment. An unknown key or level is rejected |
+| `goal_text` | optional string, at most 200 characters (201 is rejected). Whitespace and control characters collapse to single spaces; empty means no goal |
+| `goal_kind` | `role-ready`, `specific-skill` or `explore` (default `explore`) |
+| `hours_per_week` | required whole number, 1 to 20 |
+
+An unknown field anywhere is rejected too. A failure is
+`400 invalid_path_inputs` with every problem in `message` and in
+`details.issues`, and nothing is stored. A valid body replaces the user's
+previous inputs (one row per user, `user_profile_inputs`) and the response is
+the recomputed path. The console calls this again after a quiz retake.
+`goal_text` is free text the learner typed: it lives only in that row and is
+never logged.
+
+### The path: `GET` and `POST /users/:uid/path`
+
+`GET` returns the stored path, building it first if the inputs, the catalogue,
+the user's completed labs or their plan changed since it was stored.
+`POST` does the same and `?force=1` rebuilds regardless of the cache. Both
+answer `404 no_inputs` when the user never sent inputs. All three routes
+(including `PUT`) return the path itself, with an `x-path-cache` header:
+`hit` (served from storage, no model call), `miss` (rebuilt) or `forced`.
+
+```json
+{
+  "steps": [
+    { "slug": "see-what-a-gateway-does", "title": "See what a gateway does", "area": "gateway",
+      "why": "You have already finished this lab.", "estimated_minutes": 20, "status": "done" },
+    { "slug": "add-a-model-without-touching-app-code", "title": "Add a model without touching app code", "area": "gateway",
+      "why": "A first step into LLM gateway, which is new to you.", "estimated_minutes": 30, "status": "next" }
+  ],
+  "total_minutes": 30,
+  "weeks_estimate": 1,
+  "goal": { "text": "Run our company's AI gateway", "kind": "role-ready" },
+  "source": "ai",
+  "generated_at": 1767000000000
+}
+```
+
+- `steps` are, in this order: labs the learner has **done**, the labs still to
+  do in path order, then labs their plan **locks**. `status` is `done`; `next`
+  (the first step that is not done and not locked; absent when nothing is
+  left to do); `upcoming`; or `locked`.
+- `area` is the quiz area the lab belongs to (the area whose `path` and `module`
+  in `concepts.json` match the lab's), or `null` for a lab outside every area.
+- `why` is one plain sentence of at most 120 characters. A done step and a locked
+  step get a stock line; a model's reason that is missing, longer than 120
+  characters, or looks like code or a link is replaced by a generic one
+  ("A first step into LLM gateway, which is new to you.", "Builds on the earlier
+  steps in Retrieval.", "One lab to confirm what you already know about Tools and
+  MCP.", "The next step on your path.").
+- `estimated_minutes` is the manifest's, or 30 when the manifest sets none.
+- `total_minutes` is the time **still to do**: the steps that are neither done nor
+  locked. `weeks_estimate` is that time at `hours_per_week`, rounded up (0 when
+  nothing is left).
+- `source` is `ai` when a model ordered the labs and `rules` when the rules' own
+  order is used. `generated_at` is epoch milliseconds.
+
+### The rules (which labs, and a baseline order)
+
+`src/path/rules.ts`, pure and unit tested. They apply in this order:
+
+1. **Archived** labs are never on a path.
+2. **Completed** labs (some `check_runs` row for the user and lab with
+   `passed_all`, the same fact as `GET /users/:uid/progress`) are shown as
+   `done` and never offered again.
+3. **Plan.** The free plan may start only labs with `tier: free` (the manifest's
+   "whether the free plan may start this lab"). Any other lab is `locked` for a
+   free learner, and so is a lab with a locked prerequisite. Locked labs are
+   listed last, are never given to the model and do not count in the totals. The
+   plan is `users.plan` (`free`, or any other value for a paid plan); a user with no
+   `users` row is free. A completed pro lab still shows as `done`. The Worker does
+   not enforce the plan when a session starts today, so this rule is the one place
+   the path applies it.
+4. **Strong areas** are skipped, except one capstone: the highest-order lab of
+   that area the learner's plan can start. Skipped labs count as known, so the
+   capstone's prerequisites inside the area are satisfied without being on the
+   path.
+5. **Prerequisites.** A lab is only on the path after its prerequisites: each is
+   earlier on the path, completed, or skipped under rule 4. A prerequisite that is
+   not in the catalogue, or is archived, is ignored. A cycle cannot be satisfied;
+   its labs are kept in catalogue order rather than dropped.
+6. **New areas** start with their foundation labs (the area's `difficulty: intro`
+   labs, or its first lab when it has none), ahead of everything else. The rest is
+   catalogue order (`path`, `module`, `order`, `slug`).
+
+### The model orders within the rules
+
+When at least two labs are allowed, the Worker asks Workers AI to put them in the
+best order for the learner's goal, hours and quiz levels, with one short reason per
+lab. With fewer there is nothing to order and no call is made.
+
+- **Call path.** `wrangler.jsonc` declares no `AI` binding, so the call goes the way
+  the labs' model calls do: the AI Gateway's OpenAI-compatible endpoint,
+  `https://{LLM_HOST}/v1/{CLOUDFLARE_ACCOUNT_ID}/{AI_GATEWAY_NAME}/compat/chat/completions`,
+  with `Authorization: Bearer {AI_GATEWAY_TOKEN}` (see the AI Gateway section of
+  `docs/spike.md`). The Worker holds the token itself, so no egress rule is involved.
+- **Request.** Model `workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8` (the constant
+  `PATH_MODEL` in `src/path/ai.ts`), `temperature: 0`, and a strict JSON-schema
+  `response_format`: `{ "steps": [{ "slug", "why" }] }`, `why` at most 120
+  characters. The prompt carries the goal (quoted, as data), hours per week, quiz
+  levels and the allowed labs with title, area, difficulty, minutes and
+  prerequisites. `cf-aig-cache-ttl: 86400` is set, and `cf-aig-skip-cache: true` on
+  `?force=1`.
+- **The server validates the answer, always.** The path is exactly the allowed
+  set, each lab once. Slugs the model made up are dropped, a duplicate keeps its
+  first place (and first reason), allowed labs it left out are appended in rules
+  order, and a lab that precedes one of its prerequisites is moved to just after
+  it (a stable topological fix-up). `source` is still `ai`.
+- **Fallback.** A call that fails, answers non-200, returns something that is not
+  the JSON shape, or does not answer within **6 seconds** is not an error: the path
+  is the rules' order with generic reasons and `source: "rules"`. It is stored and
+  cached like any other, so a model outage does not turn into a call per read.
+  `?force=1` tries the model again.
+
+### Cache
+
+`user_paths` holds one row per user: `input_hash`, `path_json`, `source`, `model`
+(`NULL` for `rules`), `created_at`, `updated_at`. `input_hash` is the SHA-256 of a
+canonical form of: the quiz levels, goal text and kind, hours per week, the plan,
+the allowed labs as `slug@version`, the locked labs, the completed set, the model
+id and a prompt version. Same hash: the stored path is returned and **no model call
+is made**. Any change to those (a retake, an edit, a lab completed, a new lab
+version, a plan change, a model change) makes a new hash and the next read rebuilds
+the path. A retake with identical answers is a hit.
+
+### Refresh on completion
+
+When a check run passes every check of a lab (the moment the session's
+`completed_at` is set), the Worker calls `refreshPath(env, userId)` in the
+background, after the `check_runs` row is written. It never delays or fails the
+run. It uses **no model**: when the hash has changed it keeps the stored order and
+the stored reasons, marks the finished lab `done`, moves `next`, appends any lab
+published since (generic reason) and stores the result under the new hash, so the
+next read is a hit. A user with no inputs or no stored path is skipped (their first
+read builds the path), and an unchanged hash does nothing. Use
+`POST /users/:uid/path?force=1` to have the model re-order from scratch.
+
+Storage: `migrations/0010_learning_path.sql` adds `user_profile_inputs` and
+`user_paths`.
 
 ## Learning analytics
 

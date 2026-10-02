@@ -8,6 +8,7 @@ import { scoreRun } from './progress';
 import { ensureStageDir, stagePath, archiveGuard, removeStaged } from './hydrate';
 import { tryEmitSolutionUnlocked } from './solution';
 import { announceNewAwards } from '../profile/notify';
+import { refreshPath } from '../path/service';
 
 /**
  * Runs the lab's checker scripts and returns structured, per-criterion
@@ -85,8 +86,14 @@ export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?
       lab_slug: meta.lab_slug,
       lab_version: meta.lab_version,
       total_checks: manifest.checks.length,
-    }).then(() => announceNewAwards(rt, meta.user_id, meta.id)),
-    'insertCheckRun'
+    })
+      .then(() => announceNewAwards(rt, meta.user_id, meta.id))
+      .then(() =>
+        // A lab just completed: bring the learner's path up to date (rules only, no model call). Best
+        // effort and after the row is written, so a failure here never touches the run or its result.
+        passed_all ? refreshPath(rt.env, meta.user_id) : undefined
+      ),
+    'insertCheckRun / awards / refreshPath'
   );
   return run;
 }

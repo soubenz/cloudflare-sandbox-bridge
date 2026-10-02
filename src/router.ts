@@ -23,6 +23,8 @@ import { mountAdmin } from './admin';
 import { loadProfile } from './profile/store';
 import { compactProfile } from './profile/compute';
 import { parseUserId, parseStartingLevels } from './profile/request';
+import { parsePathInputs } from './path/inputs';
+import { ensurePath, saveInputsAndRecompute, type PathResult } from './path/service';
 
 export function createRouter(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
@@ -519,10 +521,42 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     return c.json({ user_id: uid, earned: awards.earned, locked: awards.locked });
   });
 
+  // --- Personal learning path (service auth; the console Worker calls these for learners) ---
+  // The rules choose the labs, a model may order them, the server validates the order; see docs/api.md.
+
+  const pathResponse = (c: { json: (body: unknown) => Response }, { path, cache }: PathResult) => {
+    const res = c.json(path);
+    res.headers.set('x-path-cache', cache);
+    return res;
+  };
+
+  // The quiz outcome, goal and hours. Replaces what was stored and recomputes the path (a cache hit when nothing changed).
+  app.put('/users/:uid/path-inputs', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const inputs = parsePathInputs(await c.req.json().catch(() => undefined));
+    return pathResponse(c, await saveInputsAndRecompute(c.env, pathUserId(c.req.param('uid')), inputs));
+  });
+
+  app.post('/users/:uid/path', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    return pathResponse(c, await ensurePath(c.env, pathUserId(c.req.param('uid')), { force: c.req.query('force') === '1' }));
+  });
+
+  app.get('/users/:uid/path', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    return pathResponse(c, await ensurePath(c.env, pathUserId(c.req.param('uid'))));
+  });
+
   // The admin panel's routes (service key only), kept in their own module.
   mountAdmin(app);
 
   return app;
+}
+
+/** A user id from the path of a learning-path route: non-empty and short enough to be one. */
+function pathUserId(uid: string): string {
+  if (uid.length === 0 || uid.length > 128) throw ApiError.badRequest('invalid_user_id', 'user id must be 1-128 characters');
+  return uid;
 }
 
 type CheckResult = 'ok' | string;
