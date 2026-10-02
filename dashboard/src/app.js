@@ -1,4 +1,4 @@
-import { api, apiBase, configureAuth, eventsUrl, serviceUrl, serviceBaseUrl } from './api.js';
+import { api, plainError, configureAuth, eventsUrl, serviceUrl, serviceBaseUrl } from './api.js';
 import { attachTerminal } from './terminal.js';
 import { diffLines, collapseContext } from './diff.js';
 import {
@@ -584,7 +584,7 @@ async function loadLabs() {
     const visible = visibleLabs(labs);
     if (!visible.length) {
       list.innerHTML =
-        '<div class="empty-state"><p>No labs are published yet.</p><p class="muted small">Publish one with <code>opalix labs publish</code>, then reload.</p></div>';
+        '<div class="empty-state"><p>No labs are available yet.</p><p class="muted small">Please check back soon.</p></div>';
       return;
     }
     renderLauncher(buildLauncherModel(labs, pathMeta, { passed: passedSlugs(labs) }));
@@ -607,7 +607,7 @@ async function loadLabs() {
         <p class="error"></p>
         <button class="btn" id="btnRetryLabs">Try again</button>
       </div>`;
-    list.querySelector('.error').textContent = `Could not load labs — ${err.message}`;
+    list.querySelector('.error').textContent = `Could not load labs. ${plainError(err)}`;
     list.querySelector('#btnRetryLabs').addEventListener('click', () => {
       showLabSkeleton();
       loadLabs();
@@ -892,7 +892,7 @@ function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
     if (kind === 'time') {
       chip.title = lab.estimated_minutes
         ? `Expected about ${lab.estimated_minutes} min to finish${lab.timeout_minutes ? `; the session ends after ${lab.timeout_minutes} min` : ''}`
-        : 'Hard time limit for the session';
+        : 'Time limit for this lab';
     }
     chip.textContent = text;
     if (limit) chip.append(node('span', 'chip-limit', limit));
@@ -1336,7 +1336,7 @@ async function renderResumeCard() {
  * a container running that nothing on this browser can reach.
  */
 async function discardRemembered(saved, host) {
-  if (!confirm('Discard the running lab? Its container is destroyed and unsaved work is lost.')) return;
+  if (!confirm('Discard the running lab? Its workspace is cleared and unsaved work is lost.')) return;
   const button = host.querySelector('#btnDiscard');
   button.disabled = true;
   button.setAttribute('aria-busy', 'true');
@@ -1351,7 +1351,7 @@ async function discardRemembered(saved, host) {
   } catch (err) {
     button.disabled = false;
     button.removeAttribute('aria-busy');
-    toast(`Could not discard the lab — ${err.message}`, 'bad');
+    toast(`Could not discard the lab. ${plainError(err)}`, 'bad');
   }
 }
 
@@ -1752,12 +1752,16 @@ async function loadLearn() {
             return typeof result === 'string' ? result : (result?.content ?? '');
           } catch (err) {
             if (/^404:/.test(err.message)) return null;
-            throw err;
+            throw new Error(plainError(err));
           }
         },
         write: async (text) => {
           const s = current();
-          await api.writeFile(s.id, s.token, file, text);
+          try {
+            await api.writeFile(s.id, s.token, file, text);
+          } catch (err) {
+            throw new Error(plainError(err));
+          }
           hideIdleBanner();
         },
         onWritten: (text) => {
@@ -2080,7 +2084,7 @@ async function startSession(slug, card) {
     const started = await api.startSession(slug, {
       retries: 5,
       onBusy: (attempt, retries, seconds) => {
-        const text = `All lab slots are busy — retrying in ${seconds}s (attempt ${attempt} of ${retries})`;
+        const text = `Labs are busy right now. Trying again in ${seconds}s.`;
         if ($('launcher').hidden) return toast(text, 'info', seconds * 1000);
         error.textContent = text;
         error.className = 'notice notice-warn';
@@ -2103,10 +2107,10 @@ async function startSession(slug, card) {
     // where it scrolled out of sight and the click looked like it did nothing.
     error.className = 'notice notice-bad';
     if ($('launcher').hidden) {
-      toast(`Could not start this lab — ${err.message}`, 'bad');
+      toast(`Could not start this lab. ${plainError(err)}`, 'bad');
       return false;
     }
-    error.textContent = `Could not start this lab — ${err.message}`;
+    error.textContent = `Could not start this lab. ${plainError(err)}`;
     (card ?? $('launcher')).append(error);
     error.hidden = false;
     error.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -2192,7 +2196,7 @@ function enterSession() {
   $('notFound').hidden = true;
   // The task, not an empty terminal: the guide opens on the brief, and the workspace on the files.
   showView('editor');
-  showBoot('Claiming a container…');
+  showBoot('Getting your lab ready…');
   // The address names the lab; a session that came on screen by a button gets it now.
   leftSession(false);
   ensureSessionUrl(state.session.lab);
@@ -2362,7 +2366,7 @@ async function confirmEnded(reason) {
     /* cannot check; trust the event */
   }
   if (state.session !== session) return;
-  bootFailed(`Session ended: ${reason ?? 'unknown'}`);
+  bootFailed('The lab stopped before it was ready.');
   onEnded(reason);
 }
 
@@ -2386,7 +2390,7 @@ function onContainerRestarted() {
   // so this socket is gone whether or not it has noticed yet.
   state.terminal?.dispose();
   state.terminal = null;
-  setTerminalStatus('closed', 'the container was replaced; reconnecting');
+  setTerminalStatus('closed', 'Your lab was restarted, so the terminal is reconnecting');
   pollUntilRunning();
 }
 
@@ -2408,11 +2412,11 @@ const LEARNER_NOTICES = {
   // header's own timer counts down to.
   'session.expiring': () => {
     const minutes = state.expiresAt ? Math.max(1, Math.ceil((state.expiresAt - Date.now()) / 60_000)) : 5;
-    return ['Session ending soon', `About ${minutes} minute${minutes === 1 ? '' : 's'} left. End with a snapshot to keep your work.`];
+    return ['Session ending soon', `About ${minutes} minute${minutes === 1 ? '' : 's'} left. Use End & save to keep your work.`];
   },
   'session.idle_warning': () => ['Still there?', 'This session ends soon if nothing happens.'],
-  'container.restarted': () => ['Container replaced', 'Your lab is being rebuilt; the terminal will reconnect.'],
-  alert: (d) => ['Something went wrong', d.message ?? d.error ?? d.kind],
+  'container.restarted': () => ['Your lab restarted', 'Your workspace is being restored and the terminal will reconnect on its own.'],
+  alert: () => ['Something went wrong', 'The lab ran into a problem. If it keeps happening, end the lab and start it again.'],
 };
 
 function noticeFor(type, tone, data) {
@@ -2495,10 +2499,10 @@ async function pollUntilRunning() {
     if (state.session === session && !runningHandled) {
       bootFailed(
         refused
-          ? `This session is no longer available (${lastError.message}). It may have ended or expired.`
+          ? 'This lab is no longer available. It may have ended or expired.'
           : lastError
-            ? `The lab is not answering: ${lastError.message}`
-            : 'The lab still is not running after two minutes. It may yet come up, or it may be stuck.',
+            ? `The lab is not responding. ${plainError(lastError)}`
+            : 'The lab is taking longer than expected to start. You can keep waiting, or go back and start it again.',
         { canRetry: !refused }
       );
     }
@@ -2512,7 +2516,7 @@ async function onRunning(status) {
   if (runningHandled) return;
   runningHandled = true;
 
-  bootStep('services', 'Attaching the terminal…');
+  bootStep('services', 'Opening your terminal…');
   if (!state.terminal) {
     state.terminal = attachSessionTerminal();
   }
@@ -2615,7 +2619,7 @@ async function loadBrief() {
         'Check the workspace files and the hints panel.</p>'
       : '<div class="empty-state"><p class="error"></p><button class="btn" id="btnRetryBrief">Try again</button></div>';
     if (!missing) {
-      body.querySelector('.error').textContent = `Could not load the brief — ${err.message}`;
+      body.querySelector('.error').textContent = `Could not load the brief. ${plainError(err)}`;
       body.querySelector('#btnRetryBrief').addEventListener('click', () => {
         body.innerHTML = '<p class="muted">Loading the brief…</p>';
         loadBrief();
@@ -2747,7 +2751,7 @@ export function renderMarkdown(src) {
  * shows is what the session is actually doing.
  */
 function bootProgress(type, data) {
-  if (type === 'session.state' && data?.state === 'starting') bootStep('container', 'Unpacking the workspace…');
+  if (type === 'session.state' && data?.state === 'starting') bootStep('container', 'Setting up your workspace…');
   if (type === 'service.health') {
     bootStep('workspace', `Starting ${data?.service ?? 'services'}…`);
     if (data?.service && data?.health) {
@@ -2757,9 +2761,9 @@ function bootProgress(type, data) {
   }
   if (type === 'session.state' && data?.state === 'running') {
     bootStep('workspace');
-    bootStep('services', 'Attaching the terminal…');
+    bootStep('services', 'Opening your terminal…');
   }
-  if (type === 'alert' && data?.kind?.startsWith?.('start')) bootFailed(data.message ?? data.kind);
+  if (type === 'alert' && data?.kind?.startsWith?.('start')) bootFailed('The lab could not finish starting.');
 }
 
 // ------------------------------------------------------------- boot modal
@@ -2847,7 +2851,7 @@ function bootFailed(message, { canRetry = false } = {}) {
   // reads as "api did not become healthy", not a bare "start failed".
   message = String(message ?? '');
   if (state.bootUnhealthy && !message.includes(state.bootUnhealthy)) {
-    message = `${state.bootUnhealthy} did not become healthy. ${message}`;
+    message = `${state.bootUnhealthy} did not start properly. ${message}`;
   }
   // A failed start reports itself twice — the alert that says why, then
   // `session.state: ended` — and the first is the one worth reading.
@@ -2874,8 +2878,8 @@ const END_REASONS = {
   user: 'You ended this session.',
   idle: 'It ended because nothing happened in it for a while.',
   expired: 'It reached its time limit.',
-  error: 'It stopped because of an error on our side.',
-  evicted: 'Its container was reclaimed.',
+  error: 'Something went wrong on our side and it had to stop.',
+  evicted: 'It had to be closed on our side to free up room.',
 };
 
 function onEnded(reason) {
@@ -2884,7 +2888,7 @@ function onEnded(reason) {
   stopStreamFallback();
   hideIdleBanner();
   hideExpiryBanner();
-  $('expiryTimer').textContent = reason ? `ended: ${reason}` : 'ended';
+  $('expiryTimer').textContent = 'ended';
   delete $('expiryTimer').dataset.urgent;
   for (const id of ['btnChecks', 'btnChecksInline', 'btnDockAction', 'btnSnapshot', 'btnEnd']) $(id).disabled = true;
   state.terminal?.dispose();
@@ -2898,8 +2902,8 @@ function onEnded(reason) {
   // API can undo: it snapshots the workspace on the way out.
   const recoverable = reason === 'idle' || reason === 'expired';
   $('endedText').textContent = recoverable
-    ? `This session has ended. ${END_REASONS[reason]} Its container is gone, but you can resume from the last snapshot or start the lab again.`
-    : `This session has ended. ${END_REASONS[reason] ?? ''} Its container is gone, so the terminal and files ` +
+    ? `This session has ended. ${END_REASONS[reason]} You can pick up from your last save or start the lab again.`
+    : `This session has ended. ${END_REASONS[reason] ?? ''} The terminal and files ` +
       'are no longer available — go back to the labs to start again.';
   $('btnResume').hidden = !recoverable;
   $('btnRestart').hidden = !recoverable;
@@ -2938,13 +2942,13 @@ async function resumeFromSnapshot() {
     // outlives it by minutes, not hours, and cannot be renewed once it is over.
     toast(
       /^401:/.test(err.message)
-        ? 'This session can no longer be resumed — its sign-in has expired. Restart the lab instead.'
-        : `Could not resume — ${err.message}`,
+        ? 'This lab can no longer be resumed. Start it again instead.'
+        : `Could not resume. ${plainError(err)}`,
       'bad'
     );
   } finally {
     button.disabled = false;
-    button.textContent = 'Resume from snapshot';
+    button.textContent = 'Resume my work';
     button.removeAttribute('aria-busy');
   }
 }
@@ -3017,12 +3021,12 @@ function setTerminalStatus(status, detail) {
     return;
   }
   if (status === 'reconnecting') {
-    $('termStatusText').textContent = `Reconnecting… ${detail?.match(/\((\d+\/\d+)\)/)?.[1] ?? ''}`.trim();
+    $('termStatusText').textContent = 'Reconnecting to your terminal…';
     $('btnReconnectTerm').hidden = true;
     panel.hidden = false;
     return;
   }
-  $('termStatusText').textContent = detail ? `Terminal disconnected — ${detail}.` : 'Terminal disconnected.';
+  $('termStatusText').textContent = detail ? `${detail}.` : 'The terminal lost its connection. Press Reconnect to pick up where you left off.';
   $('btnReconnectTerm').hidden = false;
   panel.hidden = false;
 }
@@ -3224,7 +3228,7 @@ async function imHere() {
     await api.touch(session.id, session.token);
     hideIdleBanner();
   } catch (err) {
-    toast(`Could not tell the lab you are here — ${err.message}`, 'bad');
+    toast(`Could not tell the lab you are here. ${plainError(err)}`, 'bad');
   } finally {
     button.disabled = false;
     button.removeAttribute('aria-busy');
@@ -3234,7 +3238,7 @@ async function imHere() {
 function showExpiryBanner(left) {
   $('expiryCountdown').textContent = formatClock(left);
   $('expiryBanner').hidden = false;
-  if (!endInFlight) $('btnEnd').textContent = 'End & snapshot';
+  if (!endInFlight) $('btnEnd').textContent = 'End & save';
 }
 
 function hideExpiryBanner() {
@@ -3328,7 +3332,7 @@ async function runChecks() {
   } catch (err) {
     state.checksRunning = false;
     panel.innerHTML = `${previous}<p class="notice notice-bad small" role="alert"></p>`;
-    panel.querySelector('.notice').textContent = `The checks could not run — ${err.message}`;
+    panel.querySelector('.notice').textContent = `The checks could not run. ${plainError(err)}`;
     return null;
   } finally {
     state.checksRunning = false;
@@ -3689,7 +3693,7 @@ async function readMine(session, path) {
     return { text: typeof result?.content === 'string' ? result.content : '', missing: false };
   } catch (err) {
     if (err.status === 404) return { text: '', missing: true };
-    return { text: '', missing: false, unreadable: err.message };
+    return { text: '', missing: false, unreadable: plainError(err) };
   }
 }
 
@@ -3742,7 +3746,7 @@ async function loadSolution() {
       renderSolution(null);
       return setSolutionStatus('empty', 'This lab has no solution to show.');
     }
-    setSolutionStatus('error', `Could not load the solution — ${err.message}`);
+    setSolutionStatus('error', `Could not load the solution. ${plainError(err)}`);
   }
 }
 
@@ -3808,7 +3812,7 @@ function selectSolutionFile(index) {
 
   if (file.unreadable) {
     note.hidden = false;
-    note.textContent = `Could not read your copy of this file (${file.unreadable}), so the solution is shown without a comparison.`;
+    note.textContent = 'Could not read your copy of this file, so the solution is shown without a comparison.';
     diff.replaceChildren(
       ...file.content.split('\n').map((text, i) => diffRow({ type: 'same', text, aLine: undefined, bLine: i + 1 }))
     );
@@ -4037,7 +4041,7 @@ async function sendFeedback(event) {
     thanks.tabIndex = -1;
     thanks.focus();
   } catch (err) {
-    error.textContent = `Could not send your feedback — ${err.message}`;
+    error.textContent = `Could not send your feedback. ${plainError(err)}`;
     error.hidden = false;
     button.disabled = false;
   } finally {
@@ -4071,7 +4075,7 @@ async function refreshFiles() {
     if (!rows.length) list.innerHTML = '<li class="muted">empty</li>';
   } catch (err) {
     list.innerHTML = '<li class="error"></li>';
-    list.querySelector('li').textContent = `Could not list files — ${err.message}`;
+    list.querySelector('li').textContent = `Could not list files. ${plainError(err)}`;
   } finally {
     button.removeAttribute('aria-busy');
     button.disabled = false;
@@ -4167,7 +4171,7 @@ async function ensureEditor() {
     });
     $('editorEmpty').hidden = true;
   } catch (err) {
-    setEditorStatus(`The editor failed to load — ${err.message}`, 'bad');
+    setEditorStatus(`The editor failed to load. ${plainError(err)}`, 'bad');
   }
   return state.editor;
 }
@@ -4216,7 +4220,7 @@ async function openFile(name) {
     }
     if ($('viewEditor').classList.contains('view-active')) editor.focus();
   } catch (err) {
-    setEditorStatus(`Could not open ${name} — ${err.message}`, 'bad');
+    setEditorStatus(`Could not open ${name}. ${plainError(err)}`, 'bad');
   }
 }
 
@@ -4244,7 +4248,7 @@ async function newFile() {
     await refreshFiles();
     await openFile(clean);
   } catch (err) {
-    showFileError(`Could not create ${clean} — ${err.message}`);
+    showFileError(`Could not create ${clean}. ${plainError(err)}`);
   }
 }
 
@@ -4278,7 +4282,7 @@ async function saveFile() {
     refreshFiles();
   } catch (err) {
     // Still dirty: the edit exists only in this tab.
-    setEditorStatus(`Not saved — ${err.message}`, 'bad');
+    setEditorStatus(`Not saved. ${plainError(err)}`, 'bad');
   } finally {
     saving = false;
     $('btnSaveFile').disabled = !state.session || $('statePill').dataset.state === 'ended';
@@ -4442,7 +4446,7 @@ async function restartService(name, button) {
     }
   } catch (err) {
     setServiceHealth(name, 'unknown');
-    toast(`Could not restart ${name} — ${err.message}`, 'bad');
+    toast(`Could not restart ${name}. ${plainError(err)}`, 'bad');
   } finally {
     button.disabled = false;
     button.textContent = 'Restart';
@@ -4692,7 +4696,7 @@ $('feedbackForm').addEventListener('change', () => {
 });
 $('feedbackForm').addEventListener('submit', sendFeedback);
 
-// A snapshot used to report nothing to the learner either way: success was
+// Saving progress used to report nothing to the learner either way: success was
 // silent and failure went nowhere the learner would look.
 $('btnSnapshot').addEventListener('click', async () => {
   const button = $('btnSnapshot');
@@ -4701,11 +4705,11 @@ $('btnSnapshot').addEventListener('click', async () => {
   button.setAttribute('aria-busy', 'true');
   try {
     await api.snapshot(state.session.id, state.session.token);
-    toast(`Snapshot saved at ${new Date().toLocaleTimeString([], { hour12: false })}.`, 'good');
+    toast(`Progress saved at ${new Date().toLocaleTimeString([], { hour12: false })}.`, 'good');
   } catch (err) {
-    toast(`Snapshot failed — ${err.message}`, 'bad');
+    toast(`Could not save your progress. ${plainError(err)}`, 'bad');
   } finally {
-    button.textContent = 'Snapshot';
+    button.textContent = 'Save progress';
     button.removeAttribute('aria-busy');
     button.disabled = !state.session || $('statePill').dataset.state === 'ended';
   }
@@ -4740,8 +4744,8 @@ async function endSession(snapshot) {
   } catch (err) {
     // Say so, but still go home: the container is gone or was never there,
     // and leaving a dead workspace on screen helps nobody.
-    addNotice('bad', 'Could not end cleanly', err.message);
-    toast(`The session may not have ended cleanly — ${err.message}`, 'bad');
+    addNotice('bad', 'Could not end cleanly', plainError(err));
+    toast(`The lab may not have ended cleanly. ${plainError(err)}`, 'bad');
   } finally {
     endInFlight = false;
     btn.textContent = 'End lab';
@@ -4942,7 +4946,6 @@ function showSignedOut() {
 
 showIdentity();
 $('saveShortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘S' : 'Ctrl+S';
-$('apiLabel').textContent = apiBase();
 router.onRoute((route) => applyRoute(route));
 router.start();
 installCodeCopy();

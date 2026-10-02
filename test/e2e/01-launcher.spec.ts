@@ -1,4 +1,4 @@
-import { test, expect, openConsole, signIn, API, LAB } from './fixtures';
+import { test, expect, openConsole, signIn, LAB } from './fixtures';
 
 test.describe('lab launcher', () => {
   test('lists published labs once signed in', async ({ page }) => {
@@ -112,8 +112,9 @@ test.describe('lab launcher', () => {
     expect(await page.locator('.lab:not(.lab-group .lab)').count()).toBe(0);
   });
 
-  test('names the API it is talking to', async ({ page }) => {
+  test('does not show where the API lives: the footer is just the links', async ({ page }) => {
     await openConsole(page);
-    await expect(page.locator('#apiLabel')).toHaveText(API);
+    await expect(page.locator('.footer')).not.toContainText(/workers\.dev|https?:/);
+    await expect(page.locator('.footer .footer-link')).toHaveText(['Status', 'Feedback']);
   });
 });

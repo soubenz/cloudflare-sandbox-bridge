@@ -136,7 +136,7 @@ test.describe('no free lab slot', () => {
     await page.waitForSelector('body[data-booted="1"]', { timeout: 60_000 });
 
     await page.locator('.lab[data-slug="hello"] button').click();
-    await expect(page.locator('#launchError')).toContainText('All lab slots are busy — retrying in 30s');
+    await expect(page.locator('#launchError')).toContainText('Labs are busy right now. Trying again in 30s.');
   });
 });
 

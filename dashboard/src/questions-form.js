@@ -291,7 +291,7 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
         setStatus(dirty.size ? 'pending' : 'saved');
         refreshCards();
       } catch (err) {
-        setStatus('error', `${err?.message ?? 'The write failed'}. Your answers are still here; press Save to try again.`);
+        setStatus('error', `${String(err?.message ?? 'Your answers could not be saved').replace(/[.\s]+$/, '')}. Your answers are still here; press Save to try again.`);
       } finally {
         saving = null;
       }

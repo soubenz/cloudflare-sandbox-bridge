@@ -50,16 +50,16 @@
     <div class="spinner" aria-hidden="true"></div>
     <div class="boot-failed-mark" aria-hidden="true">!</div>
     <h2 id="bootTitle">Starting your lab</h2>
-    <p class="muted small" id="bootDetail" aria-live="polite">Claiming a container…</p>
+    <p class="muted small" id="bootDetail" aria-live="polite">Getting your lab ready…</p>
     <ol class="boot-steps" id="bootSteps">
-      <li data-step="container">Container</li>
+      <li data-step="container">Preparing the lab</li>
       <li data-step="workspace">Workspace files</li>
       <li data-step="services">Services
         <div class="boot-svc-list" id="bootServices" aria-live="polite"></div>
       </li>
       <li data-step="terminal">Terminal</li>
     </ol>
-    <p class="small muted" id="bootHint">This usually takes a few seconds. Labs that run a gateway take up to a minute.</p>
+    <p class="small muted" id="bootHint">This usually takes a few seconds. Some labs take up to a minute.</p>
     <p class="notice notice-bad small" id="bootError" role="alert" hidden></p>
     <div class="modal-actions" id="bootActions" hidden>
       <button id="btnBootLabs" class="btn">Back to labs</button>
@@ -92,7 +92,7 @@
       <span class="sr-only" id="sessionId"></span>
 
       <span class="bar-stats" id="barStats" role="group" aria-label="Session progress">
-        <span class="tag tag-time" title="Time until the hard timeout">
+        <span class="tag tag-time" title="Time left in this lab">
           <svg width="14" height="14" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg>
           <span class="timer" id="expiryTimer"></span>
         </span>
@@ -115,7 +115,7 @@
         <button id="btnChecks" class="btn btn-accent" disabled>
           <svg width="12" height="12" aria-hidden="true" focusable="false"><use href="#i-play"/></svg><span class="btn-label">Run checks</span>
         </button>
-        <button id="btnSnapshot" class="btn btn-ghost" disabled title="Save the workspace so it survives a container restart">Snapshot</button>
+        <button id="btnSnapshot" class="btn btn-ghost" disabled title="Save your workspace so you can pick this lab up again later">Save progress</button>
         <button id="btnEnd" class="btn btn-strong" disabled>End lab</button>
       </div>
       <button id="btnBackToLabs" class="btn btn-primary" hidden>← Back to labs</button>
@@ -348,7 +348,7 @@
     <div class="ended-banner" id="endedBanner" role="status" hidden>
       <span id="endedText">This session has ended.</span>
       <span class="banner-actions">
-        <button id="btnResume" class="btn btn-sm btn-accent" hidden>Resume from snapshot</button>
+        <button id="btnResume" class="btn btn-sm btn-accent" hidden>Resume my work</button>
         <button id="btnRestart" class="btn btn-sm" hidden>Restart lab</button>
         <button id="btnEndedBack" class="btn btn-sm">Back to labs</button>
       </span>
@@ -360,7 +360,7 @@
     </p>
     <p class="banner banner-warn" id="expiryBanner" role="alert" hidden>
       <svg width="20" height="20" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg>
-      <span class="banner-text">Ends in <span class="countdown" id="expiryCountdown"></span> — end with a snapshot to keep your work.</span>
+      <span class="banner-text">Ends in <span class="countdown" id="expiryCountdown"></span> — use End &amp; save to keep your work.</span>
     </p>
 
     <section class="window" id="window" aria-label="Workspace">
@@ -447,7 +447,7 @@
           <div class="service-down" id="serviceDown" role="alert" hidden>
             <div class="empty-state service-down-card">
               <p><strong id="serviceDownName"></strong> is not answering</p>
-              <p class="muted small">Its process is down or still starting. Restart it, or retry in a moment.</p>
+              <p class="muted small">It may still be starting, or it needs a restart. Restart it, or try again in a moment.</p>
               <div class="modal-actions">
                 <button id="btnServiceDownRestart" class="btn btn-accent" type="button">Restart</button>
                 <button id="btnServiceDownRetry" class="btn" type="button">Retry</button>
@@ -497,7 +497,7 @@
 </main>
 
 <footer class="footer">
-  <span class="small muted">API <span class="mono" id="apiLabel"></span></span>
+  <span class="small muted">Opalix labs</span>
   <span class="footer-spacer"></span>
   <a class="footer-link" href="https://opalix-site.soubenz94.workers.dev/status" target="_blank" rel="noopener">Status</a>
   <a class="footer-link" href="https://opalix-site.soubenz94.workers.dev/feedback" target="_blank" rel="noopener">Feedback</a>
@@ -507,7 +507,7 @@
 <dialog class="dialog dialog-wide" id="onboarding" aria-labelledby="onboardingTitle">
   <div class="dialog-card">
     <h2 id="onboardingTitle">How this console works</h2>
-    <p class="muted small">A lab is a real container. Four things are worth knowing before you start one.</p>
+    <p class="muted small">Four things are worth knowing before you start a lab.</p>
     <dl class="onboarding-blocks">
       <div>
         <dt>Guide, terminal and editor</dt>
@@ -526,7 +526,7 @@
         <dd>Some labs change under you around a stated minute. The checks run against what is true at the end, not against what was true when you started.</dd>
       </div>
     </dl>
-    <p class="muted small onboarding-timers"><strong>Timers.</strong> The header counts down to a hard limit, and a lab left alone ends after a warning. End with a snapshot to keep your work and pick it up again.</p>
+    <p class="muted small onboarding-timers"><strong>Timers.</strong> The header counts down to a hard limit, and a lab left alone ends after a warning. Use End &amp; save to keep your work and pick it up again.</p>
     <div class="dialog-actions">
       <button type="button" id="btnOnboardingRetake" class="btn btn-ghost" hidden>Retake the quiz</button>
       <button type="button" id="btnOnboardingDone" class="btn btn-primary" autofocus>Got it</button>
@@ -538,7 +538,7 @@
 <dialog class="dialog" id="endDialog" aria-labelledby="endDialogTitle">
   <form method="dialog" class="dialog-card" id="endForm">
     <h2 id="endDialogTitle">End this session?</h2>
-    <p class="muted small" id="endDialogText">The container is destroyed when the session ends. Save a snapshot first if you want to pick this work up again.</p>
+    <p class="muted small" id="endDialogText">When this lab ends, your workspace is cleared. Choose “End and keep my work” if you want to pick it up again later.</p>
     <p class="notice notice-warn small" id="endDialogDirty" hidden></p>
     <div class="dialog-actions">
       <button type="button" id="btnEndKeep" class="btn btn-primary" value="keep">End and keep my work</button>

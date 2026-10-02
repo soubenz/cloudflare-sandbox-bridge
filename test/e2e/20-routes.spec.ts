@@ -1131,7 +1131,7 @@ test.describe('archived labs', () => {
     await page.route('**/api/labs', (route) => json(route, WITH_ARCHIVED.filter((l) => l.archived)));
     await wide(page);
     await visit(page, '/');
-    await expect(page.locator('#labList .empty-state')).toContainText('No labs are published yet');
+    await expect(page.locator('#labList .empty-state')).toContainText('No labs are available yet');
     await expect(page.locator('.lab')).toHaveCount(0);
     await visit(page, `/labs/${ARCHIVED_STORY}`);
     await expect(page.locator('#notFound')).toBeHidden();

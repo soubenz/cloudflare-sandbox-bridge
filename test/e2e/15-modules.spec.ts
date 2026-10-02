@@ -505,7 +505,7 @@ test.describe('states', () => {
   test('shows the empty state when nothing is published', async ({ page }) => {
     await stubLabs(page, []);
     await openLauncher(page);
-    await expect(page.locator('#labList .empty-state')).toContainText('No labs are published yet');
+    await expect(page.locator('#labList .empty-state')).toContainText('No labs are available yet');
     await expect(page.locator('#pathNav')).toBeHidden();
   });
 

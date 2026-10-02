@@ -32,6 +32,25 @@ function statusError(status, detail, apiError) {
 }
 
 /**
+ * What a failed call means for the learner, in plain words and with no status
+ * code, so a screen can say "Could not start this lab. <this>". The service's
+ * own wording is not shown: it is written for operators.
+ */
+export function plainError(err) {
+  const status = err?.status;
+  if (!status) return "We can't reach the labs right now. Check your connection and try again.";
+  if (status === 401) return 'You have been signed out. Reload the page to sign in again.';
+  if (status === 403) return "That isn't available to you right now.";
+  if (status === 404) return 'It could not be found. It may have ended or been removed.';
+  if (status === 408 || status === 504) return 'That took too long. Please try again.';
+  if (status === 409 || status === 503) return 'Labs are busy right now. Please try again in a moment.';
+  if (status === 413) return 'That is too large.';
+  if (status === 429) return 'Too many tries in a row. Wait a moment, then try again.';
+  if (status >= 500) return 'Something went wrong on our side. Please try again in a moment.';
+  return "That didn't work. Please try again.";
+}
+
+/**
  * How the console recovers a session token the API no longer accepts.
  * Installed by app.js, which owns the session; api.js only knows to ask.
  * `refresh()` resolves a new token for the same session, or null;

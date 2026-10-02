@@ -66,6 +66,6 @@ test.describe('lab notices', () => {
     await expect(banner).toBeVisible({ timeout: 60_000 });
     await expect(banner).toContainText(/Ends in \d+:\d{2}/);
     await expect(banner).toHaveAttribute('role', 'alert');
-    await expect(session.locator('#btnEnd')).toHaveText('End & snapshot');
+    await expect(session.locator('#btnEnd')).toHaveText('End & save');
   });
 });

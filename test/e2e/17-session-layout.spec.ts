@@ -1047,7 +1047,7 @@ test.describe('the header', () => {
 // =========================================================================
 
 test.describe('banners and the activity strip', () => {
-  test('warns above the window when under five minutes remain, and End becomes End & snapshot', async ({ page }) => {
+  test('warns above the window when under five minutes remain, and End becomes End & save', async ({ page }) => {
     const s = await stub(page);
     s.status.expiresInMs = 4 * 60_000;
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -1057,7 +1057,7 @@ test.describe('banners and the activity strip', () => {
     await expect(banner).toBeVisible();
     await expect(banner).toHaveAttribute('role', 'alert');
     await expect(banner).toContainText(/Ends in \d+:\d{2}/);
-    await expect(page.locator('#btnEnd')).toHaveText('End & snapshot');
+    await expect(page.locator('#btnEnd')).toHaveText('End & save');
     await expect(page.locator('#expiryTimer')).toHaveAttribute('data-urgent', '1');
     // It is over the window, in the stage column, where it cannot be scrolled past.
     const b = (await banner.boundingBox())!;
@@ -1099,7 +1099,7 @@ test.describe('banners and the activity strip', () => {
     await expect(banner).toBeVisible();
     await expect(banner).toContainText('nothing happened in it');
     await expect(page.locator('#statePill')).toHaveText('ended');
-    await expect(banner.getByRole('button', { name: 'Resume from snapshot' })).toBeVisible();
+    await expect(banner.getByRole('button', { name: 'Resume my work' })).toBeVisible();
     await expect(banner.getByRole('button', { name: 'Restart lab' })).toBeVisible();
     await expect(banner.getByRole('button', { name: 'Back to labs' })).toBeVisible();
     // Nothing can be run in a dead lab.
@@ -1107,7 +1107,7 @@ test.describe('banners and the activity strip', () => {
     await expect(page.locator('#termStatus')).toBeHidden();
 
     // Resume boots it again, and the buttons come back with it.
-    await banner.getByRole('button', { name: 'Resume from snapshot' }).click();
+    await banner.getByRole('button', { name: 'Resume my work' }).click();
     await expect(banner).toBeHidden();
     await expect(page.locator('#statePill')).toHaveText('running');
     expect(s.resumes).toBe(1);
@@ -1124,7 +1124,7 @@ test.describe('banners and the activity strip', () => {
     s.emit({ id: 51, event: 'session.state', data: { state: 'ended', reason: 'error' } });
     const banner = page.locator('#endedBanner');
     await expect(banner).toBeVisible();
-    await expect(banner.getByRole('button', { name: 'Resume from snapshot' })).toBeHidden();
+    await expect(banner.getByRole('button', { name: 'Resume my work' })).toBeHidden();
     await expect(banner.getByRole('button', { name: 'Restart lab' })).toBeHidden();
     await banner.getByRole('button', { name: 'Back to labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();

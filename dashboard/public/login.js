@@ -30,5 +30,5 @@ document.getElementById('f').addEventListener('submit', async (e) => {
     else location.replace(next);
   } else if (res.status === 401) err.textContent = 'Wrong password.';
   else if (res.status === 429) err.textContent = 'Too many attempts — try again in a minute';
-  else err.textContent = 'Could not sign in (' + res.status + ').';
+  else err.textContent = 'We could not sign you in just now. Please try again in a moment.';
 });

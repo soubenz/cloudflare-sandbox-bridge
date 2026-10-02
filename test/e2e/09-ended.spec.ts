@@ -72,7 +72,7 @@ test.describe('a session that ended on its own', () => {
     await emit(page.request, await sessionIdOf(page), 'session.state', { state: 'ended', reason });
   }
 
-  test('offers to resume from the snapshot or restart after an idle end', async ({ session }) => {
+  test('offers to resume or restart after an idle end', async ({ session }) => {
     await endedBy(session, 'idle');
     const banner = session.locator('#endedBanner');
     await expect(banner).toBeVisible({ timeout: 30_000 });
@@ -98,7 +98,7 @@ test.describe('a session that ended on its own', () => {
     await expect(banner.getByRole('button', { name: 'Back to labs' })).toBeVisible();
   });
 
-  test('"Resume from snapshot" asks the API to resume, then boots the session again', async ({ session }) => {
+  test('"Resume my work" asks the API to resume, then starts the session again', async ({ session }) => {
     const ended = { value: true };
     let resumed = 0;
     // The API's answer to a resume: the same session, `resuming`, a token.

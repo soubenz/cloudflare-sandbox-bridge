@@ -118,7 +118,7 @@ function relay(res) {
   // the person is signed out -- 401 from the console is reserved for "no
   // console cookie", and the launcher renders it as the signed-out state.
   if (res.status === 401) {
-    return json({ error: 'console could not authenticate to the API (service key rejected)' }, 502);
+    return json({ error: 'The labs are not available right now. Please try again in a moment.' }, 502);
   }
   return new Response(res.body, {
     status: res.status,
@@ -166,9 +166,9 @@ async function labsWithProgress(env, subject) {
     const body = await labsRes.json();
     labs = Array.isArray(body) ? body : body.labs;
   } catch {
-    return json({ error: 'the API returned a catalogue this console cannot read' }, 502);
+    return json({ error: 'The labs could not be loaded right now. Please try again in a moment.' }, 502);
   }
-  if (!Array.isArray(labs)) return json({ error: 'the API returned a catalogue this console cannot read' }, 502);
+  if (!Array.isArray(labs)) return json({ error: 'The labs could not be loaded right now. Please try again in a moment.' }, 502);
 
   const bySlug = new Map();
   if (progressRes?.ok) {
@@ -327,7 +327,7 @@ const LOGIN_PAGE = `<!doctype html>
 <body>
 <form id="f">
   <h1>▣ Opalix lab console</h1>
-  <p>This console starts real containers, so it asks for a password.</p>
+  <p>Enter the password to open your labs.</p>
   <input id="pw" type="password" placeholder="Password" autocomplete="current-password" autofocus>
   <button type="submit">Sign in</button>
   <div class="err" id="err">__ERR__</div>

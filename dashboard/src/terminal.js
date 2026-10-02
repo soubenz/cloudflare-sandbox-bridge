@@ -91,7 +91,7 @@ export function attachTerminal({ container, sessionId, token, onNotice, onStatus
           const msg = safeParse(event.data.slice(1));
           if (msg?.type === 'reset') {
             term.reset();
-            onNotice?.('The container was replaced; the shell has restarted.');
+            onNotice?.('Your lab was restarted, so the terminal started over.');
           }
           return;
         }
@@ -109,13 +109,13 @@ export function attachTerminal({ container, sessionId, token, onNotice, onStatus
       if (attempt < RETRY_SECONDS.length) {
         const wait = RETRY_SECONDS[attempt];
         attempt += 1;
-        onStatus?.('reconnecting', `reconnecting (${attempt}/${RETRY_SECONDS.length})`);
+        onStatus?.('reconnecting');
         retryTimer = setTimeout(connect, wait * 1000);
         return;
       }
       // A blank black rectangle reads as a broken app. Say what happened.
-      onStatus?.('closed', event.reason || `closed (${event.code})`);
-      onNotice?.('Terminal disconnected.');
+      onStatus?.('closed');
+      onNotice?.('The terminal lost its connection.');
     };
 
     mine.onerror = () => {
