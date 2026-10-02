@@ -25,7 +25,7 @@
 
 import { answersBody, readingTime, recordDiagnostic, isDiagnostic } from './learn-model.js';
 import { buildLessons, planSummary } from './learn-lessons.js';
-import { createFlowStore, planLearningFlow, questionHeading, restoreSteps, stepIndexFor, stepKindWord, stepLabel, stepNumberFor } from './learn-flow.js';
+import { createFlowStore, planLearningFlow, questionHeading, restoreSteps, shouldPrefetch, stepIndexFor, stepKindWord, stepLabel, stepNumberFor } from './learn-flow.js';
 import { actionBar, button, focusHeading, make, questionScreen, screenHead, show, storyContent } from './learn-ui.js';
 import { uiIcon } from './icons.js';
 
@@ -47,9 +47,15 @@ import { uiIcon } from './icons.js';
  *           'questions' or 'lessons'; n the step's number, null when the word alone names it), so the
  *           address bar can follow
  *   flowStore  where the visit is kept (default: createFlowStore, sessionStorage)
+ *   prepare        () => Promise, warms the lab's container up. Called ONCE per visit, the first time the
+ *                  second-to-last step (`prefetchStepIndex`) or a later one comes on screen, never for
+ *                  "Skip all" (that starts at once). Fire and forget: a failure is swallowed and Start works
+ *                  the same, only slower. Nothing about it is shown.
+ *   cancelPrepare  ({beacon}) => void, drops the warm lab when the visit ends without Start (Back to labs, a
+ *                  route change, the page closing with `beacon: true`). Not called once Start was pressed.
  * Returns { steps, goto(kind, n), destroy }: goto shows a step the way `initial` and `step` do (the browser's Back and Forward).
  */
-export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBack, initial, step: initialStep, onStep, resume = false, flowStore }) {
+export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBack, initial, step: initialStep, onStep, resume = false, flowStore, prepare, cancelPrepare }) {
   const learn = entry.learn;
   const flow = flowStore ?? createFlowStore({ slug: lab.slug, version: entry.version });
   const questionById = new Map(learn.questions.map((q) => [q.id, q]));
@@ -70,6 +76,25 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
   let prose = null;
   let starting = false;
   let gone = false;
+  // The warm lab: asked for once per visit, and kept only until Start is pressed (the API then hands it over).
+  let prepared = false;
+  let startPressed = false;
+  const leaving = () => {
+    if (prepared && !startPressed) cancelPrepare?.({ beacon: true });
+  };
+
+  /** Warms the lab up the first time the second-to-last step (or a later one) is shown. Once per visit, silent. */
+  const maybePrepare = (i) => {
+    if (prepared || gone || !prepare || !shouldPrefetch(steps, i)) return;
+    prepared = true;
+    // A closing tab cannot await anything: the beacon is sent from here, and the API ignores it for a lab that has begun.
+    globalThis.addEventListener?.('pagehide', leaving);
+    try {
+      Promise.resolve(prepare()).catch(() => {});
+    } catch {
+      /* a failed warm-up never blocks the flow */
+    }
+  };
 
   // Said to screen readers on every step; the heading takes focus too, this names the step among the others.
   const live = make('p', 'sr-only');
@@ -95,6 +120,8 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
   async function start() {
     if (starting || gone) return;
     starting = true;
+    // From here the start itself takes over the warm lab; leaving no longer cancels it (a failed start undoes this).
+    startPressed = true;
     const buttons = host.querySelectorAll('button');
     buttons.forEach((b) => (b.disabled = true));
     const primary = host.querySelector('[data-start="primary"]');
@@ -104,7 +131,12 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       primary.setAttribute('aria-busy', 'true');
     }
     try {
-      await onStart();
+      const started = await onStart();
+      // The app resolves true once the session is up; false (could not start) or nothing (the desktop notice) leaves the warm lab ours to drop.
+      if (!started) startPressed = false;
+    } catch (err) {
+      startPressed = false;
+      throw err;
     } finally {
       starting = false;
       if (!gone && host.isConnected) {
@@ -143,6 +175,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
 
   /** Tells the page a step is on screen: the live region, and the address bar through `onStep`. */
   const arrived = (i) => {
+    maybePrepare(i);
     announce(i);
     onStep?.(stepKindWord(steps[i]), stepNumberFor(steps, i));
   };
@@ -309,6 +342,9 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     goto: (kind, n) => enterStep(stepIndexFor(steps, kind, n), 'route'),
     destroy() {
       gone = true;
+      globalThis.removeEventListener?.('pagehide', leaving);
+      // Left without starting (or the lab did not start): the warm container is not wanted.
+      if (prepared && !startPressed) cancelPrepare?.({ beacon: false });
       cleanup();
       live.remove();
       // The visit is over (the lab started, or the learner left): the next one plans afresh.

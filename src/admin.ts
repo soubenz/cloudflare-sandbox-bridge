@@ -149,7 +149,8 @@ export function mountAdmin(app: Hono<{ Bindings: Env }>): void {
                   COALESCE(SUM(CASE WHEN state = 'ended' THEN 1 ELSE 0 END), 0) AS ended,
                   COALESCE(SUM(CASE WHEN state = 'ended' AND completed_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS completed
              FROM sessions
-            WHERE created_at >= ? AND created_at < ?`
+            WHERE created_at >= ? AND created_at < ?
+              AND COALESCE(end_reason, '') != 'unclaimed'`
         )
         .bind(...win)
         .first<Record<string, number>>(),
@@ -163,6 +164,7 @@ export function mountAdmin(app: Hono<{ Bindings: Env }>): void {
                   COALESCE(SUM(CASE WHEN state = 'ended' AND completed_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS completed
              FROM sessions
             WHERE created_at >= ? AND created_at < ?
+              AND COALESCE(end_reason, '') != 'unclaimed'
             GROUP BY lab_slug
             ORDER BY cost_usd DESC, sessions DESC, lab_slug ASC
             LIMIT ?`
@@ -176,6 +178,7 @@ export function mountAdmin(app: Hono<{ Bindings: Env }>): void {
                   COALESCE(SUM(cost_usd), 0) AS cost_usd
              FROM sessions
             WHERE created_at >= ? AND created_at < ?
+              AND COALESCE(end_reason, '') != 'unclaimed'
             GROUP BY day
             ORDER BY day DESC
             LIMIT ?`
@@ -229,6 +232,7 @@ export function mountAdmin(app: Hono<{ Bindings: Env }>): void {
                 ${withPlan ? 'MAX(u.plan)' : 'NULL'} AS plan
            FROM sessions s
            ${withPlan ? 'LEFT JOIN users u ON u.id = s.user_id' : ''}
+          WHERE COALESCE(s.end_reason, '') != 'unclaimed'
           GROUP BY s.user_id
          HAVING MAX(s.created_at) < ?
           ORDER BY last_session_at DESC, s.user_id ASC

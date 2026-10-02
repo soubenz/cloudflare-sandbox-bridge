@@ -448,6 +448,34 @@ async function route(request, env) {
       );
     }
 
+    // Warms a lab up (see POST /sessions/prepare in the API): called once by "Before you begin" when the
+    // learner nears its last step. The answer carries no session id or token -- nothing in the browser
+    // can remember it, so a lab that is only warm never shows as running and has no Rejoin card.
+    if (url.pathname === '/api/prepare' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      if (typeof body.lab !== 'string' || !SLUG.test(body.lab)) return json({ error: 'lab is required' }, 400);
+      const res = await callApi(env, '/sessions/prepare', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ lab: body.lab, user_id: subject }),
+      });
+      return res.ok ? json({ prepared: true }, 202) : relay(res);
+    }
+
+    // Drops the warm lab when the learner leaves without starting it. POST because `sendBeacon` can only
+    // POST (a closing tab uses it); the lab is optional. The API cancels only a session that has not
+    // begun, so a beacon that arrives after Start cannot end the running lab.
+    if (url.pathname === '/api/prepare/cancel' && request.method === 'POST') {
+      const body = await request.json().catch(() => ({}));
+      const lab = typeof body.lab === 'string' && SLUG.test(body.lab) ? body.lab : undefined;
+      const res = await callApi(env, '/sessions/prepare/cancel', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ user_id: subject, ...(lab ? { lab } : {}) }),
+      });
+      return res.ok ? json({ ok: true }) : relay(res);
+    }
+
     // The learning layer. The bundle and the quiz are the same for everyone,
     // so nothing about the subject is sent; a 404 (no_learn, no_onboarding)
     // passes through, which is how the console knows there is nothing to show.

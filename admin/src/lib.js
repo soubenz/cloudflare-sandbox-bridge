@@ -154,7 +154,7 @@ export const percent = (n) => (n === null || n === undefined ? '—' : `${Math.r
 
 /* ----------------------------------------------------------------- widgets */
 
-const STATE_TONE = { running: 'good', starting: 'warn', resuming: 'warn', recovering: 'warn', created: 'warn', ended: 'muted' };
+const STATE_TONE = { running: 'good', starting: 'warn', ready: 'warn', resuming: 'warn', recovering: 'warn', created: 'warn', ended: 'muted' };
 
 /** A status pill. Tone is text plus colour, never colour alone. */
 export function pill(text, tone = 'muted') {

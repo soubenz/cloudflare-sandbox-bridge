@@ -34,6 +34,12 @@ const HEALTH_INTERVAL_ACTIVE_MS = 15_000;
 const HEALTH_INTERVAL_IDLE_MS = 60_000;
 const METRICS_INTERVAL_MS = 30_000;
 const CLEANUP_AFTER_MS = 60 * 60_000;
+/**
+ * How long a prepared (`ready`) session waits to be begun before it is ended
+ * as `unclaimed`. It is the whole cost of an abandoned prefetch: one container
+ * for about this long.
+ */
+export const PREPARE_TTL_MS = 10 * 60_000;
 const PURGE_DEFAULT_AFTER_MS = 7 * 24 * 60 * 60_000;
 /** A session stuck in `recovering` this long is dead; the health tick ends it. */
 const RECOVERING_TIMEOUT_MS = 5 * 60_000;
@@ -56,6 +62,8 @@ export interface CreateSessionInput {
   labVersion: string;
   family: Family;
   manifest: LabManifest;
+  /** Pre-warm: boot the container but park in `ready` with no lab clocks until `begin`. */
+  prepare?: boolean;
 }
 
 /**
@@ -77,6 +85,7 @@ export async function createSession(rt: SessionRuntime, input: CreateSessionInpu
     state: 'starting',
     created_at: now,
     resumed_count: 0,
+    ...(input.prepare ? { prepare: true } : {}),
   };
   await rt.putMeta(meta);
   await rt.putManifest(input.manifest);
@@ -109,6 +118,13 @@ async function runStart(rt: SessionRuntime): Promise<void> {
   // end() would never destroy — it would sit in the pool's `claimed` map
   // until the 3-hour reap. Reuse the claim we already hold.
   const sandboxId = meta.sandbox_id ?? (await (await pool(rt, meta.family)).claim(rt.sessionId)).sandbox_id;
+  // A DELETE (a prepared session cancelled while it boots) can end the session
+  // while the claim was in flight. endSession saw no container to release, so
+  // the one just claimed is ours to give back.
+  if ((await rt.requireMeta()).state === 'ended') {
+    if (!meta.sandbox_id) await (await pool(rt, meta.family)).release(sandboxId).catch(() => {});
+    return;
+  }
   if (meta.sandbox_id !== sandboxId) await rt.patchMeta({ sandbox_id: sandboxId });
   await rt.bindBackend(meta.family, sandboxId);
   await rt.backend().ensureRunning();
@@ -133,10 +149,37 @@ async function runStart(rt: SessionRuntime): Promise<void> {
 
   await startAllServices(rt, manifest);
 
+  // Decided now, not at the top: `begin` may have arrived while this ran, and
+  // a prepared session that has been begun is simply a session that is starting.
+  const current = await rt.requireMeta();
+  if (current.state === 'ended') return; // cancelled mid-boot; endSession already released the container
   const now = Date.now();
+  if (current.prepare) {
+    // Pre-warm: everything is up, but the lab has not begun. No expiry, no
+    // idle/hard/hint/pressure/health timers; one timer reclaims the container
+    // if nobody ever begins it.
+    const next = await rt.patchMeta({ state: 'ready', prepared_at: now });
+    await scheduleTimer(rt, 'prepare_expiry', now + PREPARE_TTL_MS);
+    bestEffort(updateSession(rt.env, next), 'updateSession(ready)');
+    emitEvent(rt, 'session.state', { state: 'ready' });
+    return;
+  }
+
   const expiresAt = now + manifest.timeout_minutes * 60_000;
   await rt.patchMeta({ state: 'running', started_at: now, expires_at: expiresAt });
+  await scheduleRunTimers(rt, manifest, now, expiresAt);
 
+  const finalMeta = await rt.requireMeta();
+  bestEffort(updateSession(rt.env, finalMeta), 'updateSession(running)');
+  emitEvent(rt, 'session.state', { state: 'running' });
+}
+
+/**
+ * The timers of a running session: hard expiry and its warning, idle, pressure
+ * events, hints, health and metrics. One list for a normal start, a resume and
+ * `begin` of a prepared session, so the three can never drift apart.
+ */
+async function scheduleRunTimers(rt: SessionRuntime, manifest: LabManifest, now: number, expiresAt: number): Promise<void> {
   await scheduleTimer(rt, 'hard', expiresAt);
   await scheduleTimer(rt, 'hard_warn', expiresAt - HARD_WARN_BEFORE_MS);
   await scheduleIdleTimers(rt, now, manifest.idle_minutes);
@@ -148,10 +191,56 @@ async function runStart(rt: SessionRuntime): Promise<void> {
   }
   await scheduleTimer(rt, 'health', now + HEALTH_INTERVAL_IDLE_MS);
   await scheduleTimer(rt, 'metrics', now + METRICS_INTERVAL_MS);
+}
 
-  const finalMeta = await rt.requireMeta();
-  bestEffort(updateSession(rt.env, finalMeta), 'updateSession(running)');
-  emitEvent(rt, 'session.state', { state: 'running' });
+/**
+ * `POST /sessions/{id}/begin` (and the reuse path of `POST /sessions/start`):
+ * the lab begins now. A `ready` session starts its clocks (`started_at`,
+ * `expires_at`, every run timer) and drops the claim timer; one still booting
+ * is told it is no longer a pre-warm, so its start sequence finishes straight
+ * into `running`. Idempotent for anything already begun. An ended session
+ * cannot begin: the caller starts a fresh one.
+ */
+export async function beginSession(rt: SessionRuntime): Promise<{ meta: SessionMeta; token: string }> {
+  const meta = await rt.requireMeta();
+  if (meta.state === 'ended') throw ApiError.conflict('cannot_begin', 'The session has ended');
+  const manifest = await rt.requireManifest();
+
+  let next = meta;
+  if (meta.state === 'ready') {
+    const now = Date.now();
+    const expiresAt = now + manifest.timeout_minutes * 60_000;
+    await cancelTimersOfKind(rt, 'prepare_expiry');
+    next = await rt.patchMeta({ state: 'running', started_at: now, expires_at: expiresAt, prepare: undefined });
+    // Compute billed to the lab starts here; the ready minutes are not the learner's.
+    await rt.putCost({ ...(await rt.cost()), accounted_until: now });
+    await scheduleRunTimers(rt, manifest, now, expiresAt);
+    bestEffort(updateSession(rt.env, next), 'updateSession(begun)');
+    emitEvent(rt, 'session.state', { state: 'running', began: true });
+  } else if (meta.state === 'starting' && meta.prepare) {
+    next = await rt.patchMeta({ prepare: undefined });
+  }
+
+  // The token must outlive the session: its real expiry once running, the
+  // manifest's budget from now for one that is still booting.
+  const expiresAt = next.expires_at ?? Date.now() + manifest.timeout_minutes * 60_000;
+  const token = await mintSessionToken(rt.env, { sid: rt.sessionId, uid: next.user_id, exp: sessionTokenExp(expiresAt) });
+  return { meta: next, token };
+}
+
+/**
+ * Cancels a session only while it is still an unbegun pre-warm (`ready`, or
+ * `starting` with `prepare` set). Returns whether it did. Conditional inside
+ * the DO so a late cancel (a closing tab's beacon) can never end a lab the
+ * learner has since begun.
+ */
+export async function cancelPrepared(rt: SessionRuntime): Promise<boolean> {
+  const meta = await rt.meta();
+  if (!meta) return false;
+  const unbegun = meta.state === 'ready' || (meta.state === 'starting' && meta.prepare === true);
+  if (!unbegun) return false;
+  await endSession(rt, 'user', false);
+  return true;
 }
 
 async function scheduleIdleTimers(rt: SessionRuntime, from: number, idleMinutes: number): Promise<void> {
@@ -179,6 +268,13 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
         case 'start':
           await runStart(rt);
           break;
+        case 'prepare_expiry': {
+          // Nobody began the pre-warmed lab in time. Only a still-`ready`
+          // session is reclaimed: a begun one has cancelled this timer, and
+          // anything else is not ours to end.
+          if ((await rt.requireMeta()).state === 'ready') await endSession(rt, 'unclaimed', false);
+          break;
+        }
         case 'hard_warn':
           emitEvent(rt, 'session.expiring', { reason: 'hard_timeout' });
           break;
@@ -506,24 +602,14 @@ async function runResume(rt: SessionRuntime): Promise<void> {
   // Ended sessions are on a cleanup/purge schedule; a live one must not be.
   await cancelTimersOfKind(rt, 'cleanup', 'purge');
 
-  await scheduleTimer(rt, 'hard', expiresAt);
-  await scheduleTimer(rt, 'hard_warn', expiresAt - HARD_WARN_BEFORE_MS);
-  await scheduleIdleTimers(rt, now, manifest.idle_minutes);
-  for (const event of manifest.pressure) {
-    await scheduleTimer(rt, 'pressure', now + event.at_minutes * 60_000, event.id);
-  }
-  for (const [index, hint] of manifest.hints.entries()) {
-    await scheduleTimer(rt, 'hint', now + hint.after_minutes * 60_000, String(index));
-  }
-  await scheduleTimer(rt, 'health', now + HEALTH_INTERVAL_IDLE_MS);
-  await scheduleTimer(rt, 'metrics', now + METRICS_INTERVAL_MS);
+  await scheduleRunTimers(rt, manifest, now, expiresAt);
 
   bestEffort(updateSession(rt.env, next), 'updateSession(resumed)');
   emitEvent(rt, 'session.state', { state: 'running', resumed: true });
 }
 
 /** `DELETE /sessions/{id}` and every automatic end path (idle/expired/error). */
-export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reason'] | 'user', snapshot = true): Promise<void> {
+export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reason'] | 'user' | 'unclaimed', snapshot = true): Promise<void> {
   const meta = await rt.requireMeta();
   if (meta.state === 'ended') return; // idempotent
 
@@ -535,7 +621,7 @@ export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reas
   }
 
   if (snapshot && meta.sandbox_id && (meta.state === 'running' || meta.state === 'recovering')) {
-    await snapshotNow(rt, reason === 'user' ? 'user' : reason).catch((err) =>
+    await snapshotNow(rt, reason === 'unclaimed' ? 'user' : reason).catch((err) =>
       emitEvent(rt, 'alert', { kind: 'snapshot_on_end_failed', error: String(err) })
     );
   }
@@ -555,7 +641,7 @@ export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reas
   const next = await rt.patchMeta({
     state: 'ended',
     ended_at: now,
-    end_reason: reason === 'user' ? 'user' : reason,
+    end_reason: reason,
     sandbox_id: undefined,
     last_sandbox_id: meta.sandbox_id ?? meta.last_sandbox_id,
   });

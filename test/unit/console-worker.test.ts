@@ -319,6 +319,67 @@ describe('POST /api/learn/answers', () => {
   });
 });
 
+describe('POST /api/prepare and /api/prepare/cancel', () => {
+  const postTo = (path: string, cookie: string | null, body: unknown) =>
+    call(path, { method: 'POST', cookie, headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+
+  it('prepares the lab for the signed-in subject, with the service key, and hands the browser no session', async () => {
+    replies.push((u) => (u.endsWith('/sessions/prepare') ? { status: 202, body: { id: 'sess-1', state: 'starting', prepared: true } } : undefined));
+    const res = await postTo('/api/prepare', cookie, { lab: 'see-what-a-gateway-does' });
+    expect(res.status).toBe(202);
+    // No id, no token: the browser cannot remember a lab that is only warm.
+    expect(await res.json()).toEqual({ prepared: true });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe('https://api.internal/sessions/prepare');
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.headers.get('authorization')).toBe('Bearer svc-key');
+    expect(JSON.parse(calls[0]!.body)).toEqual({ lab: 'see-what-a-gateway-does', user_id: 'console' });
+  });
+
+  it('passes an API refusal through (a lab already running is a 409), for the page to ignore', async () => {
+    replies.push((u) => (u.endsWith('/sessions/prepare') ? { status: 409, body: { error: { code: 'active_session_exists', message: 'busy' } } } : undefined));
+    const res = await postTo('/api/prepare', cookie, { lab: 'x-lab' });
+    expect(res.status).toBe(409);
+  });
+
+  it('refuses a missing or malformed lab without calling the API', async () => {
+    for (const body of [{}, { lab: '' }, { lab: 7 }, { lab: '../x' }, 'nope']) {
+      const res = await postTo('/api/prepare', cookie, body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('is behind the console cookie, POST only', async () => {
+    expect((await postTo('/api/prepare', null, { lab: 'x-lab' })).status).toBe(401);
+    expect((await postTo('/api/prepare/cancel', null, { lab: 'x-lab' })).status).toBe(401);
+    expect(calls).toHaveLength(0);
+    expect((await call('/api/prepare', { cookie })).status).toBe(404);
+  });
+
+  it('cancels by user (and lab when it names one) through the API\'s conditional cancel', async () => {
+    const res = await postTo('/api/prepare/cancel', cookie, { lab: 'see-what-a-gateway-does' });
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe('https://api.internal/sessions/prepare/cancel');
+    expect(calls[0]!.headers.get('authorization')).toBe('Bearer svc-key');
+    expect(JSON.parse(calls[0]!.body)).toEqual({ user_id: 'console', lab: 'see-what-a-gateway-does' });
+  });
+
+  it('cancels with no lab, or with a body a beacon sent as plain text, and drops a junk lab', async () => {
+    await postTo('/api/prepare/cancel', cookie, {});
+    await postTo('/api/prepare/cancel', cookie, 'not json');
+    await postTo('/api/prepare/cancel', cookie, { lab: '../../x' });
+    expect(calls.map((c) => JSON.parse(c.body))).toEqual([{ user_id: 'console' }, { user_id: 'console' }, { user_id: 'console' }]);
+  });
+
+  it('cannot end anything but the signed-in subject\'s own session: the user id is the cookie\'s, never the body\'s', async () => {
+    await postTo('/api/prepare/cancel', cookie, { lab: 'x-lab', user_id: 'someone-else' });
+    await postTo('/api/prepare', cookie, { lab: 'x-lab', user_id: 'someone-else' });
+    expect(calls.map((c) => JSON.parse(c.body).user_id)).toEqual(['console', 'console']);
+  });
+});
+
 describe('GET /api/labs', () => {
   it('passes has_learn through to the launcher', async () => {
     replies.push((u) =>

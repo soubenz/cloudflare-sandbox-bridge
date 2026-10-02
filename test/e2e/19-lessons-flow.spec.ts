@@ -160,6 +160,12 @@ const json = (route: Route, body: unknown, status = 200, extra: Record<string, s
 
 interface Stub {
   starts: string[];
+  /** The labs POST /api/prepare was asked to warm up, in order. */
+  prepares: string[];
+  /** The bodies POST /api/prepare/cancel carried (a beacon included). */
+  cancels: Array<Record<string, any>>;
+  /** The status POST /api/prepare answers (the API refusing, say); 202 by default. */
+  prepareStatus: number;
   posted: Array<Record<string, any>>;
   learnFetches: string[];
   errors: string[];
@@ -168,7 +174,7 @@ interface Stub {
 /** `lab` is the lab a session that was not started through /api/start reports (a rejoined one). */
 async function stub(page: Page, { lab: rejoined = EXPLORE }: { lab?: string } = {}): Promise<Stub> {
   const waiting: Array<() => void> = [];
-  const s: Stub = { starts: [], posted: [], learnFetches: [], errors: [] };
+  const s: Stub = { starts: [], prepares: [], cancels: [], prepareStatus: 202, posted: [], learnFetches: [], errors: [] };
   page.on('pageerror', (err) => s.errors.push(`pageerror: ${err.message}`));
   page.on('console', (msg) => {
     if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) s.errors.push(msg.text());
@@ -190,6 +196,14 @@ async function stub(page: Page, { lab: rejoined = EXPLORE }: { lab?: string } = 
       s.learnFetches.push(slug);
       const b = BUNDLES[slug];
       return b ? json(route, { version: '1.0.0', learn: b }) : json(route, { error: { code: 'no_learn', message: 'no learning content' } }, 404);
+    }
+    if (path === '/api/prepare' && method === 'POST') {
+      s.prepares.push(JSON.parse(route.request().postData() ?? '{}').lab);
+      return s.prepareStatus === 202 ? json(route, { prepared: true }, 202) : json(route, { error: { code: 'x', message: 'refused' } }, s.prepareStatus);
+    }
+    if (path === '/api/prepare/cancel' && method === 'POST') {
+      s.cancels.push(JSON.parse(route.request().postData() ?? '{}'));
+      return json(route, { ok: true });
     }
     if (path === '/api/start' && method === 'POST') {
       const { lab: slug } = JSON.parse(route.request().postData() ?? '{}');
@@ -1424,5 +1438,190 @@ test.describe('rounds and lessons: no horizontal scroll', () => {
       const r = await el.boundingBox();
       if (r) expect(r.x + r.width).toBeLessThanOrEqual(390.5);
     }
+  });
+});
+
+// =========================================================================
+// the lab is warmed up while the last steps are read, and is invisible
+// =========================================================================
+
+test.describe('warming the lab up (POST /api/prepare)', () => {
+  /** Lets a fire-and-forget request reach the stub. */
+  const settle = (page: Page) => page.waitForTimeout(150);
+
+  test('prepares once, when the second-to-last step is shown, and never again for Back, Forward or the last step', async ({ page }) => {
+    // story, Round 1 (four questions), lessons: the second-to-last step is the round.
+    const s = await begin(page, FEW_QUESTIONS);
+    await settle(page);
+    expect(s.prepares, 'not on the story').toEqual([]);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(heading(page)).toHaveText('Question 1 of 4');
+    await expect.poll(() => s.prepares).toEqual([FEW_QUESTIONS]);
+
+    await runRound(page, () => true);
+    await expect(heading(page)).toHaveText(LESSONS);
+    await page.getByRole('button', { name: '← Back to the questions' }).click();
+    await settle(page);
+    expect(s.prepares, 'once per visit').toEqual([FEW_QUESTIONS]);
+    expect(s.cancels).toEqual([]);
+  });
+
+  test('a lab of a story and lessons warms up as soon as the story is shown; one of lessons alone, as soon as they are', async ({ page }) => {
+    const s = await begin(page, TEXT_STORY);
+    await expect.poll(() => s.prepares).toEqual([TEXT_STORY]);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(heading(page)).toHaveText(LESSONS);
+    await settle(page);
+    expect(s.prepares).toEqual([TEXT_STORY]);
+
+    const t = await begin(page, LESSONS_ONLY);
+    await expect.poll(() => t.prepares).toEqual([LESSONS_ONLY]);
+  });
+
+  test('a long flow warms up on the step before the last, not before', async ({ page }) => {
+    const s = await begin(page, EXPLORE);
+    // The dots are the steps and one more, for Start.
+    const stepCount = (await host(page).locator('.steps-dots i').count()) - 1;
+    expect(stepCount).toBeGreaterThanOrEqual(4);
+    // Walk step by step; the warm-up must appear exactly when step (n - 1) of n is on screen.
+    let shown = 1;
+    for (let guard = 0; guard < 40 && shown < stepCount - 1; guard++) {
+      expect(s.prepares, `before step ${stepCount - 1} of ${stepCount}`).toEqual([]);
+      if (await page.locator('.quiz-prompt').count()) {
+        await answerOnly(page, () => true);
+        const next = nextButton(page);
+        const wasLast = (await heading(page).innerText()).match(/question (\d+) of (\d+)/i);
+        await next.click();
+        if (!wasLast || wasLast[1] === wasLast[2]) shown++;
+      } else if (await page.locator('#btnNextStep').count()) {
+        await page.locator('#btnNextStep').click();
+        shown++;
+      } else if (await page.locator('#btnStoryNext').count()) {
+        await page.locator('#btnStoryNext').click();
+        shown++;
+      }
+    }
+    expect(shown).toBe(stepCount - 1);
+    await expect.poll(() => s.prepares).toEqual([EXPLORE]);
+  });
+
+  test('"Skip all" starts at once and warms nothing up', async ({ page }) => {
+    const s = await begin(page, FEW_QUESTIONS);
+    await page.locator('#btnSkipAll').click();
+    await enterSession(page);
+    await settle(page);
+    expect(s.starts).toEqual([FEW_QUESTIONS]);
+    expect(s.prepares).toEqual([]);
+    expect(s.cancels).toEqual([]);
+  });
+
+  test('Start after the warm-up runs the normal start, and the warm lab is not cancelled', async ({ page }) => {
+    const s = await begin(page, FEW_QUESTIONS);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await runRound(page, () => true);
+    await expect(heading(page)).toHaveText(LESSONS);
+    await expect.poll(() => s.prepares).toEqual([FEW_QUESTIONS]);
+    await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+    await enterSession(page);
+    // Pressing Start (and a page that closes after it) must never cancel what the start is using.
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await settle(page);
+    expect(s.starts).toEqual([FEW_QUESTIONS]);
+    expect(s.cancels).toEqual([]);
+  });
+
+  for (const status of [409, 503, 500]) {
+    test(`a warm-up the API refuses (${status}) changes nothing: the flow and Start work as before`, async ({ page }) => {
+      const s = await stub(page);
+      s.prepareStatus = status;
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await open(page);
+      await startCard(page, TEXT_STORY);
+      await expect.poll(() => s.prepares).toEqual([TEXT_STORY]);
+      await expect(heading(page)).toBeVisible();
+      await page.getByRole('button', { name: 'Continue' }).click();
+      await expect(heading(page)).toHaveText(LESSONS);
+      await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+      await enterSession(page);
+      expect(s.starts).toEqual([TEXT_STORY]);
+      expect(s.errors).toEqual([]);
+    });
+  }
+
+  test('a warm-up whose request fails at the network changes nothing either', async ({ page }) => {
+    const s = await stub(page);
+    await page.route('**/api/prepare', (route) => route.abort('failed'));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page);
+    await startCard(page, TEXT_STORY);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(heading(page)).toHaveText(LESSONS);
+    await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
+    await enterSession(page);
+    expect(s.starts).toEqual([TEXT_STORY]);
+    expect(s.errors).toEqual([]);
+  });
+
+  test('Back to labs drops the warm lab, leaves no Rejoin card, and the next visit warms it again', async ({ page }) => {
+    const s = await begin(page, TEXT_STORY);
+    await expect.poll(() => s.prepares).toEqual([TEXT_STORY]);
+    await page.getByRole('button', { name: '← Back to labs' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await expect.poll(() => s.cancels).toEqual([{ lab: TEXT_STORY }]);
+    // Invisible: nothing is running, so no resume card and no "pick up" hero.
+    await expect(page.locator('#resumeCard')).toBeHidden();
+    await expect(page.locator('#heroTitle')).toContainText('Pick your next');
+    expect(s.starts).toEqual([]);
+
+    await startCard(page, TEXT_STORY);
+    await expect(heading(page)).toBeVisible();
+    await expect.poll(() => s.prepares).toEqual([TEXT_STORY, TEXT_STORY]);
+  });
+
+  test('leaving the flow by the browser (a route change away) drops the warm lab too', async ({ page }) => {
+    const s = await begin(page, TEXT_STORY);
+    await expect.poll(() => s.prepares).toEqual([TEXT_STORY]);
+    await page.goBack();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await expect.poll(() => s.cancels).toEqual([{ lab: TEXT_STORY }]);
+    await expect(page.locator('#resumeCard')).toBeHidden();
+  });
+
+  test('a page that closes sends the cancel as a beacon', async ({ page }) => {
+    const s = await begin(page, TEXT_STORY);
+    await expect.poll(() => s.prepares).toEqual([TEXT_STORY]);
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await expect.poll(() => s.cancels).toEqual([{ lab: TEXT_STORY }]);
+  });
+
+  test('nothing is cancelled when nothing was warmed up', async ({ page }) => {
+    const s = await begin(page, FEW_QUESTIONS);
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await page.getByRole('button', { name: '← Back to labs' }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await settle(page);
+    expect(s.prepares).toEqual([]);
+    expect(s.cancels).toEqual([]);
+  });
+
+  test('a phone cannot run a lab, so it warms nothing up', async ({ page }) => {
+    const s = await stub(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    // A phone cannot press Start on a card (the desktop notice stops it), but a link opens the steps.
+    await open(page, { url: `/labs/${TEXT_STORY}/story` });
+    await expect(heading(page)).toBeVisible();
+    await settle(page);
+    expect(s.prepares).toEqual([]);
+  });
+
+  test('a lab already running goes straight into the session: no flow, no warm-up', async ({ page }) => {
+    const s = await stub(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page, { remembered: EXPLORE });
+    await expect(page.locator('#workspace')).toBeVisible();
+    await expect(screen(page)).toBeHidden();
+    await settle(page);
+    expect(s.prepares).toEqual([]);
+    expect(s.cancels).toEqual([]);
   });
 });

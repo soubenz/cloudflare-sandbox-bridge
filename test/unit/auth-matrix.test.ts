@@ -29,6 +29,8 @@ function handlerFor(method: string, path: string, source: string = router): stri
 const SERVICE_KEY_ONLY: Array<[string, string]> = [
   ['post', '/sessions'],
   ['post', '/sessions/start'],
+  ['post', '/sessions/prepare'],
+  ['post', '/sessions/prepare/cancel'],
   ['get', '/sessions'],
   ['get', '/labs'],
   ['get', '/labs/:slug'],
@@ -71,6 +73,7 @@ const SESSION_TOKEN: Array<[string, string]> = [
   ['post', '/sessions/:id/checks'],
   ['post', '/sessions/:id/snapshot'],
   ['post', '/sessions/:id/touch'],
+  ['post', '/sessions/:id/begin'],
   ['delete', '/sessions/:id'],
   ['get', '/sessions/:id/events'],
   ['get', '/sessions/:id/files'],
@@ -162,6 +165,20 @@ describe('route auth matrix', () => {
     expect(body).not.toMatch(/solutionKey\(|privateKey\(|workspaceKey\(/);
     expect(body.indexOf('requireServiceAuth(')).toBeLessThan(body.indexOf('audioKey('));
     expect(body).toContain('CLIP_FILE.test(file)');
+  });
+
+  it('the pre-warm routes take the service key and carry a user_id, never a bare session token', () => {
+    // Prepare and its cancel act on a *user's* slot, so only the console Worker (which
+    // knows the user) may call them; the begin route belongs to one session and accepts its token.
+    for (const path of ['/sessions/prepare', '/sessions/prepare/cancel']) {
+      const body = handlerFor('post', path);
+      expect(body, path).toContain('requireServiceAuth(');
+      expect(body, path).not.toContain('requireBrowserAuth(');
+      expect(body, path).toContain('user_id');
+    }
+    // Registered before any `/sessions/:id/...` pattern could take them.
+    expect(router.indexOf("app.post('/sessions/prepare'")).toBeLessThan(router.indexOf("app.get('/sessions/:id'"));
+    expect(router.indexOf("app.post('/sessions/prepare/cancel'")).toBeLessThan(router.indexOf("app.get('/sessions/:id'"));
   });
 
   it('has no unauthenticated session-start route', () => {

@@ -94,7 +94,7 @@ const dash = '—';
 
 /* ---------------------------------------------------------------- sessions */
 
-const STATES = ['starting', 'running', 'recovering', 'resuming', 'ended'];
+const STATES = ['starting', 'ready', 'running', 'recovering', 'resuming', 'ended'];
 
 function sessionsScreen(panel) {
   let liveView;

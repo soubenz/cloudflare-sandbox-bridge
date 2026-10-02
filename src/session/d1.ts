@@ -160,7 +160,8 @@ export function isActiveSessionConflict(err: unknown): boolean {
   return /UNIQUE constraint failed/i.test(message) || message.includes('sessions_active_user');
 }
 
-const ACTIVE_STATES_SQL = `('starting','running','recovering','resuming')`;
+/** The states that hold a user's one session slot; mirrors the partial unique index (migration 0009). */
+export const ACTIVE_STATES_SQL = `('starting','ready','running','recovering','resuming')`;
 
 /** The active rows of one user (there is at most one, by the unique index). */
 export async function activeSessionRows(env: Env, userId: string): Promise<Array<{ id: string; state: string }>> {
@@ -173,7 +174,7 @@ export async function activeSessionRows(env: Env, userId: string): Promise<Array
 /** Active-looking rows older than `olderThanMs`, oldest first, for the sweeper. */
 export async function staleActiveRows(env: Env, olderThanMs: number, limit = 100): Promise<Array<{ id: string }>> {
   const result = await env.DB.prepare(
-    `SELECT id FROM sessions WHERE state IN ('starting','running') AND created_at < ? ORDER BY created_at ASC LIMIT ?`
+    `SELECT id FROM sessions WHERE state IN ('starting','ready','running') AND created_at < ? ORDER BY created_at ASC LIMIT ?`
   )
     .bind(olderThanMs, limit)
     .all<{ id: string }>();

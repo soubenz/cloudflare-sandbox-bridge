@@ -234,6 +234,32 @@ export function stepNumberFor(steps, index) {
   return steps.findIndex((s) => s.kind === step.kind) === index ? null : index + 1;
 }
 
+// ---------------------------------------------------------------------------
+// When to warm the lab up
+// ---------------------------------------------------------------------------
+
+/**
+ * The index of the step at which the lab's container is prepared in the background, so that Start
+ * on the last step is instant: the second-to-last step (the one before the final lessons or
+ * questions, the screen that holds "Start the lab"). A flow of one step prepares when that step is
+ * shown, and an empty flow never prepares (-1). Pure; the screen asks `shouldPrefetch`.
+ */
+export function prefetchStepIndex(steps) {
+  const n = Array.isArray(steps) ? steps.length : 0;
+  if (n === 0) return -1;
+  return n >= 2 ? n - 2 : 0;
+}
+
+/**
+ * Whether showing step `index` is a reason to prepare the lab: it is the prefetch step or a later
+ * one (a refresh or a link can land straight on the last step, which skips past the prefetch one).
+ * The screen asks once per visit and acts on the first yes, so Back and Forward never prepare twice.
+ */
+export function shouldPrefetch(steps, index) {
+  const at = prefetchStepIndex(steps);
+  return at >= 0 && Number.isInteger(index) && index >= at;
+}
+
 /**
  * Steps saved by an earlier page of the same visit, checked against the bundle: every question and
  * concept they name must still exist. Anything else is null (a fresh plan is made instead).

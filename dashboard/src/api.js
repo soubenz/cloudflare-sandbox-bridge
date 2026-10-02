@@ -184,6 +184,36 @@ export const api = {
   },
 
   /**
+   * Warms the lab up while the learner is still reading "Before you begin": the Worker asks the API to
+   * boot a container and park it, and the later startSession is then answered from it. Fire and forget:
+   * the caller swallows a failure, because Start works the same, only slower, when this did not.
+   */
+  prepareLab: (lab) =>
+    sameOrigin('/api/prepare', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ lab }),
+    }),
+
+  /**
+   * Drops the warmed lab when the learner leaves without starting it. The API only ever cancels one
+   * that has not begun, so a late call can never end a lab that is running. `beacon: true` is for a
+   * page that is closing (`sendBeacon` outlives it); otherwise a keepalive fetch. Never throws.
+   */
+  cancelPrepare: async (lab, { beacon = false } = {}) => {
+    const body = JSON.stringify({ lab });
+    try {
+      if (beacon && typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+        return navigator.sendBeacon('/api/prepare/cancel', new Blob([body], { type: 'application/json' }));
+      }
+      await fetch('/api/prepare/cancel', { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true });
+      return true;
+    } catch {
+      return false; // the claim timer on the API reclaims it within minutes
+    }
+  },
+
+  /**
    * `recover: false` is for asking about a session remembered from an
    * earlier visit: a refused token there means "that session is gone", and
    * rejoining through /api/start would start a fresh container to find out.

@@ -24,6 +24,8 @@ const f = (await import('../../dashboard/src/learn-flow.js' as string)) as {
   stepKindWord: (step: Step) => string;
   stepNumberFor: (steps: Step[], index: number) => number | null;
   restoreSteps: (learn: Learn, saved: unknown) => Step[] | null;
+  prefetchStepIndex: (steps: unknown) => number;
+  shouldPrefetch: (steps: unknown, index: number) => boolean;
   createFlowStore: (o: { slug: string; version?: string; storage?: unknown }) => {
     load: () => { steps: Step[]; answers: Record<string, unknown> } | null;
     save: (steps: Step[], answers: Record<string, unknown>) => void;
@@ -362,5 +364,59 @@ describe('restoreSteps and the flow store', () => {
     storage.setItem('opalix.flow.x', JSON.stringify({ v: 2, version: '1', steps: [] }));
     expect(f.createFlowStore({ slug: 'x', version: '1', storage }).load()).toBeNull();
     expect(f.createFlowStore({ slug: 'x', version: '1', storage: null }).load()).toBeNull();
+  });
+});
+
+describe('prefetchStepIndex (when the lab is warmed up)', () => {
+  const steps = (n: number) => Array.from({ length: n }, (_, i) => ({ kind: i === 0 ? 'story' : 'round' }));
+
+  it('is the second-to-last step: the one before the final step that holds Start', () => {
+    expect(f.prefetchStepIndex(steps(2))).toBe(0);
+    expect(f.prefetchStepIndex(steps(3))).toBe(1);
+    expect(f.prefetchStepIndex(steps(4))).toBe(2);
+    expect(f.prefetchStepIndex(steps(7))).toBe(5);
+  });
+
+  it('is the last step itself when the flow has fewer than two', () => {
+    expect(f.prefetchStepIndex(steps(1))).toBe(0);
+  });
+
+  it('is -1 (never) for an empty or missing flow', () => {
+    expect(f.prefetchStepIndex([])).toBe(-1);
+    expect(f.prefetchStepIndex(undefined)).toBe(-1);
+    expect(f.prefetchStepIndex(null)).toBe(-1);
+  });
+
+  it('names the step before the last for real plans', () => {
+    // story, round 1, lessons, round 2: warm up on the lessons, the screen before the last questions.
+    const plan = f.planLearningFlow(lab([3, 3, 3]), NONE);
+    expect(kinds(plan)).toEqual(['story', 'round', 'lessons', 'round']);
+    expect(f.prefetchStepIndex(plan)).toBe(plan.length - 2);
+    expect(plan[f.prefetchStepIndex(plan)]!.kind).toBe('lessons');
+    // A lab with only a story and lessons warms up on the story.
+    const small = f.planLearningFlow(lab([0], { story: true }), NONE);
+    expect(kinds(small)).toEqual(['story', 'lessons']);
+    expect(f.prefetchStepIndex(small)).toBe(0);
+  });
+});
+
+describe('shouldPrefetch', () => {
+  const steps = [{ kind: 'story' }, { kind: 'round' }, { kind: 'lessons' }, { kind: 'round' }];
+
+  it('is false before the prefetch step and true from it on (a link can land past it)', () => {
+    expect(f.shouldPrefetch(steps, 0)).toBe(false);
+    expect(f.shouldPrefetch(steps, 1)).toBe(false);
+    expect(f.shouldPrefetch(steps, 2)).toBe(true);
+    expect(f.shouldPrefetch(steps, 3)).toBe(true);
+  });
+
+  it('a one-step flow warms up as soon as it is shown; an empty one never does', () => {
+    expect(f.shouldPrefetch([{ kind: 'lessons' }], 0)).toBe(true);
+    expect(f.shouldPrefetch([], 0)).toBe(false);
+  });
+
+  it('ignores an index that is not a step number', () => {
+    expect(f.shouldPrefetch(steps, Number.NaN)).toBe(false);
+    expect(f.shouldPrefetch(steps, undefined as unknown as number)).toBe(false);
   });
 });

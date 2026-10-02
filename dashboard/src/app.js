@@ -1610,6 +1610,9 @@ function openLearnFlow(lab, entry, initial, { fromRoute = false, n } = {}) {
       onStep: (step, number) => onLabStep(lab.slug, step, number),
       // The screen may have shrunk since Start was pressed: ask again before a container is claimed.
       onStart: () => (guardDesktop(lab.slug) ? undefined : startSession(lab.slug)),
+      // The container is warmed while the last steps are read, so Start is instant; a phone cannot run a lab, so it warms nothing.
+      prepare: () => (isPhoneLike(readDevice()) ? undefined : api.prepareLab(lab.slug)),
+      cancelPrepare: (opts) => api.cancelPrepare(lab.slug, opts),
       onBack: () => {
         leaveLearnScreen();
         setRoute('launcher');

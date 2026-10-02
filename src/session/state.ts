@@ -5,8 +5,13 @@ import type { Backend } from './backend';
 import type { SolutionStatus } from './solution';
 import { ApiError } from '../lib/errors';
 
-export type SessionState = 'created' | 'starting' | 'running' | 'recovering' | 'resuming' | 'ended';
-export type EndReason = 'user' | 'idle' | 'expired' | 'error' | 'evicted';
+/**
+ * `ready` is a prepared (pre-warmed) session: container claimed and fully
+ * started, but parked with none of the lab clocks running until `begin`.
+ */
+export type SessionState = 'created' | 'starting' | 'ready' | 'running' | 'recovering' | 'resuming' | 'ended';
+/** `unclaimed`: a prepared session nobody began within PREPARE_TTL_MS. */
+export type EndReason = 'user' | 'idle' | 'expired' | 'error' | 'evicted' | 'unclaimed';
 
 export interface SessionMeta {
   id: string;
@@ -25,6 +30,14 @@ export interface SessionMeta {
   ended_at?: number;
   end_reason?: EndReason;
   resumed_count: number;
+  /**
+   * Set at creation by `POST /sessions/prepare`: the start sequence parks the
+   * session in `ready` instead of `running`. Cleared by `begin`, which is
+   * what turns a still-booting prepared session into an ordinary one.
+   */
+  prepare?: boolean;
+  /** When the session became `ready` (prepared, clocks not started). Kept after `begin` for diagnosis. */
+  prepared_at?: number;
   /** When the current `recovering` spell began; cleared on success or failure. Lets the health tick end a recovery that never finishes. */
   recovering_since?: number;
   /** Consecutive failed recover() runs since the last success. */
@@ -61,6 +74,7 @@ export interface TerminalRuntime {
 export type TimerKind =
   | 'start'
   | 'resume'
+  | 'prepare_expiry'
   | 'idle'
   | 'idle_warn'
   | 'hard'
@@ -246,7 +260,7 @@ const KEYS = {
 } as const;
 
 function notRunning(): ApiError {
-  return ApiError.conflict('not_running', 'The session is not running (still starting, resuming, recovering or ended)');
+  return ApiError.conflict('not_running', 'The session is not running (still starting, ready, resuming, recovering or ended)');
 }
 
 /**

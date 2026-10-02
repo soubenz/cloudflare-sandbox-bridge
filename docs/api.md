@@ -66,8 +66,11 @@ minutes are usable now.
 | POST | `/pools/:family/prime` | service | `{ target? }` → `{ ok: true }`; only ever grows the pool |
 | POST | `/pools/:family/drain` | service | destroys every warm container; claimed ones are untouched → `{ ok: true }` |
 | POST | `/sessions` | service | `{ lab, user_id }` → `202 { id, state, token, urls }`; `503 at_capacity` with a `Retry-After` header when the family's pool is full⁴ |
-| POST | `/sessions/start` | service | `{ lab, user_id }` → `202` same shape, or `200 { ..., rejoined: true }` if that user already has a live session² |
-| GET | `/sessions` | service | every live session, newest first, max 200 |
+| POST | `/sessions/start` | service | `{ lab, user_id }` → `202` same shape, or `200 { ..., rejoined: true }` if that user already has a live session²; if the user has a [pre-warm](#pre-warming) of that lab it begins it instead (`202`, same shape, instant) |
+| POST | `/sessions/prepare` | service | `{ lab, user_id }` → pre-warm a lab: claims a container and boots it fully, then parks the session in `ready` with no lab clock running. `202 { id, state, prepared: true }` (no token or URLs: they are minted when the lab begins), or `200 { id, state, prepared: true, reused: true }` when this user already has a pre-warm for that lab (at most one per user; one for another lab is replaced). `409 active_session_exists` while the user has a lab running; `503 at_capacity` like a start. See [Pre-warming](#pre-warming) |
+| POST | `/sessions/prepare/cancel` | service | `{ user_id, lab? }` → `200 { ok: true, cancelled }`. Ends the user's pre-warm if it has not begun (`lab` narrows it to that lab); `cancelled: false` for a lab that is running, no session, or another lab. Never touches a begun session. Idempotent, safe to call from a closing page |
+| POST | `/sessions/:id/begin` | session | `ready → running`: starts the lab clocks of a pre-warmed session → `{ meta, token }` (like resume, a token that outlives the session). Idempotent on anything already begun; `409 cannot_begin` once ended. `POST /sessions/start` does this itself |
+| GET | `/sessions` | service | every live session (including `ready` pre-warms), newest first, max 200 |
 | GET | `/sessions/:id` | session | the `status()` body: `{ meta, services, snapshots, checks?, cost, hints, pressure, manifest_summary?, checks_history, solution, server_time }` — see [Session status](#session-status) |
 | GET | `/sessions/:id/solution` | session token only | the lab's solution as files, once the session has earned it → `200 { files: [{ path, content }], truncated }`; `404 no_solution`, `403 solution_locked`; the service key is refused with `403 session_token_required`. See [Solution reveal](#solution-reveal) |
 | GET/PUT/DELETE | `/sessions/:id/files/:path` | session | under `/workspace`; PUT capped at 2 MiB |
@@ -85,7 +88,7 @@ minutes are usable now.
 | POST | `/sessions/:id/snapshot` | session | → the new `SnapshotEntry` |
 | POST | `/sessions/:id/touch` | session | refreshes the idle clock ("I'm here") exactly as a file write does, without doing any work; 204, or `409 not_running` |
 | POST | `/sessions/:id/resume` | session | requires a snapshot; `{ meta, token }` with a new token |
-| DELETE | `/sessions/:id?snapshot=0` | session | ends the session; snapshots by default |
+| DELETE | `/sessions/:id?snapshot=0` | session | ends the session; snapshots by default (never a `ready` one: it has no work to keep, and it cancels the pre-warm) |
 | GET | `/users/:uid/progress` | service | per-lab standing from D1 `check_runs` → `{ labs: [{ slug, attempts, best_score, passed_all, last_run_at, sessions }] }`, most recently attempted first. `best_score` is the best weighted share of checks passed in one run (0-1); `passed_all` is true if any run passed every check of the lab; `sessions` counts distinct sessions that ran checks |
 | GET | `/users/:uid/checks?lab=&limit=&before=` | service | a user's runs across sessions, newest first → `{ runs: [...] }` (same shape as the session route, plus `session_id` and `lab_slug`). `lab` filters to one lab; `before` is an epoch-ms cursor (pass the last `started_at` you saw); `limit` default 20, max 100 |
 | GET | `/users/:uid/profile?compact=&starting=` | service | the learner's skill scores, XP, streak and awards → see [Profile, XP and awards](#profile-xp-and-awards). `compact=1` returns only what the Home widget needs; `starting=gateway:ok,mcp:new` echoes the onboarding quiz result. `400 bad_user_id`; an unknown user is a `200` with an empty profile |
@@ -218,6 +221,7 @@ the RPC boundary.
 | 400 | `invalid_user_id` | a learning-path route whose `:uid` is empty or over 128 characters |
 | 404 | `no_inputs` | `GET`/`POST /users/{uid}/path` for a user who never sent path inputs |
 | 409 | `active_session_exists` | the user already has a live session (the D1 unique index) |
+| 409 | `cannot_begin` | `POST /sessions/{id}/begin` on a session that has ended |
 | 409 | `cannot_resume` | `POST /sessions/{id}/resume` on a session that is not `ended` |
 | 409 | `no_snapshot` | resume with no snapshot to restore from |
 | 409 | `not_running` | the session is not running (still starting, resuming, recovering or ended) |
@@ -710,8 +714,9 @@ solution.
 ## Session lifecycle
 
 `starting → running → ended`, with `recovering` and `resuming` as transient
-sub-states of `running`. (`created` exists in the `SessionState` type but no
-code path ever sets it.) `POST /sessions` returns as soon as the session row
+sub-states of `running`, and `ready` as an optional stop between `starting`
+and `running` for a [pre-warmed](#pre-warming) session. (`created` exists in
+the `SessionState` type but no code path ever sets it.) `POST /sessions` returns as soon as the session row
 exists (`state: "starting"`); poll `GET /sessions/:id` or watch
 `session.state` on the event stream for `running`.
 
@@ -735,6 +740,59 @@ Both timeouts snapshot before destroying the container, so
 An hour after a session ends, its stored event log and per-service state are
 dropped; the snapshot list survives, so a resume is still possible.
 
+## Pre-warming
+
+The console starts a lab's container while the learner is still reading the
+last steps of "Before you begin", so Start is instant. It is built from three
+calls and one state.
+
+```
+POST /sessions/prepare   starting ── (container claimed, hydrated, env, services) ──► ready
+POST /sessions/start     ready ── begin ──► running          (or  POST /sessions/:id/begin)
+POST /sessions/prepare/cancel | DELETE /sessions/:id | 10 minutes   ready ──► ended
+```
+
+- **`ready` has no lab clock.** The container is fully started, but
+  `started_at` and `expires_at` are unset and no hard, idle, pressure, hint,
+  metrics or health timer exists. The single timer is `prepare_expiry`, set
+  `PREPARE_TTL_MS` (10 minutes) after the session became `ready`: it ends the
+  session with `end_reason: "unclaimed"`, no snapshot, and releases the
+  container, so an abandoned prefetch costs about ten minutes of one
+  container. `meta.prepare` is true from creation until the lab begins;
+  `meta.prepared_at` records when it became `ready` and is kept after.
+- **Begin** (`POST /sessions/{id}/begin`, or `POST /sessions/start` for that
+  user and lab) sets `started_at`, `expires_at = now + timeout_minutes`,
+  cancels `prepare_expiry` and schedules exactly the timers a normal start
+  does (one shared function, `scheduleRunTimers`, also used by resume). A
+  `ready` session's time is not billed to the lab: the cost cursor starts at
+  begin. Begun while still `starting`, the session simply finishes its start
+  into `running` instead of parking.
+- **`POST /sessions/start` reuses it.** For a user with a `ready` (or still
+  booting) pre-warm of the requested lab it begins that session and answers
+  `202 { id, state, token, urls }`, the shape of a cold start (`state` is
+  `running`, or `starting` if the boot had not finished); there is no
+  `rejoined` flag. A pre-warm of another lab is cancelled and the start is
+  cold; one that ended a moment ago also falls back to a cold start.
+- **One slot per user.** `ready` holds the same one-active-session slot as
+  `running` (migration `0011_ready_state.sql` rebuilds the partial unique
+  index), so a user has at most one pre-warm and a pre-warm and a live lab
+  cannot coexist. A second `prepare` returns the first.
+- **Cancel.** `DELETE /sessions/{id}` on a `ready` session ends it
+  (`end_reason: "user"`, never a snapshot). `POST /sessions/prepare/cancel`
+  is the same by user instead of id, and refuses to touch a session that has
+  begun (the check runs inside the Session DO), which is what makes it safe
+  for a closing page to send blindly.
+- **Failure.** If the container claim or the boot fails during a prepare, the
+  session ends with `end_reason: "error"` like any failed start and the user's
+  slot is free; the later `POST /sessions/start` is then an ordinary cold
+  start. `GET /usage` ignores sessions that never started (`started_at` is
+  null), so a ready window is not in that estimate; the admin summaries
+  exclude `unclaimed` sessions from their counts.
+- **Invisible to the learner.** A `ready` session never reaches the console:
+  `POST /api/prepare` returns no id or token, so there is no remembered
+  session, no Rejoin card and no "lab running". `GET /sessions/:id` shows
+  `state: "ready"` and `meta.prepared_at` to a service-key caller (ops).
+
 ## Events
 
 `GET /sessions/{id}/events` is an SSE stream. Each frame carries a numeric
@@ -744,7 +802,7 @@ one, the last 50 events are replayed. The log is capped at the most recent
 
 | `event:` | `data` |
 |---|---|
-| `session.state` | `{ state }`, plus `recovered: true`, `resumed: true` or `reason` on the relevant transitions |
+| `session.state` | `{ state }`, plus `recovered: true`, `resumed: true`, `began: true` (a pre-warm that has begun) or `reason` on the relevant transitions; `state: "ready"` when a pre-warm has finished booting |
 | `session.expiring` | `{ reason: "hard_timeout" }` |
 | `session.idle_warning` | `{ idle_ms }` |
 | `service.health` | `{ service, health }`, plus `restarted: true`, `relaunched: true`, or `reason` + `logs_tail` on a failed start |

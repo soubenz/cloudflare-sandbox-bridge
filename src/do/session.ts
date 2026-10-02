@@ -40,7 +40,7 @@ export class Session extends DurableObject<Env> {
 
   // --- RPC surface ---
 
-  async create(input: { userId: string; labSlug: string; labVersion: string; family: Family; manifest: LabManifest }) {
+  async create(input: { userId: string; labSlug: string; labVersion: string; family: Family; manifest: LabManifest; prepare?: boolean }) {
     return lifecycle.createSession(this.rt, input);
   }
 
@@ -90,6 +90,16 @@ export class Session extends DurableObject<Env> {
   async touch(): Promise<void> {
     await this.rt.requireRunning();
     await this.rt.touchInput();
+  }
+
+  /** `ready -> running`: starts the lab clocks of a pre-warmed session. Idempotent once begun; see lifecycle.beginSession. */
+  async begin(): Promise<{ meta: SessionMeta; token: string }> {
+    return lifecycle.beginSession(this.rt);
+  }
+
+  /** Ends the session only if it is still an unbegun pre-warm; resolves whether it did. */
+  async cancelPrepared(): Promise<boolean> {
+    return lifecycle.cancelPrepared(this.rt);
   }
 
   async end(snapshot = true): Promise<void> {

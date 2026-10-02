@@ -1,5 +1,6 @@
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { Env } from './env';
+import type { SessionStatus } from './session/state';
 import { isFamily } from './families/registry';
 import { loadCurrentManifest, loadCurrentLearn, listCatalogue, publishLab, solutionKey, audioKey, currentVersion, CLIP_FILE, INDEX_KEY } from './labs/bundle';
 import { parseAnswersBody, recordAnswers } from './labs/learn-answers';
@@ -10,7 +11,7 @@ import { parseManifest } from './labs/manifest';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
 import { workspacePath } from './lib/paths';
-import { insertSession, upsertFeedback, healSessionRow, isActiveSessionConflict } from './session/d1';
+import { insertSession, upsertFeedback, healSessionRow, isActiveSessionConflict, ACTIVE_STATES_SQL } from './session/d1';
 import { healIfStale, healUserActiveRows } from './session/reconcile';
 import { userProgress, sessionProgressSummary, sessionChecks, userChecks, parseFeedback, clampLimit } from './session/progress';
 import { poolStub } from './do/pool';
@@ -266,9 +267,69 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     // A row whose DO has ended (or never existed) is not a session to rejoin:
     // close it and start fresh rather than mint a token for nothing.
     const existing = await activeSessionFor(c.env, body.user_id);
-    if (existing && (await healIfStale(c.env, existing.id)) === 'live') return c.json(await rejoinSession(c.env, existing), 200);
+    if (existing && (await healIfStale(c.env, existing.id)) === 'live') {
+      const stub = c.env.SESSION.get(c.env.SESSION.idFromName(existing.id));
+      const status = await stub.status();
+      // A pre-warmed session (POST /sessions/prepare) is not "a lab the user
+      // has": it is the one this start was waiting for. Begin it when it is
+      // this lab (instant), replace it when it is another.
+      if (isUnbegun(status.meta)) {
+        if (status.meta.lab_slug === body.lab) {
+          const begun = await beginPrepared(c.env, existing.id, status);
+          if (begun) return c.json(begun, 202);
+        } else if (!(await stub.cancelPrepared())) {
+          // Begun by someone else in the meantime: it is a live lab now.
+          return c.json(await rejoinSession(c.env, existing), 200);
+        }
+      } else {
+        return c.json(await rejoinSession(c.env, existing), 200);
+      }
+    }
 
     return c.json(await createSession(c.env, body.lab, body.user_id), 202);
+  });
+
+  /**
+   * Pre-warm a lab: claim a container and boot it fully, then park the session
+   * in `ready` with none of its clocks running (see lifecycle.runStart). The
+   * console calls this when the learner nears the end of "Before you begin",
+   * so the later `POST /sessions/start` is answered from a warm container.
+   * Same auth and `user_id` as `/sessions/start`. A user has at most one
+   * prepared session: a second prepare for the same lab returns it, for
+   * another lab replaces it, and while the user has a live lab it is a 409.
+   */
+  app.post('/sessions/prepare', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    type PrepareBody = { lab?: string; user_id?: string };
+    const body = await c.req.json<PrepareBody>().catch((): PrepareBody => ({}));
+    if (!body.lab || !body.user_id) throw ApiError.badRequest('missing_fields', 'lab and user_id are required');
+
+    const existing = await activeSessionFor(c.env, body.user_id);
+    if (existing && (await healIfStale(c.env, existing.id)) === 'live') {
+      const stub = c.env.SESSION.get(c.env.SESSION.idFromName(existing.id));
+      const { meta } = await stub.status();
+      if (!isUnbegun(meta)) throw ApiError.conflict('active_session_exists', 'This user already has an active session');
+      if (meta.lab_slug === body.lab) return c.json({ id: existing.id, state: meta.state, prepared: true, reused: true }, 200);
+      if (!(await stub.cancelPrepared())) throw ApiError.conflict('active_session_exists', 'This user already has an active session');
+    }
+    return c.json(await createSession(c.env, body.lab, body.user_id, undefined, true), 202);
+  });
+
+  /**
+   * Drops the user's pre-warmed session, if they have one that has not begun
+   * (optionally only for `lab`). Never touches a lab that is running: the
+   * check is made inside the Session DO, so a late call (a closing tab's
+   * beacon arriving after Start) is a harmless `cancelled: false`.
+   */
+  app.post('/sessions/prepare/cancel', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    type CancelBody = { lab?: string; user_id?: string };
+    const body = await c.req.json<CancelBody>().catch((): CancelBody => ({}));
+    if (!body.user_id) throw ApiError.badRequest('missing_fields', 'user_id is required');
+    const existing = await activeSessionFor(c.env, body.user_id);
+    if (!existing || (body.lab && existing.lab_slug !== body.lab)) return c.json({ ok: true, cancelled: false });
+    const stub = c.env.SESSION.get(c.env.SESSION.idFromName(existing.id));
+    return c.json({ ok: true, cancelled: await stub.cancelPrepared().catch(() => false) });
   });
 
   app.get('/sessions/:id', async (c) => {
@@ -424,6 +485,16 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     return c.json(await stub.resume());
   });
 
+  // Starts the lab clocks of a pre-warmed (`ready`) session; idempotent once
+  // begun. The console does not call it: `POST /sessions/start` begins a ready
+  // session itself. It is here for a client that holds the session id.
+  app.post('/sessions/:id/begin', async (c) => {
+    const id = c.req.param('id');
+    await requireBrowserAuth(c.req.raw, c.env, id);
+    const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
+    return c.json(await stub.begin());
+  });
+
   // "I'm here" from the idle banner: moves the idle clock like a file write
   // does, and nothing else. 204 so there is no body to parse.
   app.post('/sessions/:id/touch', async (c) => {
@@ -472,7 +543,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     requireServiceAuth(c.req.raw, c.env);
     const result = await c.env.DB.prepare(
       `SELECT id, user_id, lab_slug, state, created_at FROM sessions
-       WHERE state IN ('starting','running','recovering','resuming')
+       WHERE state IN ${ACTIVE_STATES_SQL}
        ORDER BY created_at DESC LIMIT 200`
     ).all();
     return c.json(result.results);
@@ -482,7 +553,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     requireServiceAuth(c.req.raw, c.env);
     const activeOnly = c.req.query('active') === '1';
     const query = activeOnly
-      ? `SELECT * FROM sessions WHERE user_id = ? AND state IN ('starting','running','recovering','resuming') ORDER BY created_at DESC`
+      ? `SELECT * FROM sessions WHERE user_id = ? AND state IN ${ACTIVE_STATES_SQL} ORDER BY created_at DESC`
       : `SELECT * FROM sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`;
     const result = await c.env.DB.prepare(query).bind(c.req.param('uid')).all();
     return c.json(result.results);
@@ -606,7 +677,7 @@ async function deepHealth(env: Env) {
 }
 
 /** Shared by POST /sessions and POST /sessions/start; the only difference between them is who may call. */
-async function createSession(env: Env, lab: string, userId: string, ipHash?: string) {
+async function createSession(env: Env, lab: string, userId: string, ipHash?: string, prepare = false) {
   const { version, manifest } = await loadCurrentManifest(env, lab);
   if (!isFamily(manifest.family)) throw ApiError.internal(`lab "${lab}" has an unknown family "${manifest.family}"`);
 
@@ -635,7 +706,7 @@ async function createSession(env: Env, lab: string, userId: string, ipHash?: str
   const stub = env.SESSION.get(env.SESSION.idFromName(sessionId));
   let created: Awaited<ReturnType<typeof stub.create>>;
   try {
-    created = await stub.create({ userId, labSlug: manifest.slug, labVersion: version, family: manifest.family, manifest });
+    created = await stub.create({ userId, labSlug: manifest.slug, labVersion: version, family: manifest.family, manifest, ...(prepare ? { prepare: true } : {}) });
   } catch (err) {
     // The row was reserved but no session exists: leaving it `starting` would
     // lock the user out until the sweeper found it.
@@ -643,6 +714,10 @@ async function createSession(env: Env, lab: string, userId: string, ipHash?: str
     throw err;
   }
   const { meta, token } = created;
+
+  // A pre-warm hands nothing to the caller to use: the token and URLs are
+  // minted when the lab begins.
+  if (prepare) return { id: sessionId, state: meta.state, prepared: true };
 
   return {
     id: sessionId,
@@ -679,12 +754,40 @@ async function reserveSessionSlot(env: Env, row: Parameters<typeof insertSession
 async function activeSessionFor(env: Env, userId: string): Promise<{ id: string; lab_slug: string; lab_version: string } | null> {
   const row = await env.DB.prepare(
     `SELECT id, lab_slug, lab_version FROM sessions
-     WHERE user_id = ? AND state IN ('starting','running','recovering','resuming')
+     WHERE user_id = ? AND state IN ${ACTIVE_STATES_SQL}
      ORDER BY created_at DESC LIMIT 1`
   )
     .bind(userId)
     .first<{ id: string; lab_slug: string; lab_version: string }>();
   return row ?? null;
+}
+
+/** A pre-warm that has not begun: parked `ready`, or still booting towards it. */
+function isUnbegun(meta: { state: string; prepare?: boolean }): boolean {
+  return meta.state === 'ready' || (meta.state === 'starting' && meta.prepare === true);
+}
+
+/**
+ * Begins the user's pre-warmed session and answers as a fresh start does
+ * (`{ id, state, token, urls }`), so the console cannot tell it from a cold
+ * one except that it is instant. Null when the session ended before it could
+ * begin (its pre-warm expired a moment ago): the caller starts a fresh one.
+ */
+async function beginPrepared(env: Env, id: string, status: Pick<SessionStatus, 'manifest_summary'>) {
+  const stub = env.SESSION.get(env.SESSION.idFromName(id));
+  let begun: Awaited<ReturnType<typeof stub.begin>>;
+  try {
+    begun = await stub.begin();
+  } catch (err) {
+    if (fromSdkError(err).code === 'cannot_begin') return null;
+    throw err;
+  }
+  return {
+    id,
+    state: begun.meta.state,
+    token: begun.token,
+    urls: sessionUrls(env, id, (status.manifest_summary?.services ?? []).filter((s) => s.ui).map((s) => s.name)),
+  };
 }
 
 /** Same response shape as a fresh start, with a newly minted token for the session already running. */
