@@ -20,7 +20,7 @@ The program was perfectly ordinary. It ran because nothing stopped it.
 | `programs/` | Three programs to try, including `read_the_config.py`, the one from Tuesday. |
 | `data/sales.csv` | Something to hand a program that has a reason to read a file. |
 | `config/` | The desk's configuration and the vault's seed file. Full of credentials, none of a program's business. |
-| **auditor** tab | Every run, what it printed, and in red whether the output contained one of this container's credentials. |
+| **auditor** tab | Every run, what it printed, and in red whether the output contained one of this lab's credentials. |
 
 The **auditor** (port 8754) knows the exact value of every credential here, so
 a flagged run really did print one. The **vault** (port 8755) writes down every
