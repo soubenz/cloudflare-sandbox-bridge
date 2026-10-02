@@ -1618,7 +1618,7 @@ test.describe('warming the lab up (POST /api/prepare)', () => {
   test('a lab already running goes straight into the session: no flow, no warm-up', async ({ page }) => {
     const s = await stub(page);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await open(page, { remembered: EXPLORE });
+    await open(page, { remembered: EXPLORE, url: '/' });
     await expect(page.locator('#workspace')).toBeVisible();
     await expect(screen(page)).toBeHidden();
     await settle(page);

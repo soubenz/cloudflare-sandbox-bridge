@@ -5,6 +5,7 @@ import type { Server } from 'node:http';
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import { parse as parseYaml } from 'yaml';
 import { serveConsole, serveWorker } from './console-server';
+import { MODULE_PAGE, pressStart } from './browse';
 
 /**
  * What a learner reads never describes how the platform is built.
@@ -14,8 +15,9 @@ import { serveConsole, serveWorker } from './console-server';
  * see, plus the tooltips and labels a screen reader or a hover would give them. It is the check that
  * the words are not assembled at run time (an error message, a status code, a reason the API sent).
  *
- * Screens: the launcher, "How this console works", a page that is not there, the platform quiz, the
- * story before a lab, the dialog while a lab starts, a running session (guide tabs, checks, hints,
+ * Screens: Home (a card per path), a path's page, a module's page, a lab's own page, "How this console
+ * works", a page that is not there, the empty Home, the platform quiz, the story before a lab, the
+ * "session not active" page (with and without Rejoin), the dialog while a lab starts, a running session (guide tabs, checks, hints,
  * the activity feed after the API reports a restart, an expiry warning, an idle warning and an internal
  * alert), the terminal reconnecting, the end dialog, every way a session can end, the result card, a lab
  * that cannot start, a launcher that cannot load, the sign-in page, and the public site.
@@ -29,6 +31,11 @@ const ROOT = resolve(here, '../..');
 const PUBLIC = join(ROOT, 'dashboard/public');
 const API = 'https://opalix-sandbox.soubenz94.workers.dev';
 const SESSION_ID = '01J9ZZZZZZZZZZZZZZZZZZZZZZ';
+const OTHER_SESSION_ID = '01JAAAAAAAAAAAAAAAAAAAAAAA';
+const USER_ID = 'console';
+/** A session's address, as the console writes it. */
+const sessionUrl = (slug: string, id = SESSION_ID) => `/u/${USER_ID}/labs/${slug}/session/${id}`;
+const PATH_PAGE = '/paths/ai-platform';
 
 /** The platform's own vocabulary. Lab subject matter (a gateway, a model, a trace) is not in it. */
 const PLATFORM_WORDS = [
@@ -152,6 +159,9 @@ interface Stub {
   terminals: Array<{ close: () => void }>;
   pass: { value: boolean };
   errors: string[];
+  /** What GET /api/labs says (a list), and what GET /api/sessions/active says. */
+  labs: unknown[];
+  active: Array<{ id: string; lab: string; state: string }>;
 }
 
 const json = (route: Route, body: unknown, status = 200) => {
@@ -176,6 +186,8 @@ async function stub(page: Page): Promise<Stub> {
     terminals: [],
     pass: { value: false },
     errors: [],
+    labs: LABS,
+    active: [],
   };
   let lastRun: Record<string, unknown> | null = null;
   let checkRuns = 0;
@@ -185,8 +197,9 @@ async function stub(page: Page): Promise<Stub> {
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     const method = route.request().method();
-    if (path === '/api/me') return json(route, { sub: 'console' });
-    if (path === '/api/labs') return json(route, LABS);
+    if (path === '/api/me') return json(route, { sub: 'console', user_id: USER_ID });
+    if (path === '/api/sessions/active') return json(route, { sessions: s.active });
+    if (path === '/api/labs') return json(route, s.labs);
     if (path === '/api/onboarding') return json(route, { version: 1, ...onboarding });
     if (path === '/api/learn/answers' && method === 'POST') return json(route, { ok: true, recorded: 1 }, 201);
     if (path.startsWith('/api/learn/') && method === 'GET') {
@@ -276,7 +289,7 @@ const test = base.extend<object, { staticServer: string }>({
 
 // -------------------------------------------------------------------- helpers
 
-/** Opens the console on an address, past the first-run dialog; `quiz` leaves the platform quiz for the learner to take. */
+/** Opens the console on an address (Home by default), past the first-run dialog; `quiz` leaves the platform quiz for the learner to take. */
 async function open(page: Page, path = '/', { quiz = false }: { quiz?: boolean } = {}) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript((q) => {
@@ -287,10 +300,10 @@ async function open(page: Page, path = '/', { quiz = false }: { quiz?: boolean }
   await page.waitForSelector('body[data-booted="1"]');
 }
 
-/** Starts the build lab from its card, and leaves the session on screen once it reports `running`. */
+/** Presses Start for the build lab on its row (the module's page), and leaves the session on screen once it reports `running`. */
 async function startBuildLab(page: Page, s: Stub, { hold = false }: { hold?: boolean } = {}) {
   if (hold) s.status.state = 'starting';
-  await page.locator(`.lab[data-slug="${BUILD}"] .lab-start`).click();
+  await pressStart(page, BUILD);
   await expect(page.locator('#workspace')).toBeVisible();
   if (hold) return;
   await expect(page.locator('#statePill')).toHaveText('running');
@@ -303,11 +316,11 @@ async function startBuildLab(page: Page, s: Stub, { hold = false }: { hold?: boo
 // =========================================================================
 
 test.describe('before a lab starts', () => {
-  test('the launcher, the help dialog and a page that is not there', async ({ page }) => {
+  test('home, a path, a module, a lab\'s page, the help dialog and a page that is not there', async ({ page }) => {
     await stub(page);
     await open(page);
-    await expect(page.locator(`.lab[data-slug="${BUILD}"]`)).toBeVisible();
-    await saysNothingOfThePlatform(page, 'the launcher');
+    await expect(page.locator('#path-ai-platform')).toBeVisible();
+    await saysNothingOfThePlatform(page, 'home (the paths)');
 
     await page.locator('#btnHelp').click();
     await expect(page.locator('#onboarding')).toBeVisible();
@@ -315,10 +328,51 @@ test.describe('before a lab starts', () => {
     await saysNothingOfThePlatform(page, 'the help dialog');
     await page.keyboard.press('Escape');
 
+    await page.goto(PATH_PAGE, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('body[data-booted="1"]');
+    await expect(page.locator('.module-card[data-module="1"]')).toBeVisible();
+    await saysNothingOfThePlatform(page, 'a path\'s page (the modules)');
+
+    await page.goto(MODULE_PAGE, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('body[data-booted="1"]');
+    await expect(page.locator(`.lab[data-slug="${BUILD}"]`)).toBeVisible();
+    await saysNothingOfThePlatform(page, 'a module\'s page (the lab rows)');
+
+    await page.goto(`/labs/${BUILD}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('body[data-booted="1"]');
+    await expect(page.locator(`.lab-detail[data-slug="${BUILD}"] .lab-start`)).toBeVisible();
+    await saysNothingOfThePlatform(page, 'a lab\'s own page');
+
     await page.goto('/nothing-lives-here', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('body[data-booted="1"]');
     await expect(page.locator('#notFound')).toBeVisible();
     await saysNothingOfThePlatform(page, 'the not-found page');
+  });
+
+  test('home with no labs yet says so in plain words', async ({ page }) => {
+    const s = await stub(page);
+    s.labs = [];
+    await open(page);
+    await expect(page.locator('#labList .empty-state')).toContainText('No labs are available yet');
+    await saysNothingOfThePlatform(page, 'the empty home');
+  });
+
+  test('a session that is not active says so, with Back to labs, and offers Rejoin when another is running', async ({ page }) => {
+    const s = await stub(page);
+    await open(page, sessionUrl(BUILD, OTHER_SESSION_ID));
+    await expect(page.locator('#sessionGone')).toBeVisible();
+    await expect(page.locator('#sgTitle')).toContainText('not active');
+    await expect(page.locator('#sgRejoin')).toBeHidden();
+    await saysNothingOfThePlatform(page, 'the "session not active" page');
+
+    // The learner has a different session for this lab: Rejoin is on the page, and says so in plain words too.
+    s.active = [{ id: SESSION_ID, lab: BUILD, state: 'running' }];
+    await page.goto(sessionUrl(BUILD, OTHER_SESSION_ID), { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('body[data-booted="1"]');
+    await expect(page.locator('#sessionGone')).toBeVisible();
+    await expect(page.locator('#sgRejoin')).toBeVisible();
+    await expect(page.locator('#sgRejoin')).toHaveText('Rejoin');
+    await saysNothingOfThePlatform(page, 'the "session not active" page with Rejoin');
   });
 
   test('the platform quiz, and the story and quick questions of a lab', async ({ page }) => {
@@ -336,10 +390,10 @@ test.describe('before a lab starts', () => {
 
   test('a lab that cannot start says so in plain words, with no status code', async ({ page }) => {
     await stub(page);
-    await open(page);
+    await open(page, MODULE_PAGE);
     // Registered after the stub's own route, so it answers first.
     await page.route('**/api/start', (route) => json(route, { error: { code: 'container_unavailable', message: 'pool exhausted: no container (terminal_upstream_closed 1006)' } }, 500));
-    await page.locator(`.lab[data-slug="${BUILD}"] .lab-start`).click();
+    await pressStart(page, BUILD);
     const error = page.locator('#launchError');
     await expect(error).toContainText('Could not start this lab');
     await expect(error).toContainText('Something went wrong on our side');
@@ -348,9 +402,9 @@ test.describe('before a lab starts', () => {
 
   test('a busy platform says the labs are busy and that it will try again', async ({ page }) => {
     await stub(page);
-    await open(page);
+    await open(page, MODULE_PAGE);
     await page.route('**/api/start', (route) => json(route, { error: { code: 'container_unavailable', message: 'pool exhausted' } }, 503));
-    await page.locator(`.lab[data-slug="${BUILD}"] .lab-start`).click();
+    await pressStart(page, BUILD);
     await expect(page.locator('#launchError')).toContainText('Labs are busy right now');
     await saysNothingOfThePlatform(page, 'the busy notice');
   });
@@ -371,7 +425,7 @@ test.describe('before a lab starts', () => {
 test.describe('a lab session', () => {
   test('the dialog while the lab starts, then every guide tab, the checks and the result card', async ({ page }) => {
     const s = await stub(page);
-    await open(page);
+    await open(page, MODULE_PAGE);
     await startBuildLab(page, s, { hold: true });
     await expect(page.locator('#bootModal')).toBeVisible();
     await expect(page.locator('#bootTitle')).toHaveText('Starting your lab');
@@ -402,7 +456,7 @@ test.describe('a lab session', () => {
 
   test('the activity feed, after the API reports a restart, an expiry, an idle warning and an internal alert', async ({ page }) => {
     const s = await stub(page);
-    await open(page);
+    await open(page, MODULE_PAGE);
     await startBuildLab(page, s);
     s.emit(
       { id: 1, event: 'session.expiring', data: { reason: 'hard_timeout' } },
@@ -423,7 +477,7 @@ test.describe('a lab session', () => {
 
   test('the terminal says it is reconnecting, and what to do when it cannot', async ({ page }) => {
     const s = await stub(page);
-    await open(page);
+    await open(page, MODULE_PAGE);
     await startBuildLab(page, s);
     await expect.poll(() => s.terminals.length).toBe(1);
     s.terminals[0]!.close();
@@ -440,7 +494,7 @@ test.describe('a lab session', () => {
   test('the warning under five minutes, and the end dialog', async ({ page }) => {
     const s = await stub(page);
     s.status.expiresInMs = 4 * 60_000;
-    await open(page);
+    await open(page, MODULE_PAGE);
     await startBuildLab(page, s);
     await expect(page.locator('#expiryBanner')).toBeVisible();
     await expect(page.locator('#btnEnd')).toHaveText('End & save');
@@ -460,7 +514,7 @@ test.describe('a lab session', () => {
   for (const reason of ['idle', 'expired', 'error', 'evicted', 'user']) {
     test(`a session that ended (${reason}) says why and what to do next`, async ({ page }) => {
       const s = await stub(page);
-      await open(page);
+      await open(page, MODULE_PAGE);
       await startBuildLab(page, s);
       s.status.state = 'ended';
       s.status.endReason = reason;
@@ -473,11 +527,11 @@ test.describe('a lab session', () => {
 
   test('a lab that is gone says so without a status code', async ({ page }) => {
     const s = await stub(page);
-    await open(page);
+    await open(page, MODULE_PAGE);
     // The session's status is refused as gone: the dialog says it is no longer available, and offers the way back.
     await page.route(`${API}/sessions/${SESSION_ID}`, (route) => (route.request().method() === 'GET' ? json(route, { error: { code: 'not_found', message: 'session not found in the pool' } }, 404) : route.fallback()));
     s.status.state = 'starting';
-    await page.locator(`.lab[data-slug="${BUILD}"] .lab-start`).click();
+    await pressStart(page, BUILD);
     await expect(page.locator('#bootError')).toContainText('no longer available', { timeout: 15_000 });
     await saysNothingOfThePlatform(page, 'a lab that is gone');
   });
