@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test as base, expect, type Page, type Route } from '@playwright/test';
@@ -1280,7 +1280,7 @@ test.describe('the quiz: what you are aiming for, and hours a week', () => {
     });
     // The browser never names a user, and the quiz result is still its own.
     expect(Object.keys(s.puts[0]!).sort()).toEqual(['areas', 'goal_kind', 'goal_text', 'hours_per_week']);
-    await host(page).getByRole('button', { name: 'Go to the labs' }).click();
+    await host(page).getByRole('button', { name: 'Browse all labs' }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('#homePath')).toBeVisible();
     // The path the answers brought back is the one on Home.
@@ -1348,7 +1348,7 @@ test.describe('the quiz: what you are aiming for, and hours a week', () => {
     await expect(heading(page)).toHaveText('Where to start');
     await expect.poll(() => s.puts.length).toBe(1);
     await expect(page.getByRole('alert')).toHaveCount(0);
-    await host(page).getByRole('button', { name: 'Go to the labs' }).click();
+    await host(page).getByRole('button', { name: 'Browse all labs' }).click();
     await expect(page.locator('.path-card').first()).toBeVisible();
     // No path to show: only the offer to make one (the quiz was taken), never a next lab.
     await expect(page.locator('#homePath .next-card')).toHaveCount(0);
@@ -1371,7 +1371,7 @@ test.describe('the quiz: what you are aiming for, and hours a week', () => {
     await host(page).getByRole('button', { name: 'See where to start' }).click();
     await expect.poll(() => s.puts.length).toBe(1);
     expect(s.puts[0]).toEqual({ areas: Object.fromEntries(AREAS.map((a) => [a.area, 'new'])), goal_kind: 'role-ready', goal_text: 'Run our gateway', hours_per_week: 2 });
-    await host(page).getByRole('button', { name: 'Go to the labs' }).click();
+    await host(page).getByRole('button', { name: 'Browse all labs' }).click();
     // The path the new answers brought back is the one on Home.
     await expect(page.locator('#homePath .next-title')).toContainText('Retrieve with citations');
   });
@@ -1411,4 +1411,272 @@ test.describe('the quiz: what you are aiming for, and hours a week', () => {
     const outline = await host(page).getByRole('radio', { name: '6 hours' }).evaluate((el) => getComputedStyle(el.closest('label')!).outlineStyle);
     expect(outline).not.toBe('none');
   });
+});
+
+// =========================================================================
+// the quiz's last screen: "Where to start"
+// =========================================================================
+
+test.describe('the quiz: where to start', () => {
+  type Mix = Record<string, 'strong' | 'ok'>;
+  const answerOne = async (page: Page, right: boolean) => {
+    const prompt = (await page.locator('.quiz-prompt').innerText()).trim();
+    const question = onboarding.questions.find((q) => q.prompt === prompt)!;
+    const pick = right ? question.answer : [question.options.find((o) => !question.answer.includes(o.id))!.id];
+    for (const id of pick) await page.locator(`.quiz-option[data-option="${id}"] input`).check();
+    await page.getByRole('button', { name: 'Check', exact: true }).click();
+    await page.getByRole('button', { name: /^(Next|Next: your goal)$/ }).click();
+  };
+
+  /**
+   * Takes the quiz to its last screen. `mix` names the areas to tick and the level each ends at (strong: right,
+   * right; ok: right, wrong); the areas it leaves out are new. With `goal` the two goal questions are answered
+   * (kind, text, hours), else they are skipped (the defaults, or what was said last time).
+   */
+  async function reach(page: Page, mix: Mix, goal?: { kind: RegExp; text?: string; hours?: string }) {
+    const ticked = AREAS.filter((a) => mix[a.area]);
+    if (ticked.length === 0) await page.locator('.ob-choice input[value="none"]').check();
+    for (const a of ticked) await page.locator(`.ob-choice input[value="${a.area}"]`).check();
+    await page.getByRole('button', { name: 'Start', exact: true }).click();
+    for (const a of ticked) {
+      await answerOne(page, true);
+      await answerOne(page, mix[a.area] === 'strong');
+    }
+    await expect(heading(page)).toHaveText('What are you aiming for?');
+    if (!goal) await host(page).getByRole('button', { name: 'Skip these questions' }).click();
+    else {
+      await host(page).getByRole('radio', { name: goal.kind }).check();
+      if (goal.text) await host(page).getByLabel('In a few words, what is it? (optional)').fill(goal.text);
+      await host(page).getByRole('button', { name: 'Next', exact: true }).click();
+      if (goal.hours) await host(page).getByRole('radio', { name: goal.hours }).check();
+      await host(page).getByRole('button', { name: 'See where to start' }).click();
+    }
+    await expect(heading(page)).toHaveText('Where to start');
+  }
+
+  const visitQuiz = async (page: Page, init: Partial<Stub> = {}, size = WIDE, goal?: Record<string, unknown>, modules = true) => {
+    const s = await stub(page, init);
+    // A lab in every module of the platform's path, so that every area has a page to open (answers before the stub's own).
+    if (modules) {
+      const spread = [...LABS, ...AREAS.filter((a) => a.module > 1).map((a) => lab({ slug: `a-lab-in-module-${a.module}`, title: `A lab in module ${a.module}`, module: a.module, order: 1 }))];
+      await page.route('**/api/labs', (route) => json(route, spread));
+    }
+    await page.setViewportSize(size);
+    await visit(page, '/onboarding', { mastery: { onboarding: { status: null } }, goal });
+    await expect(heading(page)).toHaveText('What have you worked with?');
+    return s;
+  };
+
+  const card = (page: Page) => host(page).locator('.start-card');
+  const allStrong = Object.fromEntries(AREAS.map((a) => [a.area, 'strong'])) as Mix;
+
+  test('everything new: the first area is the one answer, with "new to you" as the reason', async ({ page }) => {
+    await visitQuiz(page);
+    await reach(page, {});
+    await expect(heading(page)).toBeFocused();
+    await expect(host(page).locator('.learn-eyebrow')).toHaveText('Your starting point');
+    await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Start here');
+    await expect(card(page).locator('.start-title')).toHaveText(AREAS[0]!.title);
+    await expect(card(page).locator('.start-why')).toHaveText('You said this is new to you, so we begin here.');
+    await expect(card(page).locator('.tile svg')).toHaveCount(1);
+    await expect(card(page).getByRole('button', { name: `Start with ${AREAS[0]!.title}` })).toBeVisible();
+    // One card, not six: a quiet line per area below it.
+    await expect(host(page).locator('.start-card')).toHaveCount(1);
+    await expect(host(page).locator('.told-row')).toHaveCount(AREAS.length);
+  });
+
+  test('a mix of strong, familiar and new: the first area that is NEW is the answer', async ({ page }) => {
+    await visitQuiz(page);
+    await reach(page, { gateway: 'strong', mcp: 'ok' });
+    await expect(card(page).locator('.start-title')).toHaveText('Retrieval');
+    await expect(card(page).locator('.start-why')).toHaveText('You said this is new to you, so we begin here.');
+    const row = (area: string) => host(page).locator(`.told-row[data-area="${area}"]`);
+    await expect(row('gateway')).toContainText('You know this well');
+    await expect(row('mcp')).toContainText('You have some experience');
+    await expect(row('rag')).toContainText('New to you');
+    // Level is shape and words, never colour alone: a full, a half and an empty dot, each beside its phrase.
+    const dots = await host(page).locator('.told-dot').evaluateAll((els) =>
+      els.map((e) => ({ level: e.getAttribute('data-level'), gradient: getComputedStyle(e).backgroundImage !== 'none', fill: getComputedStyle(e).backgroundColor }))
+    );
+    const dot = (level: string) => dots.find((d) => d.level === level)!;
+    expect(dot('ok').gradient).toBe(true);
+    expect(dot('strong').fill).not.toBe(dot('new').fill);
+  });
+
+  test('familiar and strong only: the first familiar area, "a good place to build on"', async ({ page }) => {
+    await visitQuiz(page);
+    await reach(page, { ...allStrong, rag: 'ok', otel: 'ok' });
+    await expect(card(page).locator('.start-title')).toHaveText('Retrieval');
+    await expect(card(page).locator('.start-why')).toHaveText('You know part of this already — a good place to build on.');
+  });
+
+  test('everything strong: it says so, and each area can be opened from its own line', async ({ page }) => {
+    await visitQuiz(page);
+    await reach(page, allStrong);
+    await expect(card(page).locator('.start-why')).toHaveText('You know all of this well. Pick the area you want to sharpen.');
+    await expect(host(page).locator('.told-row[data-level="strong"]')).toHaveCount(AREAS.length);
+    const last = AREAS[AREAS.length - 1]!;
+    await host(page).getByRole('button', { name: `Open ${last.title}` }).click();
+    await expect(page.locator('#launcher')).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/paths/ai-platform/modules/${last.module}$`));
+  });
+
+  test('"Start with ..." leaves the quiz and opens that area\'s page, in place of the quiz in the history', async ({ page }) => {
+    const s = await visitQuiz(page);
+    await reach(page, { gateway: 'strong' });
+    const next = AREAS[1]!;
+    await expect(card(page).locator('.start-title')).toHaveText(next.title);
+    const history = await page.evaluate(() => window.history.length);
+    await card(page).getByRole('button', { name: `Start with ${next.title}` }).click();
+    await expect(page.locator('#learnScreen')).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`/paths/ai-platform/modules/${next.module}$`));
+    await expect(page.locator('#launcher')).toBeVisible();
+    // The quiz is replaced, not stacked: Back would not come back to it.
+    expect(await page.evaluate(() => window.history.length)).toBe(history);
+    const stored = JSON.parse((await page.evaluate(() => localStorage.getItem('opalixLearn')))!);
+    expect(stored.onboarding.status).toBe('done');
+    expect(s.errors).toEqual([]);
+  });
+
+  test('when the area has no page, "Start with ..." falls back to the labs list instead of a dead end', async ({ page }) => {
+    const s = await visitQuiz(page, {}, WIDE, undefined, false);
+    await reach(page, { gateway: 'strong' });
+    await card(page).getByRole('button', { name: /^Start with / }).click();
+    await expect(page.locator('#learnScreen')).toBeHidden();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('#launcher')).toBeVisible();
+    await expect(page.locator('#notFound')).toBeHidden();
+    expect(s.errors).toEqual([]);
+  });
+
+  test('the goal recap: the learner\'s own words and hours, and "Change" goes back to the goal question', async ({ page }) => {
+    const s = await visitQuiz(page);
+    await reach(page, {}, { kind: /Be ready for a role/, text: 'Run our gateway', hours: '6 hours' });
+    await expect(host(page).locator('.goal-recap')).toContainText('Your goal: Run our gateway · about 6 hours a week');
+    await expect.poll(() => s.puts.length).toBe(1);
+
+    await host(page).getByRole('button', { name: 'Change your goal' }).click();
+    await expect(heading(page)).toHaveText('What are you aiming for?');
+    await expect(host(page).getByRole('radio', { name: /Be ready for a role/ })).toBeChecked();
+    await expect(host(page).getByLabel('In a few words, what is it? (optional)')).toHaveValue('Run our gateway');
+    await host(page).getByRole('radio', { name: /Explore/ }).check();
+    await host(page).getByLabel('In a few words, what is it? (optional)').fill('');
+    await host(page).getByRole('button', { name: 'Next', exact: true }).click();
+    await host(page).getByRole('radio', { name: '2 hours' }).check();
+    await host(page).getByRole('button', { name: 'See where to start' }).click();
+    await expect(heading(page)).toHaveText('Where to start');
+    await expect(host(page).locator('.goal-recap')).toContainText('Your goal: explore · about 2 hours a week');
+    // The new goal is saved again, and the start card is as it was.
+    await expect.poll(() => s.puts.length).toBe(2);
+    expect(s.puts[1]).toMatchObject({ goal_kind: 'explore', hours_per_week: 2 });
+    await expect(card(page).locator('.start-title')).toHaveText(AREAS[0]!.title);
+  });
+
+  test('skipping the goal questions still shows the recap, from the defaults', async ({ page }) => {
+    await visitQuiz(page);
+    await reach(page, {});
+    await expect(host(page).locator('.goal-recap')).toContainText('Your goal: explore · about 4 hours a week');
+  });
+
+  test('"See my personal path" waits for the save, then opens /paths/mine', async ({ page }) => {
+    const s = await visitQuiz(page);
+    await reach(page, { gateway: 'ok' });
+    await expect.poll(() => s.puts.length).toBe(1);
+    const see = host(page).getByRole('button', { name: 'See my personal path' });
+    await expect(see).toBeVisible();
+    await see.click();
+    await expect(page.locator('#learnScreen')).toBeHidden();
+    await expect(page).toHaveURL(/\/paths\/mine$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Your path' })).toBeVisible();
+    expect(s.errors).toEqual([]);
+  });
+
+  test('a path that could not be saved: no "See my personal path", and nothing says why', async ({ page }) => {
+    const s = await visitQuiz(page, { putStatus: 500, path: null });
+    await reach(page, {});
+    await expect.poll(() => s.puts.length).toBe(1);
+    await page.waitForTimeout(200);
+    await expect(host(page).getByRole('button', { name: 'See my personal path' })).toBeHidden();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(card(page).getByRole('button', { name: /^Start with / })).toBeVisible();
+    await expect(host(page).getByRole('button', { name: 'Browse all labs' })).toBeVisible();
+    expect(s.errors).toEqual([]);
+  });
+
+  test('"Browse all labs" is the way to the labs list, and the screen explains itself in two short lines', async ({ page }) => {
+    await visitQuiz(page);
+    await reach(page, {});
+    await expect(host(page)).toContainText('We shorten lessons on what you already know and open them in full where it is new. You can still open or skip any lesson.');
+    await expect(host(page)).toContainText('You can retake this any time from the ? menu.');
+    await host(page).locator('#btnOnboardingDone2').click();
+    await expect(page.locator('#learnScreen')).toBeHidden();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('#launcher')).toBeVisible();
+  });
+
+  test('no module number anywhere on it, no marks, and none of the platform\'s words', async ({ page }) => {
+    await visitQuiz(page);
+    await reach(page, { gateway: 'strong', mcp: 'ok' }, { kind: /Learn a specific skill/, text: 'Trace a request', hours: '10 hours' });
+    const text = await host(page).innerText();
+    expect(text).not.toMatch(/\bmodules?\b/i);
+    expect(text).not.toMatch(/\b(score|scored|grade|graded|points|percent)\b|\d+\s*%/i);
+    // The only digit on the screen is the learner's own hours.
+    expect(text.replace('about 10 hours a week', '')).not.toMatch(/\d/);
+    await expectLearnerCopy(page, '#learnScreen');
+    const labels = await host(page).locator('[aria-label], [title]').evaluateAll((els) => els.map((e) => `${e.getAttribute('aria-label')} ${e.getAttribute('title')}`));
+    expect(labels.join(' ')).not.toMatch(/\bmodule\b/i);
+  });
+
+  test('the progress bar reads as finished: every step filled, with a check and "Done"', async ({ page }) => {
+    await visitQuiz(page);
+    await reach(page, {});
+    const bar = host(page).locator('.steps');
+    await expect(bar).toHaveClass(/steps-done/);
+    await expect(bar.locator('i.on')).toHaveCount(4);
+    await expect(bar.locator('.steps-done-label')).toHaveText('Done');
+    await expect(bar.locator('.steps-done-label svg')).toHaveCount(1);
+  });
+
+  test('landmarks and keyboard: one h1, named sections, the heading has focus, every action is a real button in order', async ({ page }) => {
+    await visitQuiz(page);
+    await reach(page, {});
+    await expect(host(page).getByRole('heading', { level: 1 })).toHaveCount(1);
+    await expect(host(page).getByRole('heading', { level: 2 })).toHaveText(['Start here', 'What you told us']);
+    await expect(host(page).getByRole('region', { name: 'Start here' })).toHaveCount(1);
+    await expect(host(page).getByRole('region', { name: 'What you told us' })).toHaveCount(1);
+    await expect(heading(page)).toBeFocused();
+    await expect(host(page).getByRole('button', { name: 'See my personal path' })).toBeVisible();
+    await page.keyboard.press('Tab');
+    await expect(card(page).getByRole('button', { name: /^Start with / })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(host(page).getByRole('button', { name: 'See my personal path' })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(host(page).getByRole('button', { name: 'Change your goal' })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(host(page).getByRole('button', { name: 'Browse all labs' })).toBeFocused();
+    // Enter on the start card's button opens the area.
+    await card(page).getByRole('button', { name: /^Start with / }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/paths/ai-platform/modules/${AREAS[0]!.module}$`));
+  });
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`on a phone, ${scheme}: no sideways scroll, 44px targets, the answer on the first screen`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await visitQuiz(page, {}, PHONE);
+      await reach(page, { gateway: 'strong', mcp: 'ok', rag: 'ok' }, { kind: /Learn a specific skill/, text: 'A very long goal line that has to wrap on a narrow screen without pushing the page sideways', hours: '10 hours' });
+      await noHorizontalScroll(page);
+      for (const b of await host(page).getByRole('button').all()) {
+        const box = await b.boundingBox();
+        expect(box!.height, await b.innerText()).toBeGreaterThanOrEqual(43.5);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(390.5);
+      }
+      await expectLearnerCopy(page, '#learnScreen');
+      const shots = process.env.SUMMARY_SHOTS_DIR;
+      if (shots) {
+        mkdirSync(shots, { recursive: true });
+        await page.screenshot({ path: join(shots, `where-to-start-${scheme}-390.png`), fullPage: true });
+      }
+    });
+  }
 });

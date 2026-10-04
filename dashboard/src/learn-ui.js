@@ -15,6 +15,7 @@
 import { gradeQuestion, readingTime } from './learn-model.js';
 import { mountMarkdown } from './markdown.js';
 import { mountComic } from './comic.js';
+import { uiIcon } from './icons.js';
 
 /** Element with a class and optional text. */
 export function make(tag, className, text) {
@@ -91,10 +92,16 @@ export function focusHeading(root) {
  * first `current` of them filled. Decoration only (the heading and the eyebrow say
  * where the learner is), so it is hidden from assistive technology.
  */
-export function stepBar(current, total) {
-  const bar = make('div', 'steps');
+export function stepBar(current, total, done = false) {
+  const bar = make('div', done ? 'steps steps-done' : 'steps');
   bar.setAttribute('aria-hidden', 'true');
   for (let i = 1; i <= total; i++) bar.append(make('i', i <= current ? 'on' : ''));
+  // The last screen: every segment is filled, and a check with "Done" says why.
+  if (done) {
+    const mark = make('span', 'steps-done-label');
+    mark.append(uiIcon('check', 14), document.createTextNode('Done'));
+    bar.append(mark);
+  }
   return bar;
 }
 
@@ -122,13 +129,13 @@ export function stepDots(kinds, current) {
  * A screen's head: the steps bar, an eyebrow line, the h1 that takes focus and an
  * optional meta line.
  *
- *   steps   { current, total } for the bar, or { current, kinds } for the pre-lab flow's dots (see stepDots)
+ *   steps   { current, total, done? } for the bar (`done`: the last screen, drawn as finished), or { current, kinds } for the pre-lab flow's dots (see stepDots)
  *   mark    the end of `title` to set on the accent highlighter, as the landing page does
  *   badge   a small navy badge beside the meta line ("Case file")
  */
 export function screenHead({ eyebrow, title, meta, id, steps, mark, badge }) {
   const head = make('header', 'learn-head');
-  if (steps) head.append(steps.kinds ? stepDots(steps.kinds, steps.current) : stepBar(steps.current, steps.total));
+  if (steps) head.append(steps.kinds ? stepDots(steps.kinds, steps.current) : stepBar(steps.current, steps.total, steps.done === true));
   if (eyebrow) head.append(make('p', 'learn-eyebrow', eyebrow));
   const h1 = make('h1', 'learn-title');
   if (mark && title.endsWith(mark)) h1.append(document.createTextNode(title.slice(0, -mark.length)), make('span', 'mark', mark));

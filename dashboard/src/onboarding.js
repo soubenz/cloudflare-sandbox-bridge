@@ -32,6 +32,7 @@ import {
   skipOnboarding,
 } from './learn-model.js';
 import { actionBar, button, focusHeading, make, questionScreen, screenHead, show } from './learn-ui.js';
+import { buildRoute } from './routes.js';
 import { icon, uiIcon } from './icons.js';
 import { mountMarkdown } from './markdown.js';
 import { goalKindField, hoursField, loadGoal } from './goal-fields.js';
@@ -48,26 +49,44 @@ function moduleLook(area) {
   return { icon: module?.icon || 'grid', accent: module?.accent || 'slate' };
 }
 
-/** What a level chip says. Words about knowledge, never about marks. */
-export const LEVEL_LABELS = { strong: 'Strong', ok: 'Familiar', new: 'New' };
+/** What the summary says about an area, by level. Words about knowledge, never about marks. */
+export const LEVEL_LABELS = { strong: 'You know this well', ok: 'You have some experience', new: 'New to you' };
 
-/** One line per module, by level. The "new" one is the suggestion to start there. */
-export function levelLine(level, moduleNumber) {
-  if (level === 'strong') return `Module ${moduleNumber} starts as short recaps. Open any lesson you want in full.`;
-  if (level === 'ok') return `Some of module ${moduleNumber} is familiar. Its lessons open, and each lab's own questions can shorten them.`;
-  return `Start with module ${moduleNumber}. Its lessons open in full.`;
+/** Why the "Start here" card suggests its area, in the learner's own terms, by that area's level. */
+export const START_REASONS = {
+  new: 'You said this is new to you, so we begin here.',
+  ok: 'You know part of this already — a good place to build on.',
+  strong: 'You know all of this well. Pick the area you want to sharpen.',
+};
+
+/** A goal in words, for the recap line. */
+const GOAL_WORDS = { 'role-ready': 'be ready for a role', 'specific-skill': 'learn one skill', explore: 'explore' };
+
+/**
+ * "Your goal: Run our gateway · about 4 hours a week" from { goal_kind, goal_text, hours_per_week }.
+ * The learner's own words win over the kind; an empty string when there is no goal object.
+ */
+export function goalLine(goal) {
+  if (!goal || typeof goal !== 'object') return '';
+  const text = typeof goal.goal_text === 'string' ? goal.goal_text.replace(/\s+/g, ' ').trim() : '';
+  const what = text || GOAL_WORDS[goal.goal_kind] || GOAL_WORDS.explore;
+  const n = Number(goal.hours_per_week);
+  const hours = Number.isFinite(n) && n > 0 ? ` · about ${n} ${n === 1 ? 'hour' : 'hours'} a week` : '';
+  return `Your goal: ${what}${hours}`;
 }
 
 /**
- * The summary as data: [{ area, title, module, level, line }] in module order,
- * and `start`, the first module at level 'new' (or null).
+ * The summary as data. `rows` is [{ area, title, path, module, level, phrase }] in module order; `start` is
+ * the one area to begin with, or null when there are no areas: the first that is new, else the first that is
+ * familiar, else (everything strong) the first, with `why` saying so in the learner's terms.
  */
 export function summarise(mastery, areas = platformAreas()) {
   const rows = areas.map((a) => {
     const level = areaLevel(mastery, a.area) ?? 'new';
-    return { area: a.area, title: a.title, module: a.module, level, line: levelLine(level, a.module) };
+    return { area: a.area, title: a.title, path: a.path, module: a.module, level, phrase: LEVEL_LABELS[level] };
   });
-  return { rows, start: rows.find((r) => r.level === 'new') ?? null };
+  const pick = rows.find((r) => r.level === 'new') ?? rows.find((r) => r.level === 'ok') ?? rows[0] ?? null;
+  return { rows, start: pick && { ...pick, why: START_REASONS[pick.level] } };
 }
 
 /**
@@ -75,7 +94,9 @@ export function summarise(mastery, areas = platformAreas()) {
  *   onboarding  { intro, questions, blurbs } from GET /api/onboarding
  *   store       the mastery store (learn-model.js createMasteryStore)
  *   post        (body) => Promise, the analytics call; errors are swallowed
- *   onExit      ({ completed }) when the learner leaves: finished, or skipped
+ *   onExit      ({ completed, to? }) when the learner leaves: finished, or skipped. `to` is a page the
+ *               learner chose on the last screen ({ name: 'module', params: { path, module } } or
+ *               { name: 'my-path', params: {} }), always one buildRoute accepts; without it, home.
  *   areas       the platform's areas in module order (default: concepts.json)
  *   onGoal      ({ levels, goal }) => Promise, called once the two last questions are answered (or skipped,
  *               with what was filled in): `levels` is the whole { area: level } result, `goal` is
@@ -94,11 +115,21 @@ export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, i
   let players = null;
   let done = false;
 
-  const leave = (completed) => {
+  const leave = (completed, to) => {
     if (done) return;
     done = true;
     players?.destroy();
-    onExit?.({ completed });
+    onExit?.(to ? { completed, to } : { completed });
+  };
+
+  /** Leaves the quiz for a page. A route that cannot be spelled falls back to the labs list. */
+  const leaveTo = (name, params = {}) => {
+    try {
+      buildRoute(name, params);
+    } catch {
+      return leave(true);
+    }
+    leave(true, { name, params });
   };
 
   const skip = () => {
@@ -246,7 +277,7 @@ export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, i
         /* analytics never blocks the summary */
       }
     }
-    if (!onGoal) return summary(next);
+    if (!onGoal) return summary(next, levels);
     goal = { ...(initialGoal ?? loadGoal()) };
     goalQuestion(levels, next);
   }
@@ -256,14 +287,21 @@ export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, i
   /** What the two last questions hold so far: it survives going Back, and is what Skip sends. */
   let goal = null;
 
-  /** Sends what was answered (best effort: the learner is never made to wait for it, or told it failed), then the summary. */
+  /**
+   * Sends what was answered (best effort: the learner is never made to wait for it, or told it failed), then the
+   * summary. The summary offers "See my personal path" once the save has settled well, and never mentions a failure.
+   */
   function sendGoal(levels, mastery) {
+    let saved;
     try {
-      Promise.resolve(onGoal({ levels, goal: { ...goal } })).catch(() => {});
+      saved = Promise.resolve(onGoal({ levels, goal: { ...goal } })).then(
+        () => true,
+        () => false
+      );
     } catch {
-      /* the path simply is not shown */
+      saved = Promise.resolve(false);
     }
-    summary(mastery);
+    summary(mastery, levels, saved);
   }
 
   const skipGoalButton = (levels, mastery, id) =>
@@ -313,44 +351,99 @@ export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, i
     focusHeading(host);
   }
 
-  function summary(mastery) {
+  /**
+   * The last screen: the one area to start with (and why, from the learner's own answer), what they said about
+   * the goal, a quiet list of what they told us, and a way on. `saved` settles true when the path was saved.
+   * No module numbers: the learner knows the areas by their names.
+   */
+  function summary(mastery, levels, saved) {
     const { rows, start } = summarise(mastery);
-    const lede = make(
-      'p',
-      'learn-lede',
-      start ? `Start with module ${start.module}, ${start.title}.` : 'You can start with any module.'
-    );
-    const list = make('ul', 'level-list');
+    const nodes = [screenHead({ eyebrow: 'Your starting point', title: 'Where to start', mark: 'start', steps: { current: STEPS, total: STEPS, done: true } })];
+    const open = (row) => leaveTo('module', { path: row.path, module: row.module });
+
+    // The personal path is offered once it has been saved; if saving failed it is never shown.
+    let seePath = null;
+    if (onGoal && saved) {
+      seePath = button('See my personal path', { kind: 'ghost', onClick: () => leaveTo('my-path'), id: 'btnSeeMyPath' });
+      seePath.classList.add('btn-lg');
+      seePath.hidden = true;
+      saved.then((ok) => {
+        if (ok && !done) seePath.hidden = false;
+      });
+    }
+
+    // --- the one answer
+    if (start) {
+      const card = make('section', 'start-card');
+      const label = make('h2', 'start-label', 'Start here');
+      label.id = 'startHereLabel';
+      card.setAttribute('aria-labelledby', label.id);
+      const look = moduleLook(start);
+      card.dataset.accent = look.accent;
+      const tile = make('span', 'tile start-tile');
+      tile.setAttribute('aria-hidden', 'true');
+      tile.append(icon(look.icon, 30));
+      const text = make('div', 'start-text');
+      text.append(label, make('p', 'start-title', start.title), make('p', 'start-why', start.why));
+      const top = make('div', 'start-top');
+      top.append(tile, text);
+      const go = button(`Start with ${start.title}`, { kind: 'accent', onClick: () => open(start), id: 'btnStartHere' });
+      go.classList.add('btn-lg');
+      go.append(uiIcon('arrow', 16));
+      card.append(top, actionBar([go, ...(seePath ? [seePath] : [])]));
+      nodes.push(card);
+    } else {
+      nodes.push(make('p', 'learn-lede', 'You can start with any area.'));
+      if (seePath) nodes.push(actionBar([seePath]));
+    }
+
+    // --- the goal they gave (or the defaults), and a way back to change it
+    const line = onGoal && goal ? goalLine(goal) : '';
+    if (line) {
+      const recap = make('p', 'goal-recap');
+      const change = button('Change', { kind: 'quiet', onClick: () => goalQuestion(levels, mastery), id: 'btnChangeGoal' });
+      change.setAttribute('aria-label', 'Change your goal');
+      recap.append(make('span', 'goal-recap-text', line), change);
+      nodes.push(recap);
+    }
+
+    // --- what they told us: one quiet line per area, a shape and words for the level (never colour alone)
+    const told = make('section', 'told');
+    const toldHead = make('h2', 'told-title', 'What you told us');
+    toldHead.id = 'toldLabel';
+    told.setAttribute('aria-labelledby', toldHead.id);
+    const list = make('ul', 'told-list');
+    // When everything is strong the card only suggests one: each area can then be opened from its own line.
+    const pickable = start?.level === 'strong';
     for (const r of rows) {
-      const li = make('li', 'level-row');
+      const li = make('li', 'told-row');
       li.dataset.area = r.area;
       li.dataset.level = r.level;
-      const top = make('div', 'level-top');
-      top.append(make('span', 'level-module', `Module ${r.module}`), make('span', 'level-title', r.title));
-      const chip = make('span', 'chip level-chip', LEVEL_LABELS[r.level]);
-      chip.dataset.level = r.level;
-      top.append(chip);
-      li.append(top, make('p', 'level-line', r.line));
+      const dot = make('span', 'told-dot');
+      dot.dataset.level = r.level;
+      dot.setAttribute('aria-hidden', 'true');
+      let name;
+      if (pickable) {
+        name = button(r.title, { kind: 'quiet', onClick: () => open(r) });
+        name.classList.add('told-open');
+        name.setAttribute('aria-label', `Open ${r.title}`);
+      } else {
+        name = make('span', 'told-name', r.title);
+      }
+      li.append(dot, name, make('span', 'told-phrase', r.phrase));
       list.append(li);
     }
-    const note = make(
-      'p',
-      'learn-note muted small',
-      'This only sets where each module starts. Every lab asks a few questions of its own, and you can open or skip any lesson.'
+    told.append(toldHead, list);
+    nodes.push(told);
+
+    // --- one short explanation, and the way out
+    nodes.push(
+      make('p', 'learn-note muted small', 'We shorten lessons on what you already know and open them in full where it is new. You can still open or skip any lesson.'),
+      make('p', 'learn-note muted small', 'You can retake this any time from the ? menu.'),
+      actionBar([button('Browse all labs', { kind: 'quiet', onClick: () => leave(true), id: 'btnOnboardingDone2' })])
     );
-    const retake = make('p', 'learn-note muted small', 'You can retake this any time from the ? menu.');
-    const go = button('Go to the labs', { kind: 'accent', onClick: () => leave(true), id: 'btnOnboardingDone2' });
-    go.classList.add('btn-lg');
-    go.append(uiIcon('arrow', 16));
-    show(
-      host,
-      screenHead({ eyebrow: 'Your starting point', title: 'Where to start', mark: 'start', steps: { current: STEPS, total: STEPS } }),
-      lede,
-      list,
-      note,
-      retake,
-      actionBar([go])
-    );
+
+    show(host, ...nodes);
     focusHeading(host);
   }
 

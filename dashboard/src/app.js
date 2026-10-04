@@ -1956,6 +1956,25 @@ function syncQuizButtons() {
   $('btnOnboardingRetake').hidden = !(onboardingOffer && atLauncher);
 }
 
+/**
+ * Takes the learner to the page the quiz's last screen chose ({ name, params }), in place of the quiz. A module
+ * page the catalogue does not have (or an address that cannot be spelled) is not gone to: false, and the caller
+ * shows home, the labs list.
+ */
+function quizDestination(to) {
+  if (!to) return false;
+  try {
+    if (to.name === 'module') {
+      const path = findPath(launcherModel, to.params.path);
+      if (!path || !findModule(path, to.params.module)) return false;
+    } else if (to.name !== 'my-path') return false;
+    router.navigate(to.name, to.params, { replace: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function showQuiz() {
   if (!onboardingOffer || state.session) return;
   if ($('onboarding').open) $('onboarding').close();
@@ -1975,9 +1994,10 @@ function showQuiz() {
         progress.pathStore.invalidate();
         throw err;
       }),
-    onExit: ({ completed }) => {
-      // Done or skipped, the quiz is not somewhere Back should return to: home takes its place.
-      router.navigate('launcher', {}, { replace: true });
+    onExit: ({ completed, to }) => {
+      // Done or skipped, the quiz is not somewhere Back should return to: the page the learner chose on the last
+      // screen (their area's page, their personal path) or else home takes its place.
+      if (!(completed && quizDestination(to))) router.navigate('launcher', {}, { replace: true });
       // The "Suggested start" badge follows the new levels.
       if (completed) {
         // The quiz result is the skills' starting point, and the path was just rebuilt from it.

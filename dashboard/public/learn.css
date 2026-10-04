@@ -205,19 +205,48 @@
 .quiz-feedback[data-result="correct"] .quiz-verdict { color: var(--good); }
 .quiz-feedback[data-result="incorrect"] .quiz-verdict { color: var(--warn); }
 
-/* ---------- the quiz summary ---------- */
-.level-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.level-row { padding: 18px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
-.level-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); }
-.level-module {
-  font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-muted);
+/* ---------- the quiz summary: one answer, then what you told us ---------- */
+/* "Start here": the one card that matters, drawn on the accent tint of the area it opens. */
+.start-card {
+  display: flex; flex-direction: column; gap: 20px; min-width: 0;
+  padding: 28px; border-radius: var(--radius-xl);
+  background: var(--a-soft, var(--accent-soft)); border: 1.5px solid var(--a, var(--accent));
 }
-.level-title { font-family: var(--display); font-size: 19px; font-weight: 700; letter-spacing: -0.02em; min-width: 0; overflow-wrap: anywhere; }
-.level-chip { margin-left: auto; font-weight: 700; }
-.level-chip[data-level="strong"] { background: var(--accent-green-soft); color: var(--accent-green-ink); border-color: var(--accent-green-ink); }
-.level-chip[data-level="ok"] { background: var(--accent-blue-soft); color: var(--accent-blue-ink); border-color: var(--accent-blue-ink); }
-.level-chip[data-level="new"] { background: var(--accent-violet-soft); color: var(--accent-violet-ink); border-color: var(--accent-violet-ink); }
-.level-line { margin: var(--s1) 0 0; color: var(--ink-2); font-size: 14.5px; }
+.start-top { display: flex; align-items: flex-start; gap: 18px; min-width: 0; }
+.start-tile { width: 64px; height: 64px; border-radius: 20px; background: var(--surface); }
+.start-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.start-label {
+  margin: 0; font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-2);
+}
+.start-title { margin: 0; font-family: var(--display); font-size: clamp(26px, 3vw, 34px); font-weight: 700; letter-spacing: -0.035em; line-height: 1.1; overflow-wrap: anywhere; }
+.start-why { margin: 0; font-size: 18px; line-height: 1.5; color: var(--ink); max-width: 52ch; }
+.start-card .learn-actions .btn { max-width: 100%; white-space: normal; text-align: center; }
+
+/* The goal they gave, as one quiet line with a way back. */
+.goal-recap { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--s2); margin: 0; color: var(--ink-2); font-size: 15px; }
+.goal-recap-text { min-width: 0; overflow-wrap: anywhere; }
+.learn-screen .goal-recap .btn { text-decoration: underline; text-underline-offset: 3px; padding: 0 var(--s2) 0 0; color: var(--accent-text); }
+
+/* What you told us: one plain line per area. The dot's shape (full, half, empty) says the level as well as its words. */
+.told { display: flex; flex-direction: column; gap: 10px; }
+.told-title { margin: 0; font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-muted); }
+.told-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+.told-row {
+  display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: var(--s1) 12px;
+  min-height: 44px; padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.told-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.told-open { justify-content: flex-start; min-width: 0; padding-left: 0; font-weight: 600; text-align: left; white-space: normal; }
+.told-phrase { color: var(--ink-2); font-size: 14.5px; text-align: right; }
+.told-dot { width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--ink-2); background: transparent; }
+.told-dot[data-level="strong"] { background: var(--ink-2); }
+.told-dot[data-level="ok"] { background: linear-gradient(90deg, var(--ink-2) 50%, transparent 50%); }
+.told-dot[data-level="new"] { background: transparent; }
+
+/* The last screen's bar: all four segments filled, and a check that says it is finished. */
+.steps.steps-done { align-items: center; }
+.steps-done i.on { background: var(--good); }
+.steps-done-label { display: inline-flex; align-items: center; gap: 4px; flex: none; margin-left: var(--s2); font-size: var(--fs-sm); font-weight: 700; color: var(--good); }
 
 /* ---------- lessons ---------- */
 .lesson-list { display: flex; flex-direction: column; gap: 10px; counter-reset: lesson; }
@@ -393,11 +422,16 @@
   .ob-tally { margin-left: 0; flex-basis: 100%; }
   .lesson, .learn-wrap-lessons .lesson { padding: 16px; }
   .lessons-tally { margin-left: 0; flex-basis: 100%; }
+  .start-card { padding: 20px; gap: 16px; border-radius: 22px; }
+  .start-top { gap: 14px; }
+  .start-tile { width: 52px; height: 52px; border-radius: 16px; }
+  .start-card .learn-actions { flex-direction: column; align-items: stretch; }
+  .told-row { grid-template-columns: 14px minmax(0, 1fr); }
+  .told-phrase { grid-column: 2; text-align: left; }
   .lesson-head .lesson-toggle { margin-left: 0; flex-basis: 100%; }
   .lesson-meta { margin-left: 0; }
   .lesson .btn, .qform .btn { min-height: 44px; }
   .qfield .qfield-input { font-size: 16px; }
-  .level-chip { margin-left: 0; }
 }
 
 /* ---------- code blocks: a Copy button in the corner ---------- */

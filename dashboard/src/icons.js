@@ -38,9 +38,10 @@ const UI_ICONS = {
   auto: ['<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/>', 24],
   arrow: ['<path d="M3 8h10M9 4l4 4-4 4"/>', 16],
   back: ['<path d="M13 8H3M7 4 3 8l4 4"/>', 16],
+  check: ['<path d="m3 8.5 3.2 3.2L13 4.8"/>', 16],
 };
 
-/** One of the console's own glyphs: sun, moon, auto, arrow, back. */
+/** One of the console's own glyphs: sun, moon, auto, arrow, back, check. */
 export function uiIcon(name, size = 16) {
   const [paths, box] = UI_ICONS[name];
   return svgIcon(paths, size, box, 1.8);

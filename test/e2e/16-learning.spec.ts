@@ -483,7 +483,8 @@ async function probeAll(page: Page, right: (q: Question) => boolean): Promise<Qu
   return asked;
 }
 
-const levelOf = (page: Page, area: string) => page.locator(`.level-row[data-area="${area}"] .level-chip`);
+const levelOf = (page: Page, area: string) => page.locator(`.told-row[data-area="${area}"] .told-phrase`);
+const summaryCard = (page: Page) => page.locator(".start-card");
 
 test.describe('the platform quiz', () => {
   test('opens on "What have you worked with?": a checklist of the six areas, and nothing about a number of questions', async ({ page }) => {
@@ -583,8 +584,9 @@ test.describe('the platform quiz', () => {
 
     await expect(heading(page)).toHaveText('Where to start');
     await expect(heading(page)).toBeFocused();
-    for (const a of AREAS) await expect(levelOf(page, a.area)).toHaveText('New');
-    await expect(screen(page).locator('.learn-lede')).toHaveText('Start with module 1, LLM gateway.');
+    for (const a of AREAS) await expect(levelOf(page, a.area)).toHaveText('New to you');
+    await expect(summaryCard(page).locator('.start-title')).toHaveText('LLM gateway');
+    await expect(summaryCard(page).locator('.start-why')).toHaveText('You said this is new to you, so we begin here.');
 
     // Only the two questions that were asked went out, once, anonymously.
     await expect.poll(() => s.posted.length).toBe(1);
@@ -615,24 +617,24 @@ test.describe('the platform quiz', () => {
     await nextQuestion(page);
     expect(asked).toEqual([probe('mcp', 'basic').id, probe('mcp', 'advanced').id]);
 
-    // The summary: one row per module from the registry, a chip and a line each, no marks.
+    // The summary: one start card, then one quiet line per area from the registry, in plain words, no marks.
     await expect(heading(page)).toHaveText('Where to start');
-    await expect(page.locator('.level-row')).toHaveCount(AREAS.length);
+    await expect(page.locator('.told-row')).toHaveCount(AREAS.length);
     for (const a of AREAS) {
-      const row = page.locator(`.level-row[data-area="${a.area}"]`);
-      await expect(row).toContainText(`Module ${a.module}`);
+      const row = page.locator(`.told-row[data-area="${a.area}"]`);
       await expect(row).toContainText(a.title);
-      await expect(levelOf(page, a.area)).toHaveText(a.area === 'mcp' ? 'Strong' : 'New');
-      await expect(row.locator('.level-line')).toContainText(a.area === 'mcp' ? 'short recaps' : `Start with module ${a.module}`);
+      await expect(row).not.toContainText(`Module ${a.module}`);
+      await expect(levelOf(page, a.area)).toHaveText(a.area === 'mcp' ? 'You know this well' : 'New to you');
     }
-    await expect(screen(page).locator('.learn-lede')).toHaveText('Start with module 1, LLM gateway.');
+    await expect(summaryCard(page).locator('.start-title')).toHaveText('LLM gateway');
+    await expect(summaryCard(page)).toContainText('You said this is new to you, so we begin here.');
     await expect(screen(page)).toContainText('You can retake this any time from the ? menu.');
     expect(await screen(page).innerText()).not.toMatch(/\b(score|scored|grade|graded|points|percent)\b|\d+\s*%/i);
 
     await expect.poll(() => s.posted.length).toBe(1);
     expect(s.posted[0]!.answers.map((a: any) => [a.question_id, a.correct])).toEqual([[probe('mcp', 'basic').id, true], [probe('mcp', 'advanced').id, true]]);
 
-    await page.getByRole('button', { name: 'Go to the labs' }).click();
+    await page.getByRole('button', { name: 'Browse all labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
     await expect(screen(page)).toBeHidden();
     // The first module that is new gets the chip: module 1, not the strong module 2.
@@ -668,10 +670,11 @@ test.describe('the platform quiz', () => {
     expect(asked.map((q) => q.id)).toEqual([probe('gateway', 'basic').id, probe('gateway', 'advanced').id, probe('rag', 'basic').id]);
 
     await expect(heading(page)).toHaveText('Where to start');
-    await expect(levelOf(page, 'gateway')).toHaveText('Familiar');
-    await expect(page.locator('.level-row[data-area="gateway"] .level-line')).toContainText('Some of module 1 is familiar');
-    await expect(levelOf(page, 'rag')).toHaveText('New');
-    await expect(screen(page).locator('.learn-lede')).toHaveText('Start with module 2, Tools and MCP.');
+    await expect(levelOf(page, 'gateway')).toHaveText('You have some experience');
+    await expect(levelOf(page, 'rag')).toHaveText('New to you');
+    // Gateway is familiar, retrieval new, and the unticked areas new too: the first NEW area is the one to start with.
+    await expect(summaryCard(page).locator('.start-title')).toHaveText('Tools and MCP');
+    await expect(summaryCard(page).locator('.start-why')).toHaveText('You said this is new to you, so we begin here.');
     await expect.poll(() => s.posted.length).toBe(1);
     expect(s.posted[0]!.answers).toHaveLength(3);
     expect((await stored(page)).onboarding.levels.gateway).toBe('ok');
@@ -685,7 +688,7 @@ test.describe('the platform quiz', () => {
     expect(asked).toHaveLength(2);
     for (const q of asked) expect(q.concept.startsWith('otel.')).toBe(true);
     await expect(heading(page)).toHaveText('Where to start');
-    for (const a of AREAS) await expect(levelOf(page, a.area)).toHaveText(a.area === 'otel' ? 'Strong' : 'New');
+    for (const a of AREAS) await expect(levelOf(page, a.area)).toHaveText(a.area === 'otel' ? 'You know this well' : 'New to you');
     await expect.poll(() => s.posted.length).toBe(1);
     for (const a of s.posted[0]!.answers) expect(a.concept.startsWith('otel.')).toBe(true);
     expect(s.posted[0]!.answers).toHaveLength(2);
@@ -699,15 +702,16 @@ test.describe('the platform quiz', () => {
     await expect(heading(page)).toHaveText('Where to start');
     await expect.poll(() => s.posted.length).toBe(1);
     expect(s.posted[0]!.answers).toHaveLength(AREAS.length);
-    await page.getByRole('button', { name: 'Go to the labs' }).click();
+    await page.getByRole('button', { name: 'Browse all labs' }).click();
 
     await page.locator('#btnRetakeQuiz').click();
     await startQuiz(page, ...AREAS.map((a) => a.area));
     const asked = await probeAll(page, () => true);
     expect(asked).toHaveLength(AREAS.length * 2);
     expect(asked.map((q) => q.level)).toEqual(AREAS.flatMap(() => ['basic', 'advanced']));
-    await expect(page.locator('.level-row[data-level="strong"]')).toHaveCount(AREAS.length);
-    await expect(screen(page).locator('.learn-lede')).toHaveText('You can start with any module.');
+    await expect(page.locator('.told-row[data-level="strong"]')).toHaveCount(AREAS.length);
+    await expect(summaryCard(page).locator('.start-why')).toHaveText('You know all of this well. Pick the area you want to sharpen.');
+    await expect(summaryCard(page).locator('.start-title')).toHaveText(AREAS[0]!.title);
     expect(asked.some((q) => q.type === 'multi')).toBe(true);
   });
 
@@ -717,16 +721,16 @@ test.describe('the platform quiz', () => {
     await startQuiz(page, 'none');
     await expect(heading(page)).toHaveText('Where to start');
     await expect(page.locator('.quiz-prompt')).toHaveCount(0);
-    await expect(page.locator('.level-row')).toHaveCount(AREAS.length);
-    await expect(page.locator('.level-row[data-level="new"]')).toHaveCount(AREAS.length);
-    await expect(screen(page).locator('.learn-lede')).toHaveText('Start with module 1, LLM gateway.');
+    await expect(page.locator('.told-row')).toHaveCount(AREAS.length);
+    await expect(page.locator('.told-row[data-level="new"]')).toHaveCount(AREAS.length);
+    await expect(summaryCard(page).locator('.start-title')).toHaveText('LLM gateway');
     // Nothing was asked, so nothing is sent; the result is stored as done.
     await page.waitForTimeout(200);
     expect(s.posted).toEqual([]);
     const m = await stored(page);
     expect(m.onboarding.status).toBe('done');
     expect(Object.values(m.onboarding.levels)).toEqual(AREAS.map(() => 'new'));
-    await page.getByRole('button', { name: 'Go to the labs' }).click();
+    await page.getByRole('button', { name: 'Browse all labs' }).click();
     await onPath(page);
     await expect(page.locator('.module-card[data-module="1"] .badge-suggested')).toHaveCount(1);
     await page.reload();
@@ -760,8 +764,8 @@ test.describe('the platform quiz', () => {
     await expect(page.getByRole('button', { name: 'Next: your goal' })).toBeVisible();
     await nextQuestion(page);
 
-    await expect(levelOf(page, 'gateway')).toHaveText('New');
-    await expect(levelOf(page, 'mcp')).toHaveText('Familiar');
+    await expect(levelOf(page, 'gateway')).toHaveText('New to you');
+    await expect(levelOf(page, 'mcp')).toHaveText('You have some experience');
     await expect.poll(() => s.posted.length).toBe(1);
     expect(s.posted[0]!.answers.map((a: any) => a.correct)).toEqual([false, true, false]);
   });
@@ -852,7 +856,7 @@ test.describe('the platform quiz', () => {
     await open(page);
     await startQuiz(page, 'none');
     await expect(screen(page)).toContainText('You can retake this any time from the ? menu.');
-    await page.getByRole('button', { name: 'Go to the labs' }).click();
+    await page.getByRole('button', { name: 'Browse all labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
 
     await page.locator('#btnHelp').click();
@@ -875,9 +879,9 @@ test.describe('the platform quiz', () => {
     await probeAll(page, () => true);
     await expect(heading(page)).toHaveText('Where to start');
     // Unticked areas are new on a retake too: the suggestion moves to module 2.
-    await expect(levelOf(page, 'gateway')).toHaveText('Strong');
-    await expect(levelOf(page, 'mcp')).toHaveText('New');
-    await page.getByRole('button', { name: 'Go to the labs' }).click();
+    await expect(levelOf(page, 'gateway')).toHaveText('You know this well');
+    await expect(levelOf(page, 'mcp')).toHaveText('New to you');
+    await page.getByRole('button', { name: 'Browse all labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
     await expect(page.locator('.badge-suggested')).toHaveCount(1);
     await onPath(page);
@@ -1795,7 +1799,7 @@ test.describe('screenshots', () => {
       await probeAll(page, () => false);
       await expect(heading(page)).toHaveText('Where to start');
       await shot('onboarding-summary');
-      await page.getByRole('button', { name: 'Go to the labs' }).click();
+      await page.getByRole('button', { name: 'Browse all labs' }).click();
       await expect(page.locator('.badge-suggested')).toHaveCount(1);
       await page.locator('.badge-suggested').scrollIntoViewIfNeeded();
       await shot('launcher-suggested');
