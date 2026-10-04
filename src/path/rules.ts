@@ -59,6 +59,13 @@ export interface RulesInput {
   areas?: AreaRegistry;
 }
 
+/**
+ * Why a lab is locked. `plan`: the lab's tier is pro and the learner is on the
+ * free plan, so a plan unlocks it. `prerequisite`: the plan could start it, but
+ * a prerequisite (`by`) is itself locked, so it opens only after that one.
+ */
+export type LockInfo = { lock: 'plan' } | { lock: 'prerequisite'; by: LabIndexEntry };
+
 export interface RulesResult {
   /** Completed labs still in the catalogue, in catalogue order. */
   done: LabIndexEntry[];
@@ -66,6 +73,8 @@ export interface RulesResult {
   allowed: LabIndexEntry[];
   /** Labs the learner's plan cannot start (or that need one), in catalogue order. */
   locked: LabIndexEntry[];
+  /** Why each locked lab is locked, by slug: one entry for every lab in `locked`. */
+  locks: ReadonlyMap<string, LockInfo>;
   /** Slugs that are the single lab kept for a 'strong' area. */
   capstones: ReadonlySet<string>;
   /** Slugs that are the foundation labs of a 'new' area (the ones put first). */
@@ -127,12 +136,16 @@ export function applyRules(input: RulesInput): RulesResult {
 
   // Rule 3: plan. A lab is locked when the plan cannot start it, or a prerequisite that is itself locked stands in the way.
   const locked = new Set(candidates.filter((l) => !canStart(l)).map((l) => l.slug));
+  const locks = new Map<string, LockInfo>([...locked].map((slug) => [slug, { lock: 'plan' }] as const));
+  const bySlug = new Map(candidates.map((l) => [l.slug, l] as const));
   for (let changed = true; changed; ) {
     changed = false;
     for (const l of candidates) {
       if (locked.has(l.slug)) continue;
-      if ((l.prerequisites ?? []).some((p) => locked.has(p))) {
+      const blocker = (l.prerequisites ?? []).find((p) => locked.has(p));
+      if (blocker) {
         locked.add(l.slug);
+        locks.set(l.slug, { lock: 'prerequisite', by: bySlug.get(blocker)! });
         changed = true;
       }
     }
@@ -157,7 +170,7 @@ export function applyRules(input: RulesInput): RulesResult {
     (l) => prerequisitesIn(l, reachableSlugs).filter((p) => activeSlugs.has(p))
   );
 
-  return { done, allowed, locked: candidates.filter((l) => locked.has(l.slug)), capstones, foundations };
+  return { done, allowed, locked: candidates.filter((l) => locked.has(l.slug)), locks, capstones, foundations };
 }
 
 /** The baseline order: what the learner gets when no model orders the labs. */

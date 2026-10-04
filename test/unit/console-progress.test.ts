@@ -40,7 +40,7 @@ const profile = (await import('../../dashboard/src/profile.js' as string)) as {
   areaLook: (a: string) => { icon: string; accent: string };
 };
 const path = (await import('../../dashboard/src/path-view.js' as string)) as {
-  normalizePath: (raw: unknown) => null | { steps: Array<{ slug: string; status: string; minutes: number; why: string }>; totalMinutes: number; weeks: number; goal: { text: string; kind: string } };
+  normalizePath: (raw: unknown) => null | { steps: Array<{ slug: string; status: string; minutes: number; why: string; lock: string | null }>; totalMinutes: number; weeks: number; goal: { text: string; kind: string } };
   nextStep: (p: unknown) => { slug: string } | null;
   comingUp: (p: unknown, n?: number) => Array<{ slug: string }>;
   totalsLine: (p: unknown) => string;
@@ -274,6 +274,16 @@ describe('the path, as the page reads it', () => {
     const p = path.normalizePath({ steps: [step('a', 'done'), step('g', 'locked')], total_minutes: 0, weeks_estimate: 0 })!;
     expect(path.nextStep(p)).toBeNull();
     expect(path.comingUp(p)).toEqual([]);
+  });
+
+  it('reads why a step is locked: the service\'s lock, else the stock plan line as a plan lock, else unknown', () => {
+    const lockOf = (o: Record<string, unknown>) => path.normalizePath({ steps: [step('g', 'locked', o)] })!.steps[0]!.lock;
+    expect(lockOf({ lock: 'plan', why: 'Included with the Pro plan.' })).toBe('plan');
+    expect(lockOf({ lock: 'prerequisite', why: 'Included with the Pro plan.' })).toBe('prerequisite');
+    expect(lockOf({ why: 'Included with the Pro plan.' })).toBe('plan'); // an older response
+    expect(lockOf({ why: 'Unlocks after A.' })).toBeNull();
+    expect(lockOf({ lock: 'whatever', why: 'Unlocks after A.' })).toBeNull();
+    expect(path.normalizePath({ steps: [step('a', 'next', { lock: 'plan' })] })!.steps[0]!.lock).toBeNull();
   });
 
   it('drops steps that are not well formed and reads nothing from a body that is not a path', () => {

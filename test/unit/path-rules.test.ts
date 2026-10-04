@@ -110,8 +110,31 @@ describe('rules: plan', () => {
     expect(slugs(r.locked)).toEqual(['gw-routing', 'gw-capstone', 'rag-basics']);
   });
 
+  it('says why each lab is locked: a pro-tier lab is a plan lock, even with a locked prerequisite of its own', () => {
+    const r = applyRules(base({ plan: 'free' }));
+    expect([...r.locks.keys()]).toEqual(expect.arrayContaining(slugs(r.locked)));
+    expect(r.locks.size).toBe(r.locked.length);
+    for (const slug of ['gw-routing', 'gw-capstone', 'rag-basics']) expect(r.locks.get(slug)).toEqual({ lock: 'plan' });
+  });
+
+  it('a free-tier lab behind a locked lab is a prerequisite lock, and names the lab that holds it', () => {
+    const catalogue = [
+      lab('a', { path: 'x', module: 1, order: 1, tier: 'free' }),
+      lab('b', { path: 'x', module: 1, order: 2, prerequisites: ['a'] }), // pro tier
+      lab('c', { path: 'x', module: 1, order: 3, prerequisites: ['b'], tier: 'free' }),
+      lab('d', { path: 'x', module: 1, order: 4, prerequisites: ['c'], tier: 'free' }),
+    ];
+    const r = applyRules(base({ catalogue, plan: 'free' }));
+    expect(slugs(r.locked)).toEqual(['b', 'c', 'd']);
+    expect(r.locks.get('b')).toEqual({ lock: 'plan' });
+    expect(r.locks.get('c')).toMatchObject({ lock: 'prerequisite', by: { slug: 'b' } });
+    expect(r.locks.get('d')).toMatchObject({ lock: 'prerequisite', by: { slug: 'c' } });
+  });
+
   it('a pro learner has nothing locked', () => {
-    expect(applyRules(base({ plan: 'pro' })).locked).toEqual([]);
+    const r = applyRules(base({ plan: 'pro' }));
+    expect(r.locked).toEqual([]);
+    expect(r.locks.size).toBe(0);
   });
 
   it('a completed pro lab still shows as done for a free learner, and unlocks what needs it', () => {

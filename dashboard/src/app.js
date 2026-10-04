@@ -194,6 +194,18 @@ function lsSet(key, value) {
   }
 }
 
+/**
+ * An address on the public site. The site's origin is written once, in the footer's Status link (index.html);
+ * this reads it from there. Null when that link is missing, and the caller then leaves the link out.
+ */
+function siteHref(path) {
+  try {
+    return new URL(path, $('footerStatus').href).href;
+  } catch {
+    return null;
+  }
+}
+
 /** What this browser knows about the learner's learning (learn-model.js); never sent anywhere. */
 const mastery = createMasteryStore();
 
@@ -208,6 +220,7 @@ const progress = createProgressHub({
   hasQuiz: () => Object.keys(mastery.get().onboarding?.levels ?? {}).length > 0,
   isRunning: (slug) => slug === runningSlug,
   labKnown: (slug) => labsBySlug.has(slug),
+  plansHref: () => siteHref('/#pricing'),
   startLab: (slug, card) => {
     const lab = labsBySlug.get(slug);
     if (lab) beginLab(lab, card);

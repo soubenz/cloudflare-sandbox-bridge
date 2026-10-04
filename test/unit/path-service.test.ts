@@ -112,6 +112,31 @@ describe('golden path', () => {
     expect(JSON.parse(inputsRow.areas_json as string)).toEqual(INPUTS.areas);
   });
 
+  it('a free learner: the same golden shape with locked steps, each saying why', async () => {
+    const catalogue = [
+      lab('gw-intro', { title: 'See what a gateway does', path: 'ai-platform', module: 1, order: 1, difficulty: 'intro', tier: 'free', estimated_minutes: 20 }),
+      lab('gw-routing', { title: 'Add a model without touching app code', path: 'ai-platform', module: 1, order: 2, prerequisites: ['gw-intro'], estimated_minutes: 30 }),
+      lab('gw-followup', { title: 'Read the spend report', path: 'ai-platform', module: 1, order: 3, prerequisites: ['gw-routing'], tier: 'free', estimated_minutes: 15 }),
+    ];
+    const { env, sqlite } = setup(catalogue);
+    complete(sqlite, 'u1', 'gw-intro');
+    const { path } = await saveInputsAndRecompute(env, 'u1', { ...INPUTS, areas: {} }, deps(stub({ steps: [] })));
+    const expected: PathJson = {
+      steps: [
+        { slug: 'gw-intro', title: 'See what a gateway does', area: 'gateway', why: 'You have already finished this lab.', estimated_minutes: 20, status: 'done' },
+        { slug: 'gw-routing', title: 'Add a model without touching app code', area: 'gateway', why: 'Included with the Pro plan.', estimated_minutes: 30, status: 'locked', lock: 'plan' },
+        { slug: 'gw-followup', title: 'Read the spend report', area: 'gateway', why: 'Unlocks after Add a model without touching app code.', estimated_minutes: 15, status: 'locked', lock: 'prerequisite' },
+      ],
+      total_minutes: 0,
+      weeks_estimate: 0,
+      goal: { text: 'Run our company AI gateway', kind: 'role-ready' },
+      source: 'rules',
+      generated_at: NOW,
+    };
+    expect(path).toEqual(expected);
+    expect(JSON.stringify(path)).toBe(JSON.stringify(expected));
+  });
+
   it('asks the model once, at temperature-0 settings, with the allowed labs only', async () => {
     const { env, sqlite } = setup();
     setPlan(sqlite, 'u1', 'pro');
@@ -289,6 +314,62 @@ describe('what the model is never asked', () => {
       'rag-basics:locked',
     ]);
     expect(path.total_minutes).toBe(40 + 35 + 25 + 20);
+  });
+});
+
+describe('locked steps say why', () => {
+  const FREE_INPUTS = { ...INPUTS, areas: {} };
+
+  it('a plan lock carries lock: plan and the stock reason', async () => {
+    const { env } = setup();
+    const { path } = await saveInputsAndRecompute(env, 'u1', FREE_INPUTS, deps(echo()));
+    const locked = path.steps.filter((s) => s.status === 'locked');
+    expect(locked.map((s) => `${s.slug}:${s.lock}`)).toEqual(['gw-routing:plan', 'gw-capstone:plan', 'rag-basics:plan']);
+    for (const s of locked) expect(s.why).toBe('Included with the Pro plan.');
+    // Only locked steps have the field.
+    for (const s of path.steps.filter((x) => x.status !== 'locked')) expect(s).not.toHaveProperty('lock');
+  });
+
+  it('a prerequisite lock carries lock: prerequisite and names the lab it waits for', async () => {
+    const catalogue = [
+      lab('a', { title: 'First lab', path: 'x', module: 1, order: 1, tier: 'free' }),
+      lab('b', { title: 'Paid lab', path: 'x', module: 1, order: 2, prerequisites: ['a'] }),
+      lab('c', { title: 'Free lab after paid', path: 'x', module: 1, order: 3, prerequisites: ['b'], tier: 'free' }),
+    ];
+    const { env } = setup(catalogue);
+    const { path } = await saveInputsAndRecompute(env, 'u1', FREE_INPUTS, deps(echo()));
+    expect(path.steps.map((s) => [s.slug, s.status, s.lock, s.why])).toEqual([
+      ['a', 'next', undefined, 'The next step on your path.'],
+      ['b', 'locked', 'plan', 'Included with the Pro plan.'],
+      ['c', 'locked', 'prerequisite', 'Unlocks after Paid lab.'],
+    ]);
+  });
+
+  it('a very long prerequisite title is cut so the reason stays one short sentence', async () => {
+    const catalogue = [lab('b', { title: 'T'.repeat(200), path: 'x', module: 1, order: 1 }), lab('c', { path: 'x', module: 1, order: 2, prerequisites: ['b'], tier: 'free' })];
+    const { env } = setup(catalogue);
+    const { path } = await saveInputsAndRecompute(env, 'u1', FREE_INPUTS, deps(echo()));
+    const c = path.steps.find((s) => s.slug === 'c')!;
+    expect(c.lock).toBe('prerequisite');
+    expect(c.why.length).toBeLessThanOrEqual(120);
+    expect(c.why).toMatch(/^Unlocks after T+…\.$/);
+  });
+
+  it('a path stored before steps carried lock gets it on the next read, and nothing else changes', async () => {
+    const catalogue = [
+      lab('a', { path: 'x', module: 1, order: 1, tier: 'free' }),
+      lab('b', { title: 'Paid lab', path: 'x', module: 1, order: 2, prerequisites: ['a'] }),
+      lab('c', { path: 'x', module: 1, order: 3, prerequisites: ['b'], tier: 'free' }),
+    ];
+    const { env, sqlite } = setup(catalogue);
+    const first = await saveInputsAndRecompute(env, 'u1', FREE_INPUTS, deps(echo()));
+    const old = { ...first.path, steps: first.path.steps.map(({ lock: _lock, ...rest }) => ({ ...rest, ...(rest.status === 'locked' ? { why: 'Included with the Pro plan.' } : {}) })) };
+    sqlite.prepare(`UPDATE user_paths SET path_json = ? WHERE user_id = 'u1'`).run(JSON.stringify(old));
+    const ai = echo();
+    const again = await ensurePath(env, 'u1', {}, deps(ai));
+    expect(again.cache).toBe('hit');
+    expect(ai).not.toHaveBeenCalled();
+    expect(again.path).toEqual(first.path);
   });
 });
 

@@ -1,7 +1,7 @@
 import type { Env } from '../env';
 import { loadCatalogue, type LabIndexEntry } from '../labs/bundle';
 import { ApiError } from '../lib/errors';
-import { AREAS, applyRules, labArea, type AreaLevel, type Plan, type RulesResult } from './rules';
+import { AREAS, applyRules, labArea, type AreaLevel, type LockInfo, type Plan, type RulesResult } from './rules';
 import { PATH_MODEL, PROMPT_VERSION, cleanWhy, gatewayAiCall, orderWithAi, buildPrompt, ORDER_SCHEMA, type AiCall, type AiStep } from './ai';
 import { fixOrder } from './validate';
 import type { PathInputs } from './inputs';
@@ -17,6 +17,9 @@ export const DEFAULT_MINUTES = 30;
 
 export type StepStatus = 'done' | 'next' | 'upcoming' | 'locked';
 
+/** Why a step is locked: `plan` (a paid plan unlocks it) or `prerequisite` (it opens after another locked lab). */
+export type StepLock = 'plan' | 'prerequisite';
+
 export interface PathStep {
   slug: string;
   title: string;
@@ -24,6 +27,8 @@ export interface PathStep {
   why: string;
   estimated_minutes: number;
   status: StepStatus;
+  /** Only on a `locked` step. */
+  lock?: StepLock;
 }
 
 export interface PathJson {
@@ -101,6 +106,16 @@ export async function inputHash(inputs: PathInputs, plan: Plan, rules: RulesResu
   );
 }
 
+/** The stock reason of a plan lock. */
+export const PLAN_LOCK_WHY = 'Included with the Pro plan.';
+
+/** The reason and kind of a lock. A prerequisite's title is plain text, cut so the line stays within the 120 characters of a `why`. */
+export function lockedStep(info: LockInfo): { lock: StepLock; why: string } {
+  if (info.lock === 'plan') return { lock: 'plan', why: PLAN_LOCK_WHY };
+  const title = info.by.title.length > 80 ? `${info.by.title.slice(0, 79)}…` : info.by.title;
+  return { lock: 'prerequisite', why: `Unlocks after ${title}.` };
+}
+
 /** The reason shown when the model gave none (or none fit to show). Plain words, no implementation detail. */
 export function genericWhy(lab: LabIndexEntry, rules: Pick<RulesResult, 'capstones' | 'foundations'>, areaTitle: string | null): string {
   if (rules.capstones.has(lab.slug)) return `One lab to confirm what you already know about ${areaTitle ?? 'this area'}.`;
@@ -126,18 +141,23 @@ export function assemblePath(a: AssembleArgs): PathJson {
     const id = labArea(l);
     return id ? (AREAS[id]?.title ?? null) : null;
   };
-  const step = (l: LabIndexEntry, why: string, status: StepStatus): PathStep => ({
+  const step = (l: LabIndexEntry, why: string, status: StepStatus, lock?: StepLock): PathStep => ({
     slug: l.slug,
     title: l.title,
     area: labArea(l),
     why,
     estimated_minutes: minutes(l),
     status,
+    ...(lock ? { lock } : {}),
   });
+  const lockedStepFor = (l: LabIndexEntry): PathStep => {
+    const { lock, why } = lockedStep(a.rules.locks.get(l.slug) ?? { lock: 'plan' });
+    return step(l, why, 'locked', lock);
+  };
   const steps: PathStep[] = [
     ...a.rules.done.map((l) => step(l, 'You have already finished this lab.', 'done')),
     ...a.order.map((l, i) => step(l, cleanWhy(a.whys.get(l.slug)) ?? genericWhy(l, a.rules, areaTitle(l)), i === 0 ? 'next' : 'upcoming')),
-    ...a.rules.locked.map((l) => step(l, 'Included with the Pro plan.', 'locked')),
+    ...a.rules.locked.map(lockedStepFor),
   ];
   const total = a.order.reduce((sum, l) => sum + minutes(l), 0);
   return {
@@ -272,6 +292,23 @@ async function askModel(call: AiCall, inputs: PathInputs, rules: RulesResult, sk
 }
 
 /**
+ * A path stored before steps carried `lock` has locked steps without one. The rules know why each is locked
+ * and nothing else about the path changed (the hash matches), so fill it in rather than serve a step whose
+ * lock kind is missing. Returns the same object when there is nothing to fill in.
+ */
+function withLocks(path: PathJson, rules: RulesResult): PathJson {
+  if (path.steps.every((s) => s.status !== 'locked' || s.lock)) return path;
+  return {
+    ...path,
+    steps: path.steps.map((s) => {
+      if (s.status !== 'locked' || s.lock) return s;
+      const info = rules.locks.get(s.slug);
+      return info ? { ...s, ...lockedStep(info) } : { ...s, lock: 'plan' };
+    }),
+  };
+}
+
+/**
  * The user's path, from the cache when nothing it was built from has
  * changed, otherwise rebuilt: the rules choose the labs, the model (when
  * there are at least two to order) orders them, and the server validates its
@@ -287,7 +324,7 @@ export async function ensurePath(env: Env, userId: string, opts: { force?: boole
 
   if (!opts.force) {
     const stored = await loadStored(env, userId);
-    if (stored && stored.input_hash === ctx.hash) return { path: stored.path, cache: 'hit' };
+    if (stored && stored.input_hash === ctx.hash) return { path: withLocks(stored.path, ctx.rules), cache: 'hit' };
   }
 
   const { rules } = ctx;

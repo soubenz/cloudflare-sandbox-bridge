@@ -511,7 +511,11 @@ answer `404 no_inputs` when the user never sent inputs. All three routes
     { "slug": "see-what-a-gateway-does", "title": "See what a gateway does", "area": "gateway",
       "why": "You have already finished this lab.", "estimated_minutes": 20, "status": "done" },
     { "slug": "add-a-model-without-touching-app-code", "title": "Add a model without touching app code", "area": "gateway",
-      "why": "A first step into LLM gateway, which is new to you.", "estimated_minutes": 30, "status": "next" }
+      "why": "A first step into LLM gateway, which is new to you.", "estimated_minutes": 30, "status": "next" },
+    { "slug": "hard-budget-per-team", "title": "Hard budget per team", "area": "gateway",
+      "why": "Included with the Pro plan.", "estimated_minutes": 45, "status": "locked", "lock": "plan" },
+    { "slug": "read-the-spend-report", "title": "Read the spend report", "area": "gateway",
+      "why": "Unlocks after Hard budget per team.", "estimated_minutes": 15, "status": "locked", "lock": "prerequisite" }
   ],
   "total_minutes": 30,
   "weeks_estimate": 1,
@@ -525,6 +529,17 @@ answer `404 no_inputs` when the user never sent inputs. All three routes
   do in path order, then labs their plan **locks**. `status` is `done`; `next`
   (the first step that is not done and not locked; absent when nothing is
   left to do); `upcoming`; or `locked`.
+- `lock` is on `locked` steps only (no other step has the field) and says why:
+  `plan` when the lab's tier is `pro` and the learner is on the free plan, so a
+  paid plan unlocks it; `prerequisite` when the plan could start the lab but a
+  prerequisite of it is itself locked, so it opens only after that one. A plan
+  lock keeps the stock `why` ("Included with the Pro plan."); a prerequisite lock's
+  `why` is "Unlocks after <title of the prerequisite>." (a title over 80
+  characters is cut). A pro-tier lab that also sits behind a locked prerequisite is a
+  `plan` lock. The console shows an Unlock button, linking to the plans page,
+  on `plan` steps only. Paths stored before this field existed get it filled in
+  on read; a client that still meets one without it should treat a locked step as a
+  plan lock only when its `why` is the stock plan line.
 - `area` is the quiz area the lab belongs to (the area whose `path` and `module`
   in `concepts.json` match the lab's), or `null` for a lab outside every area.
 - `why` is one plain sentence of at most 120 characters. A done step and a locked

@@ -77,6 +77,7 @@ export function createProgressHub({
   hasQuiz = () => false,
   isRunning = () => false,
   labKnown = () => true,
+  plansHref = () => null,
   startLab = () => {},
   reducedMotion = () => false,
   resultAwardsHost = () => document.getElementById('resultAwards'),
@@ -207,6 +208,7 @@ export function createProgressHub({
     const deps = {
       isRunning,
       labKnown,
+      plansHref,
       onStart: startLab,
       errorText: plainError,
       retry: () => pathStore.ensure({ force: true }),

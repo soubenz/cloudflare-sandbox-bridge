@@ -186,13 +186,26 @@ const PATH_A = {
     step('route-by-intent', 'Route by intent', 'upcoming', { area: 'mcp', estimated_minutes: 45 }),
     step('guard-the-spend', 'Guard the spend', 'upcoming'),
     step('retrieve-with-citations', 'Retrieve with citations', 'upcoming', { area: 'rag' }),
-    step('a-pro-only-lab', 'A pro only lab', 'locked', { why: 'Included with the Pro plan.' }),
+    step('a-pro-only-lab', 'A pro only lab', 'locked', { why: 'Included with the Pro plan.', lock: 'plan' }),
   ],
   total_minutes: 165,
   weeks_estimate: 2,
   goal: { text: 'Run our gateway', kind: 'role-ready' },
   source: 'ai',
   generated_at: EARNED_AT,
+};
+const PRICING = 'https://opalix-site.soubenz94.workers.dev/#pricing';
+/** Every kind of locked step: a plan lock, a lock behind another lab, and two from before `lock` existed. */
+const PATH_LOCKS = {
+  ...PATH_A,
+  steps: [
+    PATH_A.steps[0]!,
+    PATH_A.steps[1]!,
+    step('plan-locked-lab', 'Plan locked lab', 'locked', { why: 'Included with the Pro plan.', lock: 'plan' }),
+    step('waits-for-a-lab', 'Waits for a lab', 'locked', { why: 'Unlocks after Plan locked lab.', lock: 'prerequisite' }),
+    step('old-plan-lock', 'Old plan lock', 'locked', { why: 'Included with the Pro plan.' }),
+    step('old-other-lock', 'Old other lock', 'locked', { why: 'Something else holds this one.' }),
+  ],
 };
 /** The same labs in another order, with the next one finished: what Recompute and a saved goal bring back. */
 const PATH_B = {
@@ -939,16 +952,90 @@ test.describe('/paths/mine', () => {
     await expect(steps(page).nth(0).getByRole('button', { name: 'Open again' })).toBeVisible();
     const locked = steps(page).nth(6);
     await expect(locked.locator('.step-lock')).toHaveText('Part of the paid plan');
-    const lockedButton = locked.getByRole('button', { name: 'Locked' });
-    await expect(lockedButton).toHaveAttribute('aria-disabled', 'true');
-    await expect(lockedButton).toHaveAttribute('aria-describedby', /.+/);
-    await lockedButton.click({ force: true });
+    // A plan lock offers the way out instead of a dead button: a link to the plans page.
+    await expect(locked.getByRole('button')).toHaveCount(0);
+    await expect(locked.getByRole('link', { name: 'Unlock A pro only lab with a plan' })).toHaveAttribute('href', PRICING);
     expect(s.starts).toEqual([]);
     // The title is a link to the lab's own page.
     await expect(steps(page).nth(2).getByRole('link', { name: 'One endpoint, one key' })).toHaveAttribute('href', '/labs/one-endpoint-one-key');
     // Start begins the lab.
     await next.getByRole('button', { name: 'Start' }).click();
     await expect.poll(() => s.starts).toEqual(['add-a-model-without-touching-app-code']);
+  });
+
+  test('a plan-locked step has an Unlock link to the plans page (same tab); a step locked behind another lab says which and has none', async ({ page }) => {
+    const s = await stub(page, { path: PATH_LOCKS });
+    await page.setViewportSize(WIDE);
+    await visit(page, '/paths/mine', { mastery: DONE });
+    const rows = page.locator('.path-step');
+    await expect(rows).toHaveCount(6);
+
+    // Plan lock: the paid-plan line, and an Unlock link-button that is a real link (keyboard, middle-click), named for its lab.
+    const plan = rows.nth(2);
+    await expect(plan.locator('.step-lock')).toHaveText('Part of the paid plan');
+    const unlock = plan.getByRole('link', { name: 'Unlock Plan locked lab with a plan' });
+    await expect(unlock).toHaveText('Unlock');
+    await expect(unlock).toHaveAttribute('href', PRICING);
+    await expect(unlock).not.toHaveAttribute('target', /.+/);
+    await expect(unlock).toHaveClass(/\bbtn\b/);
+    expect(await unlock.evaluate((e) => e.tagName)).toBe('A');
+    await expect(unlock).toHaveAccessibleDescription('Part of the paid plan');
+    await expect(plan.getByRole('button')).toHaveCount(0);
+
+    // Prerequisite lock: the service's sentence, the disabled Locked button, no Unlock.
+    const waits = rows.nth(3);
+    await expect(waits.locator('.step-lock')).toHaveText('Unlocks after Plan locked lab.');
+    await expect(waits.getByRole('link', { name: /Unlock/ })).toHaveCount(0);
+    await expect(waits.getByRole('button', { name: 'Locked' })).toHaveAttribute('aria-disabled', 'true');
+
+    // An older response: the stock plan line still means a plan lock; any other text gets no button.
+    const oldPlan = rows.nth(4);
+    await expect(oldPlan.getByRole('link', { name: 'Unlock Old plan lock with a plan' })).toHaveAttribute('href', PRICING);
+    const oldOther = rows.nth(5);
+    await expect(oldOther.locator('.step-lock')).toHaveText('Something else holds this one.');
+    await expect(oldOther.getByRole('link', { name: /Unlock/ })).toHaveCount(0);
+
+    // Exactly the plan locks offer it.
+    await expect(page.getByRole('link', { name: /^Unlock .* with a plan$/ })).toHaveCount(2);
+    expect(s.starts).toEqual([]);
+    await expectLearnerCopy(page);
+  });
+
+  test('Unlock is reached from the keyboard in reading order, and Enter opens the plans page in the same tab', async ({ page, context }) => {
+    await stub(page, { path: PATH_LOCKS });
+    await page.route('https://opalix-site.soubenz94.workers.dev/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Plans</title><h1 id="pricing">Plans</h1>' }));
+    await page.setViewportSize(WIDE);
+    await visit(page, '/paths/mine', { mastery: DONE });
+    const rows = page.locator('.path-step');
+    await expect(rows).toHaveCount(6);
+    await rows.nth(2).getByRole('link', { name: 'Plan locked lab', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('link', { name: 'Unlock Plan locked lab with a plan' })).toBeFocused();
+    // Then straight on to the next step's title: the prerequisite step has no Unlock to stop at, and its disabled button comes after its title.
+    await page.keyboard.press('Tab');
+    await expect(rows.nth(3).getByRole('link', { name: 'Waits for a lab', exact: true })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(rows.nth(3).getByRole('button', { name: 'Locked' })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Shift+Tab');
+    await expect(page.getByRole('link', { name: 'Unlock Plan locked lab with a plan' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(PRICING);
+    expect(context.pages()).toHaveLength(1);
+  });
+
+  test('on a phone the Unlock link is touch-sized and nothing sticks out sideways', async ({ page }) => {
+    await stub(page, { path: PATH_LOCKS });
+    await page.setViewportSize(PHONE);
+    await visit(page, '/paths/mine', { mastery: DONE });
+    await expect(page.locator('.path-step')).toHaveCount(6);
+    const unlock = page.getByRole('link', { name: 'Unlock Plan locked lab with a plan' });
+    await expect(unlock).toBeVisible();
+    const box = await unlock.boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    await noHorizontalScroll(page);
+    await expectLearnerCopy(page);
   });
 
   test('Recompute asks for a fresh path (?force=1), says so politely, and shows the new order', async ({ page }) => {

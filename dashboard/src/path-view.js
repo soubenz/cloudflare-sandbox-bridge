@@ -26,6 +26,18 @@ const STATUSES = ['done', 'next', 'upcoming', 'locked'];
 export const STATUS_WORDS = { done: 'Done', next: 'Next up', upcoming: 'Coming up', locked: 'Locked' };
 /** Why a step cannot be started, in plain words. */
 export const LOCK_REASON = 'Part of the paid plan';
+/** The service's stock line for a plan lock; an older response without `lock` is read as a plan lock only when `why` is this. */
+export const STOCK_PLAN_WHY = 'Included with the Pro plan.';
+const LOCKS = ['plan', 'prerequisite'];
+
+/**
+ * Why a locked step is locked: the service's `lock`, or for a response from before it existed, 'plan' when the
+ * reason is the stock plan line and null (unknown: no Unlock button) for any other text.
+ */
+function lockKind(s) {
+  if (LOCKS.includes(s.lock)) return s.lock;
+  return s.why === STOCK_PLAN_WHY ? 'plan' : null;
+}
 
 /** The path as the page may rely on it: every step has a slug, a title, a status and a why line. */
 export function normalizePath(raw) {
@@ -39,6 +51,7 @@ export function normalizePath(raw) {
       why: typeof s.why === 'string' ? s.why : '',
       minutes: Number.isFinite(Number(s.estimated_minutes)) ? Number(s.estimated_minutes) : 0,
       status: s.status,
+      lock: s.status === 'locked' ? lockKind(s) : null,
     }));
   const total = Number(raw.total_minutes);
   const weeks = Number(raw.weeks_estimate);
@@ -188,6 +201,9 @@ export function pathInvite() {
 
 const CHECK = '<path d="M3.5 8.5l3 3 6-7"/>';
 
+/** The line under a locked step: the paid-plan wording for a plan lock, otherwise the service's own sentence. */
+const lockReason = (step) => (step.lock === 'plan' ? LOCK_REASON : step.why || LOCK_REASON);
+
 function stepRow(step, index, deps) {
   const li = el('li', 'path-step');
   li.dataset.status = step.status;
@@ -217,13 +233,23 @@ function stepRow(step, index, deps) {
 
   const act = el('div', 'step-act');
   if (step.status === 'locked') {
-    const locked = el('button', 'btn btn-ghost lab-start', 'Locked');
-    locked.type = 'button';
-    locked.setAttribute('aria-disabled', 'true');
-    locked.setAttribute('aria-describedby', `${titleId}-lock`);
-    const reason = el('p', 'step-lock', LOCK_REASON);
+    // A plan lock names the paid plan and offers the way to it; a lock behind another lab says which lab.
+    const reason = el('p', 'step-lock', lockReason(step));
     reason.id = `${titleId}-lock`;
-    act.append(locked, reason);
+    const plans = step.lock === 'plan' ? deps.plansHref?.() : null;
+    if (plans) {
+      const unlock = el('a', 'btn btn-accent unlock-link', 'Unlock');
+      unlock.href = plans;
+      unlock.setAttribute('aria-label', `Unlock ${step.title} with a plan`);
+      unlock.setAttribute('aria-describedby', reason.id);
+      act.append(unlock, reason);
+    } else {
+      const locked = el('button', 'btn btn-ghost lab-start', 'Locked');
+      locked.type = 'button';
+      locked.setAttribute('aria-disabled', 'true');
+      locked.setAttribute('aria-describedby', reason.id);
+      act.append(locked, reason);
+    }
   } else if (step.status === 'done') {
     const again = startButton(step, deps, li, 'btn-ghost');
     if (again) {
@@ -292,7 +318,8 @@ export function goalForm({ onSave, onCancel, errorText = () => 'Please try again
 /**
  * The page at /paths/mine, drawn from the store's state.
  *   state            { status, data, error }
- *   deps             { isRunning, labKnown, onStart, recompute, saveGoal, errorText, retry, say, formOpen, setFormOpen }
+ *   deps             { isRunning, labKnown, onStart, recompute, saveGoal, errorText, retry, say, formOpen, setFormOpen, plansHref }
+ * `plansHref()` is the address of the plans page; a plan-locked step links to it with an Unlock button (none: no button).
  * `say(text)` writes to the page's polite live region (which outlives a redraw, so it is announced).
  * `formOpen()` / `setFormOpen(open)` are the page's own memory of whether the goal form is open, so a redraw
  * (a refresh that came back) does not close it under someone who is typing in it.
