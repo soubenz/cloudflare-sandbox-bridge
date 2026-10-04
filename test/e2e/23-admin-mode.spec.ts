@@ -66,7 +66,15 @@ const LABS = [
 
 const LEARN_BUNDLE = { version: 1, story: { title: 'The case', minutes: 1, body: 'A short story about a gateway.' }, concepts: [], questions: [], answers_file: 'answers.json', fields: [] };
 
-const step = (slug: string, title: string, status: string) => ({ slug, title, area: 'gateway', why: `Why ${title}.`, estimated_minutes: 30, status });
+const step = (slug: string, title: string, status: string) => ({
+  slug,
+  title,
+  area: 'gateway',
+  why: status === 'locked' ? 'Included with the Pro plan.' : `Why ${title}.`,
+  estimated_minutes: 30,
+  status,
+  ...(status === 'locked' ? { lock: 'plan' } : {}),
+});
 const PATH = {
   steps: [step(OPEN, 'One endpoint, one key', 'next'), step(LOCKED, 'Add a model without touching app code', 'upcoming'), step(PLAN_LOCKED, 'A pro only lab', 'locked')],
   total_minutes: 90,
@@ -526,8 +534,9 @@ test.describe('locks', () => {
     await visit(page, '/paths/mine');
     const locked = page.locator(`.path-step[data-slug="${PLAN_LOCKED}"]`);
     await expect(locked.locator('.step-lock')).toHaveText('Part of the paid plan');
-    await expect(locked.locator('.lab-start')).toHaveText('Locked');
-    await expect(locked.locator('.lab-start')).toHaveAttribute('aria-disabled', 'true');
+    // A plan lock offers the way to the plans page (an Unlock link), not a start.
+    await expect(locked.locator('.unlock-link')).toBeVisible();
+    await expect(locked.locator('.lab-start')).toHaveCount(0);
 
     await adminSwitch(page).click();
     await expect(locked).toHaveAttribute('data-status', 'locked');
@@ -538,7 +547,8 @@ test.describe('locks', () => {
     // Turning it off puts the lock back.
     await adminSwitch(page).click();
     await expect(locked.locator('.step-lock')).toHaveText('Part of the paid plan');
-    await expect(locked.locator('.lab-start')).toHaveAttribute('aria-disabled', 'true');
+    await expect(locked.locator('.unlock-link')).toBeVisible();
+    await expect(locked.locator('.lab-start')).toHaveCount(0);
 
     await adminSwitch(page).click();
     await locked.locator('.lab-start').click();
@@ -793,13 +803,14 @@ test.describe('a normal learner\'s screens are unchanged', () => {
     await expect(page.locator('.admin-lock, .admin-open, .admin-skip, .admin-strip, .admin-pill')).toHaveCount(0);
   });
 
-  test('a learner\'s locked path step is still "Part of the paid plan", with no start', async ({ page }) => {
+  test('a learner\'s locked path step is still "Part of the paid plan", with an Unlock link and no start', async ({ page }) => {
     await stub(page, { me: { sub: 'console', user_id: 'console', can_admin: false } });
     await page.setViewportSize(WIDE);
     await visit(page, '/paths/mine', { stored: true });
     const locked = page.locator(`.path-step[data-slug="${PLAN_LOCKED}"]`);
     await expect(locked.locator('.step-lock')).toHaveText('Part of the paid plan');
-    await expect(locked.locator('.lab-start')).toHaveAttribute('aria-disabled', 'true');
+    await expect(locked.locator('.unlock-link')).toBeVisible();
+    await expect(locked.locator('.lab-start')).toHaveCount(0);
     await expect(locked.locator('.admin-open')).toHaveCount(0);
   });
 });
