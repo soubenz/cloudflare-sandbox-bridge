@@ -4,6 +4,16 @@
       "file": "site/public/labs.html",
       "includes": "a gateway, a worker, and a storage service",
       "reason": "Lab subject matter: the lab teaches tracing one request across a gateway, a worker service and a storage service. The line is generated from labs/*/manifest.yaml by scripts/build-labs-page.mjs and does not describe how Opalix is built."
+    },
+    {
+      "file": "dashboard/src/admin-mode.js",
+      "includes": "The session token is never shown",
+      "reason": "admin-only developer view, hidden from learners by /api/me can_admin"
+    },
+    {
+      "file": "dashboard/src/admin-mode.js",
+      "includes": "admin Worker",
+      "reason": "admin-only developer view, hidden from learners by /api/me can_admin"
     }
   ]
 }

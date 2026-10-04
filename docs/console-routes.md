@@ -53,7 +53,7 @@ saved search would hide opens with the search cleared. Archived labs are in no l
 
 ## The learner and the session in an address
 
-`GET /api/me` answers `{ sub, user_id }`. `user_id` is the **opaque id** the Worker hands out for the
+`GET /api/me` answers `{ sub, user_id, can_admin }` (and `admin_url` when `can_admin` is true; see "Admin mode" below). `user_id` is the **opaque id** the Worker hands out for the
 cookie's subject: the subject itself when it is already a plain token (today the console's one
 subject is `console`), otherwise `u-` and 24 hex digits of its SHA-256, so an email never reaches a URL.
 It is a label, not a credential: the API is still called with the subject, and the session token (held
@@ -147,3 +147,30 @@ one would resolve under `/labs/<slug>/` and be answered with the app's own HTML 
 Specs 16 to 20 serve the files through `test/e2e/console-server.ts`, which has the same fallback
 (and can put the real Worker in front for the password gate). `test/e2e/browse.ts` has what they share
 for getting around the pages.
+
+## Admin mode (the owner's developer view)
+
+A switch labelled "Admin" in the header, beside the theme toggle, for the owner to use while developing. It is
+a **client-side view mode**: it never grants server-side power. The API and the graders stay gated by the
+service key and per-session tokens, and a session was already startable by lab slug (`createSession` checks
+neither a plan tier nor a prerequisite), so nothing the API accepts changes.
+
+**Who is shown the switch** is the one thing the Worker decides. `GET /api/me` carries `can_admin`, true only
+when the signed-in subject is listed in the Worker var `CONSOLE_ADMIN_SUBJECTS` (a comma list, spaces ignored,
+exact match; unset it is `console`, today's one subject, the owner; set to an empty string nobody is an admin).
+`admin_url` (the Worker var `ADMIN_URL`, default `https://opalix-admin.soubenz94.workers.dev`, https or
+localhost only) is sent only to an admin. **When real accounts arrive, their subjects (an email, say) must be
+listed in `CONSOLE_ADMIN_SUBJECTS` by hand**, or they never see the switch. Without `can_admin: true` the
+switch is not built at all, and a stored "on" is ignored and removed.
+
+When on (kept in `localStorage` `opalixAdminMode`; code in `dashboard/src/admin-mode.js` and
+`dashboard/public/admin-mode.css`, with one-line hooks in `app.js` and `path-view.js`):
+
+- the header shows a persistent "Admin mode on" pill (a dashed ring, an icon and words), the page edge carries
+  a dashed ring, and an "Admin panel" link opens the admin Worker in a new tab;
+- a lab (a row, its page, its session address) or a path step locked by a prerequisite or by the plan is
+  startable. The lock is still shown, as "Locked for learners — open anyway (admin)";
+- the screens before a lab have "Admin: skip to Start", which presses "Skip all, just start the lab";
+- the session screen has a collapsible Admin strip under the dock: session id, user id, lab and version, state
+  and expiry (each with a Copy button) and the live event log. The session token is never shown or copied: the
+  strip is built from named fields, and the log scrubs anything named like a credential and the token itself.

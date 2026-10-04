@@ -11,6 +11,7 @@ import { minutesLabel } from './launcher-model.js';
 import { platformAreas } from './learn-model.js';
 import { areaLook } from './profile.js';
 import { GOAL_KINDS, goalKindField, hoursField, loadGoal } from './goal-fields.js';
+import { adminOpenStep } from './admin-mode.js';
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
@@ -261,6 +262,7 @@ function stepRow(step, index, deps) {
     if (start) act.append(start);
   }
   li.append(num, main, act);
+  adminOpenStep(li, step, deps); // the owner's developer view only: a no-op for a learner
   return li;
 }
 

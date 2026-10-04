@@ -48,6 +48,8 @@ import {
 // The presentation copy of every path and module: title, intro, skills, icon
 // and accent. The public /labs page reads the same file.
 import pathMeta from '../../packages/catalogue/paths.json';
+// The owner's developer view (admin-mode.js): a client-side view mode, shown only when /api/me says can_admin.
+import { adminMode } from './admin-mode.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -506,7 +508,7 @@ async function openSessionRoute(route, stale) {
   }
 
   const at = locateLab(launcherModel, slug);
-  if (at?.entry.locked) {
+  if (at?.entry.locked && !adminMode.isOn()) {
     toast(`Locked until ${at.entry.lockedByTitle ?? at.entry.lockedBy} passes. Pass every check of that lab to unlock this one.`);
     return landOnLabPage(slug);
   }
@@ -1234,6 +1236,8 @@ function fillFacts(sub, lab) {
 function fillStanding(status, button, lab, { done, locked, lockedBy, lockedByTitle }) {
   if (done) {
     status.append(node('span', 'chip chip-done', `Done · best ${percent(lab.progress.best_score)}%`));
+  } else if (locked && adminMode.isOn()) {
+    adminMode.openLock(status, button, lockedByTitle ?? lockedBy);
   } else if (locked) {
     const need = lockedByTitle ?? lockedBy;
     const lock = node('span', 'lab-lock');
@@ -1374,14 +1378,14 @@ function labPage(lab) {
     beginLab(lab, page);
   });
   side.append(status, button);
-  if (standing.locked) {
+  if (standing.locked && !adminMode.isOn()) {
     side.append(node('p', 'lab-detail-note', `Pass every check of ${standing.lockedByTitle} first, then this lab opens.`));
   } else if (lab.estimated_minutes) {
     side.append(node('p', 'lab-detail-note', `About ${lab.estimated_minutes} min${lab.timeout_minutes ? `; the session ends after ${lab.timeout_minutes} min.` : '.'}`));
   }
   page.append(main, side);
   styleStartButton(page);
-  if (lab.slug === runningSlug && !standing.locked) applyRunning(page, true);
+  if (lab.slug === runningSlug && (!standing.locked || adminMode.isOn())) applyRunning(page, true);
   return page;
 }
 
@@ -1393,7 +1397,7 @@ function labPage(lab) {
 function styleStartButton(row) {
   const button = row.querySelector('.lab-start');
   const running = row.classList.contains('lab-running');
-  const locked = row.classList.contains('lab-locked');
+  const locked = row.classList.contains('lab-locked') && !adminMode.isOn();
   const done = row.classList.contains('lab-done');
   button.textContent = locked ? 'Locked' : running ? 'Resume' : done ? 'Open again' : 'Start';
   button.className = `btn lab-start ${locked ? 'btn-ghost' : running ? 'btn-accent' : done ? 'btn-ghost' : 'btn-strong'}`;
@@ -1412,7 +1416,7 @@ function applyRunning(row, on) {
 /** The pages learn which lab is running once the resume card has asked the API. */
 function setRunningLab(slug) {
   runningSlug = slug;
-  for (const row of $('labList').querySelectorAll('.lab, .lab-detail')) applyRunning(row, row.dataset.slug === slug && !row.classList.contains('lab-locked'));
+  for (const row of $('labList').querySelectorAll('.lab, .lab-detail')) applyRunning(row, row.dataset.slug === slug && (!row.classList.contains('lab-locked') || adminMode.isOn()));
 }
 
 // ------------------------------------------------------------ filters
@@ -2654,6 +2658,7 @@ function applyStatus(status) {
 }
 
 function handleEvent(type, tone, data) {
+  adminMode.recordEvent(type, data);
   noticeFor(type, tone, data);
   bootProgress(type, data);
 
@@ -3504,8 +3509,11 @@ applyTheme(currentTheme());
  */
 async function loadIdentity() {
   try {
-    const { sub, user_id: userId } = await api.me();
+    const me = await api.me();
+    const { sub, user_id: userId } = me;
     if (isOpaqueId(userId)) state.userId = userId;
+    // The Worker says whether this subject is shown the Admin switch; anything but `true` leaves it unbuilt.
+    adminMode.configure({ canAdmin: me.can_admin === true, adminUrl: me.admin_url });
     if (typeof sub !== 'string' || !sub) return;
     $('identityName').textContent = sub;
     // Two letters in the circle, as the landing page's account chip has.
@@ -5286,6 +5294,19 @@ function showSignedOut() {
   syncQuizButtons();
 }
 
+adminMode.init({
+  // Named fields only: the session token is never handed to the admin view (the event log is scrubbed with it).
+  getSession: () => ({
+    id: state.session?.id,
+    userId: state.userId,
+    lab: state.session?.lab,
+    version: state.session ? labsBySlug.get(state.session.lab)?.version : undefined,
+    state: state.session ? $('statePill').dataset.state : undefined,
+    expiresAt: state.expiresAt,
+  }),
+  getSecrets: () => [state.session?.token],
+  onChange: () => renderBrowseIfShown(true),
+});
 meReady = loadIdentity();
 $('saveShortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘S' : 'Ctrl+S';
 router.onRoute((route) => applyRoute(route));

@@ -384,7 +384,8 @@ describe('GET /api/me', () => {
   it('says who is signed in and the opaque id the console\'s addresses carry', async () => {
     const res = await call('/api/me', { cookie });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ sub: 'console', user_id: 'console' });
+    // The console's one subject is the owner, so by default it may see the Admin switch.
+    expect(await res.json()).toEqual({ sub: 'console', user_id: 'console', can_admin: true, admin_url: 'https://opalix-admin.soubenz94.workers.dev' });
   });
 
   it('needs the cookie', async () => {
@@ -411,6 +412,63 @@ describe('GET /api/me', () => {
     const other = (await (await call('/api/me', { cookie: await mint('grace@example.com') })).json()) as { user_id: string };
     expect(again.user_id).toBe(body.user_id);
     expect(other.user_id).not.toBe(body.user_id);
+  });
+});
+
+describe('GET /api/me can_admin (who is shown the Admin switch)', () => {
+  /** A cookie for any subject, minted the way the Worker mints one (same secret, same construction). */
+  const mint = async (sub: string) => {
+    const b64 = (s: string) => btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const payload = b64(JSON.stringify({ sub, exp: Math.floor(Date.now() / 1000) + 3600 }));
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('cookie-secret'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
+    return `__Host-opx_console=${payload}.${b64(String.fromCharCode(...sig))}`;
+  };
+  const meWith = async (vars: Record<string, string | undefined>, sub = 'console') => {
+    const res = await worker.default.fetch(new Request(`${ORIGIN}/api/me`, { headers: { cookie: await mint(sub) } }), { ...e, ...vars });
+    expect(res.status).toBe(200);
+    return (await res.json()) as { sub: string; user_id: string; can_admin: boolean; admin_url?: string };
+  };
+
+  it('defaults to the console subject, and no other', async () => {
+    expect((await meWith({})).can_admin).toBe(true);
+    expect((await meWith({}, 'ada@example.com')).can_admin).toBe(false);
+    expect((await meWith({}, 'console2')).can_admin).toBe(false);
+  });
+
+  it('is true only for a subject on the CONSOLE_ADMIN_SUBJECTS list (comma list, spaces ignored, exact match)', async () => {
+    const vars = { CONSOLE_ADMIN_SUBJECTS: ' owner@example.com ,  ops@example.com,' };
+    expect((await meWith(vars, 'owner@example.com')).can_admin).toBe(true);
+    expect((await meWith(vars, 'ops@example.com')).can_admin).toBe(true);
+    expect((await meWith(vars, 'Owner@example.com')).can_admin).toBe(false);
+    expect((await meWith(vars, 'owner@example.com.evil')).can_admin).toBe(false);
+    expect((await meWith(vars, 'someone@example.com')).can_admin).toBe(false);
+  });
+
+  it('a list that does not name the console takes the console\'s admin away; an empty list means nobody', async () => {
+    expect((await meWith({ CONSOLE_ADMIN_SUBJECTS: 'owner@example.com' }, 'console')).can_admin).toBe(false);
+    expect((await meWith({ CONSOLE_ADMIN_SUBJECTS: '' }, 'console')).can_admin).toBe(false);
+    expect((await meWith({ CONSOLE_ADMIN_SUBJECTS: ' , ,' }, 'console')).can_admin).toBe(false);
+  });
+
+  it('hands the admin Worker\'s address to an admin only, and only when it is an https origin or localhost', async () => {
+    const admin = await meWith({ ADMIN_URL: 'https://admin.example.com/some/path?x=1' });
+    expect(admin.admin_url).toBe('https://admin.example.com');
+    const learner = await meWith({}, 'ada@example.com');
+    expect(learner).toEqual({ sub: 'ada@example.com', user_id: expect.stringMatching(/^u-/), can_admin: false });
+    expect('admin_url' in learner).toBe(false);
+    for (const bad of ['javascript:alert(1)', 'http://evil.example', 'not a url', 'ftp://x.example']) {
+      expect((await meWith({ ADMIN_URL: bad })).admin_url, bad).toBe('https://opalix-admin.soubenz94.workers.dev');
+    }
+    expect((await meWith({ ADMIN_URL: 'http://localhost:8790' })).admin_url).toBe('http://localhost:8790');
+  });
+
+  it('is not a way in: it needs the cookie, and no route of the Worker looks at it', async () => {
+    expect((await call('/api/me')).status).toBe(401);
+    // The learner's calls to the API carry the service key and the subject, never an admin hint.
+    calls = [];
+    await call('/api/labs', { cookie, headers: { 'x-admin': '1' } });
+    expect(calls.every((c) => !JSON.stringify([...c.headers.entries()]).includes('admin') && !c.url.includes('admin'))).toBe(true);
   });
 });
 

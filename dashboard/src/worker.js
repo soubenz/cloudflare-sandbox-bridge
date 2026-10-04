@@ -106,6 +106,42 @@ async function userIdFor(subject) {
   return `u-${hex}`;
 }
 
+/* ------------------------------------------------------------- admin view */
+
+/**
+ * Who may SEE the console's "Admin" switch. This is the only thing the Worker decides about admin mode: the
+ * switch is a client-side view mode (it opens locks in the UI, adds shortcuts and a debug strip) and grants no
+ * server-side power. The API and the graders stay gated by the service key and per-session tokens, which admin
+ * mode never touches.
+ *
+ * `CONSOLE_ADMIN_SUBJECTS` is a comma list of subjects. Unset, it is `console`: today's one subject, the owner.
+ * Set to an empty string, nobody is an admin. When real accounts arrive their subjects (an email, say) must be
+ * listed here by hand; nothing else makes a subject an admin.
+ */
+const DEFAULT_ADMIN_SUBJECTS = 'console';
+/** Where the admin Worker lives (its own origin and password); `ADMIN_URL` overrides, only an https origin or localhost is taken. */
+const DEFAULT_ADMIN_URL = 'https://opalix-admin.soubenz94.workers.dev';
+
+function canAdmin(subject, env) {
+  const raw = typeof env.CONSOLE_ADMIN_SUBJECTS === 'string' ? env.CONSOLE_ADMIN_SUBJECTS : DEFAULT_ADMIN_SUBJECTS;
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .includes(subject);
+}
+
+function adminUrl(env) {
+  try {
+    const url = new URL(env.ADMIN_URL);
+    const local = url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+    if (url.protocol === 'https:' || local) return url.origin;
+  } catch {
+    /* unset or malformed: the default */
+  }
+  return DEFAULT_ADMIN_URL;
+}
+
 /* -------------------------------------------------------------------- api */
 
 /**
@@ -540,8 +576,11 @@ async function route(request, env) {
     // Who the console thinks you are: the cookie's subject, so the header
     // can say so, and `user_id`, the opaque id the console's addresses carry
     // (/u/<user_id>/labs/...). Nothing secret -- the browser already holds the cookie.
+    // `can_admin` says whether the Admin switch is shown to this subject (see canAdmin above); `admin_url`
+    // rides along only then, so a learner's answer carries no hint of the admin Worker.
     if (url.pathname === '/api/me' && request.method === 'GET') {
-      return json({ sub: subject, user_id: await userIdFor(subject) });
+      const admin = canAdmin(subject, env);
+      return json({ sub: subject, user_id: await userIdFor(subject), can_admin: admin, ...(admin ? { admin_url: adminUrl(env) } : {}) });
     }
 
     // The sessions this learner has live, to say whether an address names one of them:

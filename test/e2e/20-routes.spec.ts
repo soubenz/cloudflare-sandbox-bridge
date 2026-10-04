@@ -1769,7 +1769,8 @@ gated.describe('the password gate', () => {
 
     // Their id is what the Worker says it is, and another's is not found.
     const me = await page.evaluate(() => fetch('/api/me').then((r) => r.json()));
-    expect(me).toEqual({ sub: 'console', user_id: 'console' });
+    // The console's one subject is the owner, so the real Worker says it may see the Admin switch (and where the admin Worker is).
+    expect(me).toEqual({ sub: 'console', user_id: 'console', can_admin: true, admin_url: 'https://opalix-admin.soubenz94.workers.dev' });
     const active = await page.evaluate(() => fetch('/api/sessions/active').then((r) => r.json()));
     expect(active).toEqual({ sessions: [{ id: SESSION_ID, lab: PLAIN, state: 'running' }] });
     expect(JSON.stringify(active)).not.toMatch(/never-shown|user_id|console/);

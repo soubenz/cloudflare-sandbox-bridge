@@ -33,7 +33,16 @@
     // The API's real, browsable origin. The console's CSP allows the browser
     // to connect (fetch + WebSocket) and frame it, and nothing else. Unlike
     // API_BASE this one must be correct.
-    "API_PUBLIC_ORIGIN": "https://opalix-sandbox.soubenz94.workers.dev"
+    "API_PUBLIC_ORIGIN": "https://opalix-sandbox.soubenz94.workers.dev",
+
+    // Who sees the console's "Admin" switch (GET /api/me -> can_admin): a comma list of subjects.
+    // Admin mode is a client-side view mode and grants no server-side power; this only decides who is
+    // shown the switch. "console" is today's one subject, the owner. Real accounts later must be listed
+    // here (their subject, e.g. an email) or they never see it.
+    "CONSOLE_ADMIN_SUBJECTS": "console",
+
+    // The admin Worker's address, opened by the "Admin panel" link (only for subjects above).
+    "ADMIN_URL": "https://opalix-admin.soubenz94.workers.dev"
   },
 
   // Five login attempts a minute per address (429 + Retry-After beyond that).
