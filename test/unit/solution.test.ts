@@ -153,6 +153,8 @@ async function runOnce(rt: SessionRuntime, manifest: ReturnType<typeof manifestW
     fake.resolveNext('exec', proc({ exitCode: pass ? 0 : 1, stdout: JSON.stringify({ pass, message: pass ? 'ok' : 'no' }), stderr: '', timedOut: false }));
   }
   (rt as unknown as { _backend: unknown })._backend = fake.asBackend();
+  // These runs follow each other instantly; forget the previous one so the 2 s run interval does not apply.
+  await rt.clearLastChecks();
   return runChecks(rt, manifest);
 }
 

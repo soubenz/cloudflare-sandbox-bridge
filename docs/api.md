@@ -75,7 +75,7 @@ minutes are usable now.
 | GET | `/sessions/:id/solution` | session token only | the lab's solution as files, once the session has earned it → `200 { files: [{ path, content }], truncated }`; `404 no_solution`, `403 solution_locked`; the service key is refused with `403 session_token_required`. See [Solution reveal](#solution-reveal) |
 | GET/PUT/DELETE | `/sessions/:id/files/:path` | session | under `/workspace`; PUT capped at 2 MiB |
 | GET | `/sessions/:id/files?path=` | session | list; `path` defaults to `/workspace` but is **not** confined to it |
-| POST | `/sessions/:id/checks` | session | `{ only? }` → runs and returns the full `ChecksRun` |
+| POST | `/sessions/:id/checks` | session | `{ only? }` → runs and returns the full `ChecksRun`. `only` must name checks of the lab's manifest (400 `unknown_check` otherwise, empty list included). A session runs one check run at a time (409 `checks_running`) and at most one every 2 seconds, measured from the start of the previous run (429 `checks_too_frequent`). A run that would execute no check is never stored |
 | GET | `/sessions/:id/checks?limit=20` | session | this session's last runs from D1, newest first (default 20, max 100) → `{ runs: [{ run_id, started_at, finished_at, passed, total, score, results }] }`; `results` is the parsed `CheckResultEntry[]` |
 | GET | `/sessions/:id/progress-summary` | session | this session's user on this session's lab → `{ slug, attempts, best_score, passed_all, last_run_at, sessions, attempts_this_session }` (zeros and `last_run_at: null` before any run) |
 | POST | `/sessions/:id/feedback` | session | `{ rating, text? }` — `rating` an integer 1-5, `text` at most 2000 characters. One row per session: a second call replaces the first. → `201 { ok: true }`; `400 bad_feedback` |
@@ -216,11 +216,13 @@ the RPC boundary.
 | 404 | `unknown_service` | restart, cookie route or proxy for a service not in the lab |
 | 400 | `bad_feedback` | `POST /sessions/{id}/feedback` with a `rating` that is not an integer 1-5, a `text` that is not a string or is over 2000 characters, or a body that is not an object |
 | 400 | `bad_user_id` | `GET /users/{uid}/profile` or `/awards` with an id that is empty, over 128 characters, or holds a control character |
+| 400 | `unknown_check` | `POST /sessions/{id}/checks` with an `only` that is empty, not an array of strings, or names a check the lab does not have; the message lists the valid names (`details: { unknown?, valid }` when the error is raised in the Worker; over the DO boundary the message carries them) |
 | 400 | `bad_cursor` | `GET /users/{uid}/checks` with a `before` that is not a number |
 | 400 | `invalid_path_inputs` | `PUT /users/{uid}/path-inputs` with a body that fails validation; `details.issues` lists `{ path, message }` |
 | 400 | `invalid_user_id` | a learning-path route whose `:uid` is empty or over 128 characters |
 | 404 | `no_inputs` | `GET`/`POST /users/{uid}/path` for a user who never sent path inputs |
 | 409 | `active_session_exists` | the user already has a live session (the D1 unique index) |
+| 409 | `checks_running` | `POST /sessions/{id}/checks` while a check run of that session is still executing |
 | 409 | `cannot_begin` | `POST /sessions/{id}/begin` on a session that has ended |
 | 409 | `cannot_resume` | `POST /sessions/{id}/resume` on a session that is not `ended` |
 | 409 | `no_snapshot` | resume with no snapshot to restore from |
@@ -228,12 +230,13 @@ the RPC boundary.
 | 409 | `session_recovering` | a stale process/terminal handle; the container was replaced |
 | 409 | `version_exists` | `POST /labs/publish` for a `<slug>/<version>` that is already published, without `force` |
 | 409 | `file_exists` | SDK `FileExistsError` |
+| 429 | `checks_too_frequent` | `POST /sessions/{id}/checks` less than 2 seconds after the previous run started; `details.retry_after_ms` is the wait left (also in the message as `retry_after_ms=N`) |
 | 413 | `payload_too_large` | `PUT .../files/...` over 2 MiB, or the SDK's own file-size limit |
 | 502 | `service_down` | service proxy while that service is `unhealthy` |
 | 503 | `at_capacity` | `POST /sessions`, `POST /sessions/start`: the family's pool is at `max_instances` or backing off; `details.retry_after_s`, and the `Retry-After` header carries the same number |
 | 503 | `container_unavailable` | SDK `ContainerUnavailableError`; `details.retry_after_ms` when the SDK supplies it |
 | 503 | `sdk_transient` | SDK `OperationInterruptedError` / `RPCTransportError` |
-| 500 | `internal_error` | anything unrecognised; `details.error_name` carries the original class name |
+| 500 | `internal_error` | anything unrecognised: the message is the fixed text `Internal error` (or `Could not reserve the session slot`), never the underlying error, which is logged server-side; `details.error_name` carries the original class name |
 
 ## Profile, XP and awards
 

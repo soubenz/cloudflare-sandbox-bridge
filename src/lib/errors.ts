@@ -70,7 +70,9 @@ export function fromSdkError(err: unknown): ApiError {
     // `details` do not survive the RPC boundary; the one caller that needs
     // one (Pool.admit's retry hint) also writes it into the message.
     const retryAfter = /retry_after_s=(\d+)/.exec(message)?.[1];
-    return new ApiError(Number(status) || 500, code || 'internal_error', message, retryAfter ? { retry_after_s: Number(retryAfter) } : undefined);
+    const retryAfterMs = /retry_after_ms=(\d+)/.exec(message)?.[1];
+    const details = retryAfter ? { retry_after_s: Number(retryAfter) } : retryAfterMs ? { retry_after_ms: Number(retryAfterMs) } : undefined;
+    return new ApiError(Number(status) || 500, code || 'internal_error', message, details);
   }
 
   switch (name) {
@@ -94,10 +96,12 @@ export function fromSdkError(err: unknown): ApiError {
     case 'RPCTransportError':
       return new ApiError(503, 'sdk_transient', message);
     default:
-      // Carry the original error's class name. The streaming paths
+      // An unrecognised error is internal text (SDK, D1, a stack of ours):
+      // the client gets a fixed message, the log gets the original. The
+      // class name still rides in `details` because the streaming paths
       // (terminal, SSE, proxy) cannot be reproduced locally without
-      // Docker, so a bare 500 message is often not enough to tell which
-      // of several SDK throw sites fired.
-      return ApiError.internal(message, name ? { error_name: name } : undefined);
+      // Docker, and the name alone says which throw site fired.
+      console.error('unhandled error', name ?? 'Error', message);
+      return ApiError.internal('Internal error', name ? { error_name: name } : undefined);
   }
 }

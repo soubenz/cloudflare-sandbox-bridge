@@ -9,6 +9,7 @@ import { ensureStageDir, stagePath, archiveGuard, removeStaged } from './hydrate
 import { tryEmitSolutionUnlocked } from './solution';
 import { announceNewAwards } from '../profile/notify';
 import { refreshPath } from '../path/service';
+import { ApiError } from '../lib/errors';
 
 /**
  * Runs the lab's checker scripts and returns structured, per-criterion
@@ -19,13 +20,60 @@ import { refreshPath } from '../path/service';
  * scripts are never resident in the container between runs."
  */
 export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?: string[]): Promise<ChecksRun> {
+  // Validate first, so a rejected request neither takes the in-flight slot nor starts the interval.
+  const checksToRun = selectChecks(manifest, only);
+  if (checksToRun.length === 0) {
+    // Nothing to execute: no events, no stored run, no check_runs row, no award recompute.
+    const now = Date.now();
+    return { run_id: newId(), started_at: now, finished_at: now, results: [] };
+  }
+
+  // One run at a time (409), and one per CHECK_MIN_INTERVAL_MS (429): every
+  // finished run costs a D1 insert and an award recompute over the user's runs.
+  // The slot is taken before the first await so two concurrent requests cannot both pass.
+  if (checksInFlight.has(rt)) throw ApiError.conflict('checks_running', 'A check run is already in progress for this session');
+  checksInFlight.add(rt);
+  try {
+    const last = await rt.lastChecks();
+    const wait = last ? last.started_at + CHECK_MIN_INTERVAL_MS - Date.now() : 0;
+    if (wait > 0) {
+      // `retry_after_ms` is in the message too: details do not survive the DO RPC boundary (see fromSdkError).
+      throw new ApiError(429, 'checks_too_frequent', `Checks can run once every ${CHECK_MIN_INTERVAL_MS / 1000} seconds; retry_after_ms=${wait}`, {
+        retry_after_ms: wait,
+      });
+    }
+    return await executeChecks(rt, manifest, checksToRun);
+  } finally {
+    checksInFlight.delete(rt);
+  }
+}
+
+/** The shortest gap between the starts of two check runs of one session. */
+export const CHECK_MIN_INTERVAL_MS = 2000;
+const checksInFlight = new WeakSet<SessionRuntime>();
+
+/** The manifest's checks named by `only` (all of them when it is absent). Throws 400 `unknown_check` for a selection that names no real check. */
+export function selectChecks(manifest: LabManifest, only?: unknown): CheckSpec[] {
+  if (only === undefined || only === null) return manifest.checks;
+  const valid = manifest.checks.map((c) => c.name);
+  const listed = `Valid checks: ${valid.join(', ')}`;
+  if (!Array.isArray(only) || only.length === 0 || only.some((n) => typeof n !== 'string')) {
+    throw ApiError.badRequest('unknown_check', `"only" must be a non-empty array of check names. ${listed}`, { valid });
+  }
+  const unknown = [...new Set(only as string[])].filter((n) => !valid.includes(n));
+  if (unknown.length > 0) {
+    throw ApiError.badRequest('unknown_check', `No such check: ${unknown.map((n) => JSON.stringify(n.slice(0, 80))).join(', ')}. ${listed}`, { unknown, valid });
+  }
+  return manifest.checks.filter((c) => (only as string[]).includes(c.name));
+}
+
+async function executeChecks(rt: SessionRuntime, manifest: LabManifest, checksToRun: CheckSpec[]): Promise<ChecksRun> {
   const backend = rt.backend();
   const runId = newId();
   const dir = `/run/opalix/checks-${runId}`;
 
   await rt.touchInput();
 
-  const checksToRun = only ? manifest.checks.filter((c) => only.includes(c.name)) : manifest.checks;
   const run: ChecksRun = { run_id: runId, started_at: Date.now(), results: [] };
   await rt.putLastChecks(run);
   emitEvent(rt, 'check.started', { run_id: runId, total: checksToRun.length });
@@ -76,6 +124,9 @@ export async function runChecks(rt: SessionRuntime, manifest: LabManifest, only?
     .recordCheckRun(passed_all)
     .catch((err) => emitEvent(rt, 'alert', { kind: 'check_run_count_failed', error: String(err) }));
   await tryEmitSolutionUnlocked(rt, manifest);
+
+  // A run that executed nothing is never written (it would be an empty row that still triggers the award recompute).
+  if (run.results.length === 0) return run;
 
   const meta = await rt.requireMeta();
   // The awards are recomputed only once the run is in D1, because they are
@@ -174,6 +225,7 @@ async function runOneCheck(
     };
   } catch (err) {
     const { timed_out, message } = classifyCheckError(err, check.timeout_s);
+    if (!timed_out) console.error('check errored', { session_id: rt.sessionId, check: check.name }, err);
     return {
       name: check.name,
       pass: false,
@@ -211,7 +263,9 @@ export function classifyCheckError(err: unknown, timeoutS: number): { timed_out:
     // number they can change.
     return { timed_out: true, message: `check exceeded its timeout_s of ${timeoutS}s` };
   }
-  return { timed_out: false, message: `check errored: ${String(err)}` };
+  // The error text (SDK, container, RPC) is internal and this message reaches
+  // the learner's browser; runOneCheck logs the original against the session.
+  return { timed_out: false, message: 'check errored: the grader could not be run' };
 }
 
 /**

@@ -39,6 +39,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
 
   app.onError((err, c) => {
     const apiErr = err instanceof ApiError ? err : fromSdkError(err);
+    if (apiErr.status >= 500) console.error('request failed', { method: c.req.method, path: c.req.path, code: apiErr.code });
     const response = apiErr.toResponse();
     if (apiErr.code === 'at_capacity') {
       const retryAfter = (apiErr.details as { retry_after_s?: number } | undefined)?.retry_after_s ?? 30;
@@ -364,7 +365,11 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     try {
       return c.json(await readSolutionFiles(obj.body));
     } catch (err) {
-      if (err instanceof TarError) throw new ApiError(500, 'solution_unreadable', `The stored solution could not be read: ${err.message}`);
+      if (err instanceof TarError) {
+        // The archive's own wording (entry names, offsets) stays in the log.
+        console.error('solution unreadable', { session_id: id }, err);
+        throw new ApiError(500, 'solution_unreadable', 'The stored solution could not be read');
+      }
       throw err;
     }
   });
@@ -638,7 +643,9 @@ async function check(fn: () => Promise<unknown>): Promise<CheckResult> {
     await fn();
     return 'ok';
   } catch (err) {
-    return `fail: ${err instanceof Error ? err.message : String(err)}`;
+    // The probe names what failed; the cause stays in the log, not the body.
+    console.error('deep health check failed', err);
+    return 'fail';
   }
 }
 
@@ -657,7 +664,8 @@ async function deepHealth(env: Env) {
         const s = await poolStub(env, f).stats();
         pools[f] = { degraded: s.stats.degraded, warm: s.warm };
       } catch (err) {
-        pools[f] = { error: err instanceof Error ? err.message : String(err) };
+        console.error('deep health: pool stats failed', { family: f }, err);
+        pools[f] = { error: 'unavailable' };
       }
     }),
   ]);
@@ -735,18 +743,23 @@ async function createSession(env: Env, lab: string, userId: string, ipHash?: str
  * a 500, not a misleading "already has a session".
  */
 async function reserveSessionSlot(env: Env, row: Parameters<typeof insertSession>[1]): Promise<void> {
-  const conflict = (err: unknown) => ApiError.conflict('active_session_exists', 'This user already has an active session', { cause: String(err) });
+  // The SQLite/D1 error text stays in the log (session and user ids, never a token).
+  const conflict = () => ApiError.conflict('active_session_exists', 'This user already has an active session');
+  const internal = (err: unknown) => {
+    console.error('could not reserve the session slot', { session_id: row.id, user_id: row.user_id }, err);
+    return ApiError.internal('Could not reserve the session slot');
+  };
   try {
     await insertSession(env, row);
     return;
   } catch (err) {
-    if (!isActiveSessionConflict(err)) throw ApiError.internal('Could not reserve the session slot', { cause: String(err) });
-    if (!(await healUserActiveRows(env, row.user_id))) throw conflict(err);
+    if (!isActiveSessionConflict(err)) throw internal(err);
+    if (!(await healUserActiveRows(env, row.user_id))) throw conflict();
   }
   try {
     await insertSession(env, row);
   } catch (err) {
-    throw isActiveSessionConflict(err) ? conflict(err) : ApiError.internal('Could not reserve the session slot', { cause: String(err) });
+    throw isActiveSessionConflict(err) ? conflict() : internal(err);
   }
 }
 

@@ -97,7 +97,9 @@ describe('classifyCheckError', () => {
   it('leaves a genuinely broken check reported as an error, not a timeout', () => {
     const result = classifyCheckError(new Error('bash: no such file or directory'), 30);
     expect(result.timed_out).toBe(false);
-    expect(result.message).toBe('check errored: Error: bash: no such file or directory');
+    // The raw error text is internal and reaches the learner's browser, so it is not in the message.
+    expect(result.message).toBe('check errored: the grader could not be run');
+    expect(result.message).not.toContain('no such file');
   });
 
   it('does not mistake another SDK error for a timeout', () => {
@@ -107,6 +109,6 @@ describe('classifyCheckError', () => {
   });
 
   it('handles a non-Error throw', () => {
-    expect(classifyCheckError('boom', 30)).toEqual({ timed_out: false, message: 'check errored: boom' });
+    expect(classifyCheckError('boom', 30)).toEqual({ timed_out: false, message: 'check errored: the grader could not be run' });
   });
 });
