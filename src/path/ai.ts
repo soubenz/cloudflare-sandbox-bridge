@@ -56,7 +56,7 @@ export interface PromptInput {
   labs: PromptLab[];
 }
 
-/** The JSON Schema the reply must satisfy (sent as the strict `response_format`). */
+/** The JSON Schema the reply must satisfy (documents the reply; the prompt spells the shape out, the server enforces it). */
 export const ORDER_SCHEMA = {
   type: 'object',
   properties: {
@@ -92,7 +92,7 @@ export type AiCall = (req: AiRequest, signal: AbortSignal) => Promise<string>;
 export function buildPrompt(input: PromptInput): { system: string; user: string } {
   const system = [
     'You put a learner\'s hands-on labs in the best order for them.',
-    'Reply with JSON only, matching the schema: "steps" lists EVERY lab given, each exactly once, using its slug exactly as written.',
+    'Reply with JSON only, in exactly this shape: {"steps":[{"slug":"<slug>","why":"<one short sentence>"}]}. "steps" lists EVERY lab given, each exactly once, using its slug exactly as written.',
     'A lab must come after every lab listed under "needs" for it.',
     'Put labs that serve the learner\'s goal sooner, start gently in areas marked new, and keep labs of one area near each other when that helps.',
     `For each lab, "why" is one short sentence (at most ${WHY_MAX} characters) in plain everyday language that tells the learner what they get from it or why it comes at that point.`,
@@ -194,7 +194,10 @@ export function gatewayAiCall(env: Pick<Env, 'LLM_HOST' | 'AI_GATEWAY_NAME' | 'C
           { role: 'system', content: req.system },
           { role: 'user', content: req.user },
         ],
-        response_format: { type: 'json_schema', json_schema: { name: 'learning_path_order', strict: true, schema: req.schema } },
+        // Not `json_schema`: the model behind PATH_MODEL refuses it outright (403, "doesn't support JSON Schema"),
+        // which made every call fall back to catalogue order without a word. `json_object` is accepted; the
+        // shape is in the prompt, and the server validates whatever comes back.
+        response_format: { type: 'json_object' },
       }),
     });
     if (!res.ok) throw new Error(`the AI gateway answered ${res.status}`);

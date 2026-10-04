@@ -573,9 +573,9 @@ lab. With fewer there is nothing to order and no call is made.
   with `Authorization: Bearer {AI_GATEWAY_TOKEN}` (see the AI Gateway section of
   `docs/spike.md`). The Worker holds the token itself, so no egress rule is involved.
 - **Request.** Model `workers-ai/@cf/meta/llama-3.1-8b-instruct-fp8` (the constant
-  `PATH_MODEL` in `src/path/ai.ts`), `temperature: 0`, and a strict JSON-schema
-  `response_format`: `{ "steps": [{ "slug", "why" }] }`, `why` at most 120
-  characters. The prompt carries the goal (quoted, as data), hours per week, quiz
+  `PATH_MODEL` in `src/path/ai.ts`), `temperature: 0`, and `response_format: { type: "json_object" }` (this model
+  refuses JSON-schema mode with a 403, so the shape `{ "steps": [{ "slug", "why" }] }`,
+  `why` at most 120 characters, is spelled out in the prompt and enforced by the server). The prompt carries the goal (quoted, as data), hours per week, quiz
   levels and the allowed labs with title, area, difficulty, minutes and
   prerequisites. `cf-aig-cache-ttl: 86400` is set, and `cf-aig-skip-cache: true` on
   `?force=1`.

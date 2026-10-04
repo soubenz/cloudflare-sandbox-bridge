@@ -137,8 +137,10 @@ describe('gatewayAiCall: the real call, with fetch stubbed', () => {
       model: PATH_MODEL,
       temperature: 0,
       messages: [{ role: 'system', content: 'sys' }, { role: 'user', content: 'usr' }],
-      response_format: { type: 'json_schema', json_schema: { name: 'learning_path_order', strict: true, schema: ORDER_SCHEMA } },
+      response_format: { type: 'json_object' },
     });
+    // The model refuses JSON-schema mode (a live 403), so it must never be asked for it.
+    expect(init.body as string).not.toContain('json_schema');
   });
 
   it('asks the gateway to skip its cache when forced', async () => {
