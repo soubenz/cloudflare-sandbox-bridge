@@ -101,14 +101,40 @@ async function tailLogs(proc: { logs: (opts: { replay: boolean }) => Promise<Rea
   }
 }
 
-/** Starts every service in dependency order, persisting runtime state as it goes. Called once from lifecycle.start. */
-export async function startAllServices(rt: SessionRuntime, manifest: LabManifest): Promise<void> {
+/**
+ * Starts every service in dependency order, persisting runtime state as it
+ * goes. Called from lifecycle's start and resume sequences. `stopRecorded` is
+ * set when that sequence is a retry of one killed mid-flight: the killed run
+ * may already have launched some services (their ids are stored), and a
+ * second launch would leave two copies fighting over one port, so the stored
+ * process is stopped first.
+ */
+export async function startAllServices(rt: SessionRuntime, manifest: LabManifest, opts: { stopRecorded?: boolean } = {}): Promise<void> {
   const services = await rt.services();
   for (const spec of topoOrder(manifest.services)) {
+    if (opts.stopRecorded) await stopRecordedProcess(rt, services[spec.name]);
     const runtime = await startService(rt, spec);
     services[spec.name] = runtime;
     await rt.putServices(services);
     emitEvent(rt, 'service.health', { service: spec.name, health: runtime.health });
+  }
+}
+
+/**
+ * Best-effort SIGKILL of a service's recorded process, for a boot retry (see
+ * startAllServices). A null handle means the process is not in this
+ * container (a fresh one, or it already exited); every failure is swallowed,
+ * since the worst case is the launch that follows meeting a busy port.
+ */
+async function stopRecordedProcess(rt: SessionRuntime, runtime: ServiceRuntime | undefined): Promise<void> {
+  if (!runtime?.process_id) return;
+  try {
+    const proc = await rt.backend().getProcess(runtime.process_id);
+    if (!proc) return;
+    await proc.kill(9).catch(() => {});
+    await proc.waitForExit({ timeout: 3000 }).catch(() => {});
+  } catch {
+    /* see above */
   }
 }
 

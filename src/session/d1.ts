@@ -171,14 +171,48 @@ export async function activeSessionRows(env: Env, userId: string): Promise<Array
   return result.results ?? [];
 }
 
-/** Active-looking rows older than `olderThanMs`, oldest first, for the sweeper. */
-export async function staleActiveRows(env: Env, olderThanMs: number, limit = 100): Promise<Array<{ id: string }>> {
+/**
+ * Rows for the sweeper to check with their Session DO, oldest first: every
+ * active-looking row created before `olderThanMs`, plus any row in a
+ * transitional boot state (`starting`, `resuming`, `recovering`) created
+ * before `bootOlderThanMs`, since a boot that lost its timer would otherwise
+ * hold the user's slot for hours. A resumed row keeps its original
+ * `created_at`, so every `resuming` row past that cut is checked; the DO
+ * decides (state.isStuck) whether it is really stuck.
+ */
+export async function staleActiveRows(env: Env, olderThanMs: number, limit = 100, bootOlderThanMs = olderThanMs): Promise<Array<{ id: string }>> {
   const result = await env.DB.prepare(
-    `SELECT id FROM sessions WHERE state IN ('starting','ready','running') AND created_at < ? ORDER BY created_at ASC LIMIT ?`
+    `SELECT id FROM sessions
+     WHERE (state IN ${ACTIVE_STATES_SQL} AND created_at < ?)
+        OR (state IN ('starting','resuming','recovering') AND created_at < ?)
+     ORDER BY created_at ASC LIMIT ?`
   )
-    .bind(olderThanMs, limit)
+    .bind(olderThanMs, bootOlderThanMs, limit)
     .all<{ id: string }>();
   return result.results ?? [];
+}
+
+/**
+ * Takes the user's one-active-session slot for a resume: flips this session's
+ * own row from `ended` to `resuming`. The partial unique index makes the flip
+ * fail (SQLite 2067, `isActiveSessionConflict`) while the user has another
+ * live session, which is the whole point. Resolves false when the row was not
+ * `ended` (another resume of it got there first, or there is no row).
+ */
+export async function markResuming(env: Env, id: string): Promise<boolean> {
+  const result = await env.DB.prepare(`UPDATE sessions SET state = 'resuming' WHERE id = ? AND state = 'ended'`).bind(id).run();
+  return (result.meta?.changes ?? 0) > 0;
+}
+
+/** Gives back a slot taken by `markResuming` when the resume never began. Only a row still `resuming` is touched. */
+export async function unmarkResuming(env: Env, id: string): Promise<void> {
+  await env.DB.prepare(`UPDATE sessions SET state = 'ended' WHERE id = ? AND state = 'resuming'`).bind(id).run();
+}
+
+/** The state D1 records for one session, or null when it has no row. */
+export async function sessionRowState(env: Env, id: string): Promise<string | null> {
+  const row = await env.DB.prepare(`SELECT state FROM sessions WHERE id = ?`).bind(id).first<{ state: string }>();
+  return row?.state ?? null;
 }
 
 /**

@@ -119,8 +119,10 @@ function makeWorld() {
       const { rt } = existing(id);
       const meta = await rt.requireMeta();
       const m = await rt.manifest();
-      return { meta, services: await rt.services(), manifest_summary: m ? summarizeManifest(m) : undefined } as unknown as SessionStatus;
+      return { meta, services: await rt.services(), snapshots: await rt.snapshots(), manifest_summary: m ? summarizeManifest(m) : undefined } as unknown as SessionStatus;
     },
+    resume: () => lifecycle.requestResume(existing(id).rt),
+    endIfStuck: () => lifecycle.endIfStuck(existing(id).rt),
     begin: () => lifecycle.beginSession(existing(id).rt),
     cancelPrepared: () => lifecycle.cancelPrepared(existing(id).rt),
     end: (snapshot = true) => lifecycle.endSession(existing(id).rt, 'user', snapshot),
@@ -602,7 +604,7 @@ describe('resume shares the timer list with start and begin', () => {
 
     await w.call('DELETE', `/sessions/${id}?snapshot=0`);
     await w.rt(id).putSnapshots([{ backup_id: 'b1', dir: '/workspace', ttl: 3600, created_at: Date.now(), reason: 'user' }]);
-    await lifecycle.requestResume(w.rt(id));
+    expect((await w.call('POST', `/sessions/${id}/resume`)).status).toBe(200);
     await w.boot(id);
 
     expect((await w.meta(id)).state).toBe('running');

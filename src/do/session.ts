@@ -106,6 +106,11 @@ export class Session extends DurableObject<Env> {
     return lifecycle.endSession(this.rt, 'user', snapshot);
   }
 
+  /** Ends the session as `error` only if it has been stuck booting for STUCK_BOOT_MS; resolves the ended meta, or null. See reconcile.healIfStale. */
+  async endIfStuck(): Promise<SessionMeta | null> {
+    return lifecycle.endIfStuck(this.rt);
+  }
+
   async readFile(path: string) {
     await this.rt.requireRunning();
     return readWorkspaceFile(this.rt, path);

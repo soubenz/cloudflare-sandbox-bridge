@@ -24,7 +24,8 @@ vi.mock('../../src/session/services', () => ({
   allServicesGone: async () => false,
 }));
 const updateSession = vi.hoisted(() => vi.fn(async () => {}));
-vi.mock('../../src/session/d1', () => ({ updateSession, insertSnapshot: async () => {}, bestEffort: () => {} }));
+// The resume route reserved the user's slot (the row says `resuming`) before the DO is asked.
+vi.mock('../../src/session/d1', () => ({ updateSession, insertSnapshot: async () => {}, bestEffort: () => {}, sessionRowState: async () => 'resuming', activeSessionRows: async () => [] }));
 
 function makeRuntime() {
   const storage = createFakeStorage();

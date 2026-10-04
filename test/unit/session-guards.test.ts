@@ -26,10 +26,13 @@ vi.mock('../../src/session/services', () => ({
   healthCheckAll: async () => {},
   allServicesGone: async () => false,
 }));
+// The resume route reserved the user's slot (the row says `resuming`) before the DO is asked.
 vi.mock('../../src/session/d1', () => ({
   updateSession: async () => {},
   insertSnapshot: async () => {},
   bestEffort: () => {},
+  sessionRowState: async () => 'resuming',
+  activeSessionRows: async () => [],
 }));
 
 /** A real SessionRuntime over fake storage that also implements deleteAll(), with the alarm calls observable. */

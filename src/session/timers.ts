@@ -37,10 +37,21 @@ export async function cancelTimersExcept(rt: SessionRuntime, ...keep: TimerKind[
   await rearmAlarm(rt);
 }
 
-export async function popDueTimers(rt: SessionRuntime, now: number): Promise<TimerEntry[]> {
+/**
+ * Removes and returns every timer due at `now`. `requeue` may hand back a
+ * replacement for a due entry (lifecycle uses it to re-arm `start`/`resume`
+ * as their own watchdog); the replacement is written in the same storage put
+ * as the removal, so no eviction can land between "popped" and "re-armed".
+ */
+export async function popDueTimers(rt: SessionRuntime, now: number, requeue?: (t: TimerEntry) => TimerEntry | undefined): Promise<TimerEntry[]> {
   const timers = await rt.timers();
   const due = timers.filter((t) => t.at <= now);
   const remaining = timers.filter((t) => t.at > now);
+  for (const t of due) {
+    const again = requeue?.(t);
+    if (again) remaining.push(again);
+  }
+  remaining.sort((a, b) => a.at - b.at);
   await rt.putTimers(remaining);
   return due;
 }

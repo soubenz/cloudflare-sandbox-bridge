@@ -5,6 +5,7 @@ import { newId } from '../lib/ids';
 import { isFamily } from '../families/registry';
 import { degradedTransition, degradedMessage, recoveredMessage, postAlert, admissionDecision, availableSlots, resolveMaxInstances } from '../lib/pool-health';
 import { ApiError } from '../lib/errors';
+import { claimOf, claimsOf, type ClaimedEntry } from '../lib/pool-claims';
 
 export { degradedTransition };
 
@@ -13,11 +14,6 @@ interface WarmEntry {
   created_at: number;
   ready_at: number;
   last_ping_at: number;
-}
-
-interface ClaimedEntry {
-  session_id: string;
-  claimed_at: number;
 }
 
 interface PoolConfig {
@@ -137,12 +133,24 @@ export class Pool extends DurableObject<Env> {
     await this.ctx.storage.put('stats', { ...stats, ...patch });
   }
 
-  /** Pops a warm sandbox for `sessionId`, or mints a cold id for the Session DO to start itself. */
+  /**
+   * Pops a warm sandbox for `sessionId`, or mints a cold id for the Session DO
+   * to start itself. Idempotent per session: a session that already holds a
+   * claim gets the same sandbox back (its claim time refreshed), so a start or
+   * resume retried after an eviction never takes a second container.
+   */
   async claim(sessionId: string): Promise<{ sandbox_id: string; warm: boolean }> {
     const config = await this.getConfig();
     const warm = await this.getWarm();
     const claimed = await this.getClaimed();
     const stats = withDefaults(await this.ctx.storage.get<PoolStats>('stats'));
+
+    const held = claimOf(claimed, sessionId);
+    if (held) {
+      claimed[held] = { session_id: sessionId, claimed_at: Date.now() };
+      await this.setClaimed(claimed);
+      return { sandbox_id: held, warm: false };
+    }
 
     const entry = warm.shift();
     await this.setWarm(warm);
@@ -195,6 +203,20 @@ export class Pool extends DurableObject<Env> {
     const claimed = await this.getClaimed();
     delete claimed[sandboxId];
     await this.setClaimed(claimed);
+  }
+
+  /**
+   * Drops every claim `sessionId` holds and returns the sandbox ids, for the
+   * session's end path when it never recorded which sandbox it was given (an
+   * eviction between `claim` and storing the id). The caller destroys them.
+   */
+  async releaseSession(sessionId: string): Promise<string[]> {
+    const claimed = await this.getClaimed();
+    const ids = claimsOf(claimed, sessionId);
+    if (ids.length === 0) return [];
+    for (const id of ids) delete claimed[id];
+    await this.setClaimed(claimed);
+    return ids;
   }
 
   async stats(): Promise<{ warm: number; claimed: number; max_instances: number; available: number; config: PoolConfig; stats: PoolStats }> {

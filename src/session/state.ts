@@ -43,6 +43,16 @@ export interface SessionMeta {
   /** Consecutive failed recover() runs since the last success. */
   recover_failures?: number;
   /**
+   * How many times a `start` or `resume` timer has begun the boot sequence
+   * since it was requested. Each run re-arms the same timer as a watchdog
+   * first, so a run killed mid-flight (a deploy, an eviction) is retried; the
+   * count bounds the retries (lifecycle.MAX_BOOT_ATTEMPTS). Cleared when the
+   * boot finishes and when the session ends.
+   */
+  boot_attempts?: number;
+  /** When the current `resuming` spell was requested; the stuck-boot rule (`stuckSince`) measures from it. */
+  resuming_since?: number;
+  /**
    * Hash of the address that opened the session, for the dev route's
    * per-address cap. Never shown, never reversed, and absent for sessions
    * started with the service key.
@@ -241,6 +251,37 @@ export function buildStatus(input: {
   };
 }
 
+/**
+ * A session that has been `starting`, `resuming` or `recovering` this long is
+ * dead, whatever its timers say: a real boot takes a minute or two, and the
+ * start/resume watchdog gives up well before this. reconcile.healIfStale and
+ * the sweeper end such a session (Session DO `endIfStuck`) so a lost timer can
+ * never hold its user's one session slot for longer than this.
+ */
+export const STUCK_BOOT_MS = 10 * 60_000;
+
+/** When the session entered the transitional state it is in, or undefined when it is not in one (`ready`, `running`, `ended`). */
+export function stuckSince(meta: SessionMeta): number | undefined {
+  switch (meta.state) {
+    case 'starting':
+      return meta.created_at;
+    case 'resuming':
+      // Sessions resumed before `resuming_since` existed: the end time is the
+      // latest moment the resume can have been asked for.
+      return meta.resuming_since ?? meta.ended_at ?? meta.created_at;
+    case 'recovering':
+      return meta.recovering_since;
+    default:
+      return undefined;
+  }
+}
+
+/** True when the session has sat in `starting`, `resuming` or `recovering` for at least STUCK_BOOT_MS. Pure. */
+export function isStuck(meta: SessionMeta, now: number): boolean {
+  const since = stuckSince(meta);
+  return since !== undefined && now - since >= STUCK_BOOT_MS;
+}
+
 const KEYS = {
   meta: 'meta',
   manifest: 'manifest',
@@ -277,6 +318,14 @@ export class SessionRuntime {
   readonly sessionId: string;
   private _backend?: Backend;
   private checkRunQueue: Promise<unknown> = Promise.resolve();
+  /**
+   * In-memory only: true while this instance is running a `start` or `resume`
+   * boot. handleAlarm will not begin a second boot while it is set (the
+   * watchdog timer of a slow but live boot is pushed back instead). An
+   * eviction or a deploy drops the flag together with the run it guarded,
+   * which is exactly when the watchdog's retry is wanted.
+   */
+  bootInFlight = false;
   private solutionClaimed = false;
 
   /** In-memory only — SSE writers for GET /events and the upstream terminal socket for WS /terminal. Never persisted; a DO restart drops both and clients reconnect. */

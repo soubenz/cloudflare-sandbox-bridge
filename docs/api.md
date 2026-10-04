@@ -87,7 +87,7 @@ minutes are usable now.
 | WS | `/sessions/:id/terminal` | session | relayed PTY |
 | POST | `/sessions/:id/snapshot` | session | → the new `SnapshotEntry` |
 | POST | `/sessions/:id/touch` | session | refreshes the idle clock ("I'm here") exactly as a file write does, without doing any work; 204, or `409 not_running` |
-| POST | `/sessions/:id/resume` | session | requires a snapshot; `{ meta, token }` with a new token |
+| POST | `/sessions/:id/resume` | session | requires an `ended` session with a snapshot; `{ meta, token }` with a new token. Passes the same gates as a start: `503 at_capacity` when the pool cannot admit, `409 active_session_exists` (with `details.active_session_id`) while the user has any other live session, `409 cannot_resume` when it is not ended or another resume of it is under way. See [Resume](#resume) |
 | DELETE | `/sessions/:id?snapshot=0` | session | ends the session; snapshots by default (never a `ready` one: it has no work to keep, and it cancels the pre-warm) |
 | GET | `/users/:uid/progress` | service | per-lab standing from D1 `check_runs` → `{ labs: [{ slug, attempts, best_score, passed_all, last_run_at, sessions }] }`, most recently attempted first. `best_score` is the best weighted share of checks passed in one run (0-1); `passed_all` is true if any run passed every check of the lab; `sessions` counts distinct sessions that ran checks |
 | GET | `/users/:uid/checks?lab=&limit=&before=` | service | a user's runs across sessions, newest first → `{ runs: [...] }` (same shape as the session route, plus `session_id` and `lab_slug`). `lab` filters to one lab; `before` is an epoch-ms cursor (pass the last `started_at` you saw); `limit` default 20, max 100 |
@@ -130,7 +130,11 @@ never existed) would lock its user out through the one-active-session index.
 `POST /sessions` therefore closes such a row and retries the insert once
 before answering `409 active_session_exists`; `POST /sessions/start` does the
 same before it rejoins; and an hourly sweep closes active rows older than
-three hours whose DO has ended or is gone. A D1 failure other than that
+three hours whose DO has ended or is gone. A session stuck in `starting`,
+`resuming` or `recovering` for ten minutes is ended (`end_reason: "error"`,
+container and pool claim released) by the same checks and by that sweep, which
+looks at boot-state rows older than ten minutes; see
+[Session lifecycle](#session-lifecycle). A D1 failure other than that
 index's violation is a `500`, and a session whose DO could not be created is
 marked `ended` with `end_reason: "error"`.
 
@@ -221,10 +225,10 @@ the RPC boundary.
 | 400 | `invalid_path_inputs` | `PUT /users/{uid}/path-inputs` with a body that fails validation; `details.issues` lists `{ path, message }` |
 | 400 | `invalid_user_id` | a learning-path route whose `:uid` is empty or over 128 characters |
 | 404 | `no_inputs` | `GET`/`POST /users/{uid}/path` for a user who never sent path inputs |
-| 409 | `active_session_exists` | the user already has a live session (the D1 unique index) |
+| 409 | `active_session_exists` | the user already has a live session (the D1 unique index): `POST /sessions`, `POST /sessions/prepare`, and `POST /sessions/{id}/resume` of an older session; `details.active_session_id` names the live one when D1 can say |
 | 409 | `checks_running` | `POST /sessions/{id}/checks` while a check run of that session is still executing |
 | 409 | `cannot_begin` | `POST /sessions/{id}/begin` on a session that has ended |
-| 409 | `cannot_resume` | `POST /sessions/{id}/resume` on a session that is not `ended` |
+| 409 | `cannot_resume` | `POST /sessions/{id}/resume` on a session that is not `ended`, or whose resume is already under way |
 | 409 | `no_snapshot` | resume with no snapshot to restore from |
 | 409 | `not_running` | the session is not running (still starting, resuming, recovering or ended) |
 | 409 | `session_recovering` | a stale process/terminal handle; the container was replaced |
@@ -233,7 +237,7 @@ the RPC boundary.
 | 429 | `checks_too_frequent` | `POST /sessions/{id}/checks` less than 2 seconds after the previous run started; `details.retry_after_ms` is the wait left (also in the message as `retry_after_ms=N`) |
 | 413 | `payload_too_large` | `PUT .../files/...` over 2 MiB, or the SDK's own file-size limit |
 | 502 | `service_down` | service proxy while that service is `unhealthy` |
-| 503 | `at_capacity` | `POST /sessions`, `POST /sessions/start`: the family's pool is at `max_instances` or backing off; `details.retry_after_s`, and the `Retry-After` header carries the same number |
+| 503 | `at_capacity` | `POST /sessions`, `POST /sessions/start`, `POST /sessions/prepare`, `POST /sessions/{id}/resume`: the family's pool is at `max_instances` or backing off; `details.retry_after_s`, and the `Retry-After` header carries the same number |
 | 503 | `container_unavailable` | SDK `ContainerUnavailableError`; `details.retry_after_ms` when the SDK supplies it |
 | 503 | `sdk_transient` | SDK `OperationInterruptedError` / `RPCTransportError` |
 | 500 | `internal_error` | anything unrecognised: the message is the fixed text `Internal error` (or `Could not reserve the session slot`), never the underlying error, which is logged server-side; `details.error_name` carries the original class name |
@@ -742,6 +746,63 @@ Both timeouts snapshot before destroying the container, so
 `POST /sessions/:id/resume` picks up where it left off in a fresh container.
 An hour after a session ends, its stored event log and per-service state are
 dropped; the snapshot list survives, so a resume is still possible.
+
+### Booting: `starting` and `resuming`
+
+The boot (claim a container, start it, hydrate, env, services) runs from a
+`start` or `resume` timer on the Session DO's alarm, never inside the request.
+
+- **Watchdog.** Before a boot runs, its timer is re-armed 2 minutes ahead
+  (`BOOT_WATCHDOG_MS`) in the same storage write that pops it; a finished boot
+  cancels it. A boot killed mid-flight (a deploy, an eviction) is therefore
+  run again from the watchdog. Every step is safe to repeat: the container
+  claim is reused (the stored `sandbox_id`, and the pool hands a session that
+  already holds a claim the same sandbox), and a retry stops the service
+  processes the killed run launched before starting them again. One instance
+  never runs two boots at once (an in-memory flag; a slow boot's watchdog just
+  waits). `meta.boot_attempts` counts runs; after 3 the session ends with
+  `end_reason: "error"`.
+- **The ten-minute rule.** A session in `starting`, `resuming` or `recovering`
+  for 10 minutes (`STUCK_BOOT_MS`, measured from `created_at`,
+  `meta.resuming_since` and `meta.recovering_since`) is dead. `POST /sessions`,
+  `/sessions/start`, `/sessions/prepare` and the hourly sweep end it inside its
+  DO (`end_reason: "error"`, container destroyed, pool claim released, D1
+  closed) and carry on, so a lost timer never holds the user's one slot for
+  longer than that. A younger boot is live: `/sessions/start` rejoins it.
+- **Cancel during boot.** `DELETE /sessions/{id}` or a pre-warm cancel can land
+  while a container call of the boot is in flight. The end destroys the
+  container; the boot re-reads the session after every container step and,
+  once it has ended, destroys the container again (the call in flight may have
+  started it) and stops. An end that finds no stored `sandbox_id` on a booting
+  session also releases whatever claim the pool holds for it.
+
+### Resume
+
+`POST /sessions/:id/resume` brings an `ended` session with a snapshot back in a
+fresh container, as the same session id. It is a start in every way that
+matters, so it passes the same gates, in this order: pool admission (`503
+at_capacity`), then the user's one-active-session slot, taken by flipping the
+session's own D1 row from `ended` to `resuming` (the partial unique index
+refuses it while the user has any other live session: `409
+active_session_exists` with `details.active_session_id`; a stale holder is
+healed and the flip retried once, as for a start). Only then is the Session DO
+asked, and it refuses a resume whose row was not reserved. If the DO refuses,
+the row goes back to `ended` (only while the DO still says ended, so a resume
+the DO did accept is never un-fenced). A resume whose boot fails ends the
+session again (`end_reason: "error"`), which closes the row.
+
+A resume is not allowed while the user has another live session, pre-warms
+included: end that one first.
+
+**Which credentials can resume.** The service key, or the session's own token
+while it is valid (session expiry plus ten minutes). That includes a session
+the learner ended themselves (`end_reason: "user"`), which the CLI and the
+smoke test rely on (`DELETE`, then resume). It is safe because the token only
+reaches its own session and every resume now passes admission and the fence: a
+token can never run a second container for its user. Each resume mints a fresh
+token for the new budget, so a learner can keep resuming the same session
+while its snapshots last (7 days), one container at a time. The console only
+offers Resume after an idle or expiry end.
 
 ## Pre-warming
 

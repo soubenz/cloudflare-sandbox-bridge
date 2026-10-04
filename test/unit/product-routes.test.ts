@@ -200,8 +200,11 @@ describe('hourly sweeper (B-18)', () => {
     expect(await sweepStaleSessions(env, now)).toEqual({ checked: 3, healed: 2 });
 
     const select = calls.find((c) => /^SELECT id FROM sessions/.test(c.sql))!;
-    expect(select.sql).toContain("state IN ('starting','ready','running')");
+    // Every active state past three hours, and the boot states past ten minutes.
+    expect(select.sql).toContain("state IN ('starting','ready','running','recovering','resuming')");
+    expect(select.sql).toContain("state IN ('starting','resuming','recovering')");
     expect(select.params[0]).toBe(now - 3 * 3_600_000);
+    expect(select.params[1]).toBe(now - 10 * 60_000);
     expect(calls.filter((c) => /UPDATE sessions SET state = 'ended'/.test(c.sql)).map((c) => c.params.at(-1))).toEqual(['gone', 'ended']);
   });
 });

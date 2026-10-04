@@ -1,17 +1,18 @@
 import type { Env, Family } from '../env';
 import type { LabManifest } from '../labs/manifest';
 import { renderManifest } from '../labs/manifest';
-import type { SessionRuntime, SessionMeta, SnapshotEntry, TimerKind } from './state';
+import type { SessionRuntime, SessionMeta, SnapshotEntry, TimerKind, TimerEntry } from './state';
+import { isStuck } from './state';
 import { emitEvent, hasActiveEventClients } from './events';
 import { BASE_ALLOWED_HOSTS } from '../families/egress';
-import { scheduleTimer, cancelTimersOfKind, cancelTimersExcept, popDueTimers, rearmAlarm } from './timers';
+import { scheduleTimer, cancelTimer, cancelTimersOfKind, cancelTimersExcept, popDueTimers, rearmAlarm } from './timers';
 import { hydrateWorkspaceFiles, hydratePressureScripts, applySessionEnv } from './hydrate';
 import { startAllServices, relaunchAllServices, healthCheckAll, allServicesGone } from './services';
 import { firePressureEvent } from './pressure';
 import { tickMetrics } from './metrics';
 import { tryEmitSolutionUnlocked } from './solution';
 import { resetTerminal } from './terminal';
-import { updateSession, insertSnapshot, bestEffort } from './d1';
+import { updateSession, insertSnapshot, bestEffort, sessionRowState, activeSessionRows } from './d1';
 import type { SessionCostRow } from './d1';
 import { mintSessionToken, mintLlmToken, sessionTokenExp } from '../auth';
 import { ApiError } from '../lib/errors';
@@ -45,6 +46,16 @@ const PURGE_DEFAULT_AFTER_MS = 7 * 24 * 60 * 60_000;
 const RECOVERING_TIMEOUT_MS = 5 * 60_000;
 /** Consecutive failed recoveries after which the health tick gives up and ends the session. */
 const MAX_RECOVER_FAILURES = 3;
+/**
+ * A `start` or `resume` timer re-arms itself this far ahead before it runs the
+ * boot, and the boot cancels it when it finishes. If the run is killed
+ * mid-flight (a deploy, an eviction) the platform's alarm retry finds no
+ * boot timer due; this watchdog is what runs the boot again. Every step of
+ * runStart/runResume is safe to repeat (see their comments).
+ */
+export const BOOT_WATCHDOG_MS = 2 * 60_000;
+/** Boot runs (the first plus watchdog retries) after which the session is ended as `error`. */
+export const MAX_BOOT_ATTEMPTS = 3;
 
 /**
  * Timers that re-arm themselves at the end of a successful run. handleAlarm
@@ -107,8 +118,26 @@ export async function createSession(rt: SessionRuntime, input: CreateSessionInpu
   return { meta, token };
 }
 
-/** The container start sequence (plan section 5), run from the `start` timer. */
-async function runStart(rt: SessionRuntime): Promise<void> {
+/**
+ * The container start sequence (plan section 5), run from the `start` timer.
+ *
+ * Retry-safe: handleAlarm re-runs it from the watchdog when a run was killed
+ * mid-flight, so every step may find the previous attempt's work done. The
+ * claim is reused (stored `sandbox_id`, and Pool.claim is idempotent per
+ * session for the window before it is stored); `ensureRunning` is a no-op on a
+ * running container; the manifest render has no templates left to replace the
+ * second time; hydrate re-extracts the same bundles over a workspace no
+ * learner has touched yet (`starting`); the env files are overwritten; and on
+ * a retry `startAllServices` stops the processes the killed attempt launched
+ * before launching them again, so no service runs twice.
+ *
+ * Cancel-safe: a DELETE or a pre-warm cancel can end the session while any
+ * container call here is in flight. endSession destroys the container then,
+ * but the call in flight (ensureRunning above all) can bring it back, so
+ * after every container step the session is re-read and, once it has ended,
+ * the container is destroyed again and its claim released before returning.
+ */
+async function runStart(rt: SessionRuntime, attempt = 1): Promise<void> {
   const meta = await rt.requireMeta();
   const rawManifest = await rt.requireManifest();
 
@@ -118,24 +147,27 @@ async function runStart(rt: SessionRuntime): Promise<void> {
   // end() would never destroy — it would sit in the pool's `claimed` map
   // until the 3-hour reap. Reuse the claim we already hold.
   const sandboxId = meta.sandbox_id ?? (await (await pool(rt, meta.family)).claim(rt.sessionId)).sandbox_id;
+  /** True (after destroying the container and giving back the claim) once the session has ended under us. */
+  const abandoned = () => abandonIfEnded(rt, meta.family, sandboxId);
   // A DELETE (a prepared session cancelled while it boots) can end the session
   // while the claim was in flight. endSession saw no container to release, so
   // the one just claimed is ours to give back.
-  if ((await rt.requireMeta()).state === 'ended') {
-    if (!meta.sandbox_id) await (await pool(rt, meta.family)).release(sandboxId).catch(() => {});
-    return;
-  }
+  if (await abandoned()) return;
   if (meta.sandbox_id !== sandboxId) await rt.patchMeta({ sandbox_id: sandboxId });
   await rt.bindBackend(meta.family, sandboxId);
   await rt.backend().ensureRunning();
+  if (await abandoned()) return;
 
   const baseUrl = rt.env.PUBLIC_BASE_URL;
   const manifest = renderManifest(rawManifest, rt.sessionId, baseUrl, rt.env.LLM_HOST);
   await rt.putManifest(manifest);
 
   await hydrateWorkspaceFiles(rt, meta.lab_slug, meta.lab_version);
+  if (await abandoned()) return;
   await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
+  if (await abandoned()) return;
   await applyEgressAllowlist(rt, manifest);
+  if (await abandoned()) return;
 
   const llmToken = await mintLlmToken(rt.env, rt.sessionId);
   await applySessionEnv(rt, {
@@ -146,19 +178,20 @@ async function runStart(rt: SessionRuntime): Promise<void> {
     LLM_MODEL: rt.env.LLM_MODEL,
     ...manifest.env,
   });
+  if (await abandoned()) return;
 
-  await startAllServices(rt, manifest);
+  await startAllServices(rt, manifest, { stopRecorded: attempt > 1 });
 
   // Decided now, not at the top: `begin` may have arrived while this ran, and
   // a prepared session that has been begun is simply a session that is starting.
+  if (await abandoned()) return; // cancelled mid-boot
   const current = await rt.requireMeta();
-  if (current.state === 'ended') return; // cancelled mid-boot; endSession already released the container
   const now = Date.now();
   if (current.prepare) {
     // Pre-warm: everything is up, but the lab has not begun. No expiry, no
     // idle/hard/hint/pressure/health timers; one timer reclaims the container
     // if nobody ever begins it.
-    const next = await rt.patchMeta({ state: 'ready', prepared_at: now });
+    const next = await rt.patchMeta({ state: 'ready', prepared_at: now, boot_attempts: undefined });
     await scheduleTimer(rt, 'prepare_expiry', now + PREPARE_TTL_MS);
     bestEffort(updateSession(rt.env, next), 'updateSession(ready)');
     emitEvent(rt, 'session.state', { state: 'ready' });
@@ -166,12 +199,42 @@ async function runStart(rt: SessionRuntime): Promise<void> {
   }
 
   const expiresAt = now + manifest.timeout_minutes * 60_000;
-  await rt.patchMeta({ state: 'running', started_at: now, expires_at: expiresAt });
+  await rt.patchMeta({ state: 'running', started_at: now, expires_at: expiresAt, boot_attempts: undefined });
   await scheduleRunTimers(rt, manifest, now, expiresAt);
 
   const finalMeta = await rt.requireMeta();
   bestEffort(updateSession(rt.env, finalMeta), 'updateSession(running)');
   emitEvent(rt, 'session.state', { state: 'running' });
+}
+
+/**
+ * The boot's cancel check: false while the session is live. Once it has ended
+ * (a DELETE, a pre-warm cancel or the stuck-boot rule ran while a container
+ * call was in flight), destroys `sandboxId` and releases its claim, then
+ * returns true so the boot stops. Both repeat what endSession did if it saw
+ * the id, and both are harmless to repeat; what they undo is a container the
+ * in-flight call brought back after that end destroyed it. Only `ended`
+ * counts: any other state is a live session and keeps its container.
+ */
+async function abandonIfEnded(rt: SessionRuntime, family: Family, sandboxId: string): Promise<boolean> {
+  if ((await rt.requireMeta()).state !== 'ended') return false;
+  await destroyQuietly(rt, family, sandboxId);
+  return true;
+}
+
+/** Destroys a container and releases its pool claim, swallowing failures (a missing container is already destroyed). */
+async function destroyQuietly(rt: SessionRuntime, family: Family, sandboxId: string): Promise<void> {
+  try {
+    await rt.bindBackend(family, sandboxId);
+    await rt.backend().destroy();
+  } catch {
+    /* already gone, or unreachable: the pool's reaper is the backstop */
+  }
+  try {
+    await (await pool(rt, family)).release(sandboxId);
+  } catch {
+    /* idem */
+  }
 }
 
 /**
@@ -249,9 +312,19 @@ async function scheduleIdleTimers(rt: SessionRuntime, from: number, idleMinutes:
   await scheduleTimer(rt, 'idle_warn', from + idleMs - IDLE_WARN_BEFORE_MS);
 }
 
+/** The state a boot timer's session must be in for that timer to run. */
+const BOOT_STATE: Partial<Record<TimerKind, SessionMeta['state']>> = { start: 'starting', resume: 'resuming' };
+
 /** Dispatched from the Session DO's `alarm()`. Runs every due timer, one kind at a time. */
 export async function handleAlarm(rt: SessionRuntime): Promise<void> {
-  const due = await popDueTimers(rt, Date.now());
+  const now = Date.now();
+  const state = (await rt.meta())?.state;
+  // A boot timer (`start`, `resume`) is replaced by its own watchdog in the
+  // same write that pops it: if this run is killed mid-boot, the watchdog is
+  // still owed and runs the boot again. A finished run cancels it.
+  const watchdog = (t: TimerEntry): TimerEntry | undefined =>
+    BOOT_STATE[t.kind] !== undefined && BOOT_STATE[t.kind] === state ? { kind: t.kind, at: now + BOOT_WATCHDOG_MS, ref: t.ref } : undefined;
+  const due = await popDueTimers(rt, now, watchdog);
   for (const timer of due) {
     try {
       // More than one timer can come due in the same tick, and one of them
@@ -266,7 +339,8 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
 
       switch (timer.kind) {
         case 'start':
-          await runStart(rt);
+        case 'resume':
+          await runBoot(rt, timer);
           break;
         case 'prepare_expiry': {
           // Nobody began the pre-warmed lab in time. Only a still-`ready`
@@ -349,9 +423,6 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
         case 'cleanup':
           await runCleanup(rt);
           break;
-        case 'resume':
-          await runResume(rt);
-          break;
         case 'purge':
           if (await runPurge(rt)) {
             // Storage is gone, including the timer list; nothing later in this
@@ -365,11 +436,59 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
       emitEvent(rt, 'alert', { kind: 'timer_failed', timer: timer.kind, ref: timer.ref, error: String(err) });
       if (timer.kind === 'start' || timer.kind === 'resume') {
         await endSession(rt, 'error').catch(() => {});
+        // A cancel may have ended the session while the call that threw was in
+        // flight, after endSession had destroyed the container, and that call
+        // may have brought it back. Destroy whatever this session is bound to.
+        if ((await rt.meta().catch(() => undefined))?.state === 'ended') {
+          await Promise.resolve()
+            .then(() => rt.backend().destroy())
+            .catch(() => {});
+        }
       }
       await rescheduleRecurring(rt, timer.kind).catch(() => {});
     }
   }
   await rearmAlarm(rt);
+}
+
+/**
+ * Runs one `start` or `resume` timer: the boot itself, bounded and guarded.
+ *
+ * - Only for a session still in the matching state; anything else (ended,
+ *   already running) just drops the watchdog.
+ * - Never two boots at once in one instance: while `rt.bootInFlight` is set,
+ *   a watchdog that comes due finds a live boot and leaves it alone (it stays
+ *   queued, re-armed by handleAlarm, and looks again later). Alarm handlers do
+ *   not overlap on the platform either; this is the in-memory backstop. An
+ *   eviction clears the flag along with the boot it guarded, so the next
+ *   watchdog legitimately retries.
+ * - Counts attempts in `meta.boot_attempts`, persisted before the boot so a
+ *   boot that keeps getting killed is counted, and ends the session as
+ *   `error` instead of starting attempt MAX_BOOT_ATTEMPTS + 1.
+ */
+async function runBoot(rt: SessionRuntime, timer: TimerEntry): Promise<void> {
+  if (rt.bootInFlight) return;
+  const meta = await rt.requireMeta();
+  if (meta.state !== BOOT_STATE[timer.kind]) {
+    await cancelTimer(rt, timer.kind, timer.ref);
+    return;
+  }
+  const attempt = (meta.boot_attempts ?? 0) + 1;
+  if (attempt > MAX_BOOT_ATTEMPTS) {
+    emitEvent(rt, 'alert', { kind: 'boot_gave_up', timer: timer.kind, attempts: meta.boot_attempts });
+    await endSession(rt, 'error');
+    return;
+  }
+  await rt.patchMeta({ boot_attempts: attempt });
+  rt.bootInFlight = true;
+  try {
+    if (timer.kind === 'start') await runStart(rt, attempt);
+    else await runResume(rt, attempt);
+  } finally {
+    rt.bootInFlight = false;
+  }
+  // Finished, or found the session ended under it: the watchdog is not needed.
+  await cancelTimer(rt, timer.kind, timer.ref);
 }
 
 /**
@@ -530,8 +649,21 @@ export async function requestResume(rt: SessionRuntime): Promise<{ meta: Session
   const snapshots = await rt.snapshots();
   if (snapshots.length === 0) throw ApiError.conflict('no_snapshot', 'No snapshot to resume from');
 
+  // The user's one-session slot. The route took it (D1 row `ended` ->
+  // `resuming`, which the unique index refuses while another session is
+  // live) before calling here; a resume whose row does not say so did not go
+  // through that fence and must not start a second container for the user.
+  const row = await sessionRowState(rt.env, rt.sessionId);
+  if (row !== 'resuming') {
+    const other = (await activeSessionRows(rt.env, meta.user_id)).find((r) => r.id !== rt.sessionId);
+    if (other) throw ApiError.conflict('active_session_exists', `This user already has an active session (${other.id})`);
+    throw ApiError.conflict('cannot_resume', 'The session slot was not reserved for this resume; use POST /sessions/:id/resume');
+  }
+  // The D1 read let other events in; a concurrent resume may have won.
+  if ((await rt.requireMeta()).state !== 'ended') throw ApiError.conflict('cannot_resume', 'Session is already resuming');
+
   const now = Date.now();
-  const next = await rt.patchMeta({ state: 'resuming' });
+  const next = await rt.patchMeta({ state: 'resuming', resuming_since: now, boot_attempts: undefined });
   await scheduleTimer(rt, 'resume', now);
   emitEvent(rt, 'session.state', { state: 'resuming' });
 
@@ -547,7 +679,14 @@ export async function requestResume(rt: SessionRuntime): Promise<{ meta: Session
   return { meta: next, token };
 }
 
-async function runResume(rt: SessionRuntime): Promise<void> {
+/**
+ * The resume sequence, run from the `resume` timer. Retry-safe and cancel-safe
+ * in the same ways as runStart (see there): the claim is reused, restoring the
+ * same snapshot again gives the same result (the session is not running, so
+ * nobody has written to /workspace since), and every container step is
+ * followed by a check that destroys the container if the session ended.
+ */
+async function runResume(rt: SessionRuntime, attempt = 1): Promise<void> {
   const meta = await rt.requireMeta();
   // A DELETE can end the session while it is `resuming`. The resume timer may
   // already be due by then; running it would claim a container and flip the
@@ -564,12 +703,17 @@ async function runResume(rt: SessionRuntime): Promise<void> {
   // retry then reuses that claim instead of taking a second one whose id
   // would be overwritten and never destroyed.
   const sandboxId = meta.sandbox_id ?? (await (await pool(rt, meta.family)).claim(rt.sessionId)).sandbox_id;
+  const abandoned = () => abandonIfEnded(rt, meta.family, sandboxId);
+  if (await abandoned()) return; // ended while the claim was in flight
   if (meta.sandbox_id !== sandboxId) await rt.patchMeta({ sandbox_id: sandboxId });
   await rt.bindBackend(meta.family, sandboxId);
   await rt.backend().ensureRunning();
+  if (await abandoned()) return;
 
   await rt.backend().restoreBackup({ id: latest.backup_id, dir: latest.dir });
+  if (await abandoned()) return;
   await hydratePressureScripts(rt, meta.lab_slug, meta.lab_version);
+  if (await abandoned()) return;
 
   const llmToken = await mintLlmToken(rt.env, rt.sessionId);
   await applySessionEnv(rt, {
@@ -580,8 +724,11 @@ async function runResume(rt: SessionRuntime): Promise<void> {
     LLM_MODEL: rt.env.LLM_MODEL,
     ...manifest.env,
   });
+  if (await abandoned()) return;
   await applyEgressAllowlist(rt, manifest);
-  await startAllServices(rt, manifest);
+  if (await abandoned()) return;
+  await startAllServices(rt, manifest, { stopRecorded: attempt > 1 });
+  if (await abandoned()) return;
   await rt.putTerminal(undefined);
 
   const now = Date.now();
@@ -597,6 +744,8 @@ async function runResume(rt: SessionRuntime): Promise<void> {
     resumed_count: meta.resumed_count + 1,
     ended_at: undefined,
     end_reason: undefined,
+    boot_attempts: undefined,
+    resuming_since: undefined,
   });
 
   // Ended sessions are on a cleanup/purge schedule; a live one must not be.
@@ -627,8 +776,17 @@ export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reas
   }
 
   if (meta.sandbox_id) {
-    await rt.backend().destroy().catch(() => {});
+    // Inside the promise chain: an unbound backend throws synchronously, and
+    // that must not stop the session from ending (it would then never end).
+    await Promise.resolve()
+      .then(() => rt.backend().destroy())
+      .catch(() => {});
     await (await pool(rt, meta.family)).release(meta.sandbox_id).catch(() => {});
+  } else if (meta.state === 'starting' || meta.state === 'resuming') {
+    // A boot killed between Pool.claim and storing `sandbox_id` holds a claim
+    // this session never recorded; it would count against admission until the
+    // pool's 2h15m reap. Give back whatever the pool says this session holds.
+    await releaseUnrecordedClaims(rt, meta.family);
   }
   rt.upstreamTerminalSocket?.close();
   rt.upstreamTerminalSocket = undefined;
@@ -644,6 +802,8 @@ export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reas
     end_reason: reason,
     sandbox_id: undefined,
     last_sandbox_id: meta.sandbox_id ?? meta.last_sandbox_id,
+    boot_attempts: undefined,
+    resuming_since: undefined,
   });
 
   // Every kind, not a fixed list: pressure and hint timers carry refs, so a
@@ -659,6 +819,33 @@ export async function endSession(rt: SessionRuntime, reason: SnapshotEntry['reas
     finalCost && { cost_usd: finalCost.usd, llm_usd: finalCost.llm_usd, running_s: Math.round(finalCost.running_s), hints_delivered: hintsDelivered }
   );
   emitEvent(rt, 'session.state', { state: 'ended', reason });
+}
+
+/** See endSession: destroys and releases every container the pool has on record for this session. Never throws. */
+async function releaseUnrecordedClaims(rt: SessionRuntime, family: Family): Promise<void> {
+  try {
+    const ids = await (await pool(rt, family)).releaseSession(rt.sessionId);
+    for (const id of ids) await destroyQuietly(rt, family, id);
+  } catch {
+    /* the pool's reaper is the backstop */
+  }
+}
+
+/**
+ * Ends a session that has been stuck in `starting`, `resuming` or
+ * `recovering` for STUCK_BOOT_MS (state.isStuck), as `error` and without a
+ * snapshot, through the normal end path so its container and pool claim are
+ * released and D1 is closed. Resolves the ended meta, or null when the session
+ * is not stuck (it may have finished booting since the caller looked). Called
+ * through the Session DO by reconcile.healIfStale, which the start routes and
+ * the sweeper use.
+ */
+export async function endIfStuck(rt: SessionRuntime, now = Date.now()): Promise<SessionMeta | null> {
+  const meta = await rt.meta();
+  if (!meta || !isStuck(meta, now)) return null;
+  emitEvent(rt, 'alert', { kind: 'stuck_boot', state: meta.state });
+  await endSession(rt, 'error', false);
+  return rt.requireMeta();
 }
 
 /** Waits before the 2nd, 3rd and 4th attempt at the final D1 write of an ended session. */

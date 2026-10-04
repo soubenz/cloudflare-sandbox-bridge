@@ -37,8 +37,8 @@ export function sqliteD1(): { db: Env['DB']; sqlite: Sqlite } {
     all: async () => ({ results: sqlite.prepare(sql).all(...params) }),
     first: async () => sqlite.prepare(sql).get(...params) ?? null,
     run: async () => {
-      sqlite.prepare(sql).run(...params);
-      return { meta: { changes: 1 } };
+      const result = sqlite.prepare(sql).run(...params) as { changes?: number | bigint };
+      return { meta: { changes: Number(result?.changes ?? 0) } };
     },
   });
   const db = {

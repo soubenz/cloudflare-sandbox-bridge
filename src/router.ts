@@ -11,7 +11,7 @@ import { parseManifest } from './labs/manifest';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
 import { workspacePath } from './lib/paths';
-import { insertSession, upsertFeedback, healSessionRow, isActiveSessionConflict, ACTIVE_STATES_SQL } from './session/d1';
+import { insertSession, upsertFeedback, healSessionRow, isActiveSessionConflict, ACTIVE_STATES_SQL, activeSessionRows, markResuming, unmarkResuming } from './session/d1';
 import { healIfStale, healUserActiveRows } from './session/reconcile';
 import { userProgress, sessionProgressSummary, sessionChecks, userChecks, parseFeedback, clampLimit } from './session/progress';
 import { poolStub } from './do/pool';
@@ -483,11 +483,35 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     return c.json(await stub.snapshot());
   });
 
+  /**
+   * A resume brings a container back, so it passes the same two gates as a
+   * start: pool admission, and the user's one-active-session slot. The slot is
+   * taken by flipping this session's own D1 row `ended -> resuming`; the
+   * partial unique index refuses that while the user has any other live
+   * session (`409 active_session_exists`), and a row that is not `ended` means
+   * another resume of it is already under way (`409 cannot_resume`). Only then
+   * is the DO asked, and it re-checks the row before scheduling anything.
+   */
   app.post('/sessions/:id/resume', async (c) => {
     const id = c.req.param('id');
     await requireBrowserAuth(c.req.raw, c.env, id);
     const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
-    return c.json(await stub.resume());
+    const { meta, snapshots } = await stub.status();
+    // Same answers the DO gives, before anything is reserved.
+    if (meta.state !== 'ended') throw ApiError.conflict('cannot_resume', `Session is ${meta.state}, not ended`);
+    if (snapshots.length === 0) throw ApiError.conflict('no_snapshot', 'No snapshot to resume from');
+    await poolStub(c.env, meta.family)
+      .admit()
+      .catch((err) => {
+        throw fromSdkError(err);
+      });
+    await reserveResumeSlot(c.env, id, meta.user_id);
+    try {
+      return c.json(await stub.resume());
+    } catch (err) {
+      await releaseResumeSlot(c.env, id);
+      throw err;
+    }
   });
 
   // Starts the lab clocks of a pre-warmed (`ready`) session; idempotent once
@@ -744,22 +768,69 @@ async function createSession(env: Env, lab: string, userId: string, ipHash?: str
  */
 async function reserveSessionSlot(env: Env, row: Parameters<typeof insertSession>[1]): Promise<void> {
   // The SQLite/D1 error text stays in the log (session and user ids, never a token).
-  const conflict = () => ApiError.conflict('active_session_exists', 'This user already has an active session');
-  const internal = (err: unknown) => {
-    console.error('could not reserve the session slot', { session_id: row.id, user_id: row.user_id }, err);
-    return ApiError.internal('Could not reserve the session slot');
-  };
+  const internal = (err: unknown) => slotInternalError(row.id, row.user_id, err);
   try {
     await insertSession(env, row);
     return;
   } catch (err) {
     if (!isActiveSessionConflict(err)) throw internal(err);
-    if (!(await healUserActiveRows(env, row.user_id))) throw conflict();
+    if (!(await healUserActiveRows(env, row.user_id))) throw await activeSessionConflict(env, row.user_id);
   }
   try {
     await insertSession(env, row);
   } catch (err) {
-    throw isActiveSessionConflict(err) ? conflict() : internal(err);
+    throw isActiveSessionConflict(err) ? await activeSessionConflict(env, row.user_id) : internal(err);
+  }
+}
+
+/** The `409 active_session_exists` of a start or resume, naming the session that holds the slot when D1 can say. */
+async function activeSessionConflict(env: Env, userId: string, exceptId?: string): Promise<ApiError> {
+  const active = await activeSessionRows(env, userId).then(
+    (rows) => rows.find((r) => r.id !== exceptId)?.id,
+    () => undefined
+  );
+  return ApiError.conflict('active_session_exists', 'This user already has an active session', active ? { active_session_id: active } : undefined);
+}
+
+/** A failed slot reservation: the D1 error text stays in the log (ids only, never a token) and never reaches a client. */
+function slotInternalError(sessionId: string, userId: string, err: unknown): ApiError {
+  console.error('could not reserve the session slot', { session_id: sessionId, user_id: userId }, err);
+  return ApiError.internal('Could not reserve the session slot');
+}
+
+/**
+ * Takes the user's slot for a resume of `id` (see the resume route): its row
+ * `ended -> resuming`. A unique-index conflict whose holder turns out to be
+ * stale (its DO ended, never existed, or is stuck booting) is healed and the
+ * flip retried once, exactly as a start does.
+ */
+async function reserveResumeSlot(env: Env, id: string, userId: string): Promise<void> {
+  const notEnded = () => ApiError.conflict('cannot_resume', 'This session is already being resumed');
+  for (let attempt = 0; ; attempt++) {
+    try {
+      if (!(await markResuming(env, id))) throw notEnded();
+      return;
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      if (!isActiveSessionConflict(err)) throw slotInternalError(id, userId, err);
+      if (attempt > 0 || !(await healUserActiveRows(env, userId))) throw await activeSessionConflict(env, userId, id);
+    }
+  }
+}
+
+/**
+ * Undoes reserveResumeSlot after the DO refused or could not be reached. Only
+ * when the DO still says `ended`: an RPC that failed after the DO accepted
+ * the resume must not hand the slot back to a session that is booting. If the
+ * DO cannot be asked, the row stays `resuming` (holding the slot is the safe
+ * side) and healIfStale or the sweeper closes it once the DO is reachable.
+ */
+async function releaseResumeSlot(env: Env, id: string): Promise<void> {
+  try {
+    const { meta } = await env.SESSION.get(env.SESSION.idFromName(id)).status();
+    if (meta.state === 'ended') await unmarkResuming(env, id);
+  } catch (err) {
+    console.error(`could not give back the resume slot of ${id}:`, err);
   }
 }
 
