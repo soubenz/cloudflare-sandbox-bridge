@@ -95,6 +95,9 @@ env:
 
 services:
   - name: postgres
+    # root: only to set up the data dir and hand it to the postgres user; the
+    # server itself runs as postgres (runuser), never as root or learner.
+    user: root
     # Fresh initdb, not a copied template (see the comment above) --
     # idempotent across a restart of this same service, same as every
     # other gateway-family lab's postgres.
@@ -111,7 +114,7 @@ services:
         "sh", "-c",
         "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then install -d -o postgres -g postgres -m 700 /tmp/pg; runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres --encoding=UTF8 --locale=C.utf8 >/dev/null; echo 'dynamic_shared_memory_type = sysv' >> /tmp/pg/postgresql.conf; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
       ]
-    cwd: /workspace
+    cwd: /
     port: 5432
     healthcheck:
       type: tcp
@@ -119,6 +122,7 @@ services:
     ui: false
     depends_on: []
   - name: phoenix
+    user: learner
     # ui: false -- see the load-bearing comment above: Phoenix's own UI
     # cannot be exposed directly as a tab under this platform's proxy.
     # `phoenix-view` below is the actual tab.
@@ -154,6 +158,7 @@ services:
     ui: false
     depends_on: []
   - name: phoenix-view
+    user: learner
     # The real tab. Strips {{service.prefix}} and forwards everything else
     # unchanged to Phoenix's real port -- see phoenix_view_proxy.py's own
     # docstring and the load-bearing comment above for exactly why this
@@ -172,6 +177,7 @@ services:
     ui: true
     depends_on: [phoenix]
   - name: app
+    user: learner
     # seed_documents.py runs once in the background alongside the app's own
     # boot (same pattern as seed_contextforge.py in Module 2's
     # see-how-tools-reach-an-agent): it polls Postgres itself, so nothing

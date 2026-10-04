@@ -27,7 +27,7 @@ The mode is switched with the admin endpoint, not by editing this file:
 this proxy actually forwarded, and with what outcome, rather than
 guessing from the caller's own error message.
 
-The service runs as root from the lab manifest. Editing this file does
+The service is started by the platform from the lab manifest. Editing this file does
 not change the running service; use the admin endpoint or restart the
 service instead.
 """

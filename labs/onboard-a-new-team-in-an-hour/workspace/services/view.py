@@ -13,7 +13,7 @@ secret again after creation (only its masked "sk-...<last4>"), and this
 page only ever reads ContextForge's own *listings* (never a token's
 stored secret, which ContextForge itself never returns after minting).
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 import json

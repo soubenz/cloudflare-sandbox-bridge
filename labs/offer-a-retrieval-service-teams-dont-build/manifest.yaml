@@ -117,12 +117,15 @@ services:
   # idempotent, so a Restart from the console's Services panel never
   # re-seeds or duplicates rows.
   - name: postgres
+    # root: only to set up the data dir and hand it to the postgres user; the
+    # server itself runs as postgres (runuser), never as root or learner.
+    user: root
     argv:
       [
         "sh", "-c",
-        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp & PID=$!; python3 -B /workspace/services/seed_db.py; wait $PID",
+        "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp & PID=$!; /usr/bin/setpriv --reuid=learner --regid=learner --init-groups -- python3 -B /workspace/services/seed_db.py; wait $PID",
       ]
-    cwd: /workspace
+    cwd: /
     port: 5432
     healthcheck:
       type: tcp
@@ -131,6 +134,7 @@ services:
     depends_on: []
 
   - name: platform
+    user: learner
     # THE LEARNER'S OWN SERVICE. Editing platform/main.py and hitting
     # Restart on this entry in the console's Services panel is exactly how
     # a learner is meant to iterate. ui: false -- nothing here is worth
@@ -152,6 +156,7 @@ services:
     depends_on: [postgres]
 
   - name: app
+    user: learner
     # THE SERVICE YOU MUST NOT CHANGE: simulates real tenant-scoped
     # callers against your /search endpoint and shows what came back,
     # including a plain, visible flag if a result ever belongs to a

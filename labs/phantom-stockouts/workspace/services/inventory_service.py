@@ -38,7 +38,7 @@ Four things about it are worth reading before you debug the agent:
    (``as_of`` is a value in a body, not a branch, and the graders assert on
    the outcome this service recorded rather than on any elapsed time.)
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

@@ -22,7 +22,7 @@ What it stores is redacted: the credential is replaced with a marker before
 anything is written down, so reading the audit log is not another way of
 reading the secret.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

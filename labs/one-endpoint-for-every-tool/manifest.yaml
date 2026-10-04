@@ -140,6 +140,7 @@ env:
 
 services:
   - name: inventory
+    user: learner
     # The inventory team's own tool server -- see services/inventory_server.py.
     argv: ["python3", "-B", "/workspace/services/inventory_server.py"]
     cwd: /workspace
@@ -152,6 +153,7 @@ services:
     ui: false
     depends_on: []
   - name: billing
+    user: learner
     # The billing team's own tool server -- see services/billing_server.py.
     # Exposes two tools; only one belongs in the public bundle.
     argv: ["python3", "-B", "/workspace/services/billing_server.py"]
@@ -165,6 +167,7 @@ services:
     ui: false
     depends_on: []
   - name: search
+    user: learner
     # The search team's own tool server -- see services/search_server.py.
     argv: ["python3", "-B", "/workspace/services/search_server.py"]
     cwd: /workspace
@@ -177,6 +180,7 @@ services:
     ui: false
     depends_on: []
   - name: contextforge
+    user: learner
     # ui: false, on purpose: this port is the raw gateway, which trusts the
     # X-Authenticated-User header from whoever sends it. The learner reaches
     # its admin pages only through the `admin` service below, which sets
@@ -238,6 +242,7 @@ services:
     ui: false
     depends_on: [inventory, billing, search]
   - name: admin
+    user: learner
     label: ContextForge
     about: ContextForge's own admin pages, already signed in. Watch your gateways, virtual server and tokens appear here as setup.py creates them.
     # A tiny stdlib reverse proxy (workspace/admin_proxy.py) in front of
@@ -262,6 +267,7 @@ services:
     ui: true
     depends_on: [contextforge]
   - name: view
+    user: learner
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
     # A small read-only stdlib page, services/view.py, next to the admin

@@ -156,6 +156,7 @@ env:
 
 services:
   - name: contextforge
+    user: learner
     argv: ["mcpgateway", "--host", "0.0.0.0", "--port", "4744"]
     cwd: /workspace
     env:
@@ -217,6 +218,7 @@ services:
   # script) and the learner can restart it from the Services panel after
   # every edit, or after a bad call takes it down while they're testing.
   - name: tool-server
+    user: learner
     argv: ["python3", "-B", "/workspace/tool_server.py"]
     cwd: /workspace
     env:
@@ -233,6 +235,7 @@ services:
     ui: false
     depends_on: []
   - name: admin
+    user: learner
     label: ContextForge
     about: ContextForge's own admin pages, already signed in. After you run register.py, look for your tool server under Gateways and Tools here.
     # A tiny stdlib reverse proxy (workspace/admin_proxy.py) in front of
@@ -261,6 +264,7 @@ services:
   # seconds. It never accepts a write and calls ContextForge's REST API the
   # same way register.py does, with the same trusted-proxy header.
   - name: view
+    user: learner
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
     argv: ["python3", "-B", "/workspace/view.py"]

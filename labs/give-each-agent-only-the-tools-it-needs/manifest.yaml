@@ -170,6 +170,7 @@ env:
 
 services:
   - name: knowledge-tools
+    user: learner
     argv: ["python3", "-B", "/workspace/tool_servers/knowledge_server.py"]
     cwd: /workspace
     env:
@@ -186,6 +187,7 @@ services:
     ui: false
     depends_on: []
   - name: tickets-tools
+    user: learner
     argv: ["python3", "-B", "/workspace/tool_servers/tickets_server.py"]
     cwd: /workspace
     env:
@@ -197,6 +199,7 @@ services:
     ui: false
     depends_on: []
   - name: accounts-tools
+    user: learner
     argv: ["python3", "-B", "/workspace/tool_servers/accounts_server.py"]
     cwd: /workspace
     env:
@@ -208,6 +211,7 @@ services:
     ui: false
     depends_on: []
   - name: contextforge
+    user: learner
     # bootstrap_ungoverned.py runs in the background and writes
     # platform/ungoverned_token.txt once ContextForge is actually
     # answering -- it polls /health itself (see that file), so nothing
@@ -286,6 +290,7 @@ services:
     ui: false
     depends_on: [knowledge-tools, tickets-tools, accounts-tools]
   - name: admin
+    user: learner
     label: ContextForge
     about: ContextForge's own admin pages, already signed in. See the three tool servers' tools, the ungoverned bundle, and the role servers your setup.py creates.
     # A tiny stdlib reverse proxy (workspace/admin_proxy.py) in front of
@@ -310,6 +315,7 @@ services:
     ui: true
     depends_on: [contextforge]
   - name: view
+    user: learner
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
     # A small read-only stdlib page, workspace/view.py, next to the admin

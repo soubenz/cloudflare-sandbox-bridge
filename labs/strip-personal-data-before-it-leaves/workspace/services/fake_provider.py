@@ -20,7 +20,7 @@ this one shows exactly that.
   POST /v1/chat/completions -> the only real endpoint; logs the request,
                             replies with a fixed, deterministic message
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

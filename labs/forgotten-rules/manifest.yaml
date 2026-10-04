@@ -120,6 +120,7 @@ services:
   # finishes and the estimate is not the problem; what it cannot tell you is
   # what fell out of the request while it was being assembled.
   - name: context
+    user: learner
     argv: ["python3", "/workspace/services/context_proxy.py"]
     cwd: /workspace
     port: 8794
@@ -130,6 +131,7 @@ services:
     ui: true
     depends_on: []
   - name: desk
+    user: learner
     argv: ["python3", "/workspace/services/desk_service.py"]
     cwd: /workspace
     port: 8795

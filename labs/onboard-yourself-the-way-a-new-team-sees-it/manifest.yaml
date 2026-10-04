@@ -118,12 +118,15 @@ services:
   # exec as the postgres OS user via runuser, data dir under /tmp because
   # /workspace is chowned to `learner`).
   - name: postgres
+    # root: only to set up the data dir and hand it to the postgres user; the
+    # server itself runs as postgres (runuser), never as root or learner.
+    user: root
     argv:
       [
         "sh", "-c",
         "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
       ]
-    cwd: /workspace
+    cwd: /
     port: 5432
     healthcheck:
       type: tcp
@@ -131,6 +134,7 @@ services:
     ui: false
     depends_on: []
   - name: provider
+    user: learner
     # A scripted stand-in for a model provider (workspace/services/fake_provider.py,
     # copied verbatim from one-endpoint-one-key) -- two "deployments" on one
     # process, /a/v1 and /b/v1, one per alias in gateway/config.yaml.
@@ -146,6 +150,7 @@ services:
     ui: false
     depends_on: []
   - name: weather-tools
+    user: learner
     # A toy MCP tool server (workspace/tools/weather_tool_server.py, copied
     # verbatim from see-how-tools-reach-an-agent) -- get_weather and
     # get_forecast, both made-up. Nobody registers this with ContextForge
@@ -165,6 +170,7 @@ services:
     ui: false
     depends_on: []
   - name: calculator-tools
+    user: learner
     # The SECOND toy MCP tool server -- add, subtract, multiply. This one
     # IS already registered with ContextForge before the learner starts
     # (seed_contextforge.py, below): "the platform as it exists today".
@@ -180,6 +186,12 @@ services:
     ui: false
     depends_on: []
   - name: litellm
+    # root: LiteLLM's Prisma engines are cached under /root (see
+    # images/gateway/Dockerfile), which learner cannot read. RESIDUAL RISK until
+    # the image moves that cache: config.yaml in /workspace can name callback
+    # modules this root process imports. cwd is / so nothing is looked up in a
+    # learner-writable directory; any seed script below is dropped to learner.
+    user: root
     # ui: false -- the admin UI always requires a login (one-endpoint-one-key,
     # hard-budget-per-team); `view` below is the tab. seed_litellm.py runs
     # once in the background alongside the gateway's own boot: it polls
@@ -190,9 +202,9 @@ services:
     argv:
       [
         "sh", "-c",
-        "python3 -B /workspace/gateway/seed_litellm.py & exec litellm --config /workspace/gateway/config.yaml --port 4000 --host 0.0.0.0",
+        "/usr/bin/setpriv --reuid=learner --regid=learner --init-groups -- python3 -B /workspace/gateway/seed_litellm.py & exec litellm --config /workspace/gateway/config.yaml --port 4000 --host 0.0.0.0",
       ]
-    cwd: /workspace
+    cwd: /
     env:
       DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
       LITELLM_MASTER_KEY: "sk-opalix-onboard-master"
@@ -213,6 +225,7 @@ services:
     ui: false
     depends_on: [postgres, provider]
   - name: contextforge
+    user: learner
     # ui: false, on purpose: this port is the raw gateway, which trusts the
     # X-Authenticated-User header from whoever sends it. The learner reaches
     # its admin pages only through the `admin` service below, which sets that
@@ -284,6 +297,7 @@ services:
     ui: false
     depends_on: [calculator-tools, weather-tools]
   - name: admin
+    user: learner
     label: ContextForge
     about: ContextForge's own admin pages, already signed in. Look at its gateways and virtual servers before and after you run onboard.py.
     # A tiny stdlib reverse proxy (workspace/admin_proxy.py) in front of
@@ -308,6 +322,7 @@ services:
     ui: true
     depends_on: [contextforge]
   - name: view
+    user: learner
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
     # This lab's compact page for BOTH gateways at once, next to the

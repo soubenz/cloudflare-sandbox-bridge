@@ -13,7 +13,7 @@ Two deployments live on this one process, on two different paths:
     an outage, that the template's own credential should never be able
     to reach.
 
-The service runs as root from the lab manifest. Editing this file does
+The service is started by the platform from the lab manifest. Editing this file does
 not change the running service; use the admin endpoint or restart the
 service instead.
 """

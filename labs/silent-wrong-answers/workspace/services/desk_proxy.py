@@ -52,7 +52,7 @@ tab shows. ``/api/log`` is the graders' view, with those fields on it.
 Diagnosing from ``/api/log`` is reading the answer key: you can, and you
 will have learned nothing.
 
-And: the service runs as root from the lab manifest. Editing this file does
+And: the service is started by the platform from the lab manifest. Editing this file does
 not change the running service.
 """
 

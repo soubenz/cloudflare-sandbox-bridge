@@ -21,8 +21,8 @@ Two endpoints, and they are the two halves of the desk's day:
   answer rests on. It has no way of knowing what the model was actually
   shown, and it does not pretend to.
 
-Nothing leaves the container. The service runs as root from the lab
-manifest; editing this file does not change the running service.
+Nothing leaves the container. The service is started by the platform from
+the lab manifest; editing this file does not change the running service.
 """
 
 import json

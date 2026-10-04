@@ -71,6 +71,7 @@ env:
 
 services:
   - name: approved-tool
+    user: learner
     argv: ["python3", "-B", "/workspace/tools/approved_tool.py"]
     cwd: /workspace
     env:
@@ -84,6 +85,7 @@ services:
     depends_on: []
 
   - name: not-approved
+    user: learner
     argv: ["python3", "-B", "/workspace/tools/not_approved.py"]
     cwd: /workspace
     env:
@@ -97,6 +99,7 @@ services:
     depends_on: []
 
   - name: egress-proxy
+    user: learner
     argv: ["python3", "-B", "/workspace/egress/proxy.py"]
     cwd: /workspace
     env:
@@ -111,6 +114,7 @@ services:
     depends_on: [approved-tool, not-approved]
 
   - name: view
+    user: learner
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
     # Small stdlib, read-only page -- under the house no-login rule, this

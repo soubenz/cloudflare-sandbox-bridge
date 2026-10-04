@@ -17,7 +17,7 @@ Two things about it are worth reading before you debug the agent:
    then fails* -- which is the whole point. A 504 or a socket timeout from
    this API tells you nothing about whether the message went out.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

@@ -113,12 +113,15 @@ services:
   # copied in once, then exec as the postgres OS user via runuser, data
   # dir under /tmp because /workspace is chowned to `learner`).
   - name: postgres
+    # root: only to set up the data dir and hand it to the postgres user; the
+    # server itself runs as postgres (runuser), never as root or learner.
+    user: root
     argv:
       [
         "sh", "-c",
         "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
       ]
-    cwd: /workspace
+    cwd: /
     port: 5432
     healthcheck:
       type: tcp
@@ -126,6 +129,7 @@ services:
     ui: false
     depends_on: []
   - name: provider
+    user: learner
     # A scripted stand-in for a model provider -- see services/fake_provider.py.
     argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
     cwd: /workspace
@@ -139,6 +143,7 @@ services:
     ui: false
     depends_on: []
   - name: wiki
+    user: learner
     # The docs team's own MCP tool server -- see services/wiki_server.py.
     argv: ["python3", "-B", "/workspace/services/wiki_server.py"]
     cwd: /workspace
@@ -151,6 +156,7 @@ services:
     ui: false
     depends_on: []
   - name: tickets
+    user: learner
     # The support team's own MCP tool server -- see services/tickets_server.py.
     # Exposes two tools; only one belongs in any team's onboarding bundle.
     argv: ["python3", "-B", "/workspace/services/tickets_server.py"]
@@ -164,9 +170,15 @@ services:
     ui: false
     depends_on: []
   - name: litellm
+    # root: LiteLLM's Prisma engines are cached under /root (see
+    # images/gateway/Dockerfile), which learner cannot read. RESIDUAL RISK until
+    # the image moves that cache: config.yaml in /workspace can name callback
+    # modules this root process imports. cwd is / so nothing is looked up in a
+    # learner-writable directory; any seed script below is dropped to learner.
+    user: root
     # ui: false -- the admin UI always requires a login; `view` is the tab.
     argv: ["litellm", "--config", "/workspace/gateway/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
-    cwd: /workspace
+    cwd: /
     env:
       DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
       LITELLM_MASTER_KEY: "sk-opalix-onboard-master"
@@ -186,6 +198,7 @@ services:
     ui: false
     depends_on: [postgres, provider]
   - name: contextforge
+    user: learner
     # ui: false, on purpose: this port is the raw gateway, which trusts the
     # X-Authenticated-User header from whoever sends it. The learner reaches
     # its admin pages only through the `admin` service below, which sets that
@@ -245,6 +258,7 @@ services:
     ui: false
     depends_on: [wiki, tickets]
   - name: admin
+    user: learner
     label: ContextForge
     about: ContextForge's own admin pages, already signed in. Compare the tools it has federated with what each team's virtual server bundles.
     # A tiny stdlib reverse proxy (workspace/services/admin_proxy.py) in front
@@ -269,6 +283,7 @@ services:
     ui: true
     depends_on: [contextforge]
   - name: view
+    user: learner
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
     # This lab's compact read-only page for both gateways at once, next to the

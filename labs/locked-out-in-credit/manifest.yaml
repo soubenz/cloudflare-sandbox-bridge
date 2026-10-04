@@ -102,6 +102,7 @@ services:
   # anything the relay claims about itself. A learner who reads only what
   # `run_traffic.py` prints sees a pile of 429s and no pattern in them.
   - name: upstream
+    user: learner
     argv: ["python3", "/workspace/services/upstream_service.py"]
     cwd: /workspace
     port: 8933

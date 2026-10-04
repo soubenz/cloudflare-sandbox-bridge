@@ -92,6 +92,9 @@ env:
 
 services:
   - name: postgres
+    # root: only to set up the data dir and hand it to the postgres user; the
+    # server itself runs as postgres (runuser), never as root or learner.
+    user: root
     # Same shape as every other gateway-family lab's postgres service
     # (docs/lab-authoring.md's precedent labs): a data dir under /tmp
     # because /workspace is chowned to `learner`, System V shared memory
@@ -113,7 +116,7 @@ services:
         "sh", "-c",
         "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then runuser -u postgres -- $PGBIN/initdb -D /tmp/pg --auth=trust -U postgres --encoding=UTF8 --locale=C.utf8; echo 'dynamic_shared_memory_type = sysv' >> /tmp/pg/postgresql.conf; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
       ]
-    cwd: /workspace
+    cwd: /
     port: 5432
     healthcheck:
       type: tcp
@@ -122,6 +125,7 @@ services:
     depends_on: []
 
   - name: search
+    user: learner
     # THE LEARNER'S OWN SERVICE. workspace/search/app.py wires two real
     # searches (db.py: ts_rank keyword search, pgvector cosine search)
     # through workspace/search/fusion.py -- editing fusion.py and hitting

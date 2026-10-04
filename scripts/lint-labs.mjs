@@ -9,7 +9,7 @@
 // Library use: `lintLab(dir) -> { errors: Finding[], warnings: Finding[] }`
 // with Finding = { rule, file, line, message }. This only READS the lab.
 //
-// Rules: leak, python-no-B, port-kill, port, hints-duplicate, brief-length,
+// Rules: leak, python-no-B, port-kill, port, service-user, hints-duplicate, brief-length,
 // pressure-undisclosed, harness-stale-lock, lesson-leaks-answer. See "Lint" in docs/lab-authoring.md.
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
@@ -280,6 +280,140 @@ function rulePort(m, add) {
   });
 }
 
+// ----------------------------------------------------------- service-user
+//
+// Mirrors src/labs/service-user.ts (test/unit/service-user.test.ts keeps the
+// two in step). A service runs as `learner` unless its manifest says
+// `user: root`, or it touches no learner-writable path at all.
+
+/** Same roots and the same "a path component, not the tail of a longer path" rule as LEARNER_WRITABLE_PATH_RE. */
+export const LEARNER_WRITABLE_PATH_RE = /(?<![\w.~-])\/(?:workspace|tmp|var\/tmp|dev\/shm|home\/learner)(?![\w.-])/;
+/** The subset that holds code and config rather than scratch data: what a root service reading it is warned about. */
+const LEARNER_CODE_PATH_RE = /(?<![\w.~-])\/(?:workspace|home\/learner)(?![\w.-])/;
+
+export function defaultServiceUser(svc) {
+  const argv = Array.isArray(svc.argv) ? svc.argv.map(String) : [];
+  const cwd = typeof svc.cwd === 'string' ? svc.cwd : '/workspace';
+  return LEARNER_WRITABLE_PATH_RE.test(cwd) || argv.some((a) => LEARNER_WRITABLE_PATH_RE.test(a)) ? 'learner' : 'root';
+}
+
+const INTERPRETER_RE = /^(?:.*\/)?(?:python[\d.]*|bash|sh|dash|node|ruby|perl)$/;
+const SHELL_RE = /^(?:.*\/)?(?:sh|bash|dash)$/;
+
+/** True for a command already dropped to the learner: `setpriv --reuid=learner ...` or `runuser -u learner ...`. */
+function isDemoted(tokens) {
+  const prog = (tokens[0] ?? '').replace(/^.*\//, '');
+  if (prog === 'setpriv') return tokens.some((t) => /^--reuid=learner$/.test(t));
+  if (prog === 'runuser') return tokens.some((t, i) => (t === '-u' && tokens[i + 1] === 'learner') || t === '--user=learner');
+  return false;
+}
+
+/**
+ * What a root-run command executes from a learner-writable place, or null.
+ * `tokens` is one simple command. A python `-m` or a relative script also
+ * counts when the working directory is learner-writable: python puts the cwd
+ * first on sys.path for -m, and a relative path resolves against it.
+ */
+function learnerCodeIn(tokens, cwdWritable) {
+  let i = 0;
+  while (i < tokens.length && (/^[A-Za-z_]\w*=/.test(tokens[i]) || ['exec', 'nohup', 'env', 'time'].includes(tokens[i]))) i++;
+  const cmd = tokens.slice(i);
+  if (cmd.length === 0 || isDemoted(cmd)) return null;
+  const [prog, ...rest] = cmd;
+  if (LEARNER_WRITABLE_PATH_RE.test(prog)) return prog;
+  if (cwdWritable && /^\.{0,2}\//.test(prog) && !prog.startsWith('/')) return `${prog} (relative to a learner-writable cwd)`;
+  if (!INTERPRETER_RE.test(prog)) return null;
+  for (let j = 0; j < rest.length; j++) {
+    const arg = rest[j];
+    if (arg === '-c') return null;
+    if (arg === '-m') return cwdWritable ? `-m ${rest[j + 1] ?? ''} (python puts the learner-writable cwd first on sys.path)`.trim() : null;
+    if (arg === '-W' || arg === '-X') {
+      j++;
+      continue;
+    }
+    if (arg.startsWith('-')) continue;
+    if (LEARNER_WRITABLE_PATH_RE.test(arg)) return arg;
+    if (cwdWritable && !arg.startsWith('/') && !arg.startsWith('$')) return `${arg} (relative to a learner-writable cwd)`;
+    return null;
+  }
+  return null;
+}
+
+/** Splits argv into simple commands: an `sh -c` script on its separators, anything else as one command. */
+function simpleCommands(argv) {
+  if (argv.length >= 3 && SHELL_RE.test(argv[0]) && argv[1] === '-c') {
+    return argv[2]
+      .split(/&&|\|\||[;&|\n]/)
+      .map((seg) => seg.trim().split(/\s+/).filter(Boolean))
+      .filter((t) => t.length > 0);
+  }
+  return [argv];
+}
+
+/** True when the line holding the `user` key, or the comment block right above it, carries a `#` comment. */
+function hasJustification(src, line) {
+  const lines = src.split('\n');
+  if (/#/.test(lines[line - 1] ?? '')) return true;
+  const above = lines[line - 2];
+  return above !== undefined && /^\s*#\s*\S/.test(above);
+}
+
+function ruleServiceUser(m, src, add) {
+  const services = Array.isArray(m.data.services) ? m.data.services : [];
+  // An acknowledged exception, like x-ports-exempt: a root service that still
+  // executes learner-writable code because it cannot yet run unprivileged.
+  // It turns that error into a warning, so it stays in every lint run.
+  const exempt = new Set();
+  if (Object.prototype.hasOwnProperty.call(m.data, 'x-root-exempt')) {
+    const list = m.data['x-root-exempt'];
+    const reason = m.data['x-root-exempt-reason'];
+    if (!Array.isArray(list) || list.some((n) => typeof n !== 'string')) {
+      add('error', 'service-user', m.file, manifestLine(m, ['x-root-exempt']), 'x-root-exempt must be a list of service names');
+    } else if (typeof reason !== 'string' || reason.trim() === '') {
+      add('error', 'service-user', m.file, manifestLine(m, ['x-root-exempt']), 'x-root-exempt requires a non-empty x-root-exempt-reason saying why these services must run learner-writable code as root');
+    } else {
+      for (const n of list) exempt.add(n);
+    }
+  }
+  services.forEach((svc, i) => {
+    if (!svc || typeof svc !== 'object') return;
+    const name = typeof svc.name === 'string' ? svc.name : `#${i}`;
+    const explicit = svc.user;
+    if (explicit !== undefined && explicit !== 'root' && explicit !== 'learner') return; // the schema reports it
+    const user = explicit ?? defaultServiceUser(svc);
+    if (user !== 'root') return;
+    const argv = Array.isArray(svc.argv) ? svc.argv.map(String) : [];
+    const cwd = typeof svc.cwd === 'string' ? svc.cwd : '/workspace';
+    const line = manifestLine(m, ['services', i, explicit !== undefined ? 'user' : 'argv']);
+
+    if (explicit === 'root' && !hasJustification(src, line)) {
+      add('error', 'service-user', m.file, line, `service "${name}" is user: root with no comment saying why; root is for the few services that cannot run unprivileged, and the manifest has to say what needs it`);
+    }
+    const cwdWritable = LEARNER_WRITABLE_PATH_RE.test(cwd);
+    for (const tokens of simpleCommands(argv)) {
+      const code = learnerCodeIn(tokens, cwdWritable);
+      if (code !== null && exempt.has(name)) {
+        add('warning', 'service-user', m.file, line, `service "${name}" runs as root and executes ${code}, which the learner can edit (acknowledged in x-root-exempt): residual risk, a restart runs learner code as root`);
+        return;
+      }
+      if (code !== null) {
+        add('error', 'service-user', m.file, line, `service "${name}" runs as root and executes ${code}, which the learner can edit: a restart would run their code as root. Run the service as user: learner, or drop that command to the learner inside the script (/usr/bin/setpriv --reuid=learner --regid=learner --init-groups -- ...)`);
+        return;
+      }
+    }
+    const env = svc.env && typeof svc.env === 'object' ? Object.values(svc.env).map(String) : [];
+    // A command already dropped to the learner reads as the learner, not as root.
+    const rootWords = simpleCommands(argv)
+      .filter((tokens) => !isDemoted(tokens.filter((t) => !/^[A-Za-z_]\w*=/.test(t) && t !== 'exec')))
+      .flat();
+    const reads = [cwd, ...rootWords, ...env].find((v) => LEARNER_CODE_PATH_RE.test(v));
+    if (reads !== undefined) {
+      const path = LEARNER_CODE_PATH_RE.exec(reads)[0];
+      add('warning', 'service-user', m.file, line, `service "${name}" runs as root and reads from ${path}, which the learner can write (${reads.length > 80 ? `${reads.slice(0, 77)}...` : reads}); a config file there can steer a root process. Residual risk: keep it only if the service cannot run as user: learner, and say so in the manifest`);
+    }
+  });
+}
+
 function normaliseWithMap(text) {
   let out = '';
   const map = [];
@@ -427,6 +561,7 @@ export function lintLab(dir) {
     if (m.doc) add('error', 'manifest', m.file, 1, `manifest.yaml does not parse: ${m.error}`);
   } else {
     rulePort(m, add);
+    ruleServiceUser(m, readFileSync(m.file, 'utf8'), add);
     ruleHintsDuplicate(dir, m, add);
     ruleBrief(dir, m, add);
   }

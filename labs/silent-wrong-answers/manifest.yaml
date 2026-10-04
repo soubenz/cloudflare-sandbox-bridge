@@ -143,6 +143,7 @@ services:
   # every call no span names. A learner who reads only the desk's stdout, or
   # only the reply log, sees seven answered questions and nothing wrong.
   - name: desk
+    user: learner
     argv: ["python3", "/workspace/services/desk_proxy.py"]
     cwd: /workspace
     port: 8871
@@ -155,6 +156,7 @@ services:
   # The clause store and the reply log. ui: false, so the proxy refuses it --
   # the graders read it, and from the terminal so can a learner.
   - name: policy
+    user: learner
     argv: ["python3", "/workspace/services/policy_service.py"]
     cwd: /workspace
     port: 8872

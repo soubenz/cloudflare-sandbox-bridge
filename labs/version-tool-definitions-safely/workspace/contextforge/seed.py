@@ -104,7 +104,7 @@ def _write_state(state):
         f.write(header)
         json.dump(state, f, indent=2)
         f.write("\n")
-    # This script runs as root (a manifest service), but rollout.py and the
+    # If this script runs as root (older platforms did), rollout.py and the
     # learner's own shell run as the workspace's owner and read AND update
     # this file, so hand it over.
     if os.geteuid() == 0:

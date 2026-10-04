@@ -120,12 +120,15 @@ services:
   # Copied from test/fixtures/labs/gateway-litellm-hello/ -- see that
   # fixture's manifest for why each line of this argv exists.
   - name: postgres
+    # root: only to set up the data dir and hand it to the postgres user; the
+    # server itself runs as postgres (runuser), never as root or learner.
+    user: root
     argv:
       [
         "sh", "-c",
         "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
       ]
-    cwd: /workspace
+    cwd: /
     port: 5432
     healthcheck:
       type: tcp
@@ -134,6 +137,7 @@ services:
     depends_on: []
 
   - name: provider
+    user: learner
     # The scripted stand-in for a model provider, with a THIRD deployment
     # (c) beyond gateway-litellm-hello's a/b -- "c" is "the new model"
     # being added to the catalogue over the course of this lab.
@@ -150,6 +154,12 @@ services:
     depends_on: []
 
   - name: litellm
+    # root: LiteLLM's Prisma engines are cached under /root (see
+    # images/gateway/Dockerfile), which learner cannot read. RESIDUAL RISK until
+    # the image moves that cache: config.yaml in /workspace can name callback
+    # modules this root process imports. cwd is / so nothing is looked up in a
+    # learner-writable directory; any seed script below is dropped to learner.
+    user: root
     # ui: false -- the admin UI always requires a login, no setting turns
     # that off (docs/spike.md, "LiteLLM under a path prefix (T5)", Q4).
     # gateway/config.yaml's model_list holds exactly one entry
@@ -161,9 +171,9 @@ services:
     argv:
       [
         "sh", "-c",
-        "litellm --config /workspace/gateway/config.yaml --port 4000 --host 0.0.0.0 & PID=$!; python3 -B /workspace/platform/seed_litellm.py; wait $PID",
+        "litellm --config /workspace/gateway/config.yaml --port 4000 --host 0.0.0.0 & PID=$!; /usr/bin/setpriv --reuid=learner --regid=learner --init-groups -- python3 -B /workspace/platform/seed_litellm.py; wait $PID",
       ]
-    cwd: /workspace
+    cwd: /
     env:
       DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
       LITELLM_MASTER_KEY: "sk-opalix-catalogue-master"
@@ -187,6 +197,7 @@ services:
     depends_on: [postgres, provider]
 
   - name: mlflow
+    user: learner
     # MLFLOW_SERVER_ALLOWED_HOSTS: "*" -- MLflow 3.16 validates the Host
     # header on every request (DNS-rebinding protection,
     # mlflow/server/security_utils.py) and refuses anything outside
@@ -227,6 +238,7 @@ services:
     depends_on: []
 
   - name: app
+    user: learner
     # THE SERVICE THE LEARNER MUST NOT CHANGE. Calls alias "support" on a
     # timer forever and shows which deployment answered, on its own page
     # and at /log -- this IS the lab's read-only view; see header comment
@@ -250,6 +262,7 @@ services:
     depends_on: [litellm, provider]
 
   - name: sync
+    user: learner
     # THE LEARNER'S OWN SERVICE. No port, so it never gates session
     # startup and is never proxied -- editing platform/sync.py and hitting
     # Restart on this entry in the console's Services panel is exactly how

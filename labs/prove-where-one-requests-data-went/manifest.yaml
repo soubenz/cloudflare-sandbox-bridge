@@ -94,6 +94,13 @@
 #     records for that exact call. checks/_harness.py uses all three.
 slug: prove-where-one-requests-data-went
 version: 1.0.0
+# Acknowledged residual risk (lint rule service-user): the litellm service has
+# to be root (Prisma engines under /root) and its launcher is a workspace file.
+x-root-exempt: [litellm]
+x-root-exempt-reason: >-
+  LiteLLM with a database cannot run as learner until the gateway image puts
+  its Prisma engine cache somewhere learner can read; until then a learner who
+  edits gateway/run_instrumented_litellm.py and restarts litellm runs code as root.
 title: "Prove where one request's data went"
 type: explore
 family: gateway
@@ -124,6 +131,7 @@ env:
 
 services:
   - name: jaeger
+    user: learner
     argv: ["jaeger", "--config", "file:/workspace/jaeger/config.yaml"]
     cwd: /workspace
     port: 16686
@@ -138,12 +146,15 @@ services:
   # gateway lab's own postgres service -- template-copy argv, data dir
   # under /tmp because /workspace is chowned to `learner`.
   - name: postgres
+    # root: only to set up the data dir and hand it to the postgres user; the
+    # server itself runs as postgres (runuser), never as root or learner.
+    user: root
     argv:
       [
         "sh", "-c",
         "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
       ]
-    cwd: /workspace
+    cwd: /
     port: 5432
     healthcheck:
       type: tcp
@@ -152,6 +163,7 @@ services:
     depends_on: []
 
   - name: provider-us
+    user: learner
     argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
     cwd: /workspace
     env:
@@ -167,6 +179,7 @@ services:
     depends_on: [jaeger]
 
   - name: provider-apac
+    user: learner
     argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
     cwd: /workspace
     env:
@@ -182,6 +195,7 @@ services:
     depends_on: [jaeger]
 
   - name: provider-eu
+    user: learner
     argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
     cwd: /workspace
     env:
@@ -202,6 +216,7 @@ services:
   # -requests on both sides of this hop -- see workspace/services/
   # regional_proxy.py's own header comment.
   - name: regional-proxy-eu
+    user: learner
     argv: ["python3", "-B", "/workspace/services/regional_proxy.py"]
     cwd: /workspace
     env:
@@ -218,6 +233,11 @@ services:
     depends_on: [jaeger, provider-eu]
 
   - name: litellm
+    # root: LiteLLM's Prisma engines are cached under /root (see
+    # images/gateway/Dockerfile), which learner cannot read. RESIDUAL RISK, listed
+    # in x-root-exempt: it runs /workspace/gateway/run_instrumented_litellm.py, which
+    # the learner can edit, as root, until the image moves that cache.
+    user: root
     # ui: false -- the admin UI always requires a login, same as every
     # sibling LiteLLM lab in this family; jaeger's own UI plus a direct
     # psql read are this lab's two views instead. Runs under
@@ -225,7 +245,7 @@ services:
     # file's own header comment for exactly why (real FastAPI + httpx
     # auto-instrumentation, applied in-process).
     argv: ["python3", "-B", "/workspace/gateway/run_instrumented_litellm.py"]
-    cwd: /workspace
+    cwd: /
     env:
       DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
       LITELLM_MASTER_KEY: "sk-opalix-prd-master"

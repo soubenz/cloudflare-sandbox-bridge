@@ -34,7 +34,7 @@ Four things worth knowing:
    an explicit cf-aig-cache-key, and the explicit-key path needs two
    sequential repeats before it reports HIT -- an early MISS is normal.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

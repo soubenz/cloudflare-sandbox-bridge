@@ -82,6 +82,7 @@ env:
 
 services:
   - name: jaeger
+    user: learner
     # seed_trace.py runs once in the background alongside jaeger's own boot
     # (same shape as seed_documents.py in Module 3's see-why-a-document-
     # matched): it polls jaeger's own query API itself before sending

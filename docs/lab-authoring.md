@@ -52,6 +52,7 @@ services:                      # at least one
   - name: agent
     argv: ["python3", "agent.py"]
     cwd: /workspace             # default /workspace
+    user: learner               # learner | root; default by rule, see "Which user a service runs as"
     env: {}                     # per-service, wins over the manifest-level env
     port: 8080
     healthcheck: { type: http, path: /health, timeout_s: 30 }
@@ -110,6 +111,7 @@ Defaults and limits worth knowing, since the schema fills them in silently:
 | `services[].cwd` | default `/workspace` |
 | `services[].port` | 1-65535, optional |
 | `services[].ui` | default `false` |
+| `services[].user` | `learner` or `root`. Omitted: `learner` if `argv` or `cwd` points into a learner-writable path (`/workspace`, `/tmp`, `/var/tmp`, `/dev/shm`, `/home/learner`), otherwise `root`. The parsed manifest always records the result |
 | `healthcheck.type` | `http` or `tcp`, **default `tcp`** |
 | `healthcheck.path` | default `/` (only meaningful for `type: http`) |
 | `healthcheck.timeout_s` | 1-120, default 30 |
@@ -172,6 +174,51 @@ call fails, the session continues on the base allowlist and emits an `alert`
 event with `kind: set_allowed_hosts_failed` rather than failing the start —
 so a lab that needs its extra host will fail in a confusing way unless the
 client surfaces that alert.
+
+### Which user a service runs as
+
+Services are started by the platform, and the platform is root. A service
+whose code or working directory is under `/workspace` is code the learner can
+edit, and anyone with the session token can restart any service, so running it
+as root would hand the learner root: the staged graders in
+`/run/opalix/checks-*`, the private material in `/opt/lab`, and every result
+the platform trusts the container for.
+
+So a `user: learner` service is exec'd through
+`setpriv --reuid=learner --regid=learner --init-groups --` (util-linux, in
+every lab image), which execs in place: same pid and process group, so
+restart, kill and the healthcheck behave as before. Its env is the usual
+session env plus service env, over `HOME=/home/learner`, `USER` and `LOGNAME`.
+It can write `/workspace`, `/tmp` and its home, and cannot read root-only
+files; give it data paths there.
+
+The default (`user` omitted) is `learner` whenever `argv` or `cwd` mentions a
+learner-writable path, and in practice that is nearly every service. Write
+`user: root` only for a service that genuinely cannot run unprivileged, with a
+comment directly above saying why (the lint requires it). Current examples:
+Postgres (the script hands the data dir to the `postgres` user and runs the
+server as that user), LiteLLM with a database (its Prisma engines are cached
+under `/root` in the gateway image) and Grafana (writes `/etc/grafana`). A root
+service:
+
+- must not run learner-writable code. A seed script started from its
+  `sh -c` drops to the learner itself:
+  `/usr/bin/setpriv --reuid=learner --regid=learner --init-groups -- python3 -B /workspace/seed.py &`.
+  The lint's `service-user` rule reports anything else as an error, unless the
+  service is named in `x-root-exempt` with an `x-root-exempt-reason`, which
+  turns it into a warning that stays in every lint run (residual risk).
+- should use `cwd: /` (or another root-owned directory), so nothing it looks
+  up relative to its working directory (`python -m`, a relative path, a binary
+  some libraries look for in `.`) comes from a directory the learner can write.
+- reading a config file under `/workspace` is still a warning: such a file can
+  often name a plugin or callback that the root process loads. LiteLLM's
+  `config.yaml` can, which is why LiteLLM-with-a-database labs are residual
+  risk until the gateway image moves the Prisma cache somewhere learner can read.
+
+Check scripts are a separate matter: they run as root, staged in a root-only
+0700 directory, by design. A check that runs learner code must drop it to the
+learner itself (as `version-tool-definitions-safely`'s harness does with
+`runuser -u learner --`).
 
 ### services[].ui
 
@@ -280,6 +327,7 @@ errors, with a one-line reason. `labs test` does not lint.
 | `leak` | error | a text file under `workspace/` (binaries and files over 512 KB are skipped) contains `TODO`, `TODO(you)`, `That's the function`, or, case-insensitively, `the bug` or `to fix`. Everything in `workspace/` is readable from minute zero |
 | `python-no-B` | error | a `.sh` under `checks/` runs `python3` or `python` (directly, or through a variable set from `command -v python3`) without `-B`, so the check leaves `__pycache__` behind |
 | `port-kill` | error | anything under `checks/` uses `fuser -k` or `pkill -f`; a check must observe the system, not kill the learner's processes |
+| `service-user` | error / warning | a `user: root` service (explicit, or by default because it touches no learner-writable path) has no comment directly above `user: root` (error); runs code from a learner-writable path, `python -m` or a relative script from a learner-writable cwd, without dropping that command to the learner with `setpriv --reuid=learner` or `runuser -u learner` (error, or a warning when the service is listed in `x-root-exempt` with a non-empty `x-root-exempt-reason`); otherwise reads from `/workspace` or `/home/learner` (warning) |
 | `port` | warning | a `services[].port`, or an `env` / `services[].env` value that is a bare number under a key named `PORT` or `*_PORT`, is not in the canonical table below |
 | `hints-duplicate` | error | `hints.md` contains the first 40 characters (whitespace-normalised) of any manifest `hints[].text`, which un-gates that hint |
 | `brief-length` | warning / error | `brief.md` is over 500 words (warning) or 700 words (error), not counting fenced code blocks |

@@ -85,6 +85,7 @@ env:
 
 services:
   - name: jaeger
+    user: learner
     argv: ["jaeger", "--config", "file:/workspace/jaeger/config.yaml"]
     cwd: /workspace
     port: 16686
@@ -96,6 +97,7 @@ services:
     depends_on: []
 
   - name: provider-us
+    user: learner
     argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
     cwd: /workspace
     env:
@@ -111,6 +113,7 @@ services:
     depends_on: [jaeger]
 
   - name: provider-apac
+    user: learner
     argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
     cwd: /workspace
     env:
@@ -126,6 +129,7 @@ services:
     depends_on: [jaeger]
 
   - name: provider-eu
+    user: learner
     argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
     cwd: /workspace
     env:
@@ -144,6 +148,7 @@ services:
   # prove-where-one-requests-data-went. Every alias allowed to touch EU
   # data reaches provider-eu only through here.
   - name: regional-proxy-eu
+    user: learner
     argv: ["python3", "-B", "/workspace/services/regional_proxy.py"]
     cwd: /workspace
     env:
@@ -160,6 +165,7 @@ services:
     depends_on: [jaeger, provider-eu]
 
   - name: litellm
+    user: learner
     # ui: false -- the admin UI always requires a login (no sibling gateway
     # lab in this repo turns that off); this lab's own scripts
     # (send_request.py, traffic.py, eu_outage.py) plus the jaeger tab are

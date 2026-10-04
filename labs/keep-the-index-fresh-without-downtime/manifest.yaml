@@ -93,6 +93,7 @@ env:
 
 services:
   - name: qdrant
+    user: learner
     # Boots, then seeds itself once from workspace/data/documents_v1.json
     # (services/seed_qdrant.py) -- idempotent, so a Restart of this entry
     # in the console is a no-op against storage that already has state,

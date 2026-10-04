@@ -17,7 +17,7 @@ value LiteLLM computes once at creation time in the fixed shape
 "sk-...<last 4 characters>" and stores for display. Both are safe to show;
 neither can be used to call the gateway.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

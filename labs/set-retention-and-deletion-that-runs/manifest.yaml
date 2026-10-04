@@ -111,6 +111,7 @@ env:
 
 services:
   - name: retention-api
+    user: learner
     # Seeds the three stores once at boot (idempotent -- always the same
     # known state), then serves a small read-only JSON API so a learner can
     # check their own work the way a real operator would (GET /customers,

@@ -37,7 +37,7 @@ how many instructions that conversation has produced since the last reset.
 Nothing here is random and nothing here looks at the clock except the one
 configured slow reply.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

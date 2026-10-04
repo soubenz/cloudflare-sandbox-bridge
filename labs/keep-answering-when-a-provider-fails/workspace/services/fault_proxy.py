@@ -29,7 +29,7 @@ happened, so a learner (or the view page, or a grader) can see directly
 how many times the failing deployment was actually bothered during an
 outage -- without guessing from litellm's own error messages.
 
-The service runs as root from the lab manifest. Editing this file does
+The service is started by the platform from the lab manifest. Editing this file does
 not change the running service; use the admin endpoint or restart the
 service instead.
 """

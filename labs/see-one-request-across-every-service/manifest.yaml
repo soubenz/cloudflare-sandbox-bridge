@@ -113,6 +113,7 @@ env:
 
 services:
   - name: jaeger
+    user: learner
     argv: ["jaeger", "--config", "file:/workspace/jaeger/jaeger-config.yaml"]
     cwd: /workspace
     port: 16686
@@ -127,6 +128,7 @@ services:
     depends_on: []
 
   - name: otelcol
+    user: learner
     # ui: false -- otelcol-contrib has no web UI of its own; its
     # health_check extension (workspace/otelcol-config.yaml) is for local
     # debugging, not a learner-facing surface.
@@ -140,6 +142,7 @@ services:
     depends_on: [jaeger]
 
   - name: storage
+    user: learner
     # The second downstream hop -- untouchable in spirit, not by file
     # permission: nothing in this lab asks you to edit
     # workspace/services/storage.py. It's already correctly instrumented
@@ -160,6 +163,7 @@ services:
     depends_on: [otelcol]
 
   - name: worker
+    user: learner
     # The skeleton you fix. See the header comment above and brief.md.
     argv: ["python3", "-B", "/workspace/worker/worker.py"]
     cwd: /workspace
@@ -174,6 +178,7 @@ services:
     depends_on: [otelcol, storage]
 
   - name: gateway
+    user: learner
     # The untouchable entry point. Already correctly instrumented on both
     # its server side (FlaskInstrumentor) and its outbound call to the
     # worker (RequestsInstrumentor) -- real W3C traceparent injection, no

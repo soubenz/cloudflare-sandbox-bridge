@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SERVICE_USERS, defaultServiceUser } from './service-user';
 
 const slugPattern = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 const versionPattern = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -77,6 +78,15 @@ const serviceSchema = z.object({
   /** One plain sentence under that tab: what the page shows and whether it is worth opening. */
   about: z.string().min(1).max(200).optional(),
   depends_on: z.array(z.string()).default([]),
+  /**
+   * The Unix user the service runs as. Omitted, it follows the platform rule
+   * (src/labs/service-user.ts): `learner` when argv or cwd points into a path
+   * the learner can write (/workspace, /tmp, ...), otherwise `root`.
+   * parseManifest always resolves it, so a stored spec says which it got.
+   * `root` must be rare and justified in a manifest comment; the lint
+   * enforces both.
+   */
+  user: z.enum(SERVICE_USERS).optional(),
 });
 
 const pressureEventSchema = z.object({
@@ -215,6 +225,13 @@ export function parseManifest(json: unknown): LabManifest {
     if (svc.ui && svc.port === undefined) {
       throw new Error(`service "${svc.name}" is marked ui: true but declares no port to proxy`);
     }
+    // Resolved here, once, so the stored manifest (and every session spec
+    // rendered from it) records the identity explicitly instead of each
+    // reader re-deriving it.
+    // Whether a `user: root` service may touch learner-writable paths is the
+    // lint's call (scripts/lint-labs.mjs, rule service-user), which can see
+    // the manifest's comments and its acknowledged exceptions.
+    svc.user ??= defaultServiceUser(svc);
   }
   return manifest;
 }

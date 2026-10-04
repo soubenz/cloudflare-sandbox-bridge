@@ -46,7 +46,7 @@ Four things worth knowing before you read the rest of this file:
    that information -- whether it ships or refuses, and why -- is between
    the gate and the release service.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service; it is staged fresh at session start.
 """
 

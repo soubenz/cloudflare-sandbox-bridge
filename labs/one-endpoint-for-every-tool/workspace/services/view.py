@@ -17,7 +17,7 @@ the browser a summary. A token's own usable secret is never requested,
 never stored by ContextForge past creation, and never shown here -- only
 its name, id, and which virtual server it's scoped to.
 
-The service runs as root from the lab manifest. Editing this file does
+The service is started by the platform from the lab manifest. Editing this file does
 not change the running service.
 """
 

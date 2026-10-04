@@ -23,7 +23,7 @@ Usage is deterministic and computable from the request alone:
     (the RETRYID marker counts as one word, same as any other).
   - completion_tokens = the request's own `max_tokens` (default 32).
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

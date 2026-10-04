@@ -130,6 +130,7 @@ services:
   # at the time. A learner who reads only what `run_agent.py` prints sees 26
   # turns answered and nothing amiss.
   - name: transcript
+    user: learner
     argv: ["python3", "/workspace/services/transcript_service.py"]
     cwd: /workspace
     port: 8851
@@ -142,6 +143,7 @@ services:
   # The provider stays dark: it is the other fault surface, and an
   # anti-cheat needs a failure path the learner cannot see being injected.
   - name: payments
+    user: learner
     argv: ["python3", "/workspace/services/payments_service.py"]
     cwd: /workspace
     port: 8852

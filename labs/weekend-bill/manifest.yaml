@@ -85,6 +85,7 @@ services:
   # is never handed one for a call that failed. A learner who trusts the
   # agent's arithmetic is reading a number the agent cannot know.
   - name: ledger
+    user: learner
     argv: ["python3", "/workspace/services/model_gateway.py"]
     cwd: /workspace
     port: 8791
@@ -95,6 +96,7 @@ services:
     ui: true
     depends_on: []
   - name: casebook
+    user: learner
     argv: ["python3", "/workspace/services/casebook_service.py"]
     cwd: /workspace
     port: 8792

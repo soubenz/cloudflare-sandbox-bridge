@@ -12,7 +12,7 @@ every later request for it succeeds. A model call that fails before the
 agent has sent anything is exactly the case retries exist for, so removing
 them is not a fix.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

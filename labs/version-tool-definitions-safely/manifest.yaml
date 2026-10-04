@@ -178,6 +178,7 @@ env:
 
 services:
   - name: tool-server-v1
+    user: learner
     argv: ["python3", "-B", "/workspace/services/tool_server.py", "v1"]
     cwd: /workspace
     port: 65101
@@ -187,6 +188,7 @@ services:
     ui: false
     depends_on: []
   - name: tool-server-v2
+    user: learner
     argv: ["python3", "-B", "/workspace/services/tool_server.py", "v2"]
     cwd: /workspace
     port: 65102
@@ -196,6 +198,7 @@ services:
     ui: false
     depends_on: []
   - name: contextforge
+    user: learner
     # mcpgateway-server is the real package's own console-script entry
     # point (mcp-contextforge-gateway==1.0.10); it reads HOST/PORT/etc from
     # its own Settings object, which is why they're plain env here rather
@@ -285,6 +288,7 @@ services:
     ui: false
     depends_on: [tool-server-v1, tool-server-v2]
   - name: admin
+    user: learner
     label: ContextForge
     about: ContextForge's own admin pages, already signed in. Watch price-tool-v2 get registered, and the price-lookup server's tool change at cutover and rollback.
     # A tiny stdlib reverse proxy (workspace/admin_proxy.py) in front of
@@ -309,6 +313,7 @@ services:
     ui: true
     depends_on: [contextforge]
   - name: view
+    user: learner
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
     # A small read-only stdlib page, services/view.py, next to the admin tab:

@@ -11,7 +11,7 @@ sitting in front of it could claim anything about what it forwarded. The
 grader reads this log directly, never the egress proxy's own account of
 what it did.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service, and it is not meant to be edited for this lab
 anyway -- `workspace/egress/proxy.py` is.
 """

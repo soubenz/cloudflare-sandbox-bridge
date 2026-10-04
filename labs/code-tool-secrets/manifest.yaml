@@ -98,6 +98,7 @@ services:
   # account of the thing that allowed it; this is a second opinion from
   # something that did not do the work.
   - name: auditor
+    user: learner
     argv: ["python3", "/workspace/services/auditor_service.py"]
     cwd: /workspace
     port: 8754
@@ -112,6 +113,7 @@ services:
   # same way anything else would have to go and ask. It records every request
   # it receives, and nothing legitimate ever sends it one.
   - name: vault
+    user: learner
     argv: ["python3", "/workspace/services/vault_service.py"]
     cwd: /workspace
     port: 8755

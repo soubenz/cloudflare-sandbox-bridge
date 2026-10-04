@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -337,5 +337,71 @@ describe('lesson-leaks-answer', () => {
     expect(warnings({ 'learn/concepts/gateway.routing-aliases.md': lesson('gpt-mini-eu') })).toEqual([]);
     expect(warnings({ 'solution/answers.json': answers })).toEqual([]);
     expect(warnings({ 'solution/answers.json': '{nope', 'learn/concepts/gateway.routing-aliases.md': lesson('gpt-mini-eu') })).toEqual([]);
+  });
+});
+
+describe('service-user', () => {
+  const withService = (svc: string, top = '') => lab({ 'manifest.yaml': `${top}${BASE_MANIFEST}${svc}` });
+  const findings = (dir: string) => {
+    const r = lintLab(dir);
+    return { errors: r.errors.filter((f) => f.rule === 'service-user'), warnings: r.warnings.filter((f) => f.rule === 'service-user') };
+  };
+
+  it('says nothing about learner services, explicit or by default', () => {
+    expect(findings(lab())).toEqual({ errors: [], warnings: [] });
+    expect(findings(withService('  - name: view\n    argv: ["python3", "-B", "/workspace/view.py"]\n    user: learner\n'))).toEqual({ errors: [], warnings: [] });
+  });
+
+  it('requires a comment saying why on user: root', () => {
+    const bare = findings(withService('  - name: pg\n    argv: ["sh", "-c", "exec runuser -u postgres -- postgres -D /tmp/pg"]\n    cwd: /\n    user: root\n'));
+    expect(bare.errors).toHaveLength(1);
+    expect(bare.errors[0]!.message).toContain('no comment');
+    const justified = findings(
+      withService('  - name: pg\n    argv: ["sh", "-c", "exec runuser -u postgres -- postgres -D /tmp/pg"]\n    cwd: /\n    # root: hands the data dir to postgres\n    user: root\n')
+    );
+    expect(justified).toEqual({ errors: [], warnings: [] });
+    const trailing = findings(withService('  - name: pg\n    argv: ["postgres"]\n    cwd: /\n    user: root  # drops to postgres itself\n'));
+    expect(trailing.errors).toEqual([]);
+  });
+
+  it('is an error for a root service that runs a learner-writable script, directly or from sh -c', () => {
+    const direct = findings(withService('  - name: app\n    argv: ["python3", "-B", "/workspace/app.py"]\n    # why\n    user: root\n'));
+    expect(direct.errors).toHaveLength(1);
+    expect(direct.errors[0]!.message).toContain('/workspace/app.py');
+    const shell = findings(withService('  - name: gw\n    argv: ["sh", "-c", "python3 -B /workspace/seed.py & exec litellm --port 4000"]\n    cwd: /\n    # why\n    user: root\n'));
+    expect(shell.errors).toHaveLength(1);
+    expect(shell.errors[0]!.message).toContain('/workspace/seed.py');
+  });
+
+  it('is an error for python -m from a learner-writable cwd as root', () => {
+    const r = findings(withService('  - name: cf\n    argv: ["python3.12", "-m", "mcpgateway"]\n    cwd: /workspace\n    # why\n    user: root\n'));
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]!.message).toContain('-m mcpgateway');
+  });
+
+  it('accepts a seed dropped to the learner, and warns only about the config the root process still reads', () => {
+    const r = findings(
+      withService(
+        '  - name: litellm\n    argv: ["sh", "-c", "setpriv --reuid=learner --regid=learner --init-groups -- python3 -B /workspace/seed.py & exec litellm --config /workspace/config.yaml"]\n    cwd: /\n    # why\n    user: root\n'
+      )
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.warnings).toHaveLength(1);
+    expect(r.warnings[0]!.message).toContain('/workspace/config.yaml');
+  });
+
+  it('turns an acknowledged exception into a warning, and requires its reason', () => {
+    const svc = '  - name: app\n    argv: ["python3", "-B", "/workspace/app.py"]\n    # why\n    user: root\n';
+    const ok = findings(withService(svc, 'x-root-exempt: [app]\nx-root-exempt-reason: "cannot run unprivileged yet"\n'));
+    expect(ok.errors).toEqual([]);
+    expect(ok.warnings[0]!.message).toContain('x-root-exempt');
+    const noReason = findings(withService(svc, 'x-root-exempt: [app]\n'));
+    expect(noReason.errors.map((e) => e.message).join('\n')).toContain('x-root-exempt-reason');
+  });
+
+  it('finds no errors in any real lab', () => {
+    const labsRoot = join(repoRoot, 'labs');
+    const dirs = readdirSync(labsRoot).filter((d) => existsSync(join(labsRoot, d, 'manifest.yaml')));
+    for (const d of dirs) expect(findings(join(labsRoot, d)).errors).toEqual([]);
   });
 });

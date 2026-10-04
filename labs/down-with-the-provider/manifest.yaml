@@ -139,6 +139,7 @@ services:
   # requests that vanished simply failed, and that the ones filed with nothing
   # in them were answered.
   - name: provider
+    user: learner
     argv: ["python3", "/workspace/services/model_proxy.py"]
     cwd: /workspace
     port: 8861
@@ -153,6 +154,7 @@ services:
   # it -- it is read by the graders and, from the terminal, by a learner who
   # wants to see what was filed.
   - name: desk
+    user: learner
     argv: ["python3", "/workspace/services/desk_service.py"]
     cwd: /workspace
     port: 8862

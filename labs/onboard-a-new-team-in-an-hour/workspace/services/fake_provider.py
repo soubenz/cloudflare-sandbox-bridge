@@ -9,7 +9,7 @@ config.yaml points one alias at each, so which path got hit tells you which
 alias LiteLLM actually routed to. Copied from labs/one-endpoint-one-key's
 own services/fake_provider.py -- same shape, same reasoning.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

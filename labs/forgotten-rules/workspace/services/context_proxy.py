@@ -53,7 +53,7 @@ records ``mode=replay`` with the reason. A lab must not fail a learner
 because a provider was down, and because nothing is graded on the reply, the
 fallback cannot change a verdict either.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

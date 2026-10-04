@@ -24,7 +24,7 @@ None of the request/response plumbing below is the point of this lab. The
 one piece of real security logic -- the allow/deny decision -- lives in
 `_is_allowed()`.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the already-running service; restart the `egress-proxy` service
 from the Services panel to pick up an edit.
 """

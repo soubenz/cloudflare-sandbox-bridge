@@ -52,7 +52,7 @@ Two practical notes:
   UI. The faults, the records and the graders behave identically; only the
   words are local. It is a testing mode, not a lab mode.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

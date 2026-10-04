@@ -96,6 +96,7 @@ env:
 
 services:
   - name: weather-tools
+    user: learner
     # A toy MCP tool server (real `mcp` PyPI SDK, streamable-http
     # transport) -- get_weather and get_forecast, both made-up. No real
     # weather API and no route out of the container to one.
@@ -114,6 +115,7 @@ services:
     ui: false
     depends_on: []
   - name: calculator-tools
+    user: learner
     # A second toy MCP tool server -- add, subtract, multiply.
     argv: ["python3", "-B", "/workspace/tools/calculator_tool_server.py"]
     cwd: /workspace
@@ -127,6 +129,7 @@ services:
     ui: false
     depends_on: []
   - name: contextforge
+    user: learner
     # ui: false, on purpose: this port is the raw gateway, which trusts the
     # X-Authenticated-User header from whoever sends it. The learner reaches
     # its admin pages only through the `admin` service below, which sets that
@@ -203,6 +206,7 @@ services:
     ui: false
     depends_on: [weather-tools, calculator-tools]
   - name: admin
+    user: learner
     label: ContextForge
     about: ContextForge's own admin pages, already signed in. Look at its gateways, tools and virtual servers here.
     # A tiny stdlib reverse proxy (workspace/admin_proxy.py) in front of
@@ -227,6 +231,7 @@ services:
     ui: true
     depends_on: [contextforge]
   - name: view
+    user: learner
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
     # A small read-only stdlib page, workspace/view_service.py, next to the

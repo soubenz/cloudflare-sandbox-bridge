@@ -87,6 +87,7 @@ env:
 
 services:
   - name: jaeger
+    user: learner
     # Assumes the image puts the Jaeger v2.21.0 binary on PATH as `jaeger`
     # (the same convention litellm/mlflow already use as pip console-
     # scripts) -- this is the platform (image) change m4-common.md says
@@ -104,6 +105,7 @@ services:
     ui: true
     depends_on: []
   - name: otelcol
+    user: learner
     # ui: false -- otelcol-contrib has no web UI of its own; its health
     # extension (workspace/otelcol-config.yaml) is for local debugging,
     # not a learner-facing surface.
@@ -118,6 +120,7 @@ services:
     ui: false
     depends_on: [jaeger]
   - name: traffic
+    user: learner
     # Assumes `opentelemetry-sdk` and
     # `opentelemetry-exporter-otlp-proto-http` are pip-installed in the
     # image (this lab needs no flask/requests instrumentation -- unlike

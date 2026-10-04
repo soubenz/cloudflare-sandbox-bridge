@@ -11,7 +11,7 @@ It costs nothing and it is not the model: only the gateway in front of the
 model bills. It is also the only record of whether the desk got through the
 case, which is why the graders read it and not the agent's own tally.
 
-Nothing leaves the container. The service runs as root from the lab manifest;
+Nothing leaves the container. The service is started by the platform from the lab manifest;
 editing this file does not change the running service.
 """
 

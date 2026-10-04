@@ -23,7 +23,7 @@ def _i(name, default):
 
 DESK_NAME = os.environ.get("DESK_NAME", "billing-desk")
 
-# The two lab services. Both are started for you by the lab, as root.
+# The two lab services. Both are started for you by the lab.
 TRANSCRIPT_URL = os.environ.get("TRANSCRIPT_URL", "http://127.0.0.1:8851").rstrip("/")
 PAYMENTS_URL = os.environ.get("PAYMENTS_URL", "http://127.0.0.1:8852").rstrip("/")
 

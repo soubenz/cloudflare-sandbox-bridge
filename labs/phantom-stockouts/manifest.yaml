@@ -108,6 +108,7 @@ services:
   # the stock and reports what it "found". A learner who trusts that is
   # reading a number the agent was never given.
   - name: inventory
+    user: learner
     argv: ["python3", "/workspace/services/inventory_service.py"]
     cwd: /workspace
     port: 8925
@@ -122,6 +123,7 @@ services:
   # ui: false, so the proxy refuses it -- it is read by the graders and, from
   # the terminal, by a learner who wants to see what was said.
   - name: chat
+    user: learner
     argv: ["python3", "/workspace/services/chat_service.py"]
     cwd: /workspace
     port: 8926

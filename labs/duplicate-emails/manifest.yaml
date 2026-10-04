@@ -58,6 +58,7 @@ services:
   # with the idempotency key each request carried. A learner who only reads
   # the agent's own stdout will believe it sent one message per ticket.
   - name: mailbox
+    user: learner
     argv: ["python3", "/workspace/services/mail_service.py"]
     cwd: /workspace
     port: 8025
@@ -68,6 +69,7 @@ services:
     ui: true
     depends_on: []
   - name: model
+    user: learner
     argv: ["python3", "/workspace/services/model_service.py"]
     cwd: /workspace
     port: 8788

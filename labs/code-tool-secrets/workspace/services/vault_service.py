@@ -21,7 +21,7 @@ Deliberately ``ui: false`` in the manifest, so the session proxy refuses it:
 the way to read this log is ``curl "$VAULT_URL/api/log"`` from the terminal,
 in the same way you would have to go and ask the service itself.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

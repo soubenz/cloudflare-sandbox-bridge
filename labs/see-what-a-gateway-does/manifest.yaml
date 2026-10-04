@@ -53,12 +53,15 @@ env:
 
 services:
   - name: postgres
+    # root: only to set up the data dir and hand it to the postgres user; the
+    # server itself runs as postgres (runuser), never as root or learner.
+    user: root
     argv:
       [
         "sh", "-c",
         "PGBIN=$(ls -d /usr/lib/postgresql/*/bin | head -n1); if [ ! -f /tmp/pg/PG_VERSION ]; then cp -a /opt/opalix/pg-template /tmp/pg; fi; exec runuser -u postgres -- $PGBIN/postgres -D /tmp/pg -h 127.0.0.1 -p 5432 -k /tmp",
       ]
-    cwd: /workspace
+    cwd: /
     port: 5432
     healthcheck:
       type: tcp
@@ -66,6 +69,7 @@ services:
     ui: false
     depends_on: []
   - name: provider
+    user: learner
     argv: ["python3", "-B", "/workspace/services/fake_provider.py"]
     cwd: /workspace
     port: 8961
@@ -76,10 +80,16 @@ services:
     ui: false
     depends_on: []
   - name: litellm
+    # root: LiteLLM's Prisma engines are cached under /root (see
+    # images/gateway/Dockerfile), which learner cannot read. RESIDUAL RISK until
+    # the image moves that cache: config.yaml in /workspace can name callback
+    # modules this root process imports. cwd is / so nothing is looked up in a
+    # learner-writable directory; any seed script below is dropped to learner.
+    user: root
     # ui: false -- the admin UI always requires a login (T5 Q4); see the
     # note above. `view` is this lab's tab instead.
     argv: ["litellm", "--config", "/workspace/gateway/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
-    cwd: /workspace
+    cwd: /
     env:
       DATABASE_URL: "postgresql://postgres@127.0.0.1:5432/postgres"
       LITELLM_MASTER_KEY: "sk-opalix-fixture-master"
@@ -99,6 +109,7 @@ services:
     ui: false
     depends_on: [postgres, provider]
   - name: view
+    user: learner
     label: Live view
     about: A read-only page that updates as you work. It shows what your lab is doing right now.
     argv: ["python3", "-B", "/workspace/services/view_service.py"]

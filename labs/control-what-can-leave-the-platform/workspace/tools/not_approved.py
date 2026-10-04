@@ -10,7 +10,7 @@ matter what the agent does or what a caller's Host header claims -- if a
 grading run's own crafted probe ever shows up here, the egress control in
 front of this service failed.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service, and it is not meant to be edited for this lab
 anyway -- `workspace/egress/proxy.py` is.
 """

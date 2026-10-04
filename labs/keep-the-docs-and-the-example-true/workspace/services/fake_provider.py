@@ -15,7 +15,7 @@ and it is deliberately simple (whitespace word count of the last message)
 so a check -- or a learner's own verify_docs.py -- can predict it without
 guessing at a real tokenizer.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

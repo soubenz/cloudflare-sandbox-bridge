@@ -35,7 +35,7 @@ It fails on purpose and deterministically, keyed to a conversation id and to
 how many appends that conversation has seen since the last reset. Nothing
 here is random and nothing here looks at the clock.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

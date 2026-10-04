@@ -25,7 +25,7 @@ Three things about it are worth reading before you debug the agent:
    lists of question ids read from its environment at start-up. Nothing
    here is random and nothing here looks at the clock.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

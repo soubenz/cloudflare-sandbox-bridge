@@ -15,7 +15,7 @@ wait for it, and it is idempotent -- a restart of this same service finds
 finds `team-chat-v2` and quietly renames it back) and changes nothing
 else.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 

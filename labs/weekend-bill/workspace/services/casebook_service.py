@@ -14,8 +14,8 @@ Two endpoints, and they are the two halves of the desk's day:
   ``needs_human`` with a reason. A question that is never filed is a
   question nobody knows about, which is worse than an expensive one.
 
-Nothing leaves the container. The service runs as root from the lab
-manifest; editing this file does not change the running service.
+Nothing leaves the container. The service is started by the platform from
+the lab manifest; editing this file does not change the running service.
 """
 
 import json

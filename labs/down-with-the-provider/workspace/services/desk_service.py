@@ -25,7 +25,7 @@ Two endpoints, and they are the two halves of the desk's job:
   nothing outside this container, and answers the same way every time.
 
 Nothing here talks to the model provider and nothing here leaves the
-container. The service runs as root from the lab manifest; editing this file
+container. The service is started by the platform from the lab manifest; editing this file
 does not change the running service.
 """
 

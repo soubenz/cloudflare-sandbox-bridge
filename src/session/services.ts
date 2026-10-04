@@ -3,6 +3,7 @@ import type { SessionRuntime, ServiceRuntime, ServiceHealth } from './state';
 import { emitEvent } from './events';
 import { ApiError } from '../lib/errors';
 import type { SandboxProcess } from '@cloudflare/sandbox';
+import { buildServiceLaunch } from '../labs/service-user';
 
 const HEALTH_PROBE_TIMEOUT_MS = 3_000;
 
@@ -44,12 +45,17 @@ export function topoOrder(services: ServiceSpec[]): ServiceSpec[] {
  */
 export async function startService(rt: SessionRuntime, spec: ServiceSpec): Promise<ServiceRuntime> {
   const backend = rt.backend();
-  // Explicitly, not via the container-wide default: that default is an
-  // in-memory field on the Sandbox DO which does not survive an eviction,
-  // so a service restarted an hour into a session would come back without
-  // the lab's declared env. Service-level env wins over session-level.
-  const env = { ...(await rt.sessionEnv()), ...spec.env };
-  const proc = await backend.exec(spec.argv, { cwd: spec.cwd, env });
+  // The env is passed explicitly, not via the container-wide default: that
+  // default is an in-memory field on the Sandbox DO which does not survive an
+  // eviction, so a service restarted an hour into a session would come back
+  // without the lab's declared env. Service-level env wins over session-level.
+  //
+  // A `user: learner` service (the default for anything launched from a path
+  // the learner can write; see src/labs/service-user.ts) is exec'd through
+  // setpriv, which drops to `learner` and execs in place, so the pid, process
+  // group, kill and port watch below behave exactly as for a root service.
+  const launch = buildServiceLaunch(spec, await rt.sessionEnv());
+  const proc = await backend.exec(launch.argv, { cwd: spec.cwd, env: launch.env });
   const runtime: ServiceRuntime = {
     spec,
     process_id: proc.id,
@@ -153,7 +159,14 @@ async function stopRecordedProcess(rt: SessionRuntime, runtime: ServiceRuntime |
  * Accepted residual gap: a witness service whose argv points into /workspace
  * (for example `python /workspace/app.py`) executes learner-editable code by
  * design, so a restart runs whatever the learner has saved there. The spec
- * pins WHAT is launched, not the contents of files it launches.
+ * pins WHAT is launched, not the contents of files it launches. What it no
+ * longer does is run that code as root: such a service runs as `learner`
+ * (src/labs/service-user.ts), so a restart gives the learner nothing their
+ * own shell does not already have. The services that still run as root are
+ * the ones a manifest marks `user: root`, with a comment saying why; they
+ * must not execute learner-writable code (the lint refuses it unless the
+ * manifest acknowledges it as residual risk), and those that read a
+ * learner-writable config file are listed as residual risk in their manifests.
  */
 export async function restartService(rt: SessionRuntime, name: string): Promise<ServiceRuntime> {
   const services = await rt.services();

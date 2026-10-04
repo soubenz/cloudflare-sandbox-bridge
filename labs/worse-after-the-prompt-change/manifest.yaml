@@ -107,6 +107,7 @@ services:
   # reads a reply as prose. ui: false: it is plumbing, read from the
   # terminal with curl if you want to see it, not a tab.
   - name: judge
+    user: learner
     argv: ["python3", "/workspace/services/judge_service.py"]
     cwd: /workspace
     port: 8901
@@ -121,6 +122,7 @@ services:
   # acts on that, the same way a real release pipeline would. The
   # **release** tab is where an anomaly gets named in plain words.
   - name: release
+    user: learner
     argv: ["python3", "/workspace/services/release_service.py"]
     cwd: /workspace
     port: 8902

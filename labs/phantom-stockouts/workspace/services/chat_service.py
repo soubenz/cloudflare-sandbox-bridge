@@ -27,7 +27,7 @@ not", "cannot", "do not know", "not confirmed", ...). What this service
 concluded is in the log next to the text, so you can see what it made of
 your wording.
 
-The service runs as root from the lab manifest. Editing this file does not
+The service is started by the platform from the lab manifest. Editing this file does not
 change the running service.
 """
 
