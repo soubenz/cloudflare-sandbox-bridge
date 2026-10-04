@@ -988,6 +988,36 @@ test.describe('the workspace window', () => {
 // the header
 // =========================================================================
 
+test.describe('a page opened before a deploy', () => {
+  test('reloads itself once when the editor file is gone, and then says so instead of looping', async ({ page }) => {
+    await session(page, BUILD);
+    // The running lab is listed for its learner, as the real console reports it, so a reload re-enters it.
+    await page.route('**/api/sessions/active', (route) =>
+      json(route, { sessions: [{ id: SESSION_ID, lab: BUILD, state: 'running' }] })
+    );
+    // The new build no longer serves the on-demand pieces this old page asks for. The reloaded page is a fresh
+    // build and gets its own files, so the block ends when the page navigates.
+    let block = true;
+    await page.route('**/dist/chunk-*.js', (route) => (block ? route.fulfill({ status: 404, body: 'gone' }) : route.continue()));
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) block = false;
+    });
+    let loads = 0;
+    page.on('load', () => loads++);
+    const file = page.locator('#fileList li', { hasText: 'gateway.yaml' });
+    await file.click();
+    await expect.poll(() => loads, { timeout: 15_000 }).toBe(1);
+    await expect(file).toBeVisible();
+    // The same failure straight after the reload: the reload did not help, so it asks.
+    block = true;
+    await file.click();
+    await expect(page.locator('#editorStatus')).toContainText('updated while this page was open');
+    await expect(page.locator('.reload-stale')).toBeVisible();
+    await page.waitForTimeout(1500);
+    expect(loads).toBe(1);
+  });
+});
+
 test.describe('the terminal', () => {
   test('comes back by itself after the connection drops, and keeps its keepalive off the idle clock', async ({ page }) => {
     const s = await session(page, BUILD);

@@ -22,6 +22,7 @@ import {
 import { isPhoneLike, readDevice } from './device.js';
 import { createRouter } from './router.js';
 import { installCodeCopy } from './code-copy.js';
+import { isStaleChunkError, recoverFromStaleBuild } from './stale-build.js';
 import { GUIDE_TAB_NAMES, buildRoute, isOpaqueId, routeTitle } from './routes.js';
 import { icon, spriteIcon, uiIcon } from './icons.js';
 import { createMasteryStore, normalizeLearn, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
@@ -4517,7 +4518,23 @@ async function ensureEditor() {
     });
     $('editorEmpty').hidden = true;
   } catch (err) {
-    setEditorStatus(`The editor failed to load. ${plainError(err)}`, 'bad');
+    if (isStaleChunkError(err)) {
+      // The console was updated while this page was open, so the editor's file is gone: a reload fetches the new
+      // build and the session's address brings the lab back. Not while there is something unsaved.
+      if (recoverFromStaleBuild({ canReload: !state.dirty })) return state.editor;
+      setEditorStatus('Opalix was updated while this page was open. Reload the page to open the editor.', 'bad');
+      const bar = $('editorStatus').parentElement;
+      if (bar && !bar.querySelector('.reload-stale')) {
+        const reload = document.createElement('button');
+        reload.type = 'button';
+        reload.className = 'btn btn-sm btn-ghost reload-stale';
+        reload.textContent = 'Reload';
+        reload.addEventListener('click', () => location.reload());
+        bar.append(reload);
+      }
+    } else {
+      setEditorStatus(`The editor could not be opened. ${plainError(err)}`, 'bad');
+    }
   }
   return state.editor;
 }

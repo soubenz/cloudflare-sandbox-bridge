@@ -34,7 +34,9 @@ const GRAMMARS = {
 
 async function loadLanguage(filename) {
   const ext = (filename.split('.').pop() ?? '').toLowerCase();
-  return GRAMMARS[ext] ? GRAMMARS[ext]() : null;
+  // Highlighting is a nicety: when a grammar cannot be fetched (a build older than this page, a flaky connection)
+  // the file still opens, as plain text.
+  return GRAMMARS[ext] ? GRAMMARS[ext]().catch(() => null) : null;
 }
 
 export async function createEditor(mount, { onChange, onSave } = {}) {
