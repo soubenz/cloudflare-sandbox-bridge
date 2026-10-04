@@ -601,7 +601,7 @@ async function route(request, env) {
         await callApi(env, '/sessions/start', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ lab: body.lab, user_id: subject }),
+          body: JSON.stringify({ lab: body.lab, user_id: subject, ...(canAdmin(subject, env) ? { bypass_tier: true } : {}) }),
         })
       );
     }
@@ -615,7 +615,7 @@ async function route(request, env) {
       const res = await callApi(env, '/sessions/prepare', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ lab: body.lab, user_id: subject }),
+        body: JSON.stringify({ lab: body.lab, user_id: subject, ...(canAdmin(subject, env) ? { bypass_tier: true } : {}) }),
       });
       return res.ok ? json({ prepared: true }, 202) : relay(res);
     }

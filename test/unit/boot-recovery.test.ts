@@ -53,6 +53,7 @@ const manifest = parseManifest({
   title: 'Lab A',
   type: 'build',
   family: 'agent',
+  tier: 'free',
   timeout_minutes: 90,
   idle_minutes: 10,
   services: [{ name: 'api', argv: ['python3', 'app.py'], port: 8000, ui: true }],

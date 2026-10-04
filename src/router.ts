@@ -25,7 +25,7 @@ import { loadProfile } from './profile/store';
 import { compactProfile } from './profile/compute';
 import { parseUserId, parseStartingLevels } from './profile/request';
 import { parsePathInputs } from './path/inputs';
-import { ensurePath, saveInputsAndRecompute, type PathResult } from './path/service';
+import { ensurePath, loadPlan, saveInputsAndRecompute, type PathResult } from './path/service';
 
 export function createRouter(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
@@ -242,7 +242,8 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     requireServiceAuth(c.req.raw, c.env);
     const body = await c.req.json<{ lab: string; user_id: string }>();
     if (!body.lab || !body.user_id) throw ApiError.badRequest('missing_fields', 'lab and user_id are required');
-    return c.json(await createSession(c.env, body.lab, body.user_id), 202);
+    // The strict create is the operator's route (CLI, tests, tooling), so it is not plan-gated.
+    return c.json(await createSession(c.env, body.lab, body.user_id, undefined, false, true), 202);
   });
 
   /**
@@ -261,7 +262,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
    */
   app.post('/sessions/start', async (c) => {
     requireServiceAuth(c.req.raw, c.env);
-    type StartBody = { lab?: string; user_id?: string };
+    type StartBody = { lab?: string; user_id?: string; bypass_tier?: boolean };
     const body = await c.req.json<StartBody>().catch((): StartBody => ({}));
     if (!body.lab || !body.user_id) throw ApiError.badRequest('missing_fields', 'lab and user_id are required');
 
@@ -287,7 +288,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
       }
     }
 
-    return c.json(await createSession(c.env, body.lab, body.user_id), 202);
+    return c.json(await createSession(c.env, body.lab, body.user_id, undefined, false, body.bypass_tier === true), 202);
   });
 
   /**
@@ -301,7 +302,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
    */
   app.post('/sessions/prepare', async (c) => {
     requireServiceAuth(c.req.raw, c.env);
-    type PrepareBody = { lab?: string; user_id?: string };
+    type PrepareBody = { lab?: string; user_id?: string; bypass_tier?: boolean };
     const body = await c.req.json<PrepareBody>().catch((): PrepareBody => ({}));
     if (!body.lab || !body.user_id) throw ApiError.badRequest('missing_fields', 'lab and user_id are required');
 
@@ -313,7 +314,7 @@ export function createRouter(): Hono<{ Bindings: Env }> {
       if (meta.lab_slug === body.lab) return c.json({ id: existing.id, state: meta.state, prepared: true, reused: true }, 200);
       if (!(await stub.cancelPrepared())) throw ApiError.conflict('active_session_exists', 'This user already has an active session');
     }
-    return c.json(await createSession(c.env, body.lab, body.user_id, undefined, true), 202);
+    return c.json(await createSession(c.env, body.lab, body.user_id, undefined, true, body.bypass_tier === true), 202);
   });
 
   /**
@@ -709,9 +710,15 @@ async function deepHealth(env: Env) {
 }
 
 /** Shared by POST /sessions and POST /sessions/start; the only difference between them is who may call. */
-async function createSession(env: Env, lab: string, userId: string, ipHash?: string, prepare = false) {
+async function createSession(env: Env, lab: string, userId: string, ipHash?: string, prepare = false, bypassTier = false) {
   const { version, manifest } = await loadCurrentManifest(env, lab);
   if (!isFamily(manifest.family)) throw ApiError.internal(`lab "${lab}" has an unknown family "${manifest.family}"`);
+
+  // A pro lab needs a paid plan. The caller vouches for `bypassTier` (an operator, or the console for its admin
+  // subject); a plain `user_id` never earns it.
+  if (!bypassTier && manifest.tier === 'pro' && (await loadPlan(env, userId)) === 'free') {
+    throw new ApiError(403, 'plan_required', 'This lab is included with the Pro plan.');
+  }
 
   // Refuse before reserving anything in D1: a session the pool cannot give a
   // container to would otherwise hold the user's one slot while it fails.

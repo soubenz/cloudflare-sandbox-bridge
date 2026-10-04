@@ -9,13 +9,14 @@ import { sweepStaleSessions } from '../../src/session/reconcile';
 const pool = vi.hoisted(() => ({ admit: vi.fn(async () => {}), stats: vi.fn() }));
 vi.mock('../../src/do/pool', () => ({ poolStub: () => pool }));
 
+const tierOf = vi.hoisted(() => ({ value: 'free' as 'free' | 'pro' }));
 const manifest = parseManifest({
-  slug: 'lab-a', version: '1.0.0', title: 'Lab A', type: 'build', family: 'agent', timeout_minutes: 60,
+  slug: 'lab-a', version: '1.0.0', title: 'Lab A', type: 'build', family: 'agent', tier: 'free', timeout_minutes: 60,
   services: [{ name: 'api', argv: ['python3', 'app.py'], port: 8000, ui: true }],
   checks: [{ name: 'c1', script: 'c1.sh' }],
 });
 vi.mock('../../src/labs/bundle', () => ({
-  loadCurrentManifest: async () => ({ version: '1.0.0', manifest }),
+  loadCurrentManifest: async () => ({ version: '1.0.0', manifest: { ...manifest, tier: tierOf.value } }),
   listCatalogue: async () => ({ labs: [] }),
   publishLab: async () => ({}),
   INDEX_KEY: 'labs/index.json',
@@ -325,5 +326,41 @@ describe('progress and history routes (B-14)', () => {
       slug: 'lab-a', attempts: 2, best_score: 0.5, passed_all: false, last_run_at: 9, sessions: 1, attempts_this_session: 2,
     });
     expect(calls[0]!.params).toEqual(['s1', 'u1', 'lab-a']);
+  });
+});
+
+describe('plan tier at lab start', () => {
+  const plan = (p: string | null) => (c: D1Call) => (/FROM users WHERE id/.test(c.sql) ? (p ? { plan: p } : null) : undefined);
+  const start = (env: Env, body: Record<string, unknown>, path = '/sessions/start') =>
+    call(env, 'POST', path, { body: { lab: 'lab-a', user_id: 'u1', ...body }, headers: SERVICE });
+
+  it('a free user cannot start a pro lab: 403 plan_required, nothing reserved', async () => {
+    tierOf.value = 'pro';
+    const { env, calls } = makeEnv({ d1: plan(null) });
+    const res = await start(env, {});
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('plan_required');
+    expect(calls.some((c) => /^INSERT INTO sessions/.test(c.sql))).toBe(false);
+    expect((await start(env, {}, '/sessions/prepare')).status).toBe(403);
+  });
+
+  it('a paid user starts a pro lab', async () => {
+    tierOf.value = 'pro';
+    const { env } = makeEnv({ d1: plan('pro') });
+    expect((await start(env, {})).status).toBe(202);
+  });
+
+  it('a free user starts a free lab', async () => {
+    tierOf.value = 'free';
+    const { env } = makeEnv({ d1: plan(null) });
+    expect((await start(env, {})).status).toBe(202);
+  });
+
+  it('bypass_tier (the console vouching for its admin) starts a pro lab for a free user; the operator create route needs no flag', async () => {
+    tierOf.value = 'pro';
+    const { env } = makeEnv({ d1: plan(null) });
+    expect((await start(env, { bypass_tier: true })).status).toBe(202);
+    expect((await start(env, { user_id: 'u2' }, '/sessions')).status).toBe(202);
+    tierOf.value = 'free';
   });
 });

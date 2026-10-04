@@ -40,7 +40,7 @@ export function plainError(err) {
   const status = err?.status;
   if (!status) return "We can't reach the labs right now. Check your connection and try again.";
   if (status === 401) return 'You have been signed out. Reload the page to sign in again.';
-  if (status === 403) return "That isn't available to you right now.";
+  if (status === 403) return err.code === 'plan_required' ? 'This lab is part of the Pro plan.' : "That isn't available to you right now.";
   if (status === 404) return 'It could not be found. It may have ended or been removed.';
   if (status === 408 || status === 504) return 'That took too long. Please try again.';
   if (status === 409 || status === 503) return 'Labs are busy right now. Please try again in a moment.';

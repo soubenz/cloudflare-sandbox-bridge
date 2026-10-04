@@ -333,7 +333,7 @@ describe('POST /api/prepare and /api/prepare/cancel', () => {
     expect(calls[0]!.url).toBe('https://api.internal/sessions/prepare');
     expect(calls[0]!.method).toBe('POST');
     expect(calls[0]!.headers.get('authorization')).toBe('Bearer svc-key');
-    expect(JSON.parse(calls[0]!.body)).toEqual({ lab: 'see-what-a-gateway-does', user_id: 'console' });
+    expect(JSON.parse(calls[0]!.body)).toEqual({ lab: 'see-what-a-gateway-does', user_id: 'console', bypass_tier: true });
   });
 
   it('passes an API refusal through (a lab already running is a 409), for the page to ignore', async () => {
@@ -606,5 +606,33 @@ describe('deep links and signing in', () => {
     const res = await call('/login.js');
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('asset');
+  });
+});
+
+describe('plan tier on start and prepare', () => {
+  const mintFor = async (sub: string) => {
+    const b64 = (v: string) => btoa(v).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const payload = b64(JSON.stringify({ sub, exp: Math.floor(Date.now() / 1000) + 3600 }));
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('cookie-secret'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
+    return `__Host-opx_console=${payload}.${b64(String.fromCharCode(...sig))}`;
+  };
+  const post = async (path: string, sub: string) =>
+    worker.default.fetch(
+      new Request(`${ORIGIN}${path}`, { method: 'POST', headers: { cookie: await mintFor(sub), 'content-type': 'application/json' }, body: JSON.stringify({ lab: 'x-lab', bypass_tier: true }) }),
+      e
+    );
+  const sent = () => JSON.parse(calls[calls.length - 1]!.body) as Record<string, unknown>;
+
+  it('an admin subject asks the API to skip the plan check; anyone else never does, whatever the browser sends', async () => {
+    calls.length = 0;
+    await post('/api/start', 'console');
+    expect(sent().bypass_tier).toBe(true);
+    await post('/api/prepare', 'console');
+    expect(sent().bypass_tier).toBe(true);
+    await post('/api/start', 'ada@example.com');
+    expect(sent()).toEqual({ lab: 'x-lab', user_id: 'ada@example.com' });
+    await post('/api/prepare', 'ada@example.com');
+    expect(sent()).toEqual({ lab: 'x-lab', user_id: 'ada@example.com' });
   });
 });
