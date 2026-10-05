@@ -104,8 +104,17 @@ export class OpalixClient {
     return this.request(`/sessions/${sessionId}/files/${path}`, { method: 'DELETE' }, true);
   }
 
-  runChecks(sessionId: string, only?: string[]): Promise<SessionStatus['checks']> {
-    return this.request(`/sessions/${sessionId}/checks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ only }) }, true);
+  /** The API allows one check run every 2 s per session; a quick lab's second run can land inside that, so wait and retry. */
+  async runChecks(sessionId: string, only?: string[]): Promise<SessionStatus['checks']> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.request(`/sessions/${sessionId}/checks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ only }) }, true);
+      } catch (err) {
+        const m = /-> 429: .*checks_too_frequent.*retry_after_ms"?\D*(\d+)/.exec(String((err as Error).message));
+        if (!m || attempt >= 5) throw err;
+        await new Promise((r) => setTimeout(r, Number(m[1]) + 250));
+      }
+    }
   }
 
   restartService(sessionId: string, name: string): Promise<ServiceRuntime> {
