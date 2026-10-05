@@ -27,16 +27,25 @@ import { ApiError } from '../lib/errors';
 /** Same cap the route applies; repeated here because this is where bytes (not UTF-16 units) are known. */
 export const MAX_WRITE_BYTES = 2 * 1024 * 1024;
 
-const FENCE_SCRIPT = 'p=$(realpath -m -- "$1") && case "$p" in /workspace|/workspace/*) exit 0;; *) exit 3;; esac';
-const FENCE_ESCAPES = 3;
+/**
+ * The fence is the head of every script below, so a file operation is ONE container call (each call costs
+ * ~200 ms; a separate fence call doubled the time to open a file). 97 is not an exit code any of the learner-side
+ * commands uses, so it can only mean "the path escapes /workspace".
+ */
+const FENCE_ESCAPES = 97;
+const FENCE = `p=$(realpath -m -- "$1") || exit 1; case "$p" in /workspace|/workspace/*) ;; *) exit ${FENCE_ESCAPES};; esac;`;
 
 // Absolute path: the Worker's exec runs as root, and util-linux puts runuser
 // in /usr/sbin, which is not guaranteed to be on the PATH exec inherits.
 // Confirmed present in both live images at /usr/sbin/runuser.
 const AS_LEARNER = ['/usr/sbin/runuser', '-u', 'learner', '--'] as const;
 
-const READ_SCRIPT = 'base64 -w0 -- "$1"';
-const LIST_SCRIPT = 'cd -- "$1" && find . -mindepth 1 -maxdepth 1 -printf "%y\\t%s\\t%T@\\t%f\\0"';
+/** The fence, then `inner` (a `sh -c` script taking the path as $1) as learner. */
+const fencedAsLearner = (inner: string) => `${FENCE} exec ${AS_LEARNER.join(' ')} sh -c '${inner}' _ "$1"`;
+
+const READ_SCRIPT = fencedAsLearner('base64 -w0 -- "$1"');
+const LIST_SCRIPT = fencedAsLearner('cd -- "$1" && find . -mindepth 1 -maxdepth 1 -printf "%y\\t%s\\t%T@\\t%f\\0"');
+const DELETE_SCRIPT = fencedAsLearner('rm -f -- "$1"');
 /**
  * Runs as root so the redirect from the root-only stage file is opened by
  * root (the stage dir is 0700 and learner must not be able to enter it); the
@@ -44,7 +53,7 @@ const LIST_SCRIPT = 'cd -- "$1" && find . -mindepth 1 -maxdepth 1 -printf "%y\\t
  * learner's too, so a parent chain can never be created outside what learner
  * may write.
  */
-const WRITE_SCRIPT = `${AS_LEARNER.join(' ')} sh -c 'mkdir -p -- "$(dirname -- "$1")" && cat > "$1"' _ "$1" < "$2"`;
+const WRITE_SCRIPT = `${FENCE} exec ${AS_LEARNER.join(' ')} sh -c 'mkdir -p -- "$(dirname -- "$1")" && cat > "$1"' _ "$1" < "$2"`;
 
 const EXEC_OPTIONS = { timeout: 30_000, cwd: '/' } as const;
 
@@ -66,19 +75,13 @@ async function run(rt: SessionRuntime, argv: readonly [string, ...string[]]): Pr
   return { exitCode: out.exitCode, stdout: asText(out.stdout), stderr: asText(out.stderr) };
 }
 
-/** Throws unless `abs` resolves, symlinks included, to somewhere inside /workspace. */
-async function fence(rt: SessionRuntime, abs: string): Promise<void> {
-  const r = await run(rt, ['sh', '-c', FENCE_SCRIPT, '_', abs]);
-  if (r.exitCode === FENCE_ESCAPES) throw escapes();
-  if (r.exitCode !== 0) throw ApiError.internal(`path check failed (exit ${r.exitCode}): ${r.stderr.slice(0, 500)}`);
-}
-
 function escapes(): ApiError {
   return ApiError.badRequest('bad_path', `path escapes ${WORKSPACE_ROOT}`);
 }
 
 /** Maps a failed learner-side operation to the API error the caller should see. */
 function failure(r: Ran, what: string): ApiError {
+  if (r.exitCode === FENCE_ESCAPES) return escapes();
   const err = r.stderr;
   if (/Permission denied|Is a directory|Not a directory/i.test(err)) return escapes();
   if (/No such file or directory/i.test(err)) return ApiError.notFound('not_found', `No such file or directory: ${what}`);
@@ -86,8 +89,7 @@ function failure(r: Ran, what: string): ApiError {
 }
 
 export async function readWorkspaceFile(rt: SessionRuntime, path: string): Promise<{ content: string; encoding?: FileEncoding }> {
-  await fence(rt, path);
-  const r = await run(rt, [...AS_LEARNER, 'sh', '-c', READ_SCRIPT, '_', path]);
+  const r = await run(rt, ['sh', '-c', READ_SCRIPT, '_', path]);
   if (r.exitCode !== 0) throw failure(r, 'read');
 
   const base64 = r.stdout.trim();
@@ -104,7 +106,6 @@ export async function writeWorkspaceFile(rt: SessionRuntime, path: string, conte
   if (new TextEncoder().encode(content).length > MAX_WRITE_BYTES) {
     throw ApiError.payloadTooLarge('File exceeds 2 MiB write limit');
   }
-  await fence(rt, path);
 
   const staged = `${STAGE_DIR}/write-${crypto.randomUUID()}`;
   await ensureStageDir(rt);
@@ -118,8 +119,7 @@ export async function writeWorkspaceFile(rt: SessionRuntime, path: string, conte
 }
 
 export async function listWorkspaceDir(rt: SessionRuntime, path: string): Promise<ListFilesResult> {
-  await fence(rt, path);
-  const r = await run(rt, [...AS_LEARNER, 'sh', '-c', LIST_SCRIPT, '_', path]);
+  const r = await run(rt, ['sh', '-c', LIST_SCRIPT, '_', path]);
   if (r.exitCode !== 0) throw failure(r, 'list');
 
   const base = path.replace(/\/+$/, '');
@@ -143,7 +143,6 @@ export async function listWorkspaceDir(rt: SessionRuntime, path: string): Promis
 }
 
 export async function deleteWorkspaceFile(rt: SessionRuntime, path: string): Promise<void> {
-  await fence(rt, path);
-  const r = await run(rt, [...AS_LEARNER, 'rm', '-f', '--', path]);
+  const r = await run(rt, ['sh', '-c', DELETE_SCRIPT, '_', path]);
   if (r.exitCode !== 0) throw failure(r, 'delete');
 }

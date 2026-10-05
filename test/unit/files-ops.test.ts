@@ -10,8 +10,8 @@ import {
 
 /**
  * Card B-09: the files API must not follow a learner-planted symlink as
- * root. Every operation runs a realpath fence first, then the operation
- * itself as `learner`.
+ * root. Every operation is one container call: a realpath fence, then the
+ * operation itself as `learner`.
  */
 
 /** Indexed access is unchecked-safe here: every test queues (and so asserts) the steps it reads. */
@@ -30,7 +30,7 @@ function setup(steps: Step[]): { rt: SessionRuntime; fake: FakeBackend; argvs: (
 }
 
 const OK: Step = { exit: 0 };
-const ESCAPES: Step = { exit: 3 };
+const ESCAPES: Step = { exit: 97 };
 const LEARNER = ['/usr/sbin/runuser', '-u', 'learner', '--'];
 const b64 = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
 
@@ -44,26 +44,33 @@ async function rejection(p: Promise<unknown>): Promise<Error> {
 }
 
 describe('realpath fence', () => {
-
   it.each([
     ['read', (rt: SessionRuntime) => readWorkspaceFile(rt, '/workspace/leak')],
-    ['write', (rt: SessionRuntime) => writeWorkspaceFile(rt, '/workspace/leak', 'x')],
     ['list', (rt: SessionRuntime) => listWorkspaceDir(rt, '/workspace/leak')],
     ['delete', (rt: SessionRuntime) => deleteWorkspaceFile(rt, '/workspace/leak')],
-  ])('%s: exit 3 from the fence is bad_path and nothing else runs', async (_name, op) => {
-    const { rt, fake, argvs } = setup([ESCAPES]);
+  ])('%s: the fence exit is bad_path, and it is the only container call', async (_name, op) => {
+    const { rt, argvs } = setup([ESCAPES]);
     const err = await rejection(op(rt));
     expect(err.name).toBe('ApiError:400:bad_path');
     expect(err.message).toMatch(/escapes \/workspace/);
     expect(argvs()).toHaveLength(1);
-    expect(argvs()[0][0]).toBe('sh');
-    expect(argvs()[0][3]).toBe('_');
-    expect(argvs()[0][4]).toBe('/workspace/leak');
+    expect(argvs()[0].slice(0, 2)).toEqual(['sh', '-c']);
     expect(argvs()[0][2]).toContain('realpath -m -- "$1"');
-    expect(fake.callsTo('writeFile')).toEqual([]);
+    expect(argvs()[0][2]).toContain('exit 97');
+    expect(argvs()[0].slice(3)).toEqual(['_', '/workspace/leak']);
   });
 
-  it('any other non-zero fence exit is a 500 carrying stderr', async () => {
+  it('write: the fence rides in the write script, so an escape writes nothing outside the stage and cleans it up', async () => {
+    const { rt, fake, argvs } = setup([OK, ESCAPES, OK]);
+    const err = await rejection(writeWorkspaceFile(rt, '/workspace/leak', 'x'));
+    expect(err.name).toBe('ApiError:400:bad_path');
+    const [, write, rm] = argvs();
+    expect(write[2]).toContain('realpath -m -- "$1"');
+    const [[staged]] = fake.callsTo('writeFile') as [[string]];
+    expect(rm).toEqual(['rm', '-f', staged]);
+  });
+
+  it('any other non-zero exit is a 500 carrying stderr', async () => {
     const { rt } = setup([{ exit: 1, stderr: 'realpath: boom' }]);
     const err = await rejection(readWorkspaceFile(rt, '/workspace/a'));
     expect(err.name).toBe('ApiError:500:internal_error');
@@ -72,27 +79,30 @@ describe('realpath fence', () => {
 });
 
 describe('readWorkspaceFile', () => {
-  it('fences, then reads as learner, and decodes utf-8', async () => {
-    const { rt, argvs } = setup([OK, { exit: 0, stdout: b64('héllo\n') }]);
+  it('fences and reads as learner in one call, and decodes utf-8', async () => {
+    const { rt, argvs } = setup([{ exit: 0, stdout: b64('héllo\n') }]);
     expect(await readWorkspaceFile(rt, '/workspace/notes.txt')).toEqual({ content: 'héllo\n', encoding: 'utf-8' });
-    const [fence, op] = argvs();
-    expect(fence.slice(0, 2)).toEqual(['sh', '-c']);
-    expect(op).toEqual([...LEARNER, 'sh', '-c', 'base64 -w0 -- "$1"', '_', '/workspace/notes.txt']);
+    expect(argvs()).toHaveLength(1);
+    const [op] = argvs();
+    expect(op.slice(0, 2)).toEqual(['sh', '-c']);
+    expect(op[2]).toContain('realpath -m -- "$1"');
+    expect(op[2]).toContain(`exec ${LEARNER.join(' ')} sh -c 'base64 -w0 -- "$1"' _ "$1"`);
+    expect(op.slice(3)).toEqual(['_', '/workspace/notes.txt']);
   });
 
   it('returns non-utf-8 bytes as base64', async () => {
     const raw = btoa(String.fromCharCode(0xff, 0xfe, 0x00));
-    const { rt } = setup([OK, { exit: 0, stdout: raw }]);
+    const { rt } = setup([{ exit: 0, stdout: raw }]);
     expect(await readWorkspaceFile(rt, '/workspace/blob')).toEqual({ content: raw, encoding: 'base64' });
   });
 
   it('maps a missing file to 404 not_found', async () => {
-    const { rt } = setup([OK, { exit: 1, stderr: 'base64: /workspace/nope: No such file or directory' }]);
+    const { rt } = setup([{ exit: 1, stderr: 'base64: /workspace/nope: No such file or directory' }]);
     expect((await rejection(readWorkspaceFile(rt, '/workspace/nope'))).name).toBe('ApiError:404:not_found');
   });
 
   it('maps permission denied to bad_path, same answer as the fence', async () => {
-    const { rt } = setup([OK, { exit: 1, stderr: 'base64: /workspace/x: Permission denied' }]);
+    const { rt } = setup([{ exit: 1, stderr: 'base64: /workspace/x: Permission denied' }]);
     const err = await rejection(readWorkspaceFile(rt, '/workspace/x'));
     expect(err.name).toBe('ApiError:400:bad_path');
     expect(err.message).toMatch(/escapes \/workspace/);
@@ -100,15 +110,14 @@ describe('readWorkspaceFile', () => {
 });
 
 describe('listWorkspaceDir', () => {
-  it('fences, then lists as learner, and parses into the SDK shape sorted by name', async () => {
+  it('fences and lists as learner in one call, and parses into the SDK shape sorted by name', async () => {
     const stdout = ['f\t12\t1700000000.5\tb.txt', 'd\t4096\t1700000100.0\ta dir', 'l\t9\t1700000200.0\tlink', 'f\t1\t0.0\ttab\tname'].join('\0') + '\0';
-    const { rt, argvs } = setup([OK, { exit: 0, stdout }]);
+    const { rt, argvs } = setup([{ exit: 0, stdout }]);
     const result = await listWorkspaceDir(rt, '/workspace/sub');
-    const [, op] = argvs();
-    expect(op.slice(0, 4)).toEqual(LEARNER);
-    expect(op.slice(4, 6)).toEqual(['sh', '-c']);
-    expect(op[6]).toContain('cd -- "$1" && find . -mindepth 1 -maxdepth 1 -printf');
-    expect(op.slice(7)).toEqual(['_', '/workspace/sub']);
+    const [op] = argvs();
+    expect(op.slice(0, 2)).toEqual(['sh', '-c']);
+    expect(op[2]).toContain(`exec ${LEARNER.join(' ')} sh -c 'cd -- "$1" && find . -mindepth 1 -maxdepth 1 -printf`);
+    expect(op.slice(3)).toEqual(['_', '/workspace/sub']);
     expect(result.count).toBe(4);
     expect(result.files.map((f) => f.name)).toEqual(['a dir', 'b.txt', 'link', 'tab\tname']);
     expect(result.files[0]).toEqual({
@@ -123,24 +132,22 @@ describe('listWorkspaceDir', () => {
   });
 
   it('an empty directory lists empty', async () => {
-    const { rt } = setup([OK, OK]);
+    const { rt } = setup([OK]);
     expect(await listWorkspaceDir(rt, '/workspace')).toEqual({ files: [], count: 0 });
   });
 
   it('permission denied is bad_path', async () => {
-    const { rt } = setup([OK, { exit: 1, stderr: 'sh: 1: cd: can\'t cd to /workspace/d/etc: Permission denied' }]);
+    const { rt } = setup([{ exit: 1, stderr: 'sh: 1: cd: can\'t cd to /workspace/d/etc: Permission denied' }]);
     expect((await rejection(listWorkspaceDir(rt, '/workspace/d/etc'))).name).toBe('ApiError:400:bad_path');
   });
 });
 
 describe('writeWorkspaceFile', () => {
-  it('fences, stages under /run/opalix/stage, writes as learner, then removes the stage file', async () => {
-    const { rt, fake, argvs } = setup([OK, OK, OK, OK]);
+  it('stages under /run/opalix/stage, fences and writes as learner, then removes the stage file', async () => {
+    const { rt, fake, argvs } = setup([OK, OK, OK]);
     await writeWorkspaceFile(rt, '/workspace/notes.txt', 'hello');
 
-    const [fence, stageDir, write, rm] = argvs();
-    expect(fence.slice(0, 2)).toEqual(['sh', '-c']);
-    expect(fence[4]).toBe('/workspace/notes.txt');
+    const [stageDir, write, rm] = argvs();
     expect(stageDir[2]).toContain('mkdir -p /run/opalix/stage');
 
     const [[staged, content]] = fake.callsTo('writeFile') as [[string, string]];
@@ -148,6 +155,7 @@ describe('writeWorkspaceFile', () => {
     expect(content).toBe('hello');
 
     expect(write.slice(0, 2)).toEqual(['sh', '-c']);
+    expect(write[2]).toContain('realpath -m -- "$1"');
     expect(write[2]).toContain('/usr/sbin/runuser -u learner -- sh -c');
     expect(write[2]).toContain('cat > "$1"');
     expect(write[2]).toContain('< "$2"');
@@ -156,7 +164,7 @@ describe('writeWorkspaceFile', () => {
   });
 
   it('removes the staged file even when the learner write fails', async () => {
-    const { rt, fake, argvs } = setup([OK, OK, { exit: 1, stderr: 'sh: 1: cannot create /workspace/d/etc/x: Permission denied' }, OK]);
+    const { rt, fake, argvs } = setup([OK, { exit: 1, stderr: 'sh: 1: cannot create /workspace/d/etc/x: Permission denied' }, OK]);
     const err = await rejection(writeWorkspaceFile(rt, '/workspace/d/etc/x', 'hello'));
     expect(err.name).toBe('ApiError:400:bad_path');
     const [[staged]] = fake.callsTo('writeFile') as [[string]];
@@ -164,7 +172,7 @@ describe('writeWorkspaceFile', () => {
   });
 
   it('a non-permission failure is a 500 with stderr, and still cleans up', async () => {
-    const { rt, argvs } = setup([OK, OK, { exit: 2, stderr: 'weird' }, OK]);
+    const { rt, argvs } = setup([OK, { exit: 2, stderr: 'weird' }, OK]);
     const err = await rejection(writeWorkspaceFile(rt, '/workspace/a', 'x'));
     expect(err.name).toBe('ApiError:500:internal_error');
     expect(err.message).toContain('weird');
@@ -186,14 +194,16 @@ describe('writeWorkspaceFile', () => {
 });
 
 describe('deleteWorkspaceFile', () => {
-  it('fences, then rm -f as learner', async () => {
-    const { rt, argvs } = setup([OK, OK]);
+  it('fences and runs rm -f as learner in one call', async () => {
+    const { rt, argvs } = setup([OK]);
     await deleteWorkspaceFile(rt, '/workspace/scratch.txt');
-    expect(argvs()[1]).toEqual([...LEARNER, 'rm', '-f', '--', '/workspace/scratch.txt']);
+    expect(argvs()).toHaveLength(1);
+    expect(argvs()[0][2]).toContain(`exec ${LEARNER.join(' ')} sh -c 'rm -f -- "$1"' _ "$1"`);
+    expect(argvs()[0].slice(3)).toEqual(['_', '/workspace/scratch.txt']);
   });
 
   it('permission denied is bad_path', async () => {
-    const { rt } = setup([OK, { exit: 1, stderr: 'rm: cannot remove: Permission denied' }]);
+    const { rt } = setup([{ exit: 1, stderr: 'rm: cannot remove: Permission denied' }]);
     expect((await rejection(deleteWorkspaceFile(rt, '/workspace/x'))).name).toBe('ApiError:400:bad_path');
   });
 });
