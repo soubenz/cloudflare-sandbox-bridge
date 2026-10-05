@@ -14,7 +14,7 @@ export interface AreaEvaluationInput {
   labsTotal: number;
   /** The learner has run at least one lab of this area. */
   attempted: boolean;
-  /** Title of the next lab to do in this area, by catalogue order. */
+  /** Title of the next lab to do in this area (path/next.ts), or null when none can be started. */
   nextLab: string | null;
   /** A finished lab in this area used a hint. */
   usedHints: boolean;
@@ -49,7 +49,8 @@ export function evaluateArea(i: AreaEvaluationInput): string {
       strength = `You have had a first go at ${i.title}, but no lab is passing yet.`;
   }
 
-  if (!i.nextLab) return `${strength} You have finished every lab here.`;
+  // No next lab with labs left: what is left is locked by the plan or skipped because the learner knows it.
+  if (!i.nextLab) return i.labsDone >= i.labsTotal ? `${strength} You have finished every lab here.` : strength;
 
   let next = `Next up: ${q(i.nextLab)}.`;
   if (i.level !== 'Expert') {

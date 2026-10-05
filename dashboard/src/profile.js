@@ -7,9 +7,8 @@
  * it measures to a screen reader. Text from the service goes in through textContent.
  */
 import { icon, svgIcon } from './icons.js';
-import { platformAreas } from './learn-model.js';
+import { skillLook } from './skills.js';
 import { awardsShelf, miniAward } from './awards.js';
-import pathMeta from '../../packages/catalogue/paths.json';
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
@@ -42,11 +41,9 @@ export function startingParam(levels) {
 /** The words for an onboarding level on a skill ("Quiz starting point: Familiar"). */
 export const STARTING_WORDS = { new: 'New to it', ok: 'Familiar', strong: 'Strong' };
 
-/** The icon and accent family of the module an area belongs to (a slate grid when the copy has none). */
+/** The icon and accent family of a skill: its module's or its path's (a slate grid for an id the list does not know). */
 export function areaLook(area) {
-  const entry = platformAreas().find((a) => a.area === area);
-  const module = entry ? pathMeta.paths?.find((p) => p.slug === entry.path)?.modules?.find((m) => m.number === entry.module) : null;
-  return { icon: module?.icon || 'grid', accent: module?.accent || 'slate' };
+  return skillLook(area);
 }
 
 /** A brand-new learner: no XP, no score anywhere, no award. Home asks them to finish a lab instead of showing zeroes. */

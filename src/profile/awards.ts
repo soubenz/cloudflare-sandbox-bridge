@@ -10,7 +10,7 @@ import type { AwardTier } from './types';
  *
  * Some awards are generated from the catalogue: one per module (for paths
  * with more than one module, since a one-module path IS its module and
- * would otherwise be awarded twice), one per path, and two per skill area.
+ * would otherwise be awarded twice), one per path, and two per skill (src/skills.ts).
  */
 
 /** The only icon names an award may use; the console maps each to a glyph. */
@@ -155,10 +155,11 @@ const FIXED: readonly AwardDef[] = [
   },
 ];
 
+/** The id predates the skill list growing past six; it stays, so learners who earned it keep it. */
 const ALL_AREAS: AwardDef = {
   id: 'all-six-areas',
-  title: 'Well rounded',
-  description: 'Reach at least Foundations in every skill area.',
+  title: 'Every skill started',
+  description: 'Reach at least Foundations in every skill.',
   icon: 'compass',
   tier: 'gold',
   evaluate: (c) => {

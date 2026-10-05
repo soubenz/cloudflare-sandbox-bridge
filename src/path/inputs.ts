@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ApiError } from '../lib/errors';
-import { AREAS, type AreaLevel } from './rules';
+import { QUIZ_SKILLS } from '../skills';
+import type { AreaLevel } from './rules';
 
 /** What the learner told us, as stored in `user_profile_inputs`. */
 export interface PathInputs {
@@ -26,8 +27,10 @@ const level = z.enum(['new', 'familiar', 'ok', 'strong']).transform((l): AreaLev
 export const pathInputsSchema = z
   .object({
     areas: z.record(z.string(), level).superRefine((areas, ctx) => {
+      // Only skills the onboarding quiz asks about take a level (src/skills.ts `quiz`).
+      const quiz = QUIZ_SKILLS.map((s) => s.id);
       for (const key of Object.keys(areas)) {
-        if (!(key in AREAS)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `unknown area "${key}"; the quiz areas are ${Object.keys(AREAS).join(', ')}`, path: [key] });
+        if (!quiz.includes(key)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `unknown area "${key}"; the quiz areas are ${quiz.join(', ')}`, path: [key] });
       }
     }),
     goal_text: z

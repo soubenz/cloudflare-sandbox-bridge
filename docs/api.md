@@ -58,7 +58,7 @@ minutes are usable now.
 | GET | `/labs` | service¹ | catalogue, ordered by `(path, module, order, slug)` → `[{ slug, version, title, type, family, summary?, objectives, difficulty?, timeout_minutes, path?, module?, order?, prerequisites?, tier, estimated_minutes?, archived?, has_learn }]`. `has_learn` is always present: true when the current version ships a [learn bundle](#learn-bundle). `summary`, `difficulty`, `path`, `module`, `order`, `prerequisites` and `estimated_minutes` are omitted when the manifest does not set them; `archived` is present (as `true`) only for an archived lab, which the list still returns so admin tools and tests see every lab (the learner console hides it, and it stays startable by slug); `tier` is `free` or `pro` (default `pro`); `objectives` is `[]` when unset. `bundle.ts` `listCatalogue({ path?, module?, tier?, limit?, cursor? })` implements the filtered, paged form (cursor = last slug of the previous page; default limit 50, max 200) for the route to expose |
 | GET | `/labs/:slug` | service¹ | current version + manifest → `{ version, manifest }` |
 | GET | `/labs/:slug/learn` | service¹ | the lab's [learn bundle](#learn-bundle), current version → `{ slug, version, learn }` (the slug rides along so the console can build narration URLs from the bundle alone); `404 no_learn` when the lab is published without one, `404 lab_not_found` when it is not published. Read by the console Worker with the service key, like `GET /labs/:slug` |
-| GET | `/learn/onboarding` | service | the platform onboarding quiz, `packages/catalogue/onboarding.json` parsed with `parseOnboarding` → `{ version: 1, intro, areas, questions }`. It is a branching quiz: `areas` is `[{ area, blurb }]`, one per area of `concepts.json` (`blurb` a one-line description, up to 90 characters), and every question is a lab quiz question plus a required `level` of `basic` or `advanced` (every area has at least one of each; 12 to 24 questions in all). The console asks only about areas the learner ticks, the area's first `basic` question and then, if right, its first `advanced` one, in file order; see [Learning content](learning-content.md#the-platform-onboarding-quiz). `404 no_onboarding` when that file is not in the deployed bundle; a file that does not validate is a 500 |
+| GET | `/learn/onboarding` | service | the platform onboarding quiz, `packages/catalogue/onboarding.json` parsed with `parseOnboarding` → `{ version: 1, intro, areas, questions }`. It is a branching quiz: `areas` is `[{ area, blurb }]`, one per quiz skill (`quiz` in `concepts.json`) (`blurb` a one-line description, up to 90 characters), and every question is a lab quiz question plus a required `level` of `basic` or `advanced` (every area has at least one of each; 12 to 24 questions in all). The console asks only about areas the learner ticks, the area's first `basic` question and then, if right, its first `advanced` one, in file order; see [Learning content](learning-content.md#the-platform-onboarding-quiz). `404 no_onboarding` when that file is not in the deployed bundle; a file that does not validate is a 500 |
 | POST | `/learn/answers` | service | anonymous quiz-answer analytics, called by the console Worker → `201 { ok: true, recorded }`. See [Learning analytics](#learning-analytics) |
 | GET | `/labs/:slug/audio/:file` | service¹ | one [narration clip](#narration-clips) of the lab's comic, current version. `:file` is `<16 hex>.mp3` (anything else is `404 no_audio`, and nothing else under the lab's R2 prefix is ever reachable). `200 audio/mpeg` with `Cache-Control: public, max-age=31536000, immutable` (the name is a content hash) and `Accept-Ranges: bytes`; a single `Range: bytes=a-b` / `a-` / `-n` is answered `206` with `Content-Range`, an unsatisfiable one `416`, several ranges the whole clip. Read by the console Worker with the service key (it proxies it as `GET /api/audio/:slug/:file`, cookie-gated, `Cache-Control: private`) |
 | POST | `/labs/publish` | service | multipart: `manifest`, `workspace`, `private` files, an optional `solution` file (the lab's `solution/` as a gzip tarball; `labs publish` sends it when the directory has anything to upload), an optional `learn` file (the compiled `learn/` folder as JSON, see [Learn bundle](#learn-bundle)), zero or more `audio` files (the comic's narration clips, see [Narration clips](#narration-clips)) and optional `force=true` → `201 { slug, version, warnings: string[] }`; `warnings` lists prerequisites that are not published labs. Re-publishing an existing version is `409 version_exists` unless `force`. The solution is stored privately at `labs/{slug}/{version}/solution.tgz`, never inside `workspace.tgz` or `private.tgz` and never served by a catalogue route; a forced re-publish without a `solution` part removes the one the version had. The `learn` part is validated with `parseLearnBundle` (the Worker does not trust the CLI): a bundle that does not parse or does not cross-check is `400 invalid_learn_bundle` listing every problem, and nothing of the publish is stored; a forced re-publish without a `learn` part removes the one the version had. The `audio` parts are checked against the bundle's `audio` index (`400 invalid_audio` otherwise, nothing stored) |
@@ -91,7 +91,7 @@ minutes are usable now.
 | DELETE | `/sessions/:id?snapshot=0` | session | ends the session; snapshots by default (never a `ready` one: it has no work to keep, and it cancels the pre-warm) |
 | GET | `/users/:uid/progress` | service | per-lab standing from D1 `check_runs` → `{ labs: [{ slug, attempts, best_score, passed_all, last_run_at, sessions }] }`, most recently attempted first. `best_score` is the best weighted share of checks passed in one run (0-1); `passed_all` is true if any run passed every check of the lab; `sessions` counts distinct sessions that ran checks |
 | GET | `/users/:uid/checks?lab=&limit=&before=` | service | a user's runs across sessions, newest first → `{ runs: [...] }` (same shape as the session route, plus `session_id` and `lab_slug`). `lab` filters to one lab; `before` is an epoch-ms cursor (pass the last `started_at` you saw); `limit` default 20, max 100 |
-| GET | `/users/:uid/profile?compact=&starting=` | service | the learner's skill scores, XP, streak and awards → see [Profile, XP and awards](#profile-xp-and-awards). `compact=1` returns only what the Home widget needs; `starting=gateway:ok,mcp:new` echoes the onboarding quiz result. `400 bad_user_id`; an unknown user is a `200` with an empty profile |
+| GET | `/users/:uid/profile?compact=&starting=` | service | the learner's skill scores, XP, streak and awards → see [Profile, XP and awards](#profile-xp-and-awards). `compact=1` returns only what the Home widget needs; `starting=gateway:ok,mcp:new` is the browser's copy of the onboarding quiz result, used only when no quiz result is stored with the learner's path inputs. `400 bad_user_id`; an unknown user is a `200` with an empty profile |
 | GET | `/users/:uid/awards` | service | `{ user_id, earned, locked }`, the same two lists as `profile.awards` |
 | GET | `/users/:uid/sessions?active=1` | service | D1-backed history/active check; capped at 50 rows without `active=1` |
 | PUT | `/users/:uid/path-inputs` | service | store the learner's quiz levels, goal and hours, then recompute their [learning path](#personal-learning-path). Body `{ areas, goal_text?, goal_kind?, hours_per_week }` → the path. `400 invalid_path_inputs` on a bad body |
@@ -263,8 +263,8 @@ in `src/profile/`; `computeProfile(facts, catalogue)` is the pure core.
   "streak": { "days": 2, "best": 4, "last_active": "2026-01-06" },
   "skills": [
     {
-      "area": "gateway", "title": "LLM gateway", "score": 67, "level": "Proficient",
-      "evaluation": "You are confident in LLM gateway: 3 of 6 labs finished, with strong results. Next up: \"One endpoint, one key\".",
+      "area": "gateway", "title": "Gateway and access", "score": 67, "level": "Proficient",
+      "evaluation": "You are confident in Gateway and access: 3 of 6 labs finished, with strong results. Next up: \"One endpoint, one key\".",
       "labs_done": 3, "labs_total": 6,
       "next_lab": { "slug": "one-endpoint-one-key", "title": "One endpoint, one key" },
       "starting_level": null
@@ -275,27 +275,55 @@ in `src/profile/`; `computeProfile(facts, catalogue)` is the pure core.
     "locked": [{ "id": "ten-labs", "title": "Ten down", "description": "Finish ten labs.", "icon": "trophy", "tier": "silver", "progress": { "have": 3, "need": 10 } }]
   },
   "overall": { "score": 11, "level": "Foundations", "evaluation": "Overall you are at Foundations level. …" },
+  "next_lab": { "slug": "one-endpoint-one-key", "title": "One endpoint, one key", "skill": "gateway", "path": "ai-platform", "module": 1 },
   "updated_at": 1767700000000
 }
 ```
 
-- `skills` has the six areas of the onboarding quiz, always, in the quiz's order
-  (`gateway`, `mcp`, `rag`, `otel`, `platform`, `sovereignty`). A lab feeds an
-  area through its catalogue `path` and `module`; the single mapping is
-  `src/profile/areas.ts`. A lab in no area (the optional runtime module, the
-  other paths) feeds no skill but still earns XP and counts for awards.
-  Archived labs, and labs the catalogue does not list, count for nothing.
+- `skills` has the ten skills of `src/skills.ts`, always, in the order of
+  `packages/catalogue/paths.json`: a skill is a module of a path with modules,
+  or a whole path without. `area` is the skill id and `title` the module's or
+  path's own title:
+
+  | `area` | `title` | labs |
+  |---|---|---|
+  | `agents` | Agent builder | path `production-agents` |
+  | `security` | Agent security | path `securing-agents` |
+  | `gateway` | Gateway and access | `ai-platform` module 1 |
+  | `mcp` | Tools and MCP | `ai-platform` module 2 |
+  | `rag` | Retrieval as a service | `ai-platform` module 3 |
+  | `otel` | Observability and cost | `ai-platform` module 4 |
+  | `runtime` | Runtime and durability | `ai-platform` module 5 |
+  | `platform` | Self-service and golden paths | `ai-platform` module 6 |
+  | `sovereignty` | Compliance and sovereignty | `ai-platform` module 7 |
+  | `evals` | Agent evals and releases | path `evals-releases` |
+
+  Every published lab feeds exactly one skill through its catalogue `path` and
+  `module`. Ids never change (stored quiz levels, concept ids and earned awards
+  are keyed by them); titles follow `paths.json`. Archived labs, and labs the
+  catalogue does not list, count for nothing.
 - `level` on a skill and on `overall` is a name: `Not started` (0),
   `Foundations` (1-29), `Practitioner` (30-59), `Proficient` (60-84), `Expert`
-  (85-100). `overall.score` is the mean of the six area scores, rounded.
+  (85-100). `overall.score` is the mean of the skill scores, rounded.
 - `evaluation` is plain sentences chosen by fixed rules (a strength for the
-  level, then the next lab to do in that area in catalogue order, preferring one
-  whose prerequisites are done). No model is involved.
-- `next_lab` is `null` when the area has no labs or all are finished.
+  level, then the skill's next lab). No model is involved.
+- `next_lab` on a skill, and `next_lab` at the top level for the whole
+  catalogue, come from one rule (`src/path/next.ts`): the first `next` or
+  `upcoming` step of the learner's stored [learning path](#personal-learning-path)
+  that is not done and that their plan can start; else the first lab in
+  catalogue order that is not done, that the plan can start, that the path does
+  not skip for a strong skill, and whose prerequisites are done. `null` when
+  there is none (everything finished, or what is left needs another plan). The
+  top-level one also says where the lab sits (`skill`, `path`, `module`), so
+  the console can mark its module ("Suggested start", the quiz's "Start here").
 - `starting_level` (`new`, `ok`, `strong`, or `null`) is the onboarding quiz
-  result for the area, a starting point only and never part of a score. The
-  quiz result lives in the browser, so the caller passes it as
-  `?starting=gateway:strong,mcp:new`; unknown areas and levels are ignored.
+  result for the skill. It is the level stored with the learner's path inputs
+  (`PUT /users/:uid/path-inputs`; `familiar` reads `ok`); for a learner with
+  none, the caller may pass the browser's copy as
+  `?starting=gateway:strong,mcp:new` (unknown or non-quiz skills and unknown
+  levels are ignored). Only the quiz skills (`gateway`, `mcp`, `rag`, `otel`,
+  `platform`, `sovereignty`) can have one. A `strong` skill's score leaves out
+  the labs the path skips for it (all but one capstone), as below.
 - `level` (top level) is the XP level: ten titled levels (Newcomer, Explorer,
   Apprentice, Builder, Engineer, Specialist, Architect, Mentor, Master, Legend)
   starting at 0, 100, 250, 500, 850, 1300, 1900, 2600, 3500 and 4600 XP.
@@ -320,14 +348,16 @@ in `src/profile/`; `computeProfile(facts, catalogue)` is the pure core.
   "level": { "n": 3, "title": "Apprentice", "xp_into": 25, "xp_needed": 250 },
   "xp": 275,
   "streak": { "days": 2, "best": 4, "last_active": "2026-01-06" },
-  "top_skills": [{ "area": "gateway", "title": "LLM gateway", "score": 67, "level": "Proficient" }],
+  "top_skills": [{ "area": "gateway", "title": "Gateway and access", "score": 67, "level": "Proficient" }],
   "recent_awards": [],
+  "next_lab": { "slug": "one-endpoint-one-key", "title": "One endpoint, one key", "skill": "gateway", "path": "ai-platform", "module": 1 },
   "updated_at": 1767700000000
 }
 ```
 
 `top_skills` is the three highest scores (ties in area order; a new learner gets
-three `Not started` areas); `recent_awards` is the three most recently earned.
+three `Not started` skills); `recent_awards` is the three most recently earned;
+`next_lab` is the profile's top-level one.
 
 `GET /users/:uid/awards` returns `{ user_id, earned, locked }`, the same lists as
 `profile.awards`.
@@ -351,11 +381,14 @@ lab     = hinted x factor
 ```
 
 `hints` is how many hints had unlocked in the best run's session and `attempts`
-is how many runs of that lab it took to reach the best run. An area's score is
+is how many runs of that lab it took to reach the best run. A skill's score is
 the average of its labs weighted by difficulty (`intro` 1, `core` 2, `advanced`
-3; no difficulty counts as `core`) over ALL the area's non-archived labs, an
+3; no difficulty counts as `core`) over ALL the skill's non-archived labs, an
 unattempted lab counting as 0, rounded to a whole number (any score above 0
-shows as at least 1).
+shows as at least 1). The one exception follows the path: for a skill whose
+quiz level is `strong`, the labs the path skips (every lab of the skill but the
+capstone, unless completed; see the path's rule 4) are left out, neither
+credited nor counted as 0.
 
 **XP.** A completed lab (a run that passed every check; only the first counts)
 earns `intro` 50, `core` 100 or `advanced` 150, plus 25 if no hint had unlocked
@@ -374,11 +407,11 @@ award is never taken back):
 | `streak-3-days` / `streak-7-days` | bronze / silver | best streak of 3 / 7 UTC days |
 | `module-complete-{path}-{module}` | silver | every lab of a module completed; only for paths with more than one module (a one-module path is its module, and gets `path-complete-*` instead) |
 | `path-complete-{path}` | gold | every lab of a path completed |
-| `area-proficient-{area}` | silver | area score at least 60 |
-| `area-expert-{area}` | gold | area score at least 85 |
+| `area-proficient-{skill}` | silver | skill score at least 60 |
+| `area-expert-{skill}` | gold | skill score at least 85 |
 | `speed-run` | silver | a lab completed in under 50% of its `estimated_minutes`, measured from its session starting |
 | `comeback` | bronze | a passing run after a run with a failing check, in the same session |
-| `all-six-areas` | gold | every area at Foundations (score 1) or better |
+| `all-six-areas` | gold | "Every skill started": every skill at Foundations (score 1) or better (the id predates the ten skills and is kept so earned awards stay) |
 
 Awards are stored after each finished check run (the run's session id goes in
 `awards.session_id`), and each new one is announced on that session's event
@@ -483,7 +516,7 @@ token.
 
 | Field | Rule |
 |---|---|
-| `areas` | required object; keys are quiz areas from `packages/catalogue/concepts.json` (`gateway`, `mcp`, `rag`, `otel`, `platform`, `sovereignty`), values `new`, `familiar` or `strong`. The console's own `ok` is accepted and stored as `familiar`. An area left out has no adjustment. An unknown key or level is rejected |
+| `areas` | required object; keys are quiz skills (`quiz` in `packages/catalogue/concepts.json`: `gateway`, `mcp`, `rag`, `otel`, `platform`, `sovereignty`), values `new`, `familiar` or `strong`. The console's own `ok` is accepted and stored as `familiar`. An area left out has no adjustment. An unknown key or level is rejected |
 | `goal_text` | optional string, at most 200 characters (201 is rejected). Whitespace and control characters collapse to single spaces; empty means no goal |
 | `goal_kind` | `role-ready`, `specific-skill` or `explore` (default `explore`) |
 | `hours_per_week` | required whole number, 1 to 20 |
@@ -540,8 +573,8 @@ answer `404 no_inputs` when the user never sent inputs. All three routes
   on `plan` steps only. Paths stored before this field existed get it filled in
   on read; a client that still meets one without it should treat a locked step as a
   plan lock only when its `why` is the stock plan line.
-- `area` is the quiz area the lab belongs to (the area whose `path` and `module`
-  in `concepts.json` match the lab's), or `null` for a lab outside every area.
+- `area` is the skill the lab feeds (`src/skills.ts`: the module's, or the
+  path's for a path without modules), or `null` for a lab outside every skill.
 - `why` is one plain sentence of at most 120 characters. A done step and a locked
   step get a stock line; a model's reason that is missing, longer than 120
   characters, or looks like code or a link is replaced by a generic one

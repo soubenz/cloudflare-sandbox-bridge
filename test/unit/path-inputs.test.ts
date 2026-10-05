@@ -56,6 +56,11 @@ describe('path inputs: validation', () => {
       const err = reject({ ...ok, areas: { 'made-up': 'new' } });
       expect(err.message).toContain('unknown area "made-up"');
     });
+    it('rejects a skill the quiz does not ask about, and accepts every one it does', () => {
+      for (const id of ['runtime', 'agents', 'security', 'evals']) expect(reject({ ...ok, areas: { [id]: 'strong' } }).message, id).toContain(`unknown area "${id}"`);
+      const all = { gateway: 'new', mcp: 'new', rag: 'new', otel: 'new', platform: 'new', sovereignty: 'new' };
+      expect(parsePathInputs({ ...ok, areas: all }).areas).toEqual(all);
+    });
     it('is required, and must be an object', () => {
       expect(reject({ hours_per_week: 5 }).message).toContain('areas');
       expect(reject({ ...ok, areas: ['gateway'] }).code).toBe('invalid_path_inputs');

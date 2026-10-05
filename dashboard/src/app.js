@@ -25,7 +25,7 @@ import { installCodeCopy } from './code-copy.js';
 import { isStaleChunkError, recoverFromStaleBuild } from './stale-build.js';
 import { GUIDE_TAB_NAMES, buildRoute, isOpaqueId, routeTitle } from './routes.js';
 import { icon, spriteIcon, uiIcon } from './icons.js';
-import { createMasteryStore, normalizeLearn, introSeen, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
+import { catalogueNextLab, createMasteryStore, normalizeLearn, introSeen, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
 import { runOnboarding } from './onboarding.js';
 import { createProgressHub } from './progress-hub.js';
 import { runBeforeYouBegin } from './before-you-begin.js';
@@ -230,6 +230,8 @@ const progress = createProgressHub({
   },
   reducedMotion: () => matchMedia('(prefers-reduced-motion: reduce)').matches,
 });
+// The "Suggested start" badge follows the profile's next lab once it answers (or when it changes).
+progress.onNextLab(() => renderBrowseIfShown(true));
 
 // ------------------------------------------------------------------ routes
 
@@ -834,10 +836,18 @@ let runningSlug = null;
 /** The entries of `entries` the search and filters let through. */
 const shown = (entries) => entries.filter((e) => labMatches(e.lab));
 
-/** Where the platform quiz says to begin: the first module card whose area is new to this learner (none before the quiz). */
+/**
+ * The one next lab: the profile's `next_lab` (the learner's path, else the catalogue rule, on the server), or,
+ * until the profile has answered, the console's copy of the catalogue rule. Null when there is none.
+ */
+function currentNextLab() {
+  const next = progress.nextLab();
+  return next === undefined ? catalogueNextLab([...labsBySlug.values()]) : next;
+}
+
+/** Where the "Suggested start" badge goes: the module (or flat path) that holds the next lab. */
 function suggestedStart() {
-  const cards = (launcherModel?.paths ?? []).flatMap((p) => (p.cards ? p.modules.map((m) => ({ path: p.slug, number: m.number })) : []));
-  return suggestStart(cards, mastery.get());
+  return suggestStart(currentNextLab());
 }
 
 /** Redraws the page that is on screen (the catalogue or the filters changed). */
@@ -1995,6 +2005,8 @@ function showQuiz() {
     post: (body) => api.postAnswers(body),
     // The goal and the hours go to the server with the quiz result, which builds (or rebuilds) the learner's path.
     // Silent when it fails: the path is then simply not shown, and a retake tries again.
+    // "Start here" is the module that holds the next lab, like the "Suggested start" badge on Home.
+    nextLab: currentNextLab,
     onGoal: ({ levels, goal }) =>
       progress.savePathInputs(goal, levels).catch((err) => {
         progress.pathStore.invalidate();
@@ -2004,7 +2016,7 @@ function showQuiz() {
       // Done or skipped, the quiz is not somewhere Back should return to: the page the learner chose on the last
       // screen (their area's page, their personal path) or else home takes its place.
       if (!(completed && quizDestination(to))) router.navigate('launcher', {}, { replace: true });
-      // The "Suggested start" badge follows the new levels.
+      // The "Suggested start" badge follows the next lab of the path just rebuilt.
       if (completed) {
         // The quiz result is the skills' starting point, and the path was just rebuilt from it.
         progress.profileStore.invalidate();

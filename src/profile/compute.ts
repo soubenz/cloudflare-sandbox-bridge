@@ -1,4 +1,6 @@
 import pathsMeta from '../../packages/catalogue/paths.json';
+import { skippedForStrong } from '../path/rules';
+import { nextLabs } from '../path/next';
 import { AREAS } from './areas';
 import { awardDefinitions, type AwardContext, type GroupProgress } from './awards';
 import { comebackAt, deriveLabStates, deriveStreak, type Completion, type LabState } from './derive';
@@ -62,21 +64,24 @@ export function deriveGroups(states: readonly LabState[]): { modules: GroupProgr
   return { modules, paths };
 }
 
-/** First unfinished lab in catalogue order whose prerequisites are done; failing that, the first unfinished one. */
-function nextLabOf(areaStates: readonly LabState[], doneSlugs: ReadonlySet<string>): CatalogueLab | null {
-  const open = areaStates.filter((s) => s.completion === null).map((s) => s.lab);
-  return open.find((l) => (l.prerequisites ?? []).every((p) => doneSlugs.has(p))) ?? open[0] ?? null;
-}
-
 export function computeProfile(facts: ProfileFacts, catalogue: readonly CatalogueLab[]): Profile {
   const states = deriveLabStates(facts, catalogue);
   const doneSlugs = new Set(states.filter((s) => s.completion).map((s) => s.lab.slug));
+  const plan = facts.plan ?? 'pro';
+  const canStart = (l: CatalogueLab) => plan === 'pro' || (l.tier ?? 'pro') === 'free';
+
+  // Scoring follows the path: a skill the quiz placed as strong has all but one lab skipped by the path
+  // (rules.ts rule 4), and those labs are left out of its score rather than counted as 0.
+  const strong = Object.fromEntries(Object.entries(facts.starting_levels ?? {}).filter(([, l]) => l === 'strong').map(([id]) => [id, 'strong' as const]));
+  const { skipped } = skippedForStrong(states.map((s) => s.lab), strong, canStart, { completed: doneSlugs });
+  // One rule for every "next lab" (path/next.ts): the stored path first, then the catalogue.
+  const next = nextLabs(facts.path_steps ?? null, states, plan, { skipped });
 
   const skills: Skill[] = AREAS.map((area) => {
     const mine = states.filter((s) => s.area?.id === area.id);
-    const score = areaScore(mine);
+    const score = areaScore(mine.filter((s) => !skipped.has(s.lab.slug)));
     const level = skillLevel(score);
-    const next = nextLabOf(mine, doneSlugs);
+    const nextLab = next.bySkill[area.id] ?? null;
     const finished = mine.filter((s) => s.completion);
     const labs_done = finished.length;
     const labs_total = mine.length;
@@ -91,13 +96,13 @@ export function computeProfile(facts: ProfileFacts, catalogue: readonly Catalogu
         labsDone: labs_done,
         labsTotal: labs_total,
         attempted: mine.some((s) => s.runs > 0),
-        nextLab: next?.title ?? null,
+        nextLab: nextLab?.title ?? null,
         usedHints: finished.some((s) => s.completion!.hints > 0),
         retried: finished.some((s) => s.completion!.attempts > 1),
       }),
       labs_done,
       labs_total,
-      next_lab: next ? { slug: next.slug, title: next.title } : null,
+      next_lab: nextLab ? { slug: nextLab.slug, title: nextLab.title } : null,
       starting_level: facts.starting_levels?.[area.id] ?? null,
     };
   });
@@ -147,6 +152,7 @@ export function computeProfile(facts: ProfileFacts, catalogue: readonly Catalogu
       level: overallLevel,
       evaluation: evaluateOverall({ level: overallLevel, attempted: states.some((s) => s.runs > 0), areas: skills }),
     },
+    next_lab: next.overall,
     updated_at: facts.now,
   };
 }
@@ -172,6 +178,7 @@ export function compactProfile(profile: Profile): CompactProfile {
     streak: profile.streak,
     top_skills: top,
     recent_awards: profile.awards.earned.slice(0, 3),
+    next_lab: profile.next_lab,
     updated_at: profile.updated_at,
   };
 }

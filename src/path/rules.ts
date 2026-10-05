@@ -1,4 +1,4 @@
-import concepts from '../../packages/catalogue/concepts.json';
+import { SKILLS } from '../skills';
 import { compareCatalogueEntries, type LabIndexEntry } from '../labs/bundle';
 
 /**
@@ -19,7 +19,7 @@ import { compareCatalogueEntries, type LabIndexEntry } from '../labs/bundle';
  *     manifest's "whether the free plan may start this lab"). Any other lab
  *     is `locked` for a free learner, and so is a lab whose prerequisite is.
  *     Locked labs are not offered to the model and do not count in the totals.
- *  4. A 'strong' area (quiz level) is skipped, except one capstone: the
+ *  4. A 'strong' area (quiz level) is skipped (`skippedForStrong`), except one capstone: the
  *     highest-order lab of that area the learner's plan can start. A skipped
  *     lab counts as known, so a capstone's prerequisites inside the area are
  *     satisfied without being on the path.
@@ -35,17 +35,45 @@ import { compareCatalogueEntries, type LabIndexEntry } from '../labs/bundle';
 export type AreaLevel = 'new' | 'familiar' | 'strong';
 export type Plan = 'free' | 'pro';
 
-/** The quiz's areas: id -> where its labs live (packages/catalogue/concepts.json). */
-export type AreaRegistry = Record<string, { title: string; path: string; module: number }>;
+/** The skills: id -> where its labs live (src/skills.ts, from packages/catalogue/paths.json). `module` null is a whole path. */
+export type AreaRegistry = Record<string, { title: string; path: string; module: number | null }>;
 
-export const AREAS: AreaRegistry = concepts.areas;
+export const AREAS: AreaRegistry = Object.fromEntries(SKILLS.map((s) => [s.id, { title: s.title, path: s.path, module: s.module }]));
 
-/** The area a lab belongs to: the quiz area whose (path, module) the lab sits in. Labs outside every area have none. */
+/** The skill a lab feeds: the one whose module (or whole path) the lab sits in. A lab outside every skill has none. */
 export function labArea(lab: Pick<LabIndexEntry, 'path' | 'module'>, areas: AreaRegistry = AREAS): string | null {
+  if (lab.path === undefined) return null;
   for (const [id, a] of Object.entries(areas)) {
-    if (lab.path === a.path && lab.module === a.module) return id;
+    if (lab.path === a.path && (a.module === null || lab.module === a.module)) return id;
   }
   return null;
+}
+
+/**
+ * Rule 4 on its own: for each 'strong' area, the one capstone kept (the
+ * highest-order lab of the area that `canStart` allows) and the labs skipped
+ * (every other lab of the area that is not completed). `labs` must be in
+ * catalogue order. Pure; the profile uses it too, so a skill's score leaves
+ * out exactly the labs the path skips.
+ */
+export function skippedForStrong<L extends Pick<LabIndexEntry, 'slug' | 'path' | 'module'>>(
+  labs: readonly L[],
+  levels: Readonly<Record<string, AreaLevel>>,
+  canStart: (lab: L) => boolean,
+  opts: { completed?: ReadonlySet<string>; areas?: AreaRegistry } = {}
+): { skipped: Set<string>; capstones: Set<string> } {
+  const areaOf = new Map(labs.map((l) => [l.slug, labArea(l, opts.areas ?? AREAS)] as const));
+  const capstones = new Set<string>();
+  for (const [area, level] of Object.entries(levels)) {
+    if (level !== 'strong') continue;
+    const startable = labs.filter((l) => areaOf.get(l.slug) === area && canStart(l));
+    const last = startable[startable.length - 1];
+    if (last) capstones.add(last.slug);
+  }
+  const skipped = new Set(
+    labs.filter((l) => !opts.completed?.has(l.slug) && levels[areaOf.get(l.slug) ?? ''] === 'strong' && !capstones.has(l.slug)).map((l) => l.slug)
+  );
+  return { skipped, capstones };
 }
 
 export interface RulesInput {
@@ -121,16 +149,7 @@ export function applyRules(input: RulesInput): RulesResult {
   const doneSlugs = new Set(done.map((l) => l.slug));
 
   // Rule 4: one capstone per strong area, then everything else of that area is skipped.
-  const capstones = new Set<string>();
-  for (const [area, level] of Object.entries(input.levels)) {
-    if (level !== 'strong') continue;
-    const startable = active.filter((l) => areaOf.get(l.slug) === area && canStart(l));
-    const last = startable[startable.length - 1];
-    if (last) capstones.add(last.slug);
-  }
-  const skipped = new Set(
-    active.filter((l) => !doneSlugs.has(l.slug) && input.levels[areaOf.get(l.slug) ?? ''] === 'strong' && !capstones.has(l.slug)).map((l) => l.slug)
-  );
+  const { skipped, capstones } = skippedForStrong(active, input.levels, canStart, { completed: doneSlugs, areas });
 
   const candidates = active.filter((l) => !doneSlugs.has(l.slug) && !skipped.has(l.slug));
 

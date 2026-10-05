@@ -157,12 +157,14 @@ describe('the fixed awards', () => {
     expect(comebackAt([subset, run('a', { session_id: 's1', started_at: NOW - DAY })])).toBeNull();
   });
 
-  it('all-six-areas: every area at Foundations or better, with progress counting areas', () => {
-    const cat6 = AREAS.map((a) => lab(`lab-${a.id}`, { path: a.path, module: a.module }));
-    const five = computeProfile(facts({ runs: cat6.slice(0, 5).map((l) => run(l.slug)) }), cat6);
-    expect(awardOf(five, 'all-six-areas').locked!.progress).toEqual({ have: 5, need: 6 });
-    const six = computeProfile(facts({ runs: cat6.map((l) => run(l.slug)) }), cat6);
-    expect(awardOf(six, 'all-six-areas').earned).toMatchObject({ tier: 'gold' });
+  it('all-six-areas ("Every skill started"): every skill at Foundations or better, with progress counting skills', () => {
+    const all = AREAS.map((a) => lab(`lab-${a.id}`, { path: a.path, module: a.module ?? 1 }));
+    const n = AREAS.length;
+    expect(n).toBe(10);
+    const most = computeProfile(facts({ runs: all.slice(0, n - 1).map((l) => run(l.slug)) }), all);
+    expect(awardOf(most, 'all-six-areas').locked!.progress).toEqual({ have: n - 1, need: n });
+    const every = computeProfile(facts({ runs: all.map((l) => run(l.slug)) }), all);
+    expect(awardOf(every, 'all-six-areas').earned).toMatchObject({ tier: 'gold', title: 'Every skill started', description: 'Reach at least Foundations in every skill.' });
   });
 
   it('all-six-areas is not earned on a catalogue with labs in only some areas, even with an empty area scoring 0', () => {
@@ -174,6 +176,7 @@ describe('the fixed awards', () => {
 describe('area awards', () => {
   // One gateway module of four core labs.
   const cat = labs(4);
+  const gatewayOf = (p: ReturnType<typeof computeProfile>) => p.skills.find((s) => s.area === 'gateway')!;
 
   it('area-proficient at 60 and area-expert at 85, from the area score', () => {
     const runsWith = (scores: number[]) => cat.map((l, i) => run(l.slug, { score: scores[i]!, passed_all: scores[i] === 1 }));
@@ -182,28 +185,32 @@ describe('area awards', () => {
     expect(awardOf(fifty, 'area-proficient-gateway').locked!.progress).toEqual({ have: 50, need: 60 });
 
     const sixty = computeProfile(facts({ runs: runsWith([1, 1, 1, 0.4]) }), cat); // (300 + 40) / 4 = 85
-    expect(sixty.skills[0]!.score).toBe(85);
+    expect(gatewayOf(sixty).score).toBe(85);
     expect(isEarned(sixty, 'area-proficient-gateway')).toBe(true);
     expect(isEarned(sixty, 'area-expert-gateway')).toBe(true);
 
     const sixtyFive = computeProfile(facts({ runs: runsWith([1, 1, 0.4, 0]) }), cat); // 60 exactly
-    expect(sixtyFive.skills[0]!.score).toBe(60);
+    expect(gatewayOf(sixtyFive).score).toBe(60);
     expect(isEarned(sixtyFive, 'area-proficient-gateway')).toBe(true);
     expect(isEarned(sixtyFive, 'area-expert-gateway')).toBe(false);
 
     const eightyFour = computeProfile(facts({ runs: runsWith([1, 1, 1, 0.36]) }), cat); // 84
-    expect(eightyFour.skills[0]!.score).toBe(84);
+    expect(gatewayOf(eightyFour).score).toBe(84);
     expect(isEarned(eightyFour, 'area-expert-gateway')).toBe(false);
   });
 
-  it('every area has its own pair, and an unmapped lab earns none', () => {
+  it('every skill has its own pair, the new skills included, and a lab in no skill earns none', () => {
     const p = computeProfile(facts(), []);
     for (const a of AREAS) {
       expect(awardOf(p, `area-proficient-${a.id}`).locked).toBeDefined();
       expect(awardOf(p, `area-expert-${a.id}`).locked).toBeDefined();
     }
-    const unmapped = computeProfile(facts({ runs: [run('x')] }), [lab('x', { path: 'production-agents', module: 1 })]);
+    for (const id of ['runtime', 'agents', 'security', 'evals']) expect(awardOf(p, `area-proficient-${id}`).locked).toBeDefined();
+    expect(awardOf(p, 'area-proficient-agents').locked!.title).toBe('Proficient in Agent builder');
+    const unmapped = computeProfile(facts({ runs: [run('x')] }), [lab('x', { path: 'nowhere', module: 1 })]);
     expect(unmapped.awards.earned.filter((a) => a.id.startsWith('area-')).length).toBe(0);
+    const flat = computeProfile(facts({ runs: [run('x')] }), [lab('x', { path: 'production-agents', module: 1 })]);
+    expect(flat.awards.earned.filter((a) => a.id.startsWith('area-')).map((a) => a.id).sort()).toEqual(['area-expert-agents', 'area-proficient-agents']);
   });
 });
 
@@ -335,7 +342,8 @@ describe('compact profile', () => {
     });
     const full = computeProfile(f, cat);
     const compact = compactProfile(full);
-    expect(Object.keys(compact).sort()).toEqual(['level', 'overall', 'recent_awards', 'streak', 'top_skills', 'updated_at', 'user_id', 'xp']);
+    expect(Object.keys(compact).sort()).toEqual(['level', 'next_lab', 'overall', 'recent_awards', 'streak', 'top_skills', 'updated_at', 'user_id', 'xp']);
+    expect(compact.next_lab).toEqual(full.next_lab);
     expect(compact.top_skills).toHaveLength(3);
     expect(compact.top_skills.map((s) => s.score)).toEqual([...compact.top_skills.map((s) => s.score)].sort((a, b) => b - a));
     expect(compact.top_skills.map((s) => s.area)).toEqual(['gateway', 'mcp', 'rag']); // ties keep area order
@@ -357,7 +365,7 @@ describe('full profile shape', () => {
   it('matches the documented keys', () => {
     const p: ProfileFacts = facts();
     const profile = computeProfile(p, labs(2));
-    expect(Object.keys(profile).sort()).toEqual(['awards', 'level', 'overall', 'skills', 'streak', 'updated_at', 'user_id', 'xp']);
+    expect(Object.keys(profile).sort()).toEqual(['awards', 'level', 'next_lab', 'overall', 'skills', 'streak', 'updated_at', 'user_id', 'xp']);
     expect(Object.keys(profile.skills[0]!).sort()).toEqual(['area', 'evaluation', 'labs_done', 'labs_total', 'level', 'next_lab', 'score', 'starting_level', 'title']);
     expect(Object.keys(profile.level).sort()).toEqual(['n', 'title', 'xp_into', 'xp_needed']);
     expect(Object.keys(profile.streak).sort()).toEqual(['best', 'days', 'last_active']);

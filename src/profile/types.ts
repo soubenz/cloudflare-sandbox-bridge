@@ -12,6 +12,8 @@ export interface CatalogueLab {
   difficulty?: Difficulty | undefined;
   estimated_minutes?: number | undefined;
   prerequisites?: string[] | undefined;
+  /** Whether the free plan may start the lab; missing is 'pro', as in the manifest. */
+  tier?: 'free' | 'pro' | undefined;
   archived?: boolean | undefined;
 }
 
@@ -54,7 +56,16 @@ export interface ProfileFacts {
   runs: RunFact[];
   sessions: SessionFact[];
   earned: StoredAward[];
+  /**
+   * The quiz level per skill: the one stored with the learner's path inputs (D1), or, when there is none, what
+   * the console sent in `?starting=`. Echoed as `starting_level`; a 'strong' skill also leaves the labs its
+   * path skips out of its score.
+   */
   starting_levels?: Record<string, StartingLevel> | undefined;
+  /** The learner's plan; missing reads as 'pro' (every lab startable). */
+  plan?: 'free' | 'pro' | undefined;
+  /** The steps of the learner's stored personal path, when there is one: the first place the next lab comes from. */
+  path_steps?: ReadonlyArray<{ slug: string; status: string }> | null | undefined;
 }
 
 export type AwardTier = 'bronze' | 'silver' | 'gold';
@@ -108,6 +119,15 @@ export interface Streak {
   last_active: string | null;
 }
 
+/** The one lab to do next (src/path/next.ts), with where it sits so the console can mark its module. */
+export interface NextLabRef {
+  slug: string;
+  title: string;
+  skill: string | null;
+  path: string | null;
+  module: number | null;
+}
+
 export interface Profile {
   user_id: string;
   xp: number;
@@ -116,6 +136,8 @@ export interface Profile {
   skills: Skill[];
   awards: { earned: EarnedAward[]; locked: LockedAward[] };
   overall: { score: number; level: SkillLevel; evaluation: string };
+  /** The next lab overall: the learner's path's next step, else the first startable lab in catalogue order. */
+  next_lab: NextLabRef | null;
   updated_at: number;
 }
 
@@ -127,5 +149,6 @@ export interface CompactProfile {
   streak: Streak;
   top_skills: Array<Pick<Skill, 'area' | 'title' | 'score' | 'level'>>;
   recent_awards: EarnedAward[];
+  next_lab: NextLabRef | null;
   updated_at: number;
 }

@@ -43,7 +43,8 @@ const m = (await import('../../dashboard/src/learn-model.js' as string)) as {
   onboardingState: (m: Mastery) => string | null;
   onboardingFinished: (m: Mastery) => boolean;
   areaLevel: (m: Mastery, area: string) => string | null;
-  suggestStart: (mods: Array<{ path: string; number: number }>, m: Mastery) => { path: string; number: number } | null;
+  suggestStart: (next: unknown, labs?: unknown[], opts?: { canStart?: (l: any) => boolean }) => { path: string; number: number } | null;
+  catalogueNextLab: (labs: unknown[], opts?: { canStart?: (l: any) => boolean }) => { slug: string } | null;
   diagnosticQuestions: (l: Learn, m: Mastery) => Q[];
   recordDiagnostic: (m: Mastery, results: Array<{ concept: string; correct: boolean }>) => Mastery;
   setOverride: (m: Mastery, concept: string, v: string | null) => Mastery;
@@ -108,18 +109,22 @@ describe('gradeQuestion', () => {
 
 // --------------------------------------------------------------------- areas
 
-describe('areas from the concept registry', () => {
-  it('lists every area in module order with its title', () => {
+describe('areas: the quiz skills of skills.js', () => {
+  it('lists every quiz area in module order, titled like its module', () => {
     const areas = m.platformAreas();
-    expect(areas.map((a) => a.area)).toEqual(Object.entries(registry.areas).sort((a, b) => a[1].module - b[1].module).map(([k]) => k));
+    expect(areas.map((a) => a.area).sort()).toEqual([...registry.quiz].sort());
     expect(areas.map((a) => a.module)).toEqual([...areas.map((a) => a.module)].sort((a, b) => a - b));
-    expect(areas[0]).toMatchObject({ area: 'gateway', path: 'ai-platform', module: 1 });
+    expect(areas[0]).toMatchObject({ area: 'gateway', title: 'Gateway and access', path: 'ai-platform', module: 1 });
+    const modules = paths.paths.find((p) => p.slug === 'ai-platform')!.modules;
+    for (const a of areas) expect(a.title, a.area).toBe(modules.find((x) => x.number === a.module)!.title);
   });
 
-  it('maps a launcher module to its area by path and number', () => {
+  it('maps a launcher module (or a path without modules) to its skill by path and number', () => {
     expect(m.areaForModule('ai-platform', 2)).toMatchObject({ area: 'mcp' });
-    expect(m.areaForModule('ai-platform', 5)).toBeNull();
-    expect(m.areaForModule('production-agents', 1)).toBeNull();
+    expect(m.areaForModule('ai-platform', 5)).toMatchObject({ area: 'runtime' });
+    expect(m.areaForModule('production-agents', 1)).toMatchObject({ area: 'agents', module: null });
+    expect(m.areaForModule('ai-platform', 99)).toBeNull();
+    expect(m.areaForModule('nowhere', 1)).toBeNull();
   });
 
   it('every area of the registry has a module in paths.json, so a chip can land on a card', () => {
@@ -437,16 +442,33 @@ describe('onboarding: the branching probe', () => {
     expect(m.areaLevel(second, 'gateway')).toBe('new');
   });
 
-  it('suggests the first module whose area is new, in card order', () => {
-    const cards = paths.paths.find((p) => p.slug === 'ai-platform')!.modules.map((x) => ({ path: 'ai-platform', number: x.number }));
-    const base = m.emptyMastery();
-    expect(m.suggestStart(cards, base)).toBeNull();
-    const withLevels = (levels: Record<string, string>): Mastery => ({ ...base, onboarding: { status: 'done', at: 1, levels } });
-    expect(m.suggestStart(cards, withLevels({ gateway: 'strong', mcp: 'ok', rag: 'new', otel: 'new' }))).toEqual({ path: 'ai-platform', number: 3 });
-    expect(m.suggestStart(cards, withLevels({ gateway: 'strong', mcp: 'strong' }))).toBeNull();
-    expect(m.suggestStart(cards, withLevels({ gateway: 'new' }))).toEqual({ path: 'ai-platform', number: 1 });
-    // A module with no area (number 5) and other paths never get the chip.
-    expect(m.suggestStart([{ path: 'ai-platform', number: 5 }, { path: 'other', number: 1 }], withLevels({ gateway: 'new' }))).toBeNull();
+  it("suggests the module that holds the profile's next lab", () => {
+    expect(m.suggestStart({ slug: 'x', path: 'ai-platform', module: 3 })).toEqual({ path: 'ai-platform', number: 3 });
+    // A lab of a path without modules marks that path (its labs are module 1).
+    expect(m.suggestStart({ slug: 'x', path: 'production-agents', module: null })).toEqual({ path: 'production-agents', number: 1 });
+    // The profile said there is no next lab: no badge, whatever the catalogue holds.
+    expect(m.suggestStart(null, [{ slug: 'a', path: 'ai-platform', module: 1 }])).toBeNull();
+    expect(m.suggestStart({ slug: 'x' })).toBeNull();
+  });
+
+  it('until the profile answers, uses the console copy of the catalogue rule', () => {
+    const labs = [
+      { slug: 'pa-1', path: 'production-agents', module: 1, order: 1, tier: 'free', progress: { passed_all: true } },
+      { slug: 'gw-2', path: 'ai-platform', module: 1, order: 2, prerequisites: ['gw-1'] },
+      { slug: 'gw-1', path: 'ai-platform', module: 1, order: 1, progress: { passed_all: false, attempts: 2 } },
+      { slug: 'old', path: 'ai-platform', module: 1, order: 0, archived: true },
+      { slug: 'rag-1', path: 'ai-platform', module: 3, order: 1, tier: 'free', prerequisites: ['ghost'] },
+    ];
+    // Catalogue order is (path, module, order, slug), as the server sorts its index; archived and passed labs are skipped.
+    expect(m.catalogueNextLab(labs)?.slug).toBe('gw-1');
+    expect(m.suggestStart(undefined, labs)).toEqual({ path: 'ai-platform', number: 1 });
+    // A lab whose prerequisite is not passed waits; one the catalogue does not list is ignored.
+    const gw1Done = labs.map((l) => (l.slug === 'gw-1' ? { ...l, progress: { passed_all: true } } : l));
+    expect(m.catalogueNextLab(gw1Done)?.slug).toBe('gw-2');
+    expect(m.catalogueNextLab(labs, { canStart: (l) => l.tier === 'free' })?.slug).toBe('rag-1');
+    expect(m.suggestStart(undefined, labs, { canStart: (l) => l.tier === 'free' })).toEqual({ path: 'ai-platform', number: 3 });
+    expect(m.catalogueNextLab(labs.map((l) => ({ ...l, progress: { passed_all: true } })))).toBeNull();
+    expect(m.suggestStart(undefined, [])).toBeNull();
   });
 });
 

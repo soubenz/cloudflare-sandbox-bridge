@@ -8,8 +8,7 @@
  */
 import { icon, svgIcon } from './icons.js';
 import { minutesLabel } from './launcher-model.js';
-import { platformAreas } from './learn-model.js';
-import { areaLook } from './profile.js';
+import { skillById, skillLook } from './skills.js';
 import { GOAL_KINDS, goalKindField, hoursField, loadGoal } from './goal-fields.js';
 import { adminOpenStep } from './admin-mode.js';
 
@@ -79,12 +78,12 @@ export function totalsLine(path) {
 
 export const goalKindLabel = (kind) => GOAL_KINDS.find((k) => k.value === kind)?.label ?? 'Explore';
 
-/** The chip for a step's area: its title, in the module's colour. */
+/** The chip for a step's skill: its title, in the skill's colour. */
 function areaChip(area) {
   if (!area) return null;
-  const title = platformAreas().find((a) => a.area === area)?.title ?? area;
-  const chip = el('span', 'chip chip-area', title);
-  chip.dataset.accent = areaLook(area).accent;
+  const skill = skillById(area);
+  const chip = el('span', 'chip chip-area', skill?.title ?? area);
+  chip.dataset.accent = skillLook(area).accent;
   return chip;
 }
 
@@ -129,7 +128,7 @@ export function pathBand(rawPath, deps = {}) {
     const card = el('article', 'next-card');
     card.dataset.slug = next.slug;
     card.setAttribute('aria-labelledby', 'nextLabTitle');
-    const accent = next.area ? areaLook(next.area).accent : 'blue';
+    const accent = next.area ? skillLook(next.area).accent : 'blue';
     card.dataset.accent = accent;
     card.append(el('p', 'next-eyebrow', 'Next lab'));
     const title = el('h3', 'next-title');

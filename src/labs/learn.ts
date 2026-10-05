@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import registry from '../../packages/catalogue/concepts.json';
+import { QUIZ_SKILLS } from '../skills';
 import { KNOWN_DIAGRAMS, diagramRefs } from './diagram';
 import { ComicSchema, checkComic } from './comic';
 import { VOICEOVER_MAX, legacyNarrationLines, narrationLines, usesVoiceover } from './comic-kit';
@@ -97,7 +98,7 @@ export const OnboardingQuestionSchema = QuestionShape.extend({ level: z.enum(ONB
 export const OnboardingSchema = z.object({
   version: z.literal(1),
   intro: markdown(600),
-  /** One entry per area of concepts.json: what the checklist says under its title. */
+  /** One entry per quiz skill (concepts.json `quiz`): what the checklist says under its title. */
   areas: z.array(z.object({ area: z.string().regex(/^[a-z]+$/, 'an area id such as gateway'), blurb: plain(90) })).min(1).max(12),
   questions: z.array(OnboardingQuestionSchema).min(12).max(24),
 });
@@ -112,10 +113,16 @@ export function checkOnboarding(o: Onboarding, known: ReadonlySet<string> = KNOW
   }
   const listed = o.areas.map((a) => a.area);
   if (new Set(listed).size !== listed.length) problems.push('two onboarding areas have the same id');
+  // The quiz's areas are the quiz skills (packages/catalogue/concepts.json `quiz`), each a skill of paths.json.
+  const quiz = QUIZ_SKILLS.map((s) => s.id);
   for (const area of listed) {
-    if (!(area in registry.areas)) problems.push(`onboarding area "${area}" is not an area in packages/catalogue/concepts.json`);
+    if (!quiz.includes(area)) problems.push(`onboarding area "${area}" is not an area: not a quiz skill in packages/catalogue/concepts.json`);
   }
-  for (const area of Object.keys(registry.areas)) {
+  for (const q of o.questions) {
+    const skill = q.concept.split('.')[0] ?? '';
+    if (!quiz.includes(skill)) problems.push(`onboarding question ${q.id} is about "${skill}", which is not a quiz skill`);
+  }
+  for (const area of quiz) {
     if (!listed.includes(area)) problems.push(`the onboarding quiz has no entry for area "${area}" in its areas list`);
     const mine = o.questions.filter((q) => q.concept.startsWith(area + '.'));
     for (const level of ONBOARDING_LEVELS) {

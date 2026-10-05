@@ -16,7 +16,7 @@
  * so every read and write is wrapped and the store keeps working in memory.
  */
 
-import registry from '../../packages/catalogue/concepts.json';
+import { SKILLS, skillForPlacement } from './skills.js';
 
 export const STORAGE_KEY = 'opalixLearn';
 
@@ -40,20 +40,21 @@ export function areaOf(conceptId) {
 }
 
 /**
- * The platform's areas in module order: [{ area, title, path, module }].
- * From packages/catalogue/concepts.json, so a new area appears by editing
- * that file.
+ * The areas the onboarding quiz asks about, in module order: [{ area, title, path, module }]. They are the quiz
+ * skills of skills.js (packages/catalogue/paths.json, with `quiz` from concepts.json), so a title is always the
+ * module's own. `skills` is for tests.
  */
-export function platformAreas(reg = registry) {
-  return Object.entries(reg.areas || {})
-    .map(([area, a]) => ({ area, title: String(a.title ?? area), path: String(a.path ?? ''), module: Number(a.module) }))
-    .filter((a) => Number.isFinite(a.module))
+export function platformAreas(skills = SKILLS) {
+  return skills
+    .filter((s) => s.quiz && Number.isFinite(s.module))
+    .map((s) => ({ area: s.id, title: s.title, path: s.path, module: s.module }))
     .sort((a, b) => a.module - b.module);
 }
 
-/** The area a launcher module card stands for, or null: its path and module number match. */
-export function areaForModule(path, moduleNumber, reg = registry) {
-  return platformAreas(reg).find((a) => a.path === path && a.module === Number(moduleNumber)) ?? null;
+/** The skill a launcher module card stands for, as { area, title, path, module }, or null. */
+export function areaForModule(path, moduleNumber, skills = SKILLS) {
+  const s = skillForPlacement(path, moduleNumber, skills);
+  return s ? { area: s.id, title: s.title, path: s.path, module: s.module } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -274,17 +275,44 @@ export function skipOnboarding(m, now = Date.now()) {
 /** 'strong' | 'ok' | 'new', or null when onboarding has not set a level for the area. */
 export const areaLevel = (m, area) => m?.onboarding?.levels?.[area] ?? null;
 
+/** Catalogue order, as the server sorts its index: (path ?? 'zz', module ?? 999, order ?? 999, slug). */
+function compareCatalogue(a, b) {
+  const rank = (v, none) => (Number.isFinite(v) ? v : none);
+  return (
+    String(a.path ?? 'zz').localeCompare(String(b.path ?? 'zz')) ||
+    rank(a.module, 999) - rank(b.module, 999) ||
+    rank(a.order, 999) - rank(b.order, 999) ||
+    String(a.slug).localeCompare(String(b.slug))
+  );
+}
+
 /**
- * The first module, in the order given ([{ path, number }]), whose area's
- * level is 'new': where the launcher puts its "Suggested start" chip. Null
- * when onboarding set no level, or nothing is new.
+ * The console's copy of the server's catalogue rule (src/path/next.ts), for when the profile has not answered:
+ * the first lab in catalogue order that is not archived, not passed, startable (`canStart`, default every lab:
+ * the console does not know the plan) and whose prerequisites in the catalogue are all passed. Null when none.
  */
-export function suggestStart(modules, m, reg = registry) {
-  for (const mod of modules || []) {
-    const a = areaForModule(mod.path, mod.number, reg);
-    if (a && areaLevel(m, a.area) === 'new') return mod;
-  }
-  return null;
+export function catalogueNextLab(labs, { canStart = () => true } = {}) {
+  const active = (Array.isArray(labs) ? labs : []).filter((l) => l && typeof l.slug === 'string' && l.archived !== true);
+  const known = new Set(active.map((l) => l.slug));
+  const passed = new Set(active.filter((l) => l.progress?.passed_all).map((l) => l.slug));
+  return (
+    [...active]
+      .sort(compareCatalogue)
+      .find((l) => !passed.has(l.slug) && canStart(l) && (l.prerequisites ?? []).every((p) => !known.has(p) || passed.has(p))) ?? null
+  );
+}
+
+/**
+ * Where the "Suggested start" badge goes: the module ({ path, number }) that holds the next lab. `next` is the
+ * profile's `next_lab` ({ slug, path, module }): null means there is none (everything done or locked), and
+ * undefined means the profile has not answered, so the console's copy of the catalogue rule stands in, over
+ * `labs` (the catalogue with progress). A lab with no path places no badge.
+ */
+export function suggestStart(next, labs = [], opts = {}) {
+  const lab = next === undefined ? catalogueNextLab(labs, opts) : next;
+  if (!lab || typeof lab.path !== 'string' || !lab.path) return null;
+  const n = Number(lab.module);
+  return { path: lab.path, number: Number.isFinite(n) && n > 0 ? n : 1 };
 }
 
 // --- lab diagnostics --------------------------------------------------------

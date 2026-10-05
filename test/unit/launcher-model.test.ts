@@ -535,8 +535,7 @@ const learner = (await import('../../dashboard/src/launcher-model.js' as string)
   visibleLabs: (labs: unknown) => Lab[];
 };
 const learnModel = (await import('../../dashboard/src/learn-model.js' as string)) as {
-  suggestStart: (mods: Array<{ path: string; number: number }>, m: unknown) => { path: string; number: number } | null;
-  emptyMastery: () => Record<string, unknown>;
+  suggestStart: (next: unknown, labs?: unknown[]) => { path: string; number: number } | null;
 };
 describe('archived labs', () => {
   const arch = (slug: string, over: Partial<Lab> = {}): Lab => ({ ...lab(slug, over), archived: true });
@@ -625,21 +624,19 @@ describe('archived labs', () => {
 
   it('never suggests a module that only archived labs would fill', () => {
     const labs = [
-      lab('g1', { path: 'ai-platform', module: 1, order: 1 }),
+      lab('g1', { path: 'ai-platform', module: 1, order: 1, progress: { attempts: 1, best_score: 1, passed_all: true } }),
       arch('rag-only-archived', { path: 'ai-platform', module: 3, order: 1 }),
       lab('o1', { path: 'ai-platform', module: 4, order: 1 }),
     ];
     const cardsOf = (m: Model) => m.paths.flatMap((p) => (p.cards ? p.modules.map((x) => ({ path: p.slug, number: x.number as number })) : []));
-    const levels = { gateway: 'strong', mcp: 'strong', rag: 'new', otel: 'new' };
-    const mastery = { ...learnModel.emptyMastery(), onboarding: { status: 'done', at: 1, levels } };
-
     const cards = cardsOf(buildLauncherModel(labs, realMeta));
     expect(cards.map((c) => c.number)).toEqual([1, 4]);
-    expect(learnModel.suggestStart(cards, mastery)).toEqual({ path: 'ai-platform', number: 4 });
+    // Until the profile answers, the console's copy of the catalogue rule finds the next lab: archived ones never count.
+    expect(learnModel.suggestStart(undefined, labs)).toEqual({ path: 'ai-platform', number: 4 });
 
     // The same catalogue with nothing archived would have suggested module 3: the filter is what moves it.
     const unarchived = labs.map((l) => ({ ...l, archived: false }));
-    expect(learnModel.suggestStart(cardsOf(buildLauncherModel(unarchived, realMeta)), mastery)).toEqual({ path: 'ai-platform', number: 3 });
+    expect(learnModel.suggestStart(undefined, unarchived)).toEqual({ path: 'ai-platform', number: 3 });
   });
 });
 

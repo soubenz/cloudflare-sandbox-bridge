@@ -217,9 +217,22 @@ describe('XP', () => {
 describe('computeProfile skills', () => {
   const catalogue = [...labs(3, 1, { path: 'ai-platform' }), ...labs(2, 2)];
 
-  it('gives all six areas, in quiz order, with zero scores and no next lab for areas with no labs', () => {
+  it('gives all ten skills, in the order of paths.json, with zero scores and no next lab for skills with no labs', () => {
     const p = computeProfile(facts(), []);
-    expect(p.skills.map((s) => s.area)).toEqual(['gateway', 'mcp', 'rag', 'otel', 'platform', 'sovereignty']);
+    expect(p.skills.map((s) => s.area)).toEqual(['agents', 'security', 'gateway', 'mcp', 'rag', 'otel', 'runtime', 'platform', 'sovereignty', 'evals']);
+    expect(p.skills.map((s) => s.title)).toEqual([
+      'Agent builder',
+      'Agent security',
+      'Gateway and access',
+      'Tools and MCP',
+      'Retrieval as a service',
+      'Observability and cost',
+      'Runtime and durability',
+      'Self-service and golden paths',
+      'Compliance and sovereignty',
+      'Agent evals and releases',
+    ]);
+    expect(p.next_lab).toBeNull();
     expect(p.skills.every((s) => s.score === 0 && s.level === 'Not started' && s.labs_total === 0 && s.next_lab === null)).toBe(true);
     expect(p.overall).toMatchObject({ score: 0, level: 'Not started' });
     expect(p.xp).toBe(0);
@@ -236,29 +249,35 @@ describe('computeProfile skills', () => {
     expect(gateway.labs_total).toBe(3);
     expect(gateway.next_lab).toEqual({ slug: 'm1-lab-2', title: 'Lab m1-lab-2' });
     expect(p.skills.find((s) => s.area === 'mcp')!.score).toBe(0);
-    // Overall is the mean of the six areas: 50 / 6 = 8.33.
-    expect(p.overall.score).toBe(8);
+    // Overall is the mean of the ten skills: 50 / 10 = 5.
+    expect(p.overall.score).toBe(5);
     expect(p.overall.level).toBe('Foundations');
   });
 
   it('next lab prefers one whose prerequisites are done', () => {
     const cat = [lab('a', { order: 1 }), lab('b', { order: 2, prerequisites: ['c'] }), lab('c', { order: 3 })];
     const p = computeProfile(facts({ runs: [run('a')] }), cat);
-    expect(p.skills[0]!.next_lab!.slug).toBe('c');
+    expect(p.skills.find((s) => s.area === 'gateway')!.next_lab!.slug).toBe('c');
   });
 
   it('next lab is null once the area is finished', () => {
     const p = computeProfile(facts({ runs: labs(3).map((l) => run(l.slug)) }), labs(3));
-    expect(p.skills[0]).toMatchObject({ labs_done: 3, labs_total: 3, next_lab: null, score: 100, level: 'Expert' });
+    expect(p.skills.find((s) => s.area === 'gateway')).toMatchObject({ labs_done: 3, labs_total: 3, next_lab: null, score: 100, level: 'Expert' });
   });
 
-  it('a lab in no area scores nothing but is still counted for XP', () => {
-    const p = computeProfile(facts({ runs: [run('x')] }), [lab('x', { path: 'production-agents', module: 1 })]);
+  it('a lab in no skill scores nothing but is still counted for XP', () => {
+    const p = computeProfile(facts({ runs: [run('x')] }), [lab('x', { path: 'nowhere', module: 1 })]);
     expect(p.skills.every((s) => s.score === 0)).toBe(true);
     expect(p.xp).toBe(150);
   });
 
-  it('carries the quiz result as a starting level and never scores it', () => {
+  it('a lab of a path without modules feeds that path\'s skill', () => {
+    const p = computeProfile(facts({ runs: [run('x')] }), [lab('x', { path: 'production-agents', module: 1 }), lab('y', { path: 'evals-releases', module: 1 })]);
+    expect(p.skills.find((s) => s.area === 'agents')).toMatchObject({ title: 'Agent builder', score: 100, labs_done: 1, labs_total: 1, next_lab: null });
+    expect(p.skills.find((s) => s.area === 'evals')).toMatchObject({ score: 0, labs_total: 1, next_lab: { slug: 'y', title: 'Lab y' } });
+  });
+
+  it('carries the quiz result as a starting level, and with no labs attempted it changes no score', () => {
     const a = computeProfile(facts({ starting_levels: { gateway: 'strong', mcp: 'new' } }), catalogue);
     const b = computeProfile(facts(), catalogue);
     expect(a.skills.find((s) => s.area === 'gateway')!.starting_level).toBe('strong');
@@ -270,6 +289,86 @@ describe('computeProfile skills', () => {
   it('is deterministic: the same facts give the same profile', () => {
     const f = facts({ runs: [run('m1-lab-1'), run('m2-lab-1', { score: 0.7 })] });
     expect(computeProfile(f, catalogue)).toEqual(computeProfile({ ...f }, [...catalogue].reverse()));
+  });
+});
+
+describe('computeProfile: scoring follows the path', () => {
+  // Gateway: intro, core, advanced; the advanced one is the capstone a strong learner keeps.
+  const gateway = [
+    lab('gw-1', { order: 1, difficulty: 'intro', tier: 'free' }),
+    lab('gw-2', { order: 2, difficulty: 'core', tier: 'free' }),
+    lab('gw-3', { order: 3, difficulty: 'advanced' }),
+  ];
+  const gw = (p: ReturnType<typeof computeProfile>) => p.skills.find((s) => s.area === 'gateway')!;
+
+  it('a strong skill is scored on the labs its path keeps: the skipped ones are neither credited nor counted as 0', () => {
+    const f = facts({ runs: [run('gw-3')] });
+    expect(gw(computeProfile(f, gateway)).score).toBe(50); // 3 / (1 + 2 + 3)
+    const strong = gw(computeProfile({ ...f, starting_levels: { gateway: 'strong' } }, gateway));
+    expect(strong.score).toBe(100);
+    expect(strong.level).toBe('Expert');
+    // Progress still counts every lab of the module.
+    expect(strong).toMatchObject({ labs_done: 1, labs_total: 3, next_lab: null });
+  });
+
+  it('a started but unfinished skipped lab is left out too; a completed one is not skipped and counts', () => {
+    const partial = facts({ runs: [run('gw-1', { score: 0.2 }), run('gw-3')], starting_levels: { gateway: 'strong' } });
+    expect(gw(computeProfile(partial, gateway)).score).toBe(100);
+    const finished = facts({ runs: [run('gw-1'), run('gw-3')], starting_levels: { gateway: 'strong' } });
+    expect(gw(computeProfile(finished, gateway)).score).toBe(100); // (1 + 3) / (1 + 3)
+    const half = facts({ runs: [run('gw-1')], starting_levels: { gateway: 'strong' } });
+    expect(gw(computeProfile(half, gateway)).score).toBe(25); // 1 / (1 + 3): gw-2 is skipped, gw-3 is not done
+  });
+
+  it('other levels skip nothing', () => {
+    const f = facts({ runs: [run('gw-3')] });
+    for (const level of ['ok', 'new'] as const) expect(gw(computeProfile({ ...f, starting_levels: { gateway: level } }, gateway)).score).toBe(50);
+  });
+
+  it('on the free plan the capstone is the last lab the plan can start, as on the path', () => {
+    const f = facts({ runs: [run('gw-2')], starting_levels: { gateway: 'strong' }, plan: 'free' });
+    const p = computeProfile(f, gateway);
+    // gw-2 is the free capstone; the path skips the rest of the skill (gw-1, and gw-3, which the plan cannot start).
+    expect(gw(p).score).toBe(100);
+    expect(gw(p).next_lab).toBeNull(); // gw-3 needs the Pro plan
+    expect(gw(p).evaluation).not.toMatch(/finished every lab/);
+  });
+});
+
+describe('computeProfile: the next lab', () => {
+  const cat = [
+    lab('gw-1', { order: 1, tier: 'free' }),
+    lab('gw-2', { order: 2, prerequisites: ['gw-1'] }),
+    lab('rag-1', { module: 3, order: 1, tier: 'free' }),
+    lab('agent-1', { path: 'production-agents', module: 1, order: 1, tier: 'free' }),
+  ];
+
+  it('without a path is the first startable lab in catalogue order whose prerequisites are done', () => {
+    expect(computeProfile(facts(), cat).next_lab).toEqual({ slug: 'gw-1', title: 'Lab gw-1', skill: 'gateway', path: 'ai-platform', module: 1 });
+    expect(computeProfile(facts({ runs: [run('gw-1')] }), cat).next_lab?.slug).toBe('gw-2');
+    expect(computeProfile(facts({ runs: [run('gw-1')], plan: 'free' }), cat).next_lab?.slug).toBe('rag-1');
+    expect(computeProfile(facts({ runs: ['gw-1', 'gw-2', 'rag-1', 'agent-1'].map((s) => run(s)) }), cat).next_lab).toBeNull();
+  });
+
+  it("follows the learner's stored path first, overall and per skill", () => {
+    const path_steps = [
+      { slug: 'gw-1', status: 'done' },
+      { slug: 'agent-1', status: 'next' },
+      { slug: 'gw-2', status: 'upcoming' },
+    ];
+    const p = computeProfile(facts({ runs: [run('gw-1')], path_steps }), cat);
+    expect(p.next_lab).toMatchObject({ slug: 'agent-1', skill: 'agents', path: 'production-agents', module: 1 });
+    expect(p.skills.find((s) => s.area === 'agents')!.next_lab).toEqual({ slug: 'agent-1', title: 'Lab agent-1' });
+    expect(p.skills.find((s) => s.area === 'gateway')!.next_lab?.slug).toBe('gw-2');
+    // A skill the path does not reach falls back to the catalogue rule.
+    expect(p.skills.find((s) => s.area === 'rag')!.next_lab?.slug).toBe('rag-1');
+  });
+
+  it('does not suggest a lab the path skips for a strong skill', () => {
+    const three = [lab('gw-1', { order: 1 }), lab('gw-2', { order: 2 }), lab('gw-3', { order: 3 })];
+    const p = computeProfile(facts({ starting_levels: { gateway: 'strong' } }), three);
+    expect(p.next_lab?.slug).toBe('gw-3');
+    expect(p.skills.find((s) => s.area === 'gateway')!.next_lab?.slug).toBe('gw-3');
   });
 });
 
@@ -299,6 +398,8 @@ describe('evaluation text', () => {
 
   it('says the area is finished when no lab is left', () => {
     expect(evaluateArea({ ...base, labsDone: 5, nextLab: null })).toMatch(/You have finished every lab here\.$/);
+    // No next lab while labs are left (locked by the plan, or skipped as known): no claim that all is done.
+    expect(evaluateArea({ ...base, nextLab: null })).toBe('You can work through Retrieval on your own: 2 of 5 labs finished.');
   });
 
   it('covers an area tried but not yet passing', () => {

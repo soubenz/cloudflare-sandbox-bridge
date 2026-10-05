@@ -1,13 +1,6 @@
 {
-  "_note": "The authoritative list of concept ids. A concept is one idea a learner can know or not know. Lab lessons (labs/<slug>/learn/concepts/<id>.md), quiz questions and the onboarding quiz all refer to these ids, and `labs learn-check` fails on an id that is not listed here. Ids are `<area>.<name>`. `module` places the concept in a platform module so the onboarding quiz can summarise a learner per module.",
-  "areas": {
-    "gateway": { "title": "LLM gateway", "path": "ai-platform", "module": 1 },
-    "mcp": { "title": "Tools and MCP", "path": "ai-platform", "module": 2 },
-    "rag": { "title": "Retrieval", "path": "ai-platform", "module": 3 },
-    "otel": { "title": "Tracing and cost", "path": "ai-platform", "module": 4 },
-    "platform": { "title": "Self-service platform", "path": "ai-platform", "module": 6 },
-    "sovereignty": { "title": "Data sovereignty", "path": "ai-platform", "module": 7 }
-  },
+  "_note": "The authoritative list of concept ids. A concept is one idea a learner can know or not know. Lab lessons (labs/<slug>/learn/concepts/<id>.md), quiz questions and the onboarding quiz all refer to these ids, and `labs learn-check` fails on an id that is not listed here. Ids are `<skill>.<name>`, where <skill> is a skill id from packages/catalogue/paths.json (the `skill` of a module or of a path without modules). `quiz` lists the skills the onboarding quiz has questions on, in no particular order: only those get a starting level from the quiz, and packages/catalogue/onboarding.json must cover each of them.",
+  "quiz": ["gateway", "mcp", "rag", "otel", "platform", "sovereignty"],
   "concepts": [
     { "id": "gateway.what-is-a-gateway", "title": "What an LLM gateway is and why teams run one" },
     { "id": "gateway.routing-aliases", "title": "Model aliases and routing" },

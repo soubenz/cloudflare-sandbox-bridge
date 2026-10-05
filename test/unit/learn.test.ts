@@ -214,7 +214,7 @@ describe('every lab that ships a learn/ folder', () => {
 describe('the onboarding quiz', () => {
   const file = join(__dirname, '..', '..', 'packages', 'catalogue', 'onboarding.json');
   const real = () => JSON.parse(readFileSync(file, 'utf8'));
-  const areas = Object.keys(registry.areas);
+  const areas = registry.quiz;
 
   it('the shipped quiz validates', () => {
     expect(existsSync(file)).toBe(true);
@@ -303,11 +303,13 @@ describe('the onboarding quiz', () => {
     expect(() => parseOnboarding(withQuestions((qs) => qs.map((q, i) => (i === 1 ? { ...q, concept: 'gateway.nope' } : q))))).toThrow(/unknown concept/);
   });
 
-  it('needs an areas list that matches concepts.json exactly', () => {
+  it('needs an areas list that matches the quiz skills of concepts.json exactly', () => {
     const r = real();
     expect(() => parseOnboarding({ ...r, areas: r.areas.slice(1) })).toThrow(/no entry for area "gateway"/);
     expect(() => parseOnboarding({ ...r, areas: [...r.areas, { area: 'made-up', blurb: 'x' }] })).toThrow();
     expect(() => parseOnboarding({ ...r, areas: [...r.areas, { area: 'madeup', blurb: 'x' }] })).toThrow(/not an area/);
+    // A skill the quiz has no questions on (concepts.json `quiz`) is not a quiz area either.
+    expect(() => parseOnboarding({ ...r, areas: [...r.areas, { area: 'runtime', blurb: 'x' }] })).toThrow(/"runtime" is not an area/);
     expect(() => parseOnboarding({ ...r, areas: [...r.areas, r.areas[0]] })).toThrow(/same id/);
     expect(() => parseOnboarding({ ...r, areas: undefined })).toThrow(/areas/);
   });

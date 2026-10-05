@@ -115,6 +115,9 @@ export function createProgressHub({
     return resultAwards;
   };
 
+  /** The compact profile's `next_lab`: the lab object or null once it has answered, undefined until then. */
+  const nextOf = (state) => (state.data && typeof state.data === 'object' && 'next_lab' in state.data ? (state.data.next_lab ?? null) : undefined);
+
   /** Something about the learner's progress changed (a check ran, an award came in): ask again next time. */
   function invalidate() {
     profileFull.invalidate();
@@ -269,5 +272,23 @@ export function createProgressHub({
       result()?.clear();
     },
     hasPath: () => Boolean(normalizePath(pathStore.get().data)),
+    /**
+     * The one next lab (GET /api/profile `next_lab`): { slug, title, skill, path, module }, null when there is
+     * none, undefined while the profile has not answered (asking it is started here).
+     */
+    nextLab() {
+      queueMicrotask(() => profileCompact.ensure());
+      return nextOf(profileCompact.get());
+    },
+    /** fn() each time the next lab the profile names changes (its first answer included). Returns an unsubscribe. */
+    onNextLab(fn) {
+      let last = String(JSON.stringify(nextOf(profileCompact.get())));
+      return profileCompact.subscribe((state) => {
+        const key = String(JSON.stringify(nextOf(state)));
+        if (key === last) return;
+        last = key;
+        fn(nextOf(state));
+      });
+    },
   };
 }

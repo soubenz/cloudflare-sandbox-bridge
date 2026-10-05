@@ -79,9 +79,9 @@ describe('golden path', () => {
   const EXPECTED: PathJson = {
     steps: [
       { slug: 'gw-intro', title: 'See what a gateway does', area: 'gateway', why: 'You have already finished this lab.', estimated_minutes: 20, status: 'done' },
-      { slug: 'standalone', title: 'Weekend bill', area: null, why: 'Start with a quick win on a problem you will recognise.', estimated_minutes: 40, status: 'next' },
-      { slug: 'rag-basics', title: 'See why a document matched', area: 'rag', why: 'Builds on the earlier steps in Retrieval.', estimated_minutes: 30, status: 'upcoming' },
-      { slug: 'gw-routing', title: 'Add a model without touching app code', area: 'gateway', why: 'A first step into LLM gateway, which is new to you.', estimated_minutes: 30, status: 'upcoming' },
+      { slug: 'standalone', title: 'Weekend bill', area: 'agents', why: 'Start with a quick win on a problem you will recognise.', estimated_minutes: 40, status: 'next' },
+      { slug: 'rag-basics', title: 'See why a document matched', area: 'rag', why: 'Builds on the earlier steps in Retrieval as a service.', estimated_minutes: 30, status: 'upcoming' },
+      { slug: 'gw-routing', title: 'Add a model without touching app code', area: 'gateway', why: 'A first step into Gateway and access, which is new to you.', estimated_minutes: 30, status: 'upcoming' },
       { slug: 'gw-capstone', title: 'Hard budget per team', area: 'gateway', why: 'Pulls the gateway ideas together on spend.', estimated_minutes: 45, status: 'upcoming' },
       { slug: 'mcp-virtual', title: 'One endpoint for every tool', area: 'mcp', why: 'One lab to confirm what you already know about Tools and MCP.', estimated_minutes: 35, status: 'upcoming' },
     ],
@@ -253,7 +253,7 @@ describe('fallback to the rules', () => {
     expect(path.source).toBe('rules');
     expect(slugs(path.steps.filter((s) => s.status !== 'done'))).toEqual(rulesOrderPro);
     expect(path.steps[0]).toMatchObject({ slug: 'gw-intro', status: 'done' });
-    expect(path.steps[1]).toMatchObject({ slug: 'gw-routing', status: 'next', why: 'A first step into LLM gateway, which is new to you.' });
+    expect(path.steps[1]).toMatchObject({ slug: 'gw-routing', status: 'next', why: 'A first step into Gateway and access, which is new to you.' });
     expect(path.steps.every((s) => s.why.length > 0 && s.why.length <= 120)).toBe(true);
     expect(sqlite.prepare(`SELECT source, model FROM user_paths`).get()).toEqual({ source: 'rules', model: null });
   });
@@ -464,7 +464,7 @@ describe('refreshPath, after a lab is completed', () => {
     const env2 = { ...env, LABS_BUCKET: { get: async () => ({ json: async () => added }) } } as unknown as Env;
     expect(await refreshPath(env2, 'u1', deps(ai))).toBe('refreshed');
     const path = JSON.parse((sqlite.prepare(`SELECT path_json FROM user_paths`).get() as { path_json: string }).path_json) as PathJson;
-    expect(path.steps.at(-1)).toMatchObject({ slug: 'brand-new', status: 'upcoming', why: 'The next step on your path.' });
+    expect(path.steps.at(-1)).toMatchObject({ slug: 'brand-new', status: 'upcoming', why: 'Builds on the earlier steps in Agent builder.' });
     expect(ai).toHaveBeenCalledTimes(1);
   });
 });

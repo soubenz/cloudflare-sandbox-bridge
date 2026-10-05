@@ -111,14 +111,19 @@ function compileLearn(slug: string): Bundle {
 
 const bundle = compileLearn(GATEWAY);
 const onboarding = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/onboarding.json'), 'utf8')) as { intro: string; areas: Array<{ area: string; blurb: string }>; questions: Question[] };
-const concepts = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/concepts.json'), 'utf8')) as { areas: Record<string, { title: string; module: number }> };
+// The skills (packages/catalogue/paths.json: a module, or a path without modules), titled like their module or path;
+// the quiz asks about the ones `quiz` in concepts.json lists.
+type PathMetaE2E = { slug: string; title: string; skill?: string; modules: Array<{ number: number; title: string; skill: string }> };
+const pathsMeta = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/paths.json'), 'utf8')) as { paths: PathMetaE2E[] };
+const concepts = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/concepts.json'), 'utf8')) as { quiz: string[] };
+const SKILL_LIST = pathsMeta.paths.flatMap((p) =>
+  p.modules.length === 0 ? [{ area: p.skill!, title: p.title, path: p.slug, module: 1 }] : p.modules.map((m) => ({ area: m.skill, title: m.title, path: p.slug, module: m.number }))
+);
 
-/** The platform's areas in module order, and the two questions the branching quiz probes each with. */
-const AREAS = Object.entries(concepts.areas)
-  .map(([area, a]) => ({ area, title: a.title, module: a.module }))
-  .sort((a, b) => a.module - b.module);
+/** The platform's quiz areas in module order, and the two questions the branching quiz probes each with. */
+const AREAS = SKILL_LIST.filter((s) => concepts.quiz.includes(s.area) && s.path === 'ai-platform').sort((a, b) => a.module - b.module);
 const probe = (area: string, level: 'basic' | 'advanced') => onboarding.questions.find((q) => q.concept.startsWith(`${area}.`) && q.level === level)!;
-const titleOf = (area: string) => concepts.areas[area]!.title;
+const titleOf = (area: string) => SKILL_LIST.find((s) => s.area === area)!.title;
 const stepText = (area: string, n: number) => `${titleOf(area)} \u00b7 question ${n} of up to 2`;
 
 /** The lesson of a concept, and the diagnostic questions about it. */
@@ -585,7 +590,7 @@ test.describe('the platform quiz', () => {
     await expect(heading(page)).toHaveText('Where to start');
     await expect(heading(page)).toBeFocused();
     for (const a of AREAS) await expect(levelOf(page, a.area)).toHaveText('New to you');
-    await expect(summaryCard(page).locator('.start-title')).toHaveText('LLM gateway');
+    await expect(summaryCard(page).locator('.start-title')).toHaveText('Gateway and access');
     await expect(summaryCard(page).locator('.start-why')).toHaveText('You said this is new to you, so we begin here.');
 
     // Only the two questions that were asked went out, once, anonymously.
@@ -626,7 +631,7 @@ test.describe('the platform quiz', () => {
       await expect(row).not.toContainText(`Module ${a.module}`);
       await expect(levelOf(page, a.area)).toHaveText(a.area === 'mcp' ? 'You know this well' : 'New to you');
     }
-    await expect(summaryCard(page).locator('.start-title')).toHaveText('LLM gateway');
+    await expect(summaryCard(page).locator('.start-title')).toHaveText('Gateway and access');
     await expect(summaryCard(page)).toContainText('You said this is new to you, so we begin here.');
     await expect(screen(page)).toContainText('You can retake this any time from the ? menu.');
     expect(await screen(page).innerText()).not.toMatch(/\b(score|scored|grade|graded|points|percent)\b|\d+\s*%/i);
@@ -723,7 +728,7 @@ test.describe('the platform quiz', () => {
     await expect(page.locator('.quiz-prompt')).toHaveCount(0);
     await expect(page.locator('.told-row')).toHaveCount(AREAS.length);
     await expect(page.locator('.told-row[data-level="new"]')).toHaveCount(AREAS.length);
-    await expect(summaryCard(page).locator('.start-title')).toHaveText('LLM gateway');
+    await expect(summaryCard(page).locator('.start-title')).toHaveText('Gateway and access');
     // Nothing was asked, so nothing is sent; the result is stored as done.
     await page.waitForTimeout(200);
     expect(s.posted).toEqual([]);

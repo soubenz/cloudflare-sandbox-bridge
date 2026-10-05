@@ -243,8 +243,8 @@ describe('the profile, as the page reads it', () => {
     expect(profile.streakText(undefined)).toBe('No streak yet');
   });
 
-  it('gives every area of the quiz the icon and colour of its module', () => {
-    for (const area of ['gateway', 'mcp', 'rag', 'otel', 'platform', 'sovereignty']) {
+  it('gives every skill the icon and colour of its module, or of its path', () => {
+    for (const area of ['agents', 'security', 'gateway', 'mcp', 'rag', 'otel', 'runtime', 'platform', 'sovereignty', 'evals']) {
       const look = profile.areaLook(area);
       expect(look.icon, area).toBeTruthy();
       expect(['blue', 'teal', 'green', 'amber', 'rose', 'violet', 'indigo', 'slate'], area).toContain(look.accent);

@@ -4,6 +4,7 @@ import { ApiError } from '../lib/errors';
 import { AREAS, applyRules, labArea, type AreaLevel, type LockInfo, type Plan, type RulesResult } from './rules';
 import { PATH_MODEL, PROMPT_VERSION, cleanWhy, gatewayAiCall, orderWithAi, buildPrompt, ORDER_SCHEMA, type AiCall, type AiStep } from './ai';
 import { fixOrder } from './validate';
+import { nextLabs } from './next';
 import type { PathInputs } from './inputs';
 
 /**
@@ -154,9 +155,16 @@ export function assemblePath(a: AssembleArgs): PathJson {
     const { lock, why } = lockedStep(a.rules.locks.get(l.slug) ?? { lock: 'plan' });
     return step(l, why, 'locked', lock);
   };
+  // Which step is `next` is the one shared rule (next.ts). Every lab in `order` is one the plan can start
+  // (the rules keep locked labs out of it), so the plan given here changes nothing.
+  const next = nextLabs(
+    a.order.map((l) => ({ slug: l.slug, status: 'upcoming' })),
+    [...a.rules.done.map((l) => ({ lab: l, completion: true })), ...a.order.map((l) => ({ lab: l, completion: null }))],
+    'pro'
+  ).overall?.slug;
   const steps: PathStep[] = [
     ...a.rules.done.map((l) => step(l, 'You have already finished this lab.', 'done')),
-    ...a.order.map((l, i) => step(l, cleanWhy(a.whys.get(l.slug)) ?? genericWhy(l, a.rules, areaTitle(l)), i === 0 ? 'next' : 'upcoming')),
+    ...a.order.map((l) => step(l, cleanWhy(a.whys.get(l.slug)) ?? genericWhy(l, a.rules, areaTitle(l)), l.slug === next ? 'next' : 'upcoming')),
     ...a.rules.locked.map(lockedStepFor),
   ];
   const total = a.order.reduce((sum, l) => sum + minutes(l), 0);
@@ -216,6 +224,12 @@ async function loadStored(env: Env, userId: string): Promise<StoredPath | null> 
   } catch {
     return null; // an unreadable row is no cache; it is replaced on the next write
   }
+}
+
+/** The steps of the user's stored path, as last written (null when there is none). The profile reads them for its "next lab". */
+export async function loadPathSteps(env: Env, userId: string): Promise<PathStep[] | null> {
+  const stored = await loadStored(env, userId);
+  return stored && Array.isArray(stored.path.steps) ? stored.path.steps : null;
 }
 
 async function storePath(env: Env, userId: string, hash: string, path: PathJson, model: string | null, now: number): Promise<void> {

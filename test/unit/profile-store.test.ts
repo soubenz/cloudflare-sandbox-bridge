@@ -35,6 +35,7 @@ interface IndexEntry {
   order?: number;
   difficulty?: string;
   estimated_minutes?: number;
+  tier?: 'free' | 'pro';
   archived?: true;
 }
 
@@ -229,7 +230,51 @@ describe('loadProfile', () => {
     const { env } = makeEnv([]);
     const p = await loadProfile(env, 'new-user', { now: NOW });
     expect(p).toMatchObject({ user_id: 'new-user', xp: 0, level: { n: 1, title: 'Newcomer' }, overall: { score: 0, level: 'Not started' }, updated_at: NOW });
-    expect(p.skills).toHaveLength(6);
+    expect(p.skills).toHaveLength(10);
+    expect(p.next_lab).toBeNull();
+  });
+
+  const inputs = (sqlite: Sqlite, areas: Record<string, string>, user = 'u1') =>
+    sqlite
+      .prepare(`INSERT INTO user_profile_inputs (user_id, areas_json, goal_text, goal_kind, hours_per_week, updated_at) VALUES (?, ?, NULL, 'explore', 4, 0)`)
+      .run(user, JSON.stringify(areas));
+  const plan = (sqlite: Sqlite, value: string, user = 'u1') => sqlite.prepare(`INSERT INTO users (id, plan, created_at) VALUES (?, ?, 0)`).run(user, value);
+
+  it('reads the quiz levels stored with the path inputs; ?starting= is only the fallback', async () => {
+    const { env, sqlite } = makeEnv();
+    const without = await loadProfile(env, 'u1', { now: NOW, starting: { mcp: 'ok' } });
+    expect(without.skills.find((s) => s.area === 'mcp')!.starting_level).toBe('ok');
+    inputs(sqlite, { gateway: 'strong', rag: 'familiar' });
+    const p = await loadProfile(env, 'u1', { now: NOW, starting: { mcp: 'ok' } });
+    expect(Object.fromEntries(p.skills.map((s) => [s.area, s.starting_level]))).toMatchObject({ gateway: 'strong', rag: 'ok', mcp: null, agents: null });
+  });
+
+  it('a strong skill stored in D1 is scored on the labs its path keeps', async () => {
+    const { env, sqlite } = makeEnv();
+    plan(sqlite, 'pro');
+    // lab-a (core) and lab-b (intro) are gateway; lab-b is the last by order, so it is the capstone.
+    seed(sqlite, { session: 's1', lab: 'lab-b', startedAt: NOW - DAY, runs: [[1, MIN]] });
+    expect((await loadProfile(env, 'u1', { now: NOW })).skills.find((s) => s.area === 'gateway')!.score).toBe(33); // 1 / (2 + 1)
+    inputs(sqlite, { gateway: 'strong' });
+    expect((await loadProfile(env, 'u1', { now: NOW })).skills.find((s) => s.area === 'gateway')!.score).toBe(100);
+  });
+
+  it("names the next lab from the stored path, else the catalogue rule for the learner's plan", async () => {
+    const { env, sqlite } = makeEnv([...CATALOGUE, { slug: 'lab-free', title: 'Lab Free', path: 'production-agents', module: 1, order: 1, tier: 'free' }]);
+    // No users row: the free plan, so only the free lab can be next.
+    expect((await loadProfile(env, 'u1', { now: NOW })).next_lab).toEqual({ slug: 'lab-free', title: 'Lab Free', skill: 'agents', path: 'production-agents', module: 1 });
+    plan(sqlite, 'pro');
+    expect((await loadProfile(env, 'u1', { now: NOW })).next_lab?.slug).toBe('lab-a');
+    const steps = [
+      { slug: 'lab-c', title: 'Lab C', area: 'mcp', why: 'x', estimated_minutes: 30, status: 'next' },
+      { slug: 'lab-a', title: 'Lab A', area: 'gateway', why: 'x', estimated_minutes: 30, status: 'upcoming' },
+    ];
+    sqlite
+      .prepare(`INSERT INTO user_paths (user_id, input_hash, path_json, source, model, created_at, updated_at) VALUES ('u1', 'h', ?, 'rules', NULL, 0, 0)`)
+      .run(JSON.stringify({ steps, total_minutes: 60, weeks_estimate: 1, goal: { text: null, kind: 'explore' }, source: 'rules', generated_at: 0 }));
+    const p = await loadProfile(env, 'u1', { now: NOW });
+    expect(p.next_lab).toMatchObject({ slug: 'lab-c', skill: 'mcp', module: 2 });
+    expect(p.skills.find((s) => s.area === 'gateway')!.next_lab?.slug).toBe('lab-a');
   });
 });
 
@@ -248,6 +293,8 @@ describe('request parsing', () => {
     expect(parseStartingLevels('')).toBeUndefined();
     expect(parseStartingLevels(undefined)).toBeUndefined();
     expect(parseStartingLevels('junk')).toBeUndefined();
+    // Only skills the quiz asks about take a starting level.
+    expect(parseStartingLevels('runtime:ok,agents:strong,otel:new')).toEqual({ otel: 'new' });
   });
 });
 
@@ -262,10 +309,10 @@ describe('profile routes', () => {
     const res = await get(env, '/users/u1/profile');
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect(Object.keys(body).sort()).toEqual(['awards', 'level', 'overall', 'skills', 'streak', 'updated_at', 'user_id', 'xp']);
+    expect(Object.keys(body).sort()).toEqual(['awards', 'level', 'next_lab', 'overall', 'skills', 'streak', 'updated_at', 'user_id', 'xp']);
     expect(body.user_id).toBe('u1');
     expect(body.xp).toBe(150);
-    expect((body.skills as unknown[]).length).toBe(6);
+    expect((body.skills as unknown[]).length).toBe(10);
     const awards = body.awards as { earned: Array<{ id: string }>; locked: unknown[] };
     expect(awards.earned.map((a) => a.id)).toContain('first-lab');
     expect(awards.locked.length).toBeGreaterThan(0);
@@ -274,7 +321,7 @@ describe('profile routes', () => {
   it('GET /users/:uid/profile?compact=1 returns the Home widget slice', async () => {
     const { env } = makeEnv();
     const body = (await (await get(env, '/users/u1/profile?compact=1')).json()) as Record<string, unknown>;
-    expect(Object.keys(body).sort()).toEqual(['level', 'overall', 'recent_awards', 'streak', 'top_skills', 'updated_at', 'user_id', 'xp']);
+    expect(Object.keys(body).sort()).toEqual(['level', 'next_lab', 'overall', 'recent_awards', 'streak', 'top_skills', 'updated_at', 'user_id', 'xp']);
     expect((body.top_skills as unknown[]).length).toBe(3);
   });
 

@@ -1,17 +1,43 @@
 import { describe, it, expect } from 'vitest';
-import { applyRules, labArea, rulesOrder, stableTopo, type RulesInput } from '../../src/path/rules';
+import { applyRules, labArea, rulesOrder, skippedForStrong, stableTopo, type RulesInput } from '../../src/path/rules';
 import { fixOrder } from '../../src/path/validate';
 import { CATALOGUE, lab, slugs } from './path-fixtures';
 
 const base = (over: Partial<RulesInput> = {}): RulesInput => ({ catalogue: CATALOGUE, levels: {}, plan: 'pro', completed: new Set(), ...over });
 
 describe('labArea', () => {
-  it('maps a lab to the quiz area of its (path, module), and a lab outside every area to null', () => {
+  it('maps a lab to the skill of its module, or of its whole path when the path has no modules, and a lab outside every skill to null', () => {
     expect(labArea({ path: 'ai-platform', module: 1 })).toBe('gateway');
     expect(labArea({ path: 'ai-platform', module: 2 })).toBe('mcp');
     expect(labArea({ path: 'ai-platform', module: 3 })).toBe('rag');
-    expect(labArea({ path: 'production-agents', module: 1 })).toBeNull();
+    expect(labArea({ path: 'ai-platform', module: 5 })).toBe('runtime');
+    expect(labArea({ path: 'production-agents', module: 1 })).toBe('agents');
+    expect(labArea({ path: 'evals-releases', module: 1 })).toBe('evals');
+    expect(labArea({ path: 'ai-platform', module: 99 })).toBeNull();
+    expect(labArea({ path: 'nowhere', module: 1 })).toBeNull();
     expect(labArea({})).toBeNull();
+  });
+});
+
+describe('skippedForStrong (rule 4 on its own)', () => {
+  const labs = [lab('a1', { path: 'ai-platform', module: 1, order: 1, tier: 'free' }), lab('a2', { path: 'ai-platform', module: 1, order: 2, tier: 'free' }), lab('a3', { path: 'ai-platform', module: 1, order: 3 }), lab('b1', { path: 'ai-platform', module: 2, order: 1 })];
+  const all = () => true;
+
+  it('keeps the last startable lab of a strong area and skips the rest of it, and nothing else', () => {
+    expect(skippedForStrong(labs, { gateway: 'strong' }, all)).toEqual({ skipped: new Set(['a1', 'a2']), capstones: new Set(['a3']) });
+    expect(skippedForStrong(labs, { gateway: 'familiar', mcp: 'new' }, all)).toEqual({ skipped: new Set(), capstones: new Set() });
+  });
+
+  it('picks the capstone among the labs the plan can start, and never skips a completed lab', () => {
+    const free = (l: { tier?: string }) => l.tier === 'free';
+    expect(skippedForStrong(labs, { gateway: 'strong' }, free)).toEqual({ skipped: new Set(['a1', 'a3']), capstones: new Set(['a2']) });
+    expect(skippedForStrong(labs, { gateway: 'strong' }, all, { completed: new Set(['a1']) }).skipped).toEqual(new Set(['a2']));
+  });
+
+  it('is what applyRules skips', () => {
+    const r = applyRules(base({ catalogue: labs, levels: { gateway: 'strong' } }));
+    expect(slugs(r.allowed)).toEqual(['a3', 'b1']);
+    expect(r.capstones).toEqual(new Set(['a3']));
   });
 });
 

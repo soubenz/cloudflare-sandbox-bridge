@@ -35,10 +35,19 @@ const onboarding = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/onboar
   intro: string;
   questions: Array<{ id: string; concept: string; prompt: string; options: Array<{ id: string; text: string }>; answer: string[]; explanation: string; level?: string }>;
 };
-const concepts = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/concepts.json'), 'utf8')) as { areas: Record<string, { title: string; module: number }> };
-const AREAS = Object.entries(concepts.areas)
-  .map(([area, a]) => ({ area, title: a.title, module: a.module }))
-  .sort((a, b) => a.module - b.module);
+// The skills (packages/catalogue/paths.json: a module, or a path without modules), titled like their module or path;
+// the quiz asks about the ones `quiz` in concepts.json lists.
+type PathMetaE2E = { slug: string; title: string; skill?: string; modules: Array<{ number: number; title: string; skill: string }> };
+const pathsMeta = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/paths.json'), 'utf8')) as { paths: PathMetaE2E[] };
+const concepts = JSON.parse(readFileSync(join(ROOT, 'packages/catalogue/concepts.json'), 'utf8')) as { quiz: string[] };
+const SKILL_LIST = pathsMeta.paths.flatMap((p) =>
+  p.modules.length === 0 ? [{ area: p.skill!, title: p.title, path: p.slug, module: 1 }] : p.modules.map((m) => ({ area: m.skill, title: m.title, path: p.slug, module: m.number }))
+);
+/** The quiz's areas, in module order. */
+const AREAS = SKILL_LIST.filter((s) => concepts.quiz.includes(s.area) && s.path === 'ai-platform').sort((a, b) => a.module - b.module);
+/** Every skill the profile shows (ten), in its order. */
+const SKILLS = SKILL_LIST;
+const skillTitle = (area: string) => SKILL_LIST.find((s) => s.area === area)!.title;
 const probe = (area: string, level: 'basic' | 'advanced') => onboarding.questions.find((q) => q.concept.startsWith(`${area}.`) && q.level === level)!;
 
 const lab = (o: Record<string, unknown>) => ({
@@ -74,10 +83,10 @@ type Award = { id: string; title: string; description: string; icon: string; tie
 
 const skill = (area: string, o: Record<string, unknown>) => ({
   area,
-  title: concepts.areas[area]!.title,
+  title: skillTitle(area),
   score: 0,
   level: 'Not started',
-  evaluation: `You have not started ${concepts.areas[area]!.title} yet. Begin with "A first lab".`,
+  evaluation: `You have not started ${skillTitle(area)} yet. Begin with "A first lab".`,
   labs_done: 0,
   labs_total: 4,
   next_lab: { slug: 'see-what-a-gateway-does', title: 'See what a gateway does' },
@@ -96,7 +105,7 @@ const NEW_LEARNER = {
   xp: 0,
   level: { n: 1, title: 'Newcomer', xp_into: 0, xp_needed: 100 },
   streak: { days: 0, best: 0, last_active: null },
-  skills: AREAS.map((a) => skill(a.area, {})),
+  skills: SKILLS.map((a) => skill(a.area, {})),
   awards: {
     earned: [] as Award[],
     locked: [{ id: 'first-lab', title: 'First steps', description: 'Finish your first lab.', icon: 'flag', tier: 'bronze', progress: { have: 0, need: 1 } }, ...LOCKED.map((a) => ({ ...a, progress: { have: 0, need: a.progress!.need } }))] as Award[],
@@ -110,14 +119,15 @@ const MID_LEARNER = {
   xp: 275,
   level: { n: 3, title: 'Apprentice', xp_into: 25, xp_needed: 250 },
   streak: { days: 2, best: 4, last_active: '2026-01-06' },
-  skills: AREAS.map((a, i) =>
+  // `i` is the skill's place among the quiz areas (gateway 0, mcp 1, rag 2, otel 3, platform 4); the other skills get the defaults.
+  skills: SKILLS.map((a) => [a, AREAS.findIndex((x) => x.area === a.area)] as const).map(([a, i]) =>
     skill(
       a.area,
       i === 0
         ? {
             score: 67,
             level: 'Proficient',
-            evaluation: 'You are confident in LLM gateway: 3 of 6 labs finished, with strong results. Next up: "One endpoint, one key".',
+            evaluation: 'You are confident in Gateway and access: 3 of 6 labs finished, with strong results. Next up: "One endpoint, one key".',
             labs_done: 3,
             labs_total: 6,
             next_lab: { slug: 'one-endpoint-one-key', title: 'One endpoint, one key' },
@@ -152,7 +162,7 @@ const TOP_LEARNER = {
   xp: 5200,
   level: { n: 10, title: 'Legend', xp_into: 600, xp_needed: 0 },
   streak: { days: 30, best: 30, last_active: '2026-01-06' },
-  skills: AREAS.map((a) => skill(a.area, { score: 92, level: 'Expert', evaluation: `You have finished every lab in ${a.title}, with excellent results.`, labs_done: 5, labs_total: 5, next_lab: null })),
+  skills: SKILLS.map((a) => skill(a.area, { score: 92, level: 'Expert', evaluation: `You have finished every lab in ${a.title}, with excellent results.`, labs_done: 5, labs_total: 5, next_lab: null })),
   awards: {
     earned: [
       { id: 'all-labs', title: 'Every lab', description: 'Finish every lab.', icon: 'medal', tier: 'gold', earned_at: EARNED_AT, session_id: 's9' },
@@ -181,7 +191,7 @@ const step = (slug: string, title: string, status: string, o: Record<string, unk
 const PATH_A = {
   steps: [
     step('see-what-a-gateway-does', 'See what a gateway does', 'done', { estimated_minutes: 20, why: 'You have already finished this lab.' }),
-    step('add-a-model-without-touching-app-code', 'Add a model without touching app code', 'next', { why: 'A first step into LLM gateway, which is new to you.' }),
+    step('add-a-model-without-touching-app-code', 'Add a model without touching app code', 'next', { why: 'A first step into Gateway and access, which is new to you.' }),
     step('one-endpoint-one-key', 'One endpoint, one key', 'upcoming'),
     step('route-by-intent', 'Route by intent', 'upcoming', { area: 'mcp', estimated_minutes: 45 }),
     step('guard-the-spend', 'Guard the spend', 'upcoming'),
@@ -440,8 +450,8 @@ test.describe('the profile page', () => {
     // Six skills, in the quiz's order, each Not started with its sentence and a way to the first lab.
     const cards = page.locator('.skill-card');
     await expect(cards).toHaveCount(6);
-    await expect(cards.locator('.skill-title')).toHaveText(AREAS.map((a) => a.title));
-    for (const a of AREAS) {
+    await expect(cards.locator('.skill-title')).toHaveText(SKILLS.map((a) => a.title));
+    for (const a of SKILLS) {
       const card = page.locator(`.skill-card[data-area="${a.area}"]`);
       await expect(card.locator('.level-name')).toHaveText('Not started');
       await expect(card.getByRole('meter', { name: `${a.title} score` })).toHaveAttribute('aria-valuenow', '0');
@@ -482,16 +492,16 @@ test.describe('the profile page', () => {
     await expect(page.locator('.overall-eval')).toContainText('Overall you are at Foundations level');
 
     const gateway = page.locator('.skill-card[data-area="gateway"]');
-    await expect(gateway.getByRole('meter', { name: 'LLM gateway score' })).toHaveAttribute('aria-valuenow', '67');
-    await expect(gateway.getByRole('meter', { name: 'LLM gateway score' })).toHaveAttribute('aria-valuetext', '67 out of 100, Proficient');
+    await expect(gateway.getByRole('meter', { name: 'Gateway and access score' })).toHaveAttribute('aria-valuenow', '67');
+    await expect(gateway.getByRole('meter', { name: 'Gateway and access score' })).toHaveAttribute('aria-valuetext', '67 out of 100, Proficient');
     await expect(gateway.locator('.level-name')).toHaveText('Proficient');
-    await expect(gateway.locator('.skill-eval')).toHaveText('You are confident in LLM gateway: 3 of 6 labs finished, with strong results. Next up: "One endpoint, one key".');
+    await expect(gateway.locator('.skill-eval')).toHaveText('You are confident in Gateway and access: 3 of 6 labs finished, with strong results. Next up: "One endpoint, one key".');
     await expect(gateway.locator('.skill-labs-line')).toHaveText('3 of 6 labs done');
-    await expect(gateway.getByRole('meter', { name: 'Labs done in LLM gateway' })).toHaveAttribute('aria-valuenow', '3');
+    await expect(gateway.getByRole('meter', { name: 'Labs done in Gateway and access' })).toHaveAttribute('aria-valuenow', '3');
     await expect(gateway.locator('.skill-quiz')).toHaveText('Quiz starting point: Familiar');
     await expect(gateway.getByRole('link', { name: 'Next lab: One endpoint, one key' })).toHaveAttribute('href', '/labs/one-endpoint-one-key');
     // The level names, one per band.
-    const names = AREAS.map((a) => page.locator(`.skill-card[data-area="${a.area}"] .level-name`));
+    const names = SKILLS.map((a) => page.locator(`.skill-card[data-area="${a.area}"] .level-name`));
     await expect(names[0]!).toHaveText('Proficient');
     await expect(names[1]!).toHaveText('Practitioner');
     await expect(names[2]!).toHaveText('Foundations');
@@ -541,7 +551,7 @@ test.describe('the profile page', () => {
     await expect(page.getByRole('meter', { name: 'XP' })).toHaveAttribute('aria-valuetext', 'Top level reached');
     await expect(page.locator('.xp-line')).toContainText('Top level reached');
     await expect(page.locator('.streak')).toContainText('30-day streak');
-    await expect(page.locator('.skill-card .level-name')).toHaveText(AREAS.map(() => 'Expert'));
+    await expect(page.locator('.skill-card .level-name')).toHaveText(SKILLS.map(() => 'Expert'));
     await expect(page.locator('.skill-card .skill-all-done')).toHaveCount(6);
     await expect(page.getByRole('meter', { name: 'Overall score' })).toHaveAttribute('aria-valuenow', '92');
     const gold = page.locator('#awardsEarned .award-card[data-tier="gold"]');
@@ -726,9 +736,9 @@ test.describe('Home: Your progress', () => {
     // The three best skills, best first.
     const skills = band.locator('.band-skill');
     await expect(skills).toHaveCount(3);
-    await expect(skills.locator('.band-skill-name')).toHaveText(['Self-service platform', 'LLM gateway', 'Tools and MCP']);
+    await expect(skills.locator('.band-skill-name')).toHaveText(['Self-service and golden paths', 'Gateway and access', 'Tools and MCP']);
     await expect(skills.locator('.band-skill-score')).toHaveText(['90', '67', '34']);
-    await expect(band.getByRole('meter', { name: 'LLM gateway score' })).toHaveAttribute('aria-valuenow', '67');
+    await expect(band.getByRole('meter', { name: 'Gateway and access score' })).toHaveAttribute('aria-valuenow', '67');
     // The last three awards, with their tier said in words for a screen reader.
     const awards = band.locator('.mini-award');
     await expect(awards).toHaveCount(3);
@@ -778,8 +788,8 @@ test.describe('Home: Your path', () => {
     await expect(band.locator('.path-goal')).toHaveText('Your goal: Run our gateway');
     const next = band.locator('.next-card');
     await expect(next.getByRole('heading', { level: 3, name: 'Add a model without touching app code' })).toBeVisible();
-    await expect(next.locator('.next-why')).toHaveText('A first step into LLM gateway, which is new to you.');
-    await expect(next.locator('.chip-area')).toHaveText('LLM gateway');
+    await expect(next.locator('.next-why')).toHaveText('A first step into Gateway and access, which is new to you.');
+    await expect(next.locator('.chip-area')).toHaveText('Gateway and access');
     await expect(next.locator('.chip').last()).toHaveText('30 min');
     await expect(next.getByRole('button', { name: 'Start' })).toBeVisible();
     // The three after it, as a small timeline in order.
@@ -942,8 +952,8 @@ test.describe('/paths/mine', () => {
     await expect(steps(page).locator('.step-status')).toHaveText(['Done', 'Next up', 'Coming up', 'Coming up', 'Coming up', 'Coming up', 'Locked']);
 
     const next = steps(page).nth(1);
-    await expect(next.locator('.step-why')).toHaveText('A first step into LLM gateway, which is new to you.');
-    await expect(next.locator('.chip-area')).toHaveText('LLM gateway');
+    await expect(next.locator('.step-why')).toHaveText('A first step into Gateway and access, which is new to you.');
+    await expect(next.locator('.chip-area')).toHaveText('Gateway and access');
     await expect(next.locator('.chip').last()).toHaveText('30 min');
     await expect(next.getByRole('button', { name: 'Start' })).toBeVisible();
     await expect(steps(page).nth(3).locator('.chip-area')).toHaveText('Tools and MCP');
@@ -1488,7 +1498,7 @@ test.describe('the quiz: where to start', () => {
   test('a mix of strong, familiar and new: the first area that is NEW is the answer', async ({ page }) => {
     await visitQuiz(page);
     await reach(page, { gateway: 'strong', mcp: 'ok' });
-    await expect(card(page).locator('.start-title')).toHaveText('Retrieval');
+    await expect(card(page).locator('.start-title')).toHaveText('Retrieval as a service');
     await expect(card(page).locator('.start-why')).toHaveText('You said this is new to you, so we begin here.');
     const row = (area: string) => host(page).locator(`.told-row[data-area="${area}"]`);
     await expect(row('gateway')).toContainText('You know this well');
@@ -1506,7 +1516,7 @@ test.describe('the quiz: where to start', () => {
   test('familiar and strong only: the first familiar area, "a good place to build on"', async ({ page }) => {
     await visitQuiz(page);
     await reach(page, { ...allStrong, rag: 'ok', otel: 'ok' });
-    await expect(card(page).locator('.start-title')).toHaveText('Retrieval');
+    await expect(card(page).locator('.start-title')).toHaveText('Retrieval as a service');
     await expect(card(page).locator('.start-why')).toHaveText('You know part of this already — a good place to build on.');
   });
 

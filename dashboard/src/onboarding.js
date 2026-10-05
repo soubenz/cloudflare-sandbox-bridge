@@ -36,18 +36,14 @@ import { buildRoute } from './routes.js';
 import { icon, uiIcon } from './icons.js';
 import { mountMarkdown } from './markdown.js';
 import { goalKindField, hoursField, loadGoal } from './goal-fields.js';
-// The copy of every path and module (icon and accent too), shared with the launcher:
-// each area of the quiz is drawn with the icon and colour of the module it opens.
-import pathMeta from '../../packages/catalogue/paths.json';
+// Each area of the quiz is drawn with the icon and colour of its skill (the module it opens).
+import { skillById, skillForPlacement, skillLook } from './skills.js';
 
 /** The steps of the quiz: what you know, a question or two about it, your goal, where to start. */
 const STEPS = 4;
 
-/** The icon and accent family of the module an area belongs to (slate and a grid when the copy has none). */
-function moduleLook(area) {
-  const module = pathMeta.paths?.find((p) => p.slug === area.path)?.modules?.find((m) => m.number === area.module);
-  return { icon: module?.icon || 'grid', accent: module?.accent || 'slate' };
-}
+/** The icon and accent family of an area's skill (slate and a grid for one the list does not know). */
+const moduleLook = (area) => skillLook(area.area);
 
 /** What the summary says about an area, by level. Words about knowledge, never about marks. */
 export const LEVEL_LABELS = { strong: 'You know this well', ok: 'You have some experience', new: 'New to you' };
@@ -76,17 +72,52 @@ export function goalLine(goal) {
 }
 
 /**
- * The summary as data. `rows` is [{ area, title, path, module, level, phrase }] in module order; `start` is
- * the one area to begin with, or null when there are no areas: the first that is new, else the first that is
- * familiar, else (everything strong) the first, with `why` saying so in the learner's terms.
+ * "Start here" from the next lab ({ slug, title, skill?, path, module }): the skill that holds it, with the
+ * quiz level of that skill when the quiz asked about it. Null when the lab sits in no skill.
  */
-export function summarise(mastery, areas = platformAreas()) {
+function startFromNext(next, rows) {
+  const skill = skillById(next.skill) ?? skillForPlacement(next.path, next.module);
+  if (!skill) return null;
+  const row = rows.find((r) => r.area === skill.id);
+  const title = typeof next.title === 'string' && next.title ? next.title : next.slug;
+  return {
+    area: skill.id,
+    title: skill.title,
+    path: skill.path,
+    module: skill.module,
+    level: row?.level ?? null,
+    phrase: row?.phrase ?? '',
+    lab: { slug: next.slug, title },
+    why: `Your next lab is "${title}".`,
+  };
+}
+
+/**
+ * The summary as data. `rows` is [{ area, title, path, module, level, phrase }] in module order; `start` is
+ * where to begin, or null when there is nothing to suggest.
+ *
+ * `next` is the one next lab (the profile's `next_lab`, the saved path's next step, or the console's copy of the
+ * catalogue rule): when there is one, `start` is the skill that holds it, so the quiz, Home and the path agree.
+ * Only without one does the quiz's own answer pick: the first area that is new, else the first that is familiar,
+ * else (everything strong) the first, with `why` saying so in the learner's terms.
+ */
+export function summarise(mastery, areas = platformAreas(), next = null) {
   const rows = areas.map((a) => {
     const level = areaLevel(mastery, a.area) ?? 'new';
     return { area: a.area, title: a.title, path: a.path, module: a.module, level, phrase: LEVEL_LABELS[level] };
   });
+  const fromNext = next && typeof next === 'object' && typeof next.slug === 'string' ? startFromNext(next, rows) : null;
+  if (fromNext) return { rows, start: fromNext };
   const pick = rows.find((r) => r.level === 'new') ?? rows.find((r) => r.level === 'ok') ?? rows[0] ?? null;
   return { rows, start: pick && { ...pick, why: START_REASONS[pick.level] } };
+}
+
+/** The next lab a saved path names ({ steps: [{ slug, title, area, status }] }) as summarise takes it, or null. */
+export function nextFromPath(path) {
+  const step = (Array.isArray(path?.steps) ? path.steps : []).find((s) => s && s.status === 'next' && typeof s.slug === 'string');
+  if (!step) return null;
+  const skill = skillById(step.area);
+  return { slug: step.slug, title: typeof step.title === 'string' ? step.title : step.slug, skill: skill?.id ?? null, path: skill?.path ?? null, module: skill?.module ?? null };
 }
 
 /**
@@ -103,9 +134,12 @@ export function summarise(mastery, areas = platformAreas()) {
  *               { goal_kind, goal_text, hours_per_week }. Errors are swallowed: the path is simply not shown.
  *               Without it the quiz ends after the probes, as it did before paths.
  *   initialGoal what the two last questions start from (default: what was answered last time)
+ *   nextLab     () => the next lab as known now ({ slug, title, skill, path, module } or null): the profile's
+ *               `next_lab`, or the console's copy of the catalogue rule. "Start here" shows the skill that holds
+ *               it; once the path is saved, the path's own next step takes its place.
  * Returns { destroy }.
  */
-export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, initialGoal, areas = platformAreas() }) {
+export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, initialGoal, nextLab = () => null, areas = platformAreas() }) {
   const questions = onboarding.questions || [];
   const blurbs = onboarding.blurbs || {};
   const titleOf = (area) => areas.find((a) => a.area === area)?.title ?? area;
@@ -295,11 +329,11 @@ export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, i
     let saved;
     try {
       saved = Promise.resolve(onGoal({ levels, goal: { ...goal } })).then(
-        () => true,
-        () => false
+        (path) => ({ ok: true, path }),
+        () => ({ ok: false, path: null })
       );
     } catch {
-      saved = Promise.resolve(false);
+      saved = Promise.resolve({ ok: false, path: null });
     }
     summary(mastery, levels, saved);
   }
@@ -353,13 +387,21 @@ export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, i
 
   /**
    * The last screen: the one area to start with (and why, from the learner's own answer), what they said about
-   * the goal, a quiet list of what they told us, and a way on. `saved` settles true when the path was saved.
+   * the goal, a quiet list of what they told us, and a way on. `saved` settles to { ok, path } once the path
+   * was saved (or not); a saved path's next step then becomes "Start here".
    * No module numbers: the learner knows the areas by their names.
    */
   function summary(mastery, levels, saved) {
-    const { rows, start } = summarise(mastery);
+    let next = null;
+    try {
+      next = nextLab();
+    } catch {
+      /* no next lab known: the quiz's own answer picks */
+    }
+    const { rows, start } = summarise(mastery, areas, next);
     const nodes = [screenHead({ eyebrow: 'Your starting point', title: 'Where to start', mark: 'start', steps: { current: STEPS, total: STEPS, done: true } })];
-    const open = (row) => leaveTo('module', { path: row.path, module: row.module });
+    // A skill that is a whole path opens the path's page; one that is a module, the module's.
+    const open = (row) => (row.module === null || row.module === undefined ? leaveTo('path', { path: row.path }) : leaveTo('module', { path: row.path, module: row.module }));
 
     // The personal path is offered once it has been saved; if saving failed it is never shown.
     let seePath = null;
@@ -367,13 +409,18 @@ export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, i
       seePath = button('See my personal path', { kind: 'ghost', onClick: () => leaveTo('my-path'), id: 'btnSeeMyPath' });
       seePath.classList.add('btn-lg');
       seePath.hidden = true;
-      saved.then((ok) => {
-        if (ok && !done) seePath.hidden = false;
+      saved.then(({ ok, path }) => {
+        if (!ok || done) return;
+        seePath.hidden = false;
+        // The path just saved names the next lab: "Start here" follows it when it differs.
+        const fresh = summarise(mastery, areas, nextFromPath(path)).start;
+        if (fresh?.lab && fresh.lab.slug !== start?.lab?.slug && startSlot.isConnected) startSlot.replaceChildren(startCard(fresh));
       });
     }
 
     // --- the one answer
-    if (start) {
+    const startSlot = make('div', 'start-slot');
+    function startCard(start) {
       const card = make('section', 'start-card');
       const label = make('h2', 'start-label', 'Start here');
       label.id = 'startHereLabel';
@@ -391,7 +438,11 @@ export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, i
       go.classList.add('btn-lg');
       go.append(uiIcon('arrow', 16));
       card.append(top, actionBar([go, ...(seePath ? [seePath] : [])]));
-      nodes.push(card);
+      return card;
+    }
+    if (start) {
+      startSlot.append(startCard(start));
+      nodes.push(startSlot);
     } else {
       nodes.push(make('p', 'learn-lede', 'You can start with any area.'));
       if (seePath) nodes.push(actionBar([seePath]));

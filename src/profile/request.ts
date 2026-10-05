@@ -20,7 +20,7 @@ const STARTING: readonly StartingLevel[] = ['new', 'ok', 'strong'];
 /**
  * `?starting=gateway:ok,mcp:new`: the learner's onboarding-quiz result, which
  * the console holds in the browser. It is echoed back as each skill's
- * `starting_level` and never scored. Entries naming an unknown area or level
+ * `starting_level`; a stored quiz result (D1) wins over it. Entries naming an unknown or non-quiz skill, or an unknown level,
  * are ignored rather than failing the profile read.
  */
 export function parseStartingLevels(raw: string | undefined): Record<string, StartingLevel> | undefined {
@@ -28,7 +28,7 @@ export function parseStartingLevels(raw: string | undefined): Record<string, Sta
   const out: Record<string, StartingLevel> = {};
   for (const part of raw.split(',')) {
     const [area, level] = part.split(':').map((s) => s.trim());
-    if (area && level && areaById(area) && (STARTING as readonly string[]).includes(level)) out[area] = level as StartingLevel;
+    if (area && level && areaById(area)?.quiz && (STARTING as readonly string[]).includes(level)) out[area] = level as StartingLevel;
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }

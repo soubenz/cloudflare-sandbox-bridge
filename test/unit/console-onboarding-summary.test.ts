@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import registry from '../../packages/catalogue/concepts.json';
+import paths from '../../packages/catalogue/paths.json';
 
 /**
  * The last screen of the platform quiz ("Where to start"), as data: which one area it recommends, why, in the
@@ -7,16 +8,22 @@ import registry from '../../packages/catalogue/concepts.json';
  * test/e2e/16-learning.spec.ts; the words are the learner's, never a module number or a platform word.
  */
 type Row = { area: string; title: string; path: string; module: number; level: 'strong' | 'ok' | 'new'; phrase: string };
-type Summary = { rows: Row[]; start: (Row & { why: string }) | null };
+type Start = Omit<Row, 'module' | 'level'> & { module: number | null; level: Row['level'] | null; why: string; lab?: { slug: string; title: string } };
+type Summary = { rows: Row[]; start: Start | null };
+type Next = { slug: string; title?: string; skill?: string | null; path?: string | null; module?: number | null };
 const o = (await import('../../dashboard/src/onboarding.js' as string)) as {
   LEVEL_LABELS: Record<string, string>;
   START_REASONS: Record<string, string>;
-  summarise: (mastery: unknown, areas?: unknown) => Summary;
+  summarise: (mastery: unknown, areas?: unknown, next?: Next | null) => Summary;
+  nextFromPath: (path: unknown) => Next | null;
   goalLine: (goal: unknown) => string;
 };
 
-const AREAS = Object.entries(registry.areas)
-  .map(([area, a]) => ({ area, title: a.title, path: a.path, module: a.module }))
+// The quiz areas: the quiz skills (concepts.json `quiz`), each an AI-platform module, titled like it.
+const AREAS = paths.paths
+  .find((p) => p.slug === 'ai-platform')!
+  .modules.filter((m) => registry.quiz.includes(m.skill))
+  .map((m) => ({ area: m.skill, title: m.title, path: 'ai-platform', module: m.number }))
   .sort((a, b) => a.module - b.module);
 const names = AREAS.map((a) => a.area);
 
@@ -80,6 +87,32 @@ describe('the starting point: which area, and why', () => {
   it('never names a module number (platform words are scanned by learner-copy.test.ts)', () => {
     const copy = [...Object.values(o.LEVEL_LABELS), ...Object.values(o.START_REASONS)].join('\n');
     expect(copy).not.toMatch(/\bmodule\b|\b\d+\b/i);
+  });
+});
+
+describe('the starting point follows the next lab', () => {
+  it('is the skill that holds the next lab, whatever the quiz levels say', () => {
+    const { start, rows } = o.summarise(mix({ gateway: 'new' }), undefined, { slug: 'see-why-a-document-matched', title: 'See why a document matched', skill: 'rag', path: 'ai-platform', module: 3 });
+    expect(rows.map((r) => r.area)).toEqual(names);
+    expect(start).toMatchObject({ area: 'rag', title: 'Retrieval as a service', path: 'ai-platform', module: 3, level: 'new', lab: { slug: 'see-why-a-document-matched', title: 'See why a document matched' } });
+    expect(start?.why).toBe('Your next lab is "See why a document matched".');
+  });
+
+  it('can be a skill the quiz does not ask about: a path without modules has no module and no quiz level', () => {
+    const { start } = o.summarise(mastery(all('strong')), undefined, { slug: 'duplicate-emails', title: 'Duplicate emails', path: 'production-agents', module: 1 });
+    expect(start).toMatchObject({ area: 'agents', title: 'Agent builder', path: 'production-agents', module: null, level: null });
+  });
+
+  it('without a next lab (or one in no skill) the quiz levels pick, as before', () => {
+    expect(o.summarise(mix({ gateway: 'strong' }), undefined, null).start?.area).toBe('mcp');
+    expect(o.summarise(mix({ gateway: 'strong' }), undefined, { slug: 'x', path: 'nowhere', module: 1 }).start?.area).toBe('mcp');
+  });
+
+  it('reads the next step of a saved path', () => {
+    const path = { steps: [{ slug: 'a', title: 'A', area: 'gateway', status: 'done' }, { slug: 'b', title: 'B', area: 'evals', status: 'next' }, { slug: 'c', title: 'C', area: 'rag', status: 'upcoming' }] };
+    expect(o.nextFromPath(path)).toEqual({ slug: 'b', title: 'B', skill: 'evals', path: 'evals-releases', module: null });
+    expect(o.nextFromPath({ steps: [{ slug: 'a', area: 'gateway', status: 'done' }] })).toBeNull();
+    expect(o.nextFromPath(null)).toBeNull();
   });
 });
 

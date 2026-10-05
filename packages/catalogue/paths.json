@@ -1,8 +1,9 @@
 {
-  "_note": "Presentation copy for the four learning paths and the modules inside them. The console launcher and the public /labs page both read this file, so an intro is written once. Lab titles, counts, times and tiers come from the lab manifests, never from here. A module that has labs but no entry here fails test/unit/catalogue-meta.test.ts. `accent` is a colour family the design maps onto its tokens; `icon` names an inline glyph.",
+  "_note": "Presentation copy for the four learning paths and the modules inside them. The console launcher and the public /labs page both read this file, so an intro is written once. Lab titles, counts, times and tiers come from the lab manifests, never from here. A module that has labs but no entry here fails test/unit/catalogue-meta.test.ts. `accent` is a colour family the design maps onto its tokens; `icon` names an inline glyph. `skill` is the id of the skill a learner's profile scores: one per module of a path with modules, one per path without (its labs are all module 1). The skill's title, icon and accent are the module's or the path's, never stored again (src/skills.ts, dashboard/src/skills.js). Skill ids are single lowercase words and never change: stored quiz levels, concept ids and earned awards are keyed by them.",
   "paths": [
     {
       "slug": "production-agents",
+      "skill": "agents",
       "title": "Agent builder",
       "accent": "blue",
       "icon": "bolt",
@@ -11,6 +12,7 @@
     },
     {
       "slug": "securing-agents",
+      "skill": "security",
       "title": "Agent security",
       "accent": "rose",
       "icon": "shield",
@@ -26,6 +28,7 @@
       "modules": [
         {
           "number": 1,
+          "skill": "gateway",
           "title": "Gateway and access",
           "accent": "blue",
           "icon": "route",
@@ -34,6 +37,7 @@
         },
         {
           "number": 2,
+          "skill": "mcp",
           "title": "Tools and MCP",
           "accent": "teal",
           "icon": "plug",
@@ -42,6 +46,7 @@
         },
         {
           "number": 3,
+          "skill": "rag",
           "title": "Retrieval as a service",
           "accent": "green",
           "icon": "search",
@@ -50,6 +55,7 @@
         },
         {
           "number": 4,
+          "skill": "otel",
           "title": "Observability and cost",
           "accent": "amber",
           "icon": "chart",
@@ -58,6 +64,7 @@
         },
         {
           "number": 5,
+          "skill": "runtime",
           "title": "Runtime and durability",
           "accent": "slate",
           "icon": "stack",
@@ -67,6 +74,7 @@
         },
         {
           "number": 6,
+          "skill": "platform",
           "title": "Self-service and golden paths",
           "accent": "rose",
           "icon": "compass",
@@ -75,6 +83,7 @@
         },
         {
           "number": 7,
+          "skill": "sovereignty",
           "title": "Compliance and sovereignty",
           "accent": "indigo",
           "icon": "lock",
@@ -85,6 +94,7 @@
     },
     {
       "slug": "evals-releases",
+      "skill": "evals",
       "title": "Agent evals and releases",
       "accent": "green",
       "icon": "gate",

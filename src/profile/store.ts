@@ -1,5 +1,8 @@
 import type { Env } from '../env';
 import { loadCatalogue } from '../labs/bundle';
+import { loadInputs, loadPathSteps, loadPlan } from '../path/service';
+import type { AreaLevel } from '../path/rules';
+import { QUIZ_SKILLS } from '../skills';
 import { computeProfile, pendingAwards } from './compute';
 import type { CatalogueLab, EarnedAward, Profile, ProfileFacts, RunFact, SessionFact, StartingLevel, StoredAward } from './types';
 
@@ -90,8 +93,27 @@ export async function loadProfileCatalogue(env: Env): Promise<CatalogueLab[]> {
     difficulty: e.difficulty,
     estimated_minutes: e.estimated_minutes,
     prerequisites: e.prerequisites,
+    tier: e.tier,
     archived: e.archived === true,
   }));
+}
+
+/** The path's 'familiar' is the console's 'ok'. */
+const STARTING_OF: Record<AreaLevel, StartingLevel> = { new: 'new', familiar: 'ok', strong: 'strong' };
+
+/**
+ * What the profile reads besides runs and awards: the quiz levels stored with the learner's path inputs (quiz
+ * skills only; undefined when the learner has none), their plan, and the steps of their stored path.
+ */
+export async function loadLearner(env: Env, userId: string): Promise<Pick<ProfileFacts, 'starting_levels' | 'plan' | 'path_steps'>> {
+  const [inputs, plan, steps] = await Promise.all([loadInputs(env, userId).catch(() => null), loadPlan(env, userId), loadPathSteps(env, userId)]);
+  const quiz = new Set(QUIZ_SKILLS.map((s) => s.id));
+  const levels = Object.entries(inputs?.areas ?? {}).filter(([id, l]) => quiz.has(id) && l in STARTING_OF);
+  return {
+    starting_levels: levels.length > 0 ? Object.fromEntries(levels.map(([id, l]) => [id, STARTING_OF[l]])) : undefined,
+    plan,
+    path_steps: steps,
+  };
 }
 
 /**
@@ -131,8 +153,8 @@ export async function syncSessionHints(env: Env, sessionId: string, hints: numbe
  * callers that must not fail (a check run) catch it.
  */
 export async function recomputeAwards(env: Env, userId: string, opts: { sessionId?: string; now?: number } = {}): Promise<EarnedAward[]> {
-  const [facts, catalogue] = await Promise.all([buildFacts(env, userId, opts.now), loadProfileCatalogue(env)]);
-  const profile = computeProfile(facts, catalogue);
+  const [facts, catalogue, learner] = await Promise.all([buildFacts(env, userId, opts.now), loadProfileCatalogue(env), loadLearner(env, userId)]);
+  const profile = computeProfile({ ...facts, ...learner }, catalogue);
   return insertAwards(env, userId, pendingAwards(profile, facts.earned), opts.sessionId ?? null);
 }
 
@@ -143,8 +165,9 @@ export async function recomputeAwards(env: Env, userId: string, opts: { sessionI
  * one that stays. That write is best effort: a failure still returns the profile.
  */
 export async function loadProfile(env: Env, userId: string, opts: { starting?: Record<string, StartingLevel> | undefined; now?: number } = {}): Promise<Profile> {
-  const [facts, catalogue] = await Promise.all([buildFacts(env, userId, opts.now), loadProfileCatalogue(env)]);
-  const profile = computeProfile({ ...facts, starting_levels: opts.starting }, catalogue);
+  const [facts, catalogue, learner] = await Promise.all([buildFacts(env, userId, opts.now), loadProfileCatalogue(env), loadLearner(env, userId)]);
+  // The quiz levels stored with the path inputs win; the console's `?starting=` is the fallback for a learner who has none.
+  const profile = computeProfile({ ...facts, ...learner, starting_levels: learner.starting_levels ?? opts.starting }, catalogue);
   const pending = pendingAwards(profile, facts.earned);
   if (pending.length > 0) {
     try {
