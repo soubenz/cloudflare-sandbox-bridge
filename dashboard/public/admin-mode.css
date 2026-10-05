@@ -120,3 +120,9 @@ html[data-admin-mode="on"] body::after {
    (everything but the "Lab complete" card) is for admin mode, and so is the service tab's Restart button. */
 html:not([data-admin-mode="on"]) #questionsChecksSlot #checksBlock > :not(#resultCard) { display: none; }
 html:not([data-admin-mode="on"]) #btnServiceRestart { display: none; }
+
+/* The owner's Answers tab. */
+.answers-list { display: grid; gap: 4px 0; margin: 0; }
+.answers-list dt { margin-top: 12px; font-weight: 600; color: var(--ink); }
+.answers-list dd { margin: 0; }
+.answers-list code { font: 13px/1.4 var(--mono); background: var(--surface-3); padding: 2px 8px; border-radius: 6px; color: var(--ink); overflow-wrap: anywhere; }

@@ -2033,12 +2033,14 @@ async function initLearning() {
 // --- in a session
 
 /** What the running session shows of its lab's bundle: the graded questions. */
-const learnSession = { id: '', form: null };
+const learnSession = { id: '', form: null, fields: null, file: '' };
 
 /** Removes the guide's Questions and everything behind them. */
 function resetLearnSession() {
   learnSession.form?.destroy();
   learnSession.form = null;
+  learnSession.fields = null;
+  learnSession.file = '';
   learnSession.id = '';
   $('questionsBody').replaceChildren();
 }
@@ -2063,6 +2065,8 @@ async function loadLearn() {
   const questions = learn.fields.length > 0 && SAFE_FILE.test(learn.answers_file);
   if (questions) {
     const file = learn.answers_file;
+    learnSession.fields = learn.fields;
+    learnSession.file = file;
     const current = () => state.session;
     learnSession.form = mountQuestionsForm($('questionsBody'), {
       fields: learn.fields,
@@ -2139,6 +2143,7 @@ const GUIDE_PANEL = {
   checks: 'viewChecks',
   hints: 'viewHints',
   solution: 'viewSolution',
+  answers: 'viewAnswers',
 };
 const RAIL_ICON = {
   brief: 'i-list',
@@ -2146,6 +2151,7 @@ const RAIL_ICON = {
   checks: 'i-checks',
   hints: 'i-bulb',
   solution: 'i-key',
+  answers: 'i-key',
 };
 const VISIBLE_BADGES = new Set(['questions', 'checks']);
 const guideTab = (id) => $(`tab${id[0].toUpperCase()}${id.slice(1)}`);
@@ -2192,6 +2198,40 @@ function showGuideTab(id, { reveal = false, focus = false } = {}) {
   if (focus) tab.focus();
   // Answers may have been edited in the editor since the form last looked.
   if (id === 'questions') learnSession.form?.reload();
+  if (id === 'answers') void loadAnswersTab();
+}
+
+/** The Answers tab (admin mode): each question with its correct answer, read from the lab's solution. */
+async function loadAnswersTab() {
+  const body = $('answersBody');
+  const slug = state.session?.lab;
+  const fields = learnSession.fields;
+  if (!slug || !fields?.length) return;
+  body.replaceChildren(Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'Loading…' }));
+  try {
+    const result = await api.adminSolution(slug);
+    const file = (result.files ?? []).find((f) => f.path === learnSession.file || f.path.endsWith(`/${learnSession.file}`));
+    let answers = {};
+    try {
+      answers = JSON.parse(file?.content ?? '{}');
+    } catch {
+      /* not JSON: nothing to show */
+    }
+    const list = document.createElement('dl');
+    list.className = 'answers-list';
+    for (const f of fields) {
+      const dt = document.createElement('dt');
+      dt.textContent = f.prompt;
+      const dd = document.createElement('dd');
+      const code = document.createElement('code');
+      code.textContent = f.key in answers ? JSON.stringify(answers[f.key]) : 'not in the solution';
+      dd.append(code);
+      list.append(dt, dd);
+    }
+    body.replaceChildren(list);
+  } catch (err) {
+    body.replaceChildren(Object.assign(document.createElement('p'), { className: 'notice notice-bad small', textContent: `Could not load the answers. ${plainError(err)}` }));
+  }
 }
 
 /** The badges on the tabs and the rail, from what the session knows now. */
@@ -2285,6 +2325,8 @@ function currentGuideTabs() {
     type: state.lab?.type,
     questions: Boolean(learnSession.form),
     solution: Boolean(state.solution),
+    // The owner's tab: admin mode (the Worker re-checks who may fetch what it shows), on a lab graded by questions.
+    answers: adminMode.isOn() && Boolean(learnSession.form),
   });
 }
 
@@ -5331,7 +5373,11 @@ adminMode.init({
     expiresAt: state.expiresAt,
   }),
   getSecrets: () => [state.session?.token],
-  onChange: () => renderBrowseIfShown(true),
+  onChange: () => {
+    renderBrowseIfShown(true);
+    // The owner's Answers tab comes and goes with admin mode.
+    if (state.session) syncGuideTabs();
+  },
 });
 meReady = loadIdentity();
 $('saveShortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘S' : 'Ctrl+S';

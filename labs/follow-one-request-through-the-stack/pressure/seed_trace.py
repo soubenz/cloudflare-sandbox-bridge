@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Boot-time seed: sends ONE realistic multi-service trace into Jaeger.
 
-Runs once, backgrounded inside jaeger's own service argv (same shape as
-seed_documents.py in Module 3's see-why-a-document-matched -- it polls the
-thing it depends on itself, so nothing in the manifest has to wait for it,
-and jaeger's own healthcheck is what the platform actually watches).
+Runs as its own root service from /opt/lab (the lab's private material), NOT from
+/workspace: this script is the answer key to the questions (it builds the very
+trace they ask about), so a learner must not be able to read it. It polls the thing
+it depends on itself, then keeps watching so a restarted jaeger gets the trace back.
 
 Real opentelemetry-sdk + OTLPSpanExporter, sent over real OTLP/HTTP to
 jaeger's own otlp receiver -- never Jaeger's API directly, and never a
@@ -32,7 +32,8 @@ idempotent against repeats -- Jaeger's storage here is in-memory
 (config.yaml: memory backend), so a restart of the jaeger service wipes it
 and this script (re-run as part of the same service argv) sends a fresh
 copy of the exact same trace. That is the desired behavior: there is
-always exactly one seeded trace live, never zero, never two.
+always exactly one seeded trace live, never zero, never two (the watcher in
+watch() does the re-send, since this script is no longer part of jaeger's argv).
 """
 import os
 import time
@@ -218,13 +219,34 @@ def send_one_trace():
     return trace_id
 
 
-def main(max_attempts=3):
+def watch(trace_id, every_s=5):
+    """Keeps the seeded trace there for the whole session: Jaeger's storage is in memory, so when the learner restarts
+    jaeger the trace is gone, and this sends a fresh copy. Runs as its own service so it stays out of /workspace."""
+    while True:
+        time.sleep(every_s)
+        try:
+            wait_for_jaeger(timeout_s=60)
+            if trace_is_stored(trace_id, timeout_s=3):
+                continue
+            main(max_attempts=3, keep_watching=False)
+            return watch(_last["trace_id"], every_s)
+        except Exception as e:  # noqa: BLE001 -- never let the watcher die; the next pass tries again
+            print("watch: %s" % e, flush=True)
+
+
+_last = {}
+
+
+def main(max_attempts=3, keep_watching=True):
     wait_for_jaeger()
 
     for attempt in range(1, max_attempts + 1):
         trace_id = send_one_trace()
         if trace_is_stored(trace_id):
             print("seeded 1 trace, 6 spans across 4 services, trace_id=%s" % trace_id, flush=True)
+            _last["trace_id"] = trace_id
+            if keep_watching:
+                watch(trace_id)
             return
         print(
             "attempt %d/%d: trace_id=%s was sent but never became queryable -- "

@@ -96,6 +96,26 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     return c.json({ slug, ...found });
   });
 
+  // The lab's reference solution by slug, for the owner's Answers tab. Service key only, so a session token (a learner's)
+  // never reaches it: the console Worker serves it only to a signed-in subject it knows to be an admin. The learner's own
+  // reveal is GET /sessions/:id/solution, which waits for the unlock rule.
+  app.get('/labs/:slug/solution', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const slug = c.req.param('slug');
+    const { version } = await loadCurrentManifest(c.env, slug);
+    const obj = await c.env.LABS_BUCKET.get(solutionKey(slug, version));
+    if (!obj) throw ApiError.notFound('no_solution', 'This lab has no solution');
+    try {
+      return c.json(await readSolutionFiles(obj.body));
+    } catch (err) {
+      if (err instanceof TarError) {
+        console.error('solution unreadable', { slug }, err);
+        throw new ApiError(500, 'solution_unreadable', 'The stored solution could not be read');
+      }
+      throw err;
+    }
+  });
+
   // One narration clip of the lab's comic, an mp3 uploaded by `labs publish` against
   // the bundle's audio index. Service key like the learn route (the console Worker proxies
   // it for a signed-in learner); the file name is a content hash, so it is cached for a year.

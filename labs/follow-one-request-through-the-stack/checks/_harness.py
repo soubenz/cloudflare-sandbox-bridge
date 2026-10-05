@@ -32,7 +32,7 @@ ANSWERS_PATH = os.environ.get("ANSWERS_FILE", "/workspace/answers.json")
 
 ROOT_SERVICE = "opalix-gateway"
 ROOT_OPERATION = "handle_support_request"
-# The seed script (workspace/services/seed_trace.py) sends exactly one trace,
+# The seed script (pressure/seed_trace.py) sends exactly one trace,
 # once, at boot -- this wide, fixed window comfortably covers any real check
 # run within a lab session's lifetime (timeout_minutes maxes out at 120)
 # without hard-coding "now" in a way that could race the seed.

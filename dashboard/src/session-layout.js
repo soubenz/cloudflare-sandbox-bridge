@@ -26,6 +26,8 @@ export const GUIDE_TABS = {
   checks: 'Checks',
   hints: 'Hints',
   solution: 'Solution',
+  /** The owner's tab (admin mode): the correct answers of a question-graded lab. */
+  answers: 'Answers',
 };
 
 /**
@@ -42,12 +44,13 @@ export const GUIDE_TABS = {
  * tab says when a lab has none); the Solution only when the lab has one. The
  * story and the lessons are never tabs: they are read before the lab starts.
  */
-export function guideTabsFor({ type, questions = false, solution = false } = {}) {
+export function guideTabsFor({ type, questions = false, solution = false, answers = false } = {}) {
   const tabs = ['brief'];
   if (questions) tabs.push('questions');
   if (!(questions && type === 'explore')) tabs.push('checks');
   tabs.push('hints');
   if (solution) tabs.push('solution');
+  if (answers) tabs.push('answers');
   return tabs;
 }
 

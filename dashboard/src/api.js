@@ -147,6 +147,8 @@ export const api = {
 
   /** A lab's learning bundle, `{version, learn}`; a lab with none is a 404 (`err.status`). */
   learn: (slug) => sameOrigin(`/api/learn/${encodeURIComponent(slug)}`),
+  /** The owner's view of a lab's reference solution (the Worker refuses anyone who is not an admin). */
+  adminSolution: (slug) => sameOrigin(`/api/admin/solution/${encodeURIComponent(slug)}`),
   /** The one-time platform quiz, `{version, intro, questions}`; 404 when none is published. */
   onboarding: () => sameOrigin('/api/onboarding'),
   /**

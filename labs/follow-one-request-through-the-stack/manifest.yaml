@@ -83,29 +83,29 @@ env:
 services:
   - name: jaeger
     user: learner
-    # seed_trace.py runs once in the background alongside jaeger's own boot
-    # (same shape as seed_documents.py in Module 3's see-why-a-document-
-    # matched): it polls jaeger's own query API itself before sending
-    # anything, so nothing here has to wait for it before starting jaeger,
-    # and a restart of this same service (which re-runs this whole argv)
-    # naturally re-seeds a fresh trace into jaeger's own now-empty in-memory
-    # storage -- the desired behavior, not a bug.
-    argv:
-      [
-        "sh", "-c",
-        "python3 -B /workspace/services/seed_trace.py & exec /opt/opalix/bin/jaeger --config /workspace/jaeger/config.yaml",
-      ]
+    argv: ["/opt/opalix/bin/jaeger", "--config", "/workspace/jaeger/config.yaml"]
     cwd: /workspace
     env:
       JAEGER_BASE_PATH: "{{service.prefix}}"
-      OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318/v1/traces"
-      JAEGER_QUERY_URL: "http://127.0.0.1:16686{{service.prefix}}"
     port: 16686
     healthcheck:
       type: http
       path: "{{service.prefix}}/"
       timeout_s: 60
     ui: true
+    depends_on: []
+
+  # Sends the one trace the questions are about, and sends it again if jaeger is restarted (its storage is in
+  # memory). Root, on purpose: the script lives in /opt/lab, which only root can read, because it is the answer
+  # key (it builds the trace the learner is asked about) and must not sit in /workspace. No learner-writable
+  # path anywhere in its argv, cwd or env.
+  - name: trace-seed
+    user: root  # reads /opt/lab, which only root can: the seed script is the answer key and must stay out of /workspace
+    argv: ["python3", "-B", "/opt/lab/pressure/seed_trace.py"]
+    cwd: /opt/lab
+    env:
+      OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318/v1/traces"
+      JAEGER_QUERY_URL: "http://127.0.0.1:16686/sessions/{{session.id}}/services/jaeger"
     depends_on: []
 
 pressure: []

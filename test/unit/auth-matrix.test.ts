@@ -35,6 +35,7 @@ const SERVICE_KEY_ONLY: Array<[string, string]> = [
   ['get', '/labs'],
   ['get', '/labs/:slug'],
   ['get', '/labs/:slug/learn'],
+  ['get', '/labs/:slug/solution'],
   ['get', '/labs/:slug/audio/:file'],
   ['post', '/labs/publish'],
   ['get', '/learn/onboarding'],

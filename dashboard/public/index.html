@@ -258,6 +258,7 @@
         <button type="button" class="tab gtab" role="tab" id="tabChecks" data-guide-tab="checks" aria-selected="false" aria-controls="viewChecks" tabindex="-1" hidden><span class="gtab-label">Checks</span><span class="gtab-badge" hidden></span></button>
         <button type="button" class="tab gtab" role="tab" id="tabHints" data-guide-tab="hints" aria-selected="false" aria-controls="viewHints" tabindex="-1" hidden><span class="gtab-label">Hints</span><span class="gtab-badge" hidden></span></button>
         <button type="button" class="tab gtab" role="tab" id="tabSolution" data-guide-tab="solution" aria-selected="false" aria-controls="viewSolution" tabindex="-1" hidden><span class="gtab-label">Solution</span><span class="gtab-badge" hidden></span></button>
+        <button type="button" class="tab gtab" role="tab" id="tabAnswers" data-guide-tab="answers" aria-selected="false" aria-controls="viewAnswers" tabindex="-1" hidden><span class="gtab-label">Answers</span><span class="gtab-badge" hidden></span></button>
       </div>
       <button type="button" class="icon-btn guide-hide" id="btnGuideHide" aria-label="Hide guide" aria-expanded="true" aria-controls="guide">
         <svg width="18" height="18" aria-hidden="true" focusable="false"><use href="#i-panel"/></svg>
@@ -336,6 +337,13 @@
         <div class="hint-steps" id="hintSteps" aria-hidden="true"></div>
         <div id="hintsPanel" class="hints-list" aria-live="polite"><p class="muted small">Hints unlock on a timer as the lab goes on.</p></div>
         <p class="hint-note mono small muted">Hints unlock on a timer. There is no reveal button, on purpose.</p>
+      </div>
+
+      <div class="gview" id="viewAnswers" role="tabpanel" aria-labelledby="tabAnswers" tabindex="0">
+        <section class="answers-block" aria-labelledby="answersHeading">
+          <div class="guide-head"><h2 id="answersHeading">Answers</h2><span class="block-meta">owner only</span></div>
+          <div id="answersBody" class="answers-body" aria-live="polite"><p class="muted small">Loading…</p></div>
+        </section>
       </div>
 
       <div class="gview" id="viewSolution" role="tabpanel" aria-labelledby="tabSolution" tabindex="0">

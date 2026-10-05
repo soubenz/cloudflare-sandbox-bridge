@@ -649,6 +649,22 @@ async function route(request, env) {
       return relay(await callApi(env, `/labs/${encodeURIComponent(slug)}/learn`));
     }
 
+    // The owner's Answers tab: a lab's reference solution. The Worker itself decides who may have it (the same
+    // list that decides who sees the Admin switch), so nothing the browser sends can open it; the API route behind
+    // it takes the service key, which no learner holds.
+    const answersMatch = url.pathname.match(/^\/api\/admin\/solution\/([^/]+)$/);
+    if (answersMatch && request.method === 'GET') {
+      if (!canAdmin(subject, env)) return json({ error: 'not available' }, 403);
+      let slug = '';
+      try {
+        slug = decodeURIComponent(answersMatch[1]);
+      } catch {
+        /* a malformed escape is not a slug */
+      }
+      if (!SLUG.test(slug)) return json({ error: 'not a lab slug' }, 400);
+      return relay(await callApi(env, `/labs/${encodeURIComponent(slug)}/solution`));
+    }
+
     // A narration clip of a lab's comic. Same origin as the console so the page's <audio> carries the
     // cookie; this Worker reads it from the API with the service key. Strict names (a lab slug, and the
     // sixteen-hex clip file) are all that ever reach a path, and Range goes through so a clip can seek.
