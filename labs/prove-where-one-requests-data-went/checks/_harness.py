@@ -420,31 +420,35 @@ def check_answers_match_live_traces():
     true_eu_contained = bool(eu_regions_found) and all(r == eu_declared_region for r in eu_regions_found)
 
     # --- compare ---
+    # Compare every field before reporting, so the learner hears about all
+    # wrong answers at once rather than only the first.
+    mismatches = []
+
     got_region = _norm_str(answers.get("support_us_region_reached"))
     if got_region != _norm_str(true_us_region):
-        _finish(
-            False,
+        mismatches.append(
             "support_us_region_reached=%r does not match the opalix.region tag a fresh support-us "
-            "request's trace actually carries right now (%r)" % (answers.get("support_us_region_reached"), true_us_region),
+            "request's trace actually carries right now (%r)" % (answers.get("support_us_region_reached"), true_us_region)
         )
 
     got_hops = _norm_int(answers.get("support_eu_hop_count"))
     if got_hops is None or got_hops != true_eu_hop_count:
-        _finish(
-            False,
+        mismatches.append(
             "support_eu_hop_count=%r does not match the number of distinct services (%d: %s) a fresh "
             "support-eu request's trace actually shows right now"
-            % (answers.get("support_eu_hop_count"), true_eu_hop_count, ", ".join(eu_services)),
+            % (answers.get("support_eu_hop_count"), true_eu_hop_count, ", ".join(eu_services))
         )
 
     got_contained = _norm_bool(answers.get("support_eu_stays_in_declared_region"))
     if got_contained is None or got_contained != true_eu_contained:
-        _finish(
-            False,
+        mismatches.append(
             "support_eu_stays_in_declared_region=%r does not match reality: support-eu is declared "
             "region=%r, and a fresh request's trace actually carries region tag(s) %r"
-            % (answers.get("support_eu_stays_in_declared_region"), eu_declared_region, eu_regions_found),
+            % (answers.get("support_eu_stays_in_declared_region"), eu_declared_region, eu_regions_found)
         )
+
+    if mismatches:
+        _finish(False, "; ".join(mismatches))
 
     _finish(
         True,

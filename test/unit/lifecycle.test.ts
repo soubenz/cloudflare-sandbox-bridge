@@ -40,7 +40,7 @@ describe('createSession', () => {
 
 describe('idle_warn alarm', () => {
   const IDLE_MINUTES = 10;
-  const WARN_AFTER_MS = IDLE_MINUTES * 60_000 - 2 * 60_000;
+  const WARN_AFTER_MS = IDLE_MINUTES * 60_000 - Math.min(5 * 60_000, (IDLE_MINUTES * 60_000) / 2);
 
   async function setup(lastInputAgoMs: number) {
     const { rt } = createFakeRuntime();

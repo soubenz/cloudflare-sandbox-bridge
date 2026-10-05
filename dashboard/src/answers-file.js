@@ -113,3 +113,33 @@ export function answeredCount(fields, values) {
   }
   return n;
 }
+
+/**
+ * Which answers a check run found wrong, for marking them on their own questions.
+ *
+ *   fields   the bundle's fields
+ *   values   { key: the control's JSON value now }
+ *   results  the run's check results ({ pass, message })
+ *
+ * The answers check names every field it found wrong (by key) in its message; the same message names the fields
+ * with no answer yet after "missing an answer for:", and those are not wrong, only empty. Returns `{ key: { pass } }`:
+ * every answered field passes when the whole run does, and when a failed message names some answered fields those are
+ * wrong and the other answered ones right. A failure that names no field (a service down) says nothing about any.
+ */
+export function fieldOutcomes(fields, values, results) {
+  if (!Array.isArray(results) || !results.length) return {};
+  const answered = (key) => values?.[key] != null && values[key] !== '';
+  const out = {};
+  if (results.every((r) => r.pass)) {
+    for (const f of fields) if (answered(f.key)) out[f.key] = { pass: true };
+    return out;
+  }
+  const text = results
+    .filter((r) => !r.pass)
+    .map((r) => String(r.message ?? '').replace(/missing an answer for:[^\n]*/gi, ''))
+    .join('\n');
+  const named = fields.filter((f) => answered(f.key) && new RegExp(`(^|[^a-z0-9_])${f.key}([^a-z0-9_]|$)`).test(text));
+  if (!named.length) return {};
+  for (const f of fields) if (answered(f.key)) out[f.key] = { pass: !named.includes(f) };
+  return out;
+}

@@ -29,7 +29,9 @@ async function pool(rt: SessionRuntime, family: Family) {
   return poolStub(rt.env, family);
 }
 
-const IDLE_WARN_BEFORE_MS = 2 * 60_000;
+const IDLE_WARN_BEFORE_MS = 5 * 60_000;
+/** How long before the idle end the warning comes: five minutes, or half of a short idle limit. */
+const idleWarnLeadMs = (idleMinutes: number) => Math.min(IDLE_WARN_BEFORE_MS, (idleMinutes * 60_000) / 2);
 const HARD_WARN_BEFORE_MS = 5 * 60_000;
 const HEALTH_INTERVAL_ACTIVE_MS = 15_000;
 const HEALTH_INTERVAL_IDLE_MS = 60_000;
@@ -309,7 +311,7 @@ export async function cancelPrepared(rt: SessionRuntime): Promise<boolean> {
 async function scheduleIdleTimers(rt: SessionRuntime, from: number, idleMinutes: number): Promise<void> {
   const idleMs = idleMinutes * 60_000;
   await scheduleTimer(rt, 'idle', from + idleMs);
-  await scheduleTimer(rt, 'idle_warn', from + idleMs - IDLE_WARN_BEFORE_MS);
+  await scheduleTimer(rt, 'idle_warn', from + idleMs - idleWarnLeadMs(idleMinutes));
 }
 
 /** The state a boot timer's session must be in for that timer to run. */
@@ -365,9 +367,9 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
           const manifest = await rt.requireManifest();
           const lastInput = meta.last_input_at ?? meta.started_at ?? 0;
           const idleMs = Date.now() - lastInput;
-          const warnAfterMs = manifest.idle_minutes * 60_000 - IDLE_WARN_BEFORE_MS;
+          const warnAfterMs = manifest.idle_minutes * 60_000 - idleWarnLeadMs(manifest.idle_minutes);
           if (idleMs >= warnAfterMs) {
-            emitEvent(rt, 'session.idle_warning', { idle_ms: idleMs });
+            emitEvent(rt, 'session.idle_warning', { idle_ms: idleMs, ends_in_ms: Math.max(0, manifest.idle_minutes * 60_000 - idleMs) });
           } else {
             await scheduleTimer(rt, 'idle_warn', lastInput + warnAfterMs);
           }

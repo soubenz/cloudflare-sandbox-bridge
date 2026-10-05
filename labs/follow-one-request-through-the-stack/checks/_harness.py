@@ -243,15 +243,22 @@ def check_answers_match_the_trace():
     if err:
         _finish(False, "could not verify your answers: %s" % err)
 
+    # Compare every field before reporting, so the learner hears about all
+    # wrong answers at once rather than only the first.
+    mismatches = []
+
     if _norm_str(answers.get("longest_span_name")) != _norm_str(true_answers["longest_span_name"]):
-        _finish(False, "longest_span_name does not match the span that actually took the longest right now")
+        mismatches.append("longest_span_name does not match the span that actually took the longest right now")
 
     got_tokens = _norm_int(answers.get("llm_total_tokens"))
     if got_tokens is None or got_tokens != true_answers["llm_total_tokens"]:
-        _finish(False, "llm_total_tokens does not match what the trace's llm_call span(s) actually report")
+        mismatches.append("llm_total_tokens does not match what the trace's llm_call span(s) actually report")
 
     if _norm_str(answers.get("cache_get_parent_span")) != _norm_str(true_answers["cache_get_parent_span"]):
-        _finish(False, "cache_get_parent_span does not match cache.get's actual parent span in the trace")
+        mismatches.append("cache_get_parent_span does not match cache.get's actual parent span in the trace")
+
+    if mismatches:
+        _finish(False, "; ".join(mismatches))
 
     _finish(True, "all three answers match what the seeded trace actually shows right now")
 

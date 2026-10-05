@@ -3,6 +3,7 @@ fields:
   - key: longest_span_name
     prompt: Not counting the top-level request span, which single span took the longest to run? Give its name exactly as Jaeger shows it.
     kind: text
+    options: [litellm.completion, vector_db.query]
     placeholder: a span name
     help: Open the jaeger tab, click Find Traces, open the one trace, and compare the duration of every row below the top one. The name is the row label.
   - key: llm_total_tokens
@@ -12,5 +13,6 @@ fields:
   - key: cache_get_parent_span
     prompt: Which span is the direct parent of the span named cache.get? Give the parent's name exactly as it appears.
     kind: text
+    options: [vector_db.query, handle_support_request]
     placeholder: a span name
     help: In the waterfall in the jaeger tab, find cache.get and look at the row directly above it with one level less indentation. That row is the parent.

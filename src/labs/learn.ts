@@ -144,12 +144,15 @@ export const FieldSchema = z
     prompt: plain(300),
     kind: z.enum(['text', 'number', 'choice']),
     choices: z.array(plain(80)).min(2).max(8).optional(),
+    /** Suggested answers for a text or number field, shown as buttons beside "Something else" (which opens the usual box). */
+    options: z.array(plain(80)).min(2).max(4).optional(),
     placeholder: plain(80).optional(),
     help: plain(300).optional(),
   })
   .superRefine((f, ctx) => {
     if (f.kind === 'choice' && !f.choices) ctx.addIssue({ code: 'custom', message: `field ${f.key}: a choice field needs choices` });
     if (f.kind !== 'choice' && f.choices) ctx.addIssue({ code: 'custom', message: `field ${f.key}: only a choice field has choices` });
+    if (f.kind === 'choice' && f.options) ctx.addIssue({ code: 'custom', message: `field ${f.key}: a choice field has choices, not options` });
   });
 
 /** Most distinct narration clips one lab may carry, and the largest one, in bytes (about 70 s of speech at 48 kbps is 400 KB). */

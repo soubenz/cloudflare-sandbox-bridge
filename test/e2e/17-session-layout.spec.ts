@@ -115,6 +115,8 @@ interface Stub {
   emit: (...events: Array<{ id: number; event: string; data: unknown }>) => void;
   resumes: number;
   touches: number;
+  /** The signed-in subject may use admin mode (the activity strip is shown only in it). */
+  admin: boolean;
   starts: string[];
   files: Map<string, string>;
   puts: string[];
@@ -151,6 +153,7 @@ async function stub(page: Page): Promise<Stub> {
     restartable: { value: true },
     resumes: 0,
     touches: 0,
+    admin: false,
     starts: [],
     files: new Map([['answers.json', ANSWERS_TEMPLATE], ['gateway.yaml', 'model_list:\n  - model_name: support\n']]),
     puts: [],
@@ -171,7 +174,7 @@ async function stub(page: Page): Promise<Stub> {
     const url = new URL(route.request().url());
     const method = route.request().method();
     const path = url.pathname;
-    if (path === '/api/me') return json(route, { sub: 'console', user_id: 'console' });
+    if (path === '/api/me') return json(route, { sub: 'console', user_id: 'console', ...(s.admin ? { can_admin: true } : {}) });
     if (path === '/api/labs') return json(route, LABS);
     if (path === '/api/onboarding') return json(route, { error: { code: 'no_onboarding', message: 'none' } }, 404);
     if (path.startsWith('/api/learn/') && method === 'GET') {
@@ -978,7 +981,8 @@ test.describe('the workspace window', () => {
     await expect(page.locator('#btnImHere')).toBeAttached();
     await expect(page.locator('#idleBanner')).toHaveAttribute('role', 'alert');
     await expect(page.locator('#expiryBanner')).toHaveAttribute('role', 'alert');
-    await expect(page.locator('#activityPane')).toBeVisible();
+    // The activity strip is the owner's view (admin mode); a learner does not see it.
+    await expect(page.locator('#activityPane')).toBeHidden();
     await expect(page.locator('#noticeList')).toHaveAttribute('role', 'log');
     await expect(page.locator('#activityPane h2')).toHaveText('Lab activity');
   });
@@ -1126,10 +1130,10 @@ test.describe('banners and the activity strip', () => {
     const banner = page.locator('#idleBanner');
     await expect(banner).toBeVisible();
     await expect(banner).toHaveAttribute('role', 'alert');
-    await expect(banner).toContainText(/1:5\d/);
-    await expect(page.locator('#idleClock')).toHaveText(/^idle 1:5\d$/);
-    // It is in the activity strip too, as prose.
-    await expect(page.locator('#noticeList li', { hasText: 'Still there?' }).first()).toBeVisible();
+    await expect(banner).toContainText(/4:5\d/);
+    await expect(page.locator('#idleClock')).toHaveText(/^idle 4:5\d$/);
+    // It is in the activity log too, as prose (the strip itself is shown to the owner only).
+    await expect(page.locator('#noticeList li', { hasText: 'Still there?' }).first()).toBeAttached();
     await banner.getByRole('button', { name: "I'm here" }).click();
     await expect.poll(() => s.touches).toBe(1);
     await expect(banner).toBeHidden();
@@ -1180,8 +1184,10 @@ test.describe('banners and the activity strip', () => {
     await expect(page.locator('#launcher')).toBeVisible();
   });
 
-  test('a pressure event opens the strip so it is not missed, and the strip can be folded again', async ({ page }) => {
+  test('a pressure event opens the strip so it is not missed, and the strip can be folded again (admin mode)', async ({ page }) => {
     const s = await stub(page);
+    s.admin = true;
+    await page.addInitScript(() => localStorage.setItem('opalixAdminMode', '1'));
     s.events = [
       { id: 1, event: 'session.state', data: { state: 'running' } },
       { id: 2, event: 'service.health', data: { service: 'echo', health: 'healthy' } },
@@ -1206,6 +1212,19 @@ test.describe('banners and the activity strip', () => {
     await expect(page.locator('#noticeList li').first()).toContainText('A second wave');
     await expect(page.locator('#noticeList li').first()).toBeVisible();
     await expect(page.locator('#noticeList li').nth(1)).not.toBeInViewport();
+  });
+
+  test('a learner sees no activity strip, and a pressure event reaches them as a toast', async ({ page }) => {
+    const s = await stub(page);
+    s.events = [
+      { id: 1, event: 'session.state', data: { state: 'running' } },
+      { id: 2, event: 'pressure', data: { event_id: 'p1', title: 'A second wave', message: 'Traffic doubles at minute 10.' } },
+    ];
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page);
+    await startLab(page, BUILD);
+    await expect(page.locator('#toast')).toContainText('A second wave');
+    await expect(page.locator('#activityPane')).toBeHidden();
   });
 
   test('a dropped stream shows the reconnecting pill in the window bar', async ({ page }) => {

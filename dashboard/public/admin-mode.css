@@ -52,10 +52,13 @@ body:has(#workspace:not([hidden])) .nav-account > #adminPanelLink { display: inl
 }
 .admin-pill svg { flex: none; }
 
-/* In a lab the bar is already full: with admin mode on it takes a second row rather than run over itself. */
-html[data-admin-mode="on"] .site-header:has(#sessionBar:not([hidden])) .nav { flex-wrap: wrap; row-gap: 6px; border-radius: 28px; }
-html[data-admin-mode="on"] .site-header:has(#sessionBar:not([hidden])) .bar-session { flex: 1 1 auto; }
-html[data-admin-mode="on"] .site-header:has(#sessionBar:not([hidden])) .bar-actions { flex-wrap: wrap; justify-content: flex-end; }
+/* In a lab the bar stays ONE line with admin mode on: the title gives way (it truncates) and the extra controls are compact. */
+html[data-admin-mode="on"] .site-header:has(#sessionBar:not([hidden])) .nav { flex-wrap: nowrap; gap: 8px; }
+html[data-admin-mode="on"] .site-header:has(#sessionBar:not([hidden])) .bar-session { flex: 1 1 0; gap: 8px; }
+html[data-admin-mode="on"] .site-header:has(#sessionBar:not([hidden])) .session-title { max-width: 26ch; }
+html[data-admin-mode="on"] .site-header:has(#sessionBar:not([hidden])) .bar-actions { flex-wrap: nowrap; gap: 4px; }
+html[data-admin-mode="on"] .site-header:has(#sessionBar:not([hidden])) .admin-pill { padding: 3px 10px; font-size: 12px; }
+html[data-admin-mode="on"] .site-header:has(#sessionBar:not([hidden])) .admin-link { min-height: 36px; padding: 0 var(--s2); font-size: 13px; white-space: nowrap; }
 
 /* The same dashed ring round the whole window, so a screen that shows no header still says it. It never takes a click. */
 html[data-admin-mode="on"] body::after {
@@ -112,3 +115,8 @@ html[data-admin-mode="on"] body::after {
   .admin-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .admin-copy { min-height: 44px; }
 }
+
+/* Owner-only pieces. A learner gets their results on the questions themselves, so the checks list under the form
+   (everything but the "Lab complete" card) is for admin mode, and so is the service tab's Restart button. */
+html:not([data-admin-mode="on"]) #questionsChecksSlot #checksBlock > :not(#resultCard) { display: none; }
+html:not([data-admin-mode="on"]) #btnServiceRestart { display: none; }

@@ -17,7 +17,7 @@
  * and the timing. No markup strings: prompts and help go in as text.
  */
 
-import { MAX_RADIO_CHOICES, QUESTION_STATUS, answeredCount, displayValue, fieldValue, mergeAnswers, parseAnswersFile, questionStatus, serializeAnswers } from './answers-file.js';
+import { MAX_RADIO_CHOICES, QUESTION_STATUS, answeredCount, displayValue, fieldOutcomes, fieldValue, mergeAnswers, parseAnswersFile, questionStatus, serializeAnswers } from './answers-file.js';
 import { appendInline } from './markdown.js';
 import { button, make } from './learn-ui.js';
 
@@ -35,7 +35,7 @@ let uid = 0;
  *              string is shown beside the button
  *   delay      debounce, in ms (default 600)
  *   onProgress ({ answered, total }) whenever the number of answered questions may have changed
- * Returns { reload, save, flush, disable, destroy, statusText, progress, setResults, focusFirstUnanswered }.
+ * Returns { reload, save, flush, disable, destroy, statusText, progress, setResults, setCheckResults, focusFirstUnanswered }.
  *
  * Each question is a card with a badge (Not answered, Answered, Saved). A lab
  * whose checks report per question can pass them to setResults({ key: { pass } })
@@ -92,6 +92,7 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
 
   const changed = (key) => {
     dirty.add(key);
+    delete results[key];
     refreshCards();
     edits[key] = (edits[key] || 0) + 1;
     setStatus('pending');
@@ -141,6 +142,72 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
         get: () => radios.find((r) => r.checked)?.value ?? '',
         set: (v) => radios.forEach((r) => (r.checked = r.value === v)),
       };
+    } else if ((field.kind === 'text' || field.kind === 'number') && (field.options || []).length >= 2) {
+      // Suggested answers as buttons, and "Something else" that opens the usual box.
+      const set = make('fieldset', 'qfield-set');
+      const legend = make('legend', 'qfield-prompt');
+      appendInline(legend, field.prompt);
+      set.append(legend);
+      const group = make('div', 'qfield-choices');
+      const radios = [];
+      const pick = (value) => {
+        const other = radios[radios.length - 1];
+        for (const r of radios) r.checked = r.value === value;
+        box.hidden = value !== OTHER;
+        if (value === OTHER && other) other.checked = true;
+      };
+      const OTHER = '\u0000other';
+      for (const choice of [...field.options, OTHER]) {
+        const label = make('label', 'qfield-choice');
+        const input = make('input');
+        input.type = 'radio';
+        input.name = id;
+        input.value = choice;
+        if (helpId) input.setAttribute('aria-describedby', helpId);
+        input.addEventListener('change', () => {
+          box.hidden = choice !== OTHER;
+          if (choice === OTHER) box.querySelector('input').focus();
+          changed(field.key);
+        });
+        label.append(input, make('span', '', choice === OTHER ? 'Something else' : choice));
+        group.append(label);
+        radios.push(input);
+      }
+      const box = make('div', 'qfield-other');
+      box.hidden = true;
+      const text = make('input', 'qfield-input');
+      text.type = field.kind === 'number' ? 'number' : 'text';
+      if (field.kind === 'number') {
+        text.step = 'any';
+        text.inputMode = 'decimal';
+      }
+      text.autocomplete = 'off';
+      text.placeholder = field.placeholder || 'Your answer';
+      text.setAttribute('aria-label', `${field.prompt} Your own answer`);
+      text.addEventListener('input', () => changed(field.key));
+      box.append(text);
+      set.append(group, box);
+      wrap.append(set);
+      control = {
+        inputs: radios,
+        get: () => {
+          const on = radios.find((r) => r.checked)?.value;
+          return on === OTHER ? text.value : on ?? '';
+        },
+        set: (v) => {
+          if (v === '') {
+            for (const r of radios) r.checked = false;
+            text.value = '';
+            box.hidden = true;
+          } else if (field.options.includes(v)) {
+            text.value = '';
+            pick(v);
+          } else {
+            text.value = v;
+            pick(OTHER);
+          }
+        },
+      };
     } else {
       const label = make('label', 'qfield-prompt');
       label.htmlFor = id;
@@ -180,7 +247,12 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
       appendInline(help, field.help);
       wrap.append(help);
     }
-    controls.set(field.key, { field, badge, wrap, ...control });
+    // Says on the question itself whether a check run found the answer right.
+    const verdict = make('p', 'qfield-verdict');
+    verdict.setAttribute('role', 'status');
+    verdict.hidden = true;
+    wrap.append(verdict);
+    controls.set(field.key, { field, badge, wrap, verdict, ...control });
     form.append(wrap);
   }
 
@@ -229,6 +301,9 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
       c.wrap.dataset.status = kind;
       c.badge.textContent = text;
       c.badge.className = `badge qfield-status badge-${tone}`;
+      c.verdict.hidden = kind !== 'checked-wrong' && kind !== 'checked-correct';
+      c.verdict.dataset.tone = kind === 'checked-correct' ? 'good' : 'bad';
+      c.verdict.textContent = kind === 'checked-correct' ? 'Correct.' : kind === 'checked-wrong' ? 'This answer is not right. Look again and change it.' : '';
     }
     const answered = answeredCount(fields, values);
     filled.textContent = `${answered} of ${fields.length} filled in`;
@@ -317,6 +392,11 @@ export function mountQuestionsForm(host, { fields, file, io, runChecks, delay = 
     /** Per-question outcomes of a check run, `{ key: { pass } }`; the badges follow. */
     setResults(next) {
       results = next && typeof next === 'object' ? next : {};
+      refreshCards();
+    },
+    /** Marks each answer right or wrong from a check run's results (see fieldOutcomes). */
+    setCheckResults(runResults) {
+      results = fieldOutcomes(fields, currentValues(), runResults);
       refreshCards();
     },
     /** Puts the cursor on the first question without an answer (or the first question). */

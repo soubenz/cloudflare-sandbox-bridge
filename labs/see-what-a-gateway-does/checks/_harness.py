@@ -215,28 +215,32 @@ def check_answers_match_the_gateway():
     # None of these three is a secret (a deployment letter, a token count and
     # an HTTP status the learner can see for themselves), so a mismatch says
     # what was given next to what the gateway reported live.
+    # Compare every field before reporting, so the learner hears about all
+    # wrong answers at once rather than only the first.
+    mismatches = []
+
     if _norm_str(answers.get("support_deployment")) != _norm_str(true_deployment):
-        _finish(
-            False,
+        mismatches.append(
             "your `support_deployment` = %s vs live %s -- it does not match what the gateway actually did"
-            % (_show(answers.get("support_deployment")), json.dumps(true_deployment)),
+            % (_show(answers.get("support_deployment")), json.dumps(true_deployment))
         )
 
     got_tokens = _norm_int(answers.get("support_tokens_hello"))
     if got_tokens is None or got_tokens != true_total_tokens:
-        _finish(
-            False,
+        mismatches.append(
             "your `support_tokens_hello` = %s vs live %s -- it does not match what the gateway actually reported"
-            % (_show(answers.get("support_tokens_hello")), json.dumps(true_total_tokens)),
+            % (_show(answers.get("support_tokens_hello")), json.dumps(true_total_tokens))
         )
 
     got_status = _norm_int(answers.get("unknown_alias_status"))
     if got_status is None or got_status != unknown_status:
-        _finish(
-            False,
+        mismatches.append(
             "your `unknown_alias_status` = %s vs live %s -- it does not match what the gateway actually returned"
-            % (_show(answers.get("unknown_alias_status")), json.dumps(unknown_status)),
+            % (_show(answers.get("unknown_alias_status")), json.dumps(unknown_status))
         )
+
+    if mismatches:
+        _finish(False, "; ".join(mismatches))
 
     _finish(True, "all three answers match what the gateway actually did")
 

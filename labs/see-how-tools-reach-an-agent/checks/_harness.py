@@ -249,17 +249,24 @@ def check_answers_match_the_gateway():
         _finish(False, "could not verify your answers: calling an unregistered tool returned HTTP %r, expected 200" % status)
     true_is_error = bool(((body or {}).get("result") or {}).get("isError"))
 
+    # Compare every field before reporting, so the learner hears about all
+    # wrong answers at once rather than only the first.
+    mismatches = []
+
     got_count = _norm_number(answers.get("virtual_server_tool_count"))
     if got_count is None or got_count != float(true_tool_count):
-        _finish(False, "virtual_server_tool_count does not match what the virtual server actually exposes right now")
+        mismatches.append("virtual_server_tool_count does not match what the virtual server actually exposes right now")
 
     got_add = _norm_number(answers.get("calculator_add_result"))
     if got_add is None or abs(got_add - float(true_add_result)) > 1e-6:
-        _finish(False, "calculator_add_result does not match what calculator-tools-add actually returned for %s" % ADD_ARGUMENTS)
+        mismatches.append("calculator_add_result does not match what calculator-tools-add actually returned for %s" % ADD_ARGUMENTS)
 
     got_is_error = _norm_bool(answers.get("unregistered_tool_call_is_error"))
     if got_is_error is None or got_is_error != true_is_error:
-        _finish(False, "unregistered_tool_call_is_error does not match what the gateway actually reported")
+        mismatches.append("unregistered_tool_call_is_error does not match what the gateway actually reported")
+
+    if mismatches:
+        _finish(False, "; ".join(mismatches))
 
     _finish(True, "all three answers match what the gateway actually reports right now")
 

@@ -101,7 +101,7 @@ fields:
 
 - Each field is one key of the lab's `workspace/answers.json` template. The console writes the learner's answers into that file through the files API, so the existing checks keep working unchanged.
 - The compiler cross-checks in both directions: every key in the template needs a field, and every field needs a key.
-- `choices` is required for `choice` and forbidden otherwise. Up to 12 fields.
+- `choices` is required for `choice` and forbidden otherwise. `options` (2 to 4 suggested answers, text and number fields only) shows them as buttons next to "Something else", which opens the usual box; the stored answer is the button's text or what the learner typed. Up to 12 fields.
 
 ## The motion comic (optional): `learn/comic.yaml`
 

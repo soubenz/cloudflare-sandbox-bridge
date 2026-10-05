@@ -395,6 +395,12 @@
 .qfield-choice:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 3px; }
 .qfield-choice input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .qfield-choice span { min-width: 0; overflow-wrap: anywhere; font: 600 15px/1.2 var(--sans); }
+.qfield-other { margin-top: 10px; }
+.qfield-other[hidden] { display: none; }
+.qfield-verdict { margin: 0; font-size: 14px; font-weight: 600; }
+.qfield-verdict[hidden] { display: none; }
+.qfield-verdict[data-tone="good"] { color: var(--good-text, var(--good)); }
+.qfield-verdict[data-tone="bad"] { color: var(--bad-text, var(--bad)); }
 .qfield-help { margin: 0; color: var(--ink-muted); font-size: 13.5px; line-height: 1.5; }
 .qform code, .qfield-prompt code { font-size: 0.88em; background: var(--surface-3); padding: 1px 6px; border-radius: 6px; color: var(--ink); }
 

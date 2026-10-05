@@ -349,17 +349,24 @@ def check_answers_match_the_live_onboarding():
     if truth.get("error"):
         _finish(False, "could not verify your answers: %s" % truth["error"])
 
+    # Compare every field before reporting, so the learner hears about all
+    # wrong answers at once rather than only the first.
+    mismatches = []
+
     got_systems = _norm_number(answers.get("systems_touched_end_to_end"))
     if got_systems is None or got_systems != float(truth["systems_touched_count"]):
-        _finish(False, "systems_touched_end_to_end does not match how many distinct systems a real onboarding run just touched (%d)" % truth["systems_touched_count"])
+        mismatches.append("systems_touched_end_to_end does not match how many distinct systems a real onboarding run just touched (%d)" % truth["systems_touched_count"])
 
     got_reaches = _norm_bool(answers.get("new_key_reaches_legacy_alias"))
     if got_reaches is None or got_reaches != truth["reaches_legacy_alias"]:
-        _finish(False, "new_key_reaches_legacy_alias does not match what a freshly-scoped key actually gets back from %r right now (HTTP %r)" % (LEGACY_ALIAS, truth.get("legacy_alias_status")))
+        mismatches.append("new_key_reaches_legacy_alias does not match what a freshly-scoped key actually gets back from %r right now (HTTP %r)" % (LEGACY_ALIAS, truth.get("legacy_alias_status")))
 
     got_e2e = _norm_bool(answers.get("end_to_end_call_succeeded"))
     if got_e2e is None or got_e2e != truth["end_to_end_ok"]:
-        _finish(False, "end_to_end_call_succeeded does not match whether a real call through a new key and a new tool registration actually succeeds right now")
+        mismatches.append("end_to_end_call_succeeded does not match whether a real call through a new key and a new tool registration actually succeeds right now")
+
+    if mismatches:
+        _finish(False, "; ".join(mismatches))
 
     _finish(True, "all three answers match what a live, freshly-run onboarding sequence actually reports right now")
 

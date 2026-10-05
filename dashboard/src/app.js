@@ -2663,7 +2663,7 @@ function handleEvent(type, tone, data) {
   noticeFor(type, tone, data);
   bootProgress(type, data);
 
-  if (type === 'session.idle_warning') showIdleBanner();
+  if (type === 'session.idle_warning') showIdleBanner(data);
   if (type === 'session.state' && data?.state === 'ended') {
     confirmEnded(data.reason);
   } else if (type === 'session.state') {
@@ -2768,6 +2768,8 @@ function noticeFor(type, tone, data) {
   const [title, detail] = build(data ?? {});
   // A pressure event is the lab changing under the learner: the strip opens so it is not missed.
   addNotice(tone, title, detail, { open: type === 'pressure' });
+  // The strip itself is shown to the owner only, so a pressure event reaches a learner as a toast.
+  if (type === 'pressure' && !adminMode.isOn()) toast(detail ? `${title}. ${detail}` : title, 'info', 12_000);
 }
 
 function addNotice(tone, title, detail, { open = false } = {}) {
@@ -3538,15 +3540,16 @@ async function loadIdentity() {
  * (IDLE_WARN_BEFORE_MS in src/session/lifecycle.ts). "I'm here", a
  * keystroke in the terminal or a save in the editor each answer it.
  */
-const IDLE_WARN_BEFORE_MS = 2 * 60_000;
+const IDLE_WARN_BEFORE_MS = 5 * 60_000;
 /** Mirrors HARD_WARN_BEFORE_MS in lifecycle.ts, the API's own `session.expiring` lead time. */
 const EXPIRY_WARN_MS = 5 * 60_000;
 
-function showIdleBanner() {
+function showIdleBanner(data) {
   if ($('statePill').dataset.state === 'ended') return;
   // A second warning restarts the countdown rather than stacking a timer.
   clearInterval(state.idleTimer);
-  state.idleDeadline = Date.now() + IDLE_WARN_BEFORE_MS;
+  // The API says how long is left; its usual lead time is the fallback.
+  state.idleDeadline = Date.now() + (Number.isFinite(data?.ends_in_ms) ? data.ends_in_ms : IDLE_WARN_BEFORE_MS);
   const tick = () => {
     const left = formatClock(state.idleDeadline - Date.now());
     $('idleCountdown').textContent = left;
@@ -3729,11 +3732,13 @@ function renderChecks(run) {
     summary.textContent = '';
     delete summary.dataset.tone;
     state.lastResults = null;
+    learnSession.form?.setCheckResults(null);
     setChecksStat(null);
     return;
   }
   const t = tally(run.results);
   state.lastResults = run.results;
+  learnSession.form?.setCheckResults(run.results);
   setChecksStat(t);
   summary.textContent = summaryText(t);
   summary.dataset.tone = t.passed === t.count ? 'good' : t.passed ? 'warn' : 'bad';

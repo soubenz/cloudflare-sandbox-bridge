@@ -195,17 +195,24 @@ def check_answers_match_the_service():
     ooc_results = body["results"]
     true_ooc_has_close_match = any(float(r["distance"]) < OUT_OF_CORPUS_THRESHOLD for r in ooc_results)
 
+    # Compare every field before reporting, so the learner hears about all
+    # wrong answers at once rather than only the first.
+    mismatches = []
+
     got_top_match_id = _norm_str(answers.get("top_match_id"))
     if got_top_match_id is None or got_top_match_id != true_top_match_id:
-        _finish(False, "top_match_id does not match what the app actually returns first for %r right now" % FIXED_QUERY_MAIN)
+        mismatches.append("top_match_id does not match what the app actually returns first for %r right now" % FIXED_QUERY_MAIN)
 
     got_count = _norm_number(answers.get("close_match_count"))
     if got_count is None or got_count != float(true_close_match_count):
-        _finish(False, "close_match_count does not match how many results are actually under distance %s for %r right now" % (CLOSE_MATCH_THRESHOLD, FIXED_QUERY_MAIN))
+        mismatches.append("close_match_count does not match how many results are actually under distance %s for %r right now" % (CLOSE_MATCH_THRESHOLD, FIXED_QUERY_MAIN))
 
     got_ooc = _norm_bool(answers.get("out_of_corpus_has_close_match"))
     if got_ooc is None or got_ooc != true_ooc_has_close_match:
-        _finish(False, "out_of_corpus_has_close_match does not match what the app actually reports for %r right now" % OUT_OF_CORPUS_QUERY)
+        mismatches.append("out_of_corpus_has_close_match does not match what the app actually reports for %r right now" % OUT_OF_CORPUS_QUERY)
+
+    if mismatches:
+        _finish(False, "; ".join(mismatches))
 
     _finish(True, "all three answers match what the live retrieval service actually reports right now")
 

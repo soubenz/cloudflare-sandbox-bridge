@@ -41,7 +41,12 @@ export async function proxyService(rt: SessionRuntime, request: Request, service
     });
   }
 
-  await rt.touchInput();
+  // A page's own background requests (a UI polling for fresh data) are not the learner being there: counting them
+  // kept a lab alive forever behind an open Jaeger tab. A page load, any write, and clients that do not say what a
+  // request is for (the CLI, tests) still count.
+  const dest = request.headers.get('Sec-Fetch-Dest');
+  const background = (request.method === 'GET' || request.method === 'HEAD') && !!dest && !['document', 'iframe', 'frame'].includes(dest);
+  if (!background) await rt.touchInput();
   const backend = rt.backend();
   const isUpgrade = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
 

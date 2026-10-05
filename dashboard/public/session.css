@@ -381,7 +381,10 @@
 
 /* ---------- lab activity: one line under the window's views ---------- */
 .strip { flex: none; border-top: 1px solid var(--navy-line); background: var(--win-strip); color: var(--navy-muted); font-size: 13px; }
-.activity { display: flex; flex-direction: column; gap: 2px; padding: 8px 16px 8px 18px; }
+/* The activity strip is an owner's view: shown only in admin mode. Learners get a pressure event as a toast
+   (see noticeFor), and the idle, expiry and ended banners and the Hints block are their own pieces of the page. */
+.activity { display: none; flex-direction: column; gap: 2px; padding: 8px 16px 8px 18px; }
+:root[data-admin-mode="on"] .activity { display: flex; }
 .activity-head { display: flex; align-items: center; gap: 10px; min-height: 28px; }
 .activity h2 { margin: 0; font: 700 11px/1.3 var(--sans); text-transform: uppercase; letter-spacing: 0.1em; color: var(--win-dim); }
 .activity-count { font-size: 11.5px; color: var(--win-dim); }
