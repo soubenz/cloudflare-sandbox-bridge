@@ -93,7 +93,10 @@ describe('guideTabsFor', () => {
   });
 
   it('knows exactly the tabs it can return', () => {
-    expect(Object.keys(L.GUIDE_TABS)).toEqual(['brief', 'questions', 'checks', 'hints', 'solution']);
+    expect(Object.keys(L.GUIDE_TABS)).toEqual(['brief', 'questions', 'checks', 'hints', 'solution', 'answers']);
+    // The owner's Answers tab is only ever added on request, and comes last.
+    expect(L.guideTabsFor({ type: 'explore', questions: true })).not.toContain('answers');
+    expect(L.guideTabsFor({ type: 'explore', questions: true, answers: true }).at(-1)).toBe('answers');
   });
 });
 

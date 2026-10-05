@@ -131,9 +131,14 @@ describe('route auth matrix', () => {
     expect(body).toContain("auth.kind !== 'session'");
     expect(body).toContain('session_token_required');
     expect(body.indexOf("auth.kind !== 'session'")).toBeLessThan(body.indexOf('.status()'));
-    // No catalogue or other route may build the key, so nothing else serves the file.
-    expect(router.split('solutionKey(').length - 1, 'solutionKey( appears once in the router').toBe(1);
+    // Exactly two routes may build the key: this one, and the owner's by-slug route, which takes the service key
+    // (the console Worker serves it only to a signed-in admin) and so can never be reached with a session token.
+    expect(router.split('solutionKey(').length - 1, 'solutionKey( appears in exactly two routes').toBe(2);
     expect(body).toContain('solutionKey(');
+    const owner = handlerFor('get', '/labs/:slug/solution');
+    expect(owner).toContain('requireServiceAuth(');
+    expect(owner).not.toContain('requireBrowserAuth');
+    expect(owner.indexOf('requireServiceAuth(')).toBeLessThan(owner.indexOf('solutionKey('));
     expect(router).not.toMatch(/solution\.tgz/);
   });
 
