@@ -2851,6 +2851,9 @@ let runningHandled = false;
 async function onRunning(status) {
   if (runningHandled) return;
   runningHandled = true;
+  // Fetch the editor's code while the learner reads the brief, so the first file opens at the speed of the read.
+  // A failure is ignored here; opening a file deals with it (see ensureEditor).
+  (window.requestIdleCallback ?? ((fn) => setTimeout(fn, 1500)))(() => import('./editor.js').catch(() => {}));
 
   bootStep('services', 'Opening your terminal…');
   if (!state.terminal) {
@@ -4567,8 +4570,8 @@ async function openFile(name) {
   showView('editor');
   setEditorStatus(`Opening ${name}…`);
   try {
-    const result = await api.readFile(state.session.id, state.session.token, name);
-    const editor = await ensureEditor();
+    // Side by side: the first open used to read the file, and only then fetch and build the editor.
+    const [result, editor] = await Promise.all([api.readFile(state.session.id, state.session.token, name), ensureEditor()]);
     if (!editor) return;
     state.openFile = name;
     updateWindowTitle();

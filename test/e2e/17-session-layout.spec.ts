@@ -990,6 +990,10 @@ test.describe('the workspace window', () => {
 
 test.describe('a page opened before a deploy', () => {
   test('reloads itself once when the editor file is gone, and then says so instead of looping', async ({ page }) => {
+    // No idle time, so no early fetch of the editor: the page meets the missing file when a file is opened.
+    await page.addInitScript(() => {
+      window.requestIdleCallback = () => 0;
+    });
     await session(page, BUILD);
     // The running lab is listed for its learner, as the real console reports it, so a reload re-enters it.
     await page.route('**/api/sessions/active', (route) =>
@@ -1015,6 +1019,21 @@ test.describe('a page opened before a deploy', () => {
     await expect(page.locator('.reload-stale')).toBeVisible();
     await page.waitForTimeout(1500);
     expect(loads).toBe(1);
+  });
+
+  test('a running lab fetches the editor early, so a file still opens after a deploy took its files away', async ({ page }) => {
+    await session(page, BUILD);
+    // Wait for the early fetch to land (the editor's code arrives without anyone opening a file)...
+    await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').filter((r) => /\/dist\/chunk-/.test(r.name)).length)).toBeGreaterThan(0);
+    await page.waitForTimeout(500);
+    // ...then a deploy takes the old files away.
+    await page.route('**/dist/chunk-*.js', (route) => route.fulfill({ status: 404, body: 'gone' }));
+    let loads = 0;
+    page.on('load', () => loads++);
+    await page.locator('#fileList li', { hasText: 'gateway.yaml' }).click();
+    await expect(page.locator('#editorPath')).toHaveText('gateway.yaml');
+    await expect(page.locator('#editorStatus')).not.toContainText('updated while this page was open');
+    expect(loads).toBe(0);
   });
 });
 
