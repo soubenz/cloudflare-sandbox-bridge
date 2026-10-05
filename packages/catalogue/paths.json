@@ -3,7 +3,7 @@
   "paths": [
     {
       "slug": "production-agents",
-      "title": "Production agents essentials",
+      "title": "Agent builder",
       "accent": "blue",
       "icon": "bolt",
       "intro": "How agents fail once real customers use them: an action repeated on a retry, a weekend of runaway spend, a tool's answer trusted without a check, a provider outage, instructions forgotten mid-conversation, and answers that are confidently wrong. Every lab starts broken, and you fix the cause.",
@@ -11,7 +11,7 @@
     },
     {
       "slug": "securing-agents",
-      "title": "Securing agents",
+      "title": "Agent security",
       "accent": "rose",
       "icon": "shield",
       "intro": "Keep an agent from leaking what it can reach or doing what it should not. The first lab is about the tool that runs code and the secrets file it could read. More labs are planned.",
@@ -19,7 +19,7 @@
     },
     {
       "slug": "ai-platform",
-      "title": "Building an AI platform",
+      "title": "AI platform engineering",
       "accent": "violet",
       "icon": "layers",
       "intro": "The platform agents and models run on, in seven modules. You work on the real tools a platform team runs: an LLM gateway, tool servers behind MCP, retrieval, tracing and cost, and the controls that keep teams apart. Most labs start with something missing that you build.",
@@ -85,7 +85,7 @@
     },
     {
       "slug": "evals-releases",
-      "title": "Evals and safe releases",
+      "title": "Agent evals and releases",
       "accent": "green",
       "icon": "gate",
       "intro": "Catch a bad change before your customers do. The first lab is a prompt change that made things worse while every dashboard stayed green. More labs are planned.",

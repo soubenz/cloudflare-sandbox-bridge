@@ -28,6 +28,9 @@
   body:has(#workspace:not([hidden])) .nav-links,
   body:has(#workspace:not([hidden])) .nav-account > :not(#btnTheme) { display: none; }
 }
+/* Help explains how a running lab works (checks, hints, the timer), so it is only in the bar while a lab is open. */
+#btnHelp { display: none; }
+body:has(#workspace:not([hidden])) .nav-account > #btnHelp { display: inline-flex; align-items: center; }
 
 .bar-session { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
 .session-lab { display: flex; flex-direction: column; gap: 1px; line-height: 1.2; min-width: 0; flex: 0 1 auto; }

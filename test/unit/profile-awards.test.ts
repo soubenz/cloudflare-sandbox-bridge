@@ -242,7 +242,7 @@ describe('module and path awards', () => {
   it('titles come from the catalogue metadata', () => {
     const p = computeProfile(facts(), cat);
     expect(awardOf(p, 'module-complete-ai-platform-1').locked!.title).toBe('Module complete: Gateway and access');
-    expect(awardOf(p, 'path-complete-production-agents').locked!.title).toBe('Path complete: Production agents essentials');
+    expect(awardOf(p, 'path-complete-production-agents').locked!.title).toBe('Path complete: Agent builder');
   });
 });
 

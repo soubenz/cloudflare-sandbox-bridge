@@ -1209,8 +1209,8 @@ test.describe('the launcher is four pages', () => {
     await visit(page, '/');
     await expect(page.locator('#labList .path-card')).toHaveCount(1);
     const card = page.locator('#path-ai-platform');
-    await expect(card.getByRole('heading', { level: 2 })).toHaveText('Building an AI platform');
-    await expect(card.getByRole('link', { name: 'Building an AI platform' })).toHaveAttribute('href', '/paths/ai-platform');
+    await expect(card.getByRole('heading', { level: 2 })).toHaveText('AI platform engineering');
+    await expect(card.getByRole('link', { name: 'AI platform engineering' })).toHaveAttribute('href', '/paths/ai-platform');
     await expect(card.locator('.path-card-intro')).not.toBeEmpty();
     // One module (all five labs are in it), five labs of twenty minutes.
     await expect(card.locator('.path-card-line')).toHaveText('1 module · 5 labs · about 1 h 40 min');
@@ -1231,12 +1231,12 @@ test.describe('the launcher is four pages', () => {
     await stub(page);
     await wide(page);
     await visit(page, '/');
-    await page.getByRole('link', { name: 'Building an AI platform' }).click();
+    await page.getByRole('link', { name: 'AI platform engineering' }).click();
     expect(here_(page)).toBe('/paths/ai-platform');
-    await expect(page.locator('h1.group-head')).toHaveText('Building an AI platform');
+    await expect(page.locator('h1.group-head')).toHaveText('AI platform engineering');
     await expect(page.locator('h1.group-head')).toBeFocused();
-    await expect(page).toHaveTitle('Building an AI platform · Opalix labs');
-    await expect(page.locator('#routeLive')).toHaveText('Building an AI platform');
+    await expect(page).toHaveTitle('AI platform engineering · Opalix labs');
+    await expect(page.locator('#routeLive')).toHaveText('AI platform engineering');
     await expect(page.locator('#hello')).toBeHidden();
     await expect(page.locator('.path-intro')).not.toBeEmpty();
     await expect(page.locator('.path-summary')).toContainText('5 labs');
@@ -1248,7 +1248,7 @@ test.describe('the launcher is four pages', () => {
     await expect(card.locator('.module-progress')).toHaveText('0 of 5 done');
     await expect(card.getByRole('link', { name: 'Gateway and access' })).toHaveAttribute('href', MODULE_1);
     for (const sel of ['.path-card', '.module', '.lab', '.lab-rows']) await expect(page.locator(sel), sel).toHaveCount(0);
-    expect(await crumbTexts(page)).toEqual(['Home', 'Building an AI platform']);
+    expect(await crumbTexts(page)).toEqual(['Home', 'AI platform engineering']);
   });
 
   test('a module\'s page: number, title, intro, "You will learn to" and a progress meter on the left; the labs as rows on the right', async ({ page }) => {
@@ -1266,7 +1266,7 @@ test.describe('the launcher is four pages', () => {
     await expect(info.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '5');
     await expect(info.locator('.module-progress')).toHaveText('0 of 5 done');
     await expect(page.locator('#routeLive')).toHaveText('Module 1: Gateway and access');
-    await expect(page).toHaveTitle('Gateway and access · Building an AI platform · Opalix labs');
+    await expect(page).toHaveTitle('Gateway and access · AI platform engineering · Opalix labs');
 
     const rows = page.locator('.lab-rows .lab');
     await expect(rows).toHaveCount(5);
@@ -1284,7 +1284,7 @@ test.describe('the launcher is four pages', () => {
     expect(left!.x + left!.width).toBeLessThanOrEqual(right!.x + 1);
     // Nothing of the other pages.
     for (const sel of ['.path-card', '.module-card', '.lab-detail']) await expect(page.locator(sel), sel).toHaveCount(0);
-    expect(await crumbTexts(page)).toEqual(['Home', 'Building an AI platform', 'Module 1: Gateway and access']);
+    expect(await crumbTexts(page)).toEqual(['Home', 'AI platform engineering', 'Module 1: Gateway and access']);
     expect(s.errors).toEqual([]);
   });
 
@@ -1309,7 +1309,7 @@ test.describe('the launcher is four pages', () => {
     await expect(page.locator('#routeLive')).toHaveText(EXPLORE_TITLE);
     for (const sel of ['.path-card', '.module-card', '.module', '.lab']) await expect(page.locator(sel), sel).toHaveCount(0);
     await expect(page.locator('#labFilters')).toBeHidden();
-    expect(await crumbTexts(page)).toEqual(['Home', 'Building an AI platform', 'Module 1: Gateway and access', EXPLORE_TITLE]);
+    expect(await crumbTexts(page)).toEqual(['Home', 'AI platform engineering', 'Module 1: Gateway and access', EXPLORE_TITLE]);
     expect(s.starts).toEqual([]);
   });
 
@@ -1323,12 +1323,12 @@ test.describe('the launcher is four pages', () => {
     await expect(nav.locator('a')).toHaveCount(3);
     await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
     await expect(nav.locator('[aria-current="page"]')).toHaveText(EXPLORE_TITLE);
-    await expect(nav.locator('a')).toHaveText(['Home', 'Building an AI platform', 'Module 1: Gateway and access']);
+    await expect(nav.locator('a')).toHaveText(['Home', 'AI platform engineering', 'Module 1: Gateway and access']);
 
     await nav.getByRole('link', { name: 'Module 1: Gateway and access' }).click();
     expect(here_(page)).toBe(MODULE_1);
     await expect(page.locator('.module')).toBeVisible();
-    await crumbs(page).getByRole('link', { name: 'Building an AI platform' }).click();
+    await crumbs(page).getByRole('link', { name: 'AI platform engineering' }).click();
     expect(here_(page)).toBe('/paths/ai-platform');
     await expect(page.locator('.module-card')).toBeVisible();
     await crumbs(page).getByRole('link', { name: 'Home' }).click();
@@ -1398,7 +1398,7 @@ test.describe('the launcher is four pages', () => {
     expect(await historyLength(page)).toBe(before + 1);
     // The lab on it: Home > Path > Lab (no module in the trail).
     await page.locator('.lab[data-slug="shield-one"]').getByRole('link', { name: 'About this lab' }).click();
-    expect(await crumbTexts(page)).toEqual(['Home', 'Securing agents', 'Shield one']);
+    expect(await crumbTexts(page)).toEqual(['Home', 'Agent security', 'Shield one']);
   });
 
   test('the header\'s Labs and Paths, and the brand, go home', async ({ page }) => {
@@ -1471,7 +1471,7 @@ test.describe('search and filters act on the page they are on', () => {
     await expect(page.locator('#labCount')).toHaveText('1 of 5 labs');
 
     // A path's page: the module that holds a match; the count is the path's labs.
-    await page.locator('#path-ai-platform').getByRole('link', { name: 'Building an AI platform' }).click();
+    await page.locator('#path-ai-platform').getByRole('link', { name: 'AI platform engineering' }).click();
     await expect(page.locator('.module-card')).toHaveCount(1);
     await expect(page.locator('.module-card')).toHaveAttribute('data-module', '2');
     await expect(page.locator('#labCount')).toHaveText('1 of 4 labs');
@@ -1645,9 +1645,9 @@ test.describe('the tab title and the screen reader', () => {
     await expect(page).toHaveTitle(`Lessons · ${EXPLORE_TITLE} · Opalix labs`);
     await page.goBack();
     await page.goBack();
-    await expect(page).toHaveTitle('Gateway and access · Building an AI platform · Opalix labs');
+    await expect(page).toHaveTitle('Gateway and access · AI platform engineering · Opalix labs');
     await page.goBack();
-    await expect(page).toHaveTitle('Building an AI platform · Opalix labs');
+    await expect(page).toHaveTitle('AI platform engineering · Opalix labs');
     await page.goBack();
     await expect(page).toHaveTitle('Opalix labs');
   });
