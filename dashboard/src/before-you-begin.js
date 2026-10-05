@@ -117,7 +117,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     host.classList.remove('learn-wrap-comic', 'learn-wrap-lessons', 'learn-wrap-round');
   };
 
-  async function start() {
+  async function start({ remember = true } = {}) {
     if (starting || gone) return;
     starting = true;
     // From here the start itself takes over the warm lab; leaving no longer cancels it (a failed start undoes this).
@@ -134,6 +134,8 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       const started = await onStart();
       // The app resolves true once the session is up; false (could not start) or nothing (the desktop notice) leaves the warm lab ours to drop.
       if (!started) startPressed = false;
+      // Gone through it once and started: the next Start goes straight to the lab. "Skip all" is not having been through it.
+      else if (remember) store?.update?.((m) => ({ ...m, labs: { ...m.labs, [lab.slug]: { intro: true } } }));
     } catch (err) {
       startPressed = false;
       throw err;
@@ -149,7 +151,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     }
   }
 
-  const skipAll = () => button('Skip all, just start the lab', { kind: 'quiet', onClick: start, id: 'btnSkipAll' });
+  const skipAll = () => button('Skip all, just start the lab', { kind: 'quiet', onClick: () => start({ remember: false }), id: 'btnSkipAll' });
   const backToLabs = () =>
     button('← Back to labs', {
       kind: 'quiet',

@@ -90,7 +90,7 @@ export const isDiagnostic = (q) => q && q.diagnostic !== false;
  * }
  */
 export function emptyMastery() {
-  return { v: 1, onboarding: { status: null, at: 0, levels: {} }, concepts: {}, overrides: {} };
+  return { v: 1, onboarding: { status: null, at: 0, levels: {} }, concepts: {}, overrides: {}, labs: {} };
 }
 
 /** Anything from storage to a well-formed record; keys and values that do not fit are dropped. */
@@ -117,8 +117,17 @@ export function normalizeMastery(raw) {
       if (CONCEPT_ID.test(id) && (v === 'skipped' || v === 'forced')) out.overrides[id] = v;
     }
   }
+  // Labs whose "Before you begin" (story, questions, lessons) the learner has been through and started from.
+  if (raw.labs && typeof raw.labs === 'object' && !Array.isArray(raw.labs)) {
+    for (const [slug, v] of Object.entries(raw.labs)) {
+      if (/^[a-z0-9][a-z0-9-]{0,80}$/.test(slug) && v && typeof v === 'object' && v.intro === true) out.labs[slug] = { intro: true };
+    }
+  }
   return out;
 }
+
+/** Whether the learner has been through this lab's "Before you begin" and started it. */
+export const introSeen = (m, slug) => m?.labs?.[slug]?.intro === true;
 
 /**
  * The record's home. `storage` defaults to window.localStorage; if it is

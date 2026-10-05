@@ -25,7 +25,7 @@ import { installCodeCopy } from './code-copy.js';
 import { isStaleChunkError, recoverFromStaleBuild } from './stale-build.js';
 import { GUIDE_TAB_NAMES, buildRoute, isOpaqueId, routeTitle } from './routes.js';
 import { icon, spriteIcon, uiIcon } from './icons.js';
-import { createMasteryStore, normalizeLearn, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
+import { createMasteryStore, normalizeLearn, introSeen, normalizeOnboarding, onboardingFinished, suggestStart } from './learn-model.js';
 import { runOnboarding } from './onboarding.js';
 import { createProgressHub } from './progress-hub.js';
 import { runBeforeYouBegin } from './before-you-begin.js';
@@ -1856,7 +1856,8 @@ async function beginLab(lab, card) {
   if (guardDesktop(lab.slug)) return;
   // A running lab is rejoined by Start, whatever was clicked: nothing to prepare for.
   const resuming = runningSlug !== null || !$('resumeCard').hidden;
-  if (!lab.has_learn || resuming) return startSession(lab.slug, card);
+  // A lab whose story and questions the learner has been through once is not shown them again.
+  if (!lab.has_learn || resuming || introSeen(mastery.get(), lab.slug)) return startSession(lab.slug, card);
   beginning = true;
   const buttons = document.querySelectorAll('.lab button, .lab-detail button, .resume button');
   buttons.forEach((b) => (b.disabled = true));
