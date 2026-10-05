@@ -74,7 +74,7 @@ timeout_minutes: 90
 idle_minutes: 10
 
 env:
-  JAEGER_URL: "http://127.0.0.1:16686"
+  JAEGER_URL: "http://127.0.0.1:16686/sessions/{{session.id}}/services/jaeger"
   LITELLM_URL: "http://127.0.0.1:4000"
   LITELLM_MASTER_KEY: "sk-opalix-eu-master"
   OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318"
@@ -87,11 +87,13 @@ services:
   - name: jaeger
     user: learner
     argv: ["jaeger", "--config", "file:/workspace/jaeger/config.yaml"]
+    env:
+      JAEGER_BASE_PATH: "{{service.prefix}}"
     cwd: /workspace
     port: 16686
     healthcheck:
       type: http
-      path: /
+      path: "{{service.prefix}}/"
       timeout_s: 60
     ui: true
     depends_on: []

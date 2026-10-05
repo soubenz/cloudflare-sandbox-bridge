@@ -33,6 +33,9 @@ service:
 
 extensions:
   jaeger_query:
+    # The console shows this UI under /sessions/<id>/services/jaeger/ and forwards that path unchanged, so Jaeger
+    # serves everything (UI and API) under it. Set per session from the manifest (JAEGER_BASE_PATH).
+    base_path: ${env:JAEGER_BASE_PATH}
     http:
       endpoint: "0.0.0.0:16686"
     grpc:

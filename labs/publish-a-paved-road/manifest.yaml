@@ -109,7 +109,7 @@ env:
   LITELLM_URL: "http://127.0.0.1:4000"
   LITELLM_MASTER_KEY: "sk-opalix-ppr-master"
   TEMPLATE_URL: "http://127.0.0.1:8980"
-  JAEGER_QUERY_URL: "http://127.0.0.1:16686"
+  JAEGER_QUERY_URL: "http://127.0.0.1:16686/sessions/{{session.id}}/services/jaeger"
   OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318"
   CREDENTIALS_FILE: "/workspace/template/credentials.json"
   MODEL_NAME: "feature-model"
@@ -230,11 +230,13 @@ services:
   - name: jaeger
     user: learner
     argv: ["jaeger", "--config", "file:/workspace/jaeger/jaeger-config.yaml"]
+    env:
+      JAEGER_BASE_PATH: "{{service.prefix}}"
     cwd: /workspace
     port: 16686
     healthcheck:
       type: http
-      path: /
+      path: "{{service.prefix}}/"
       timeout_s: 30
     ui: true
     depends_on: []

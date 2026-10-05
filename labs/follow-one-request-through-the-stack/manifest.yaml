@@ -78,7 +78,7 @@ timeout_minutes: 60
 idle_minutes: 10
 
 env:
-  JAEGER_URL: "http://127.0.0.1:16686"
+  JAEGER_URL: "http://127.0.0.1:16686/sessions/{{session.id}}/services/jaeger"
 
 services:
   - name: jaeger
@@ -97,12 +97,13 @@ services:
       ]
     cwd: /workspace
     env:
+      JAEGER_BASE_PATH: "{{service.prefix}}"
       OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318/v1/traces"
-      JAEGER_QUERY_URL: "http://127.0.0.1:16686"
+      JAEGER_QUERY_URL: "http://127.0.0.1:16686{{service.prefix}}"
     port: 16686
     healthcheck:
       type: http
-      path: /
+      path: "{{service.prefix}}/"
       timeout_s: 60
     ui: true
     depends_on: []

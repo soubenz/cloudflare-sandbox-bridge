@@ -80,7 +80,7 @@ timeout_minutes: 90
 idle_minutes: 10
 
 env:
-  JAEGER_URL: "http://127.0.0.1:16686"
+  JAEGER_URL: "http://127.0.0.1:16686/sessions/{{session.id}}/services/jaeger"
   OTELCOL_METRICS_URL: "http://127.0.0.1:8888/metrics"
   TRAFFIC_URL: "http://127.0.0.1:5010"
   TRAFFIC_SERVICE_NAME: "opalix-traffic"
@@ -93,11 +93,13 @@ services:
     # scripts) -- this is the platform (image) change m4-common.md says
     # the main session makes later, not something this lab folder does.
     argv: ["jaeger", "--config", "file:/workspace/jaeger/jaeger-config.yaml"]
+    env:
+      JAEGER_BASE_PATH: "{{service.prefix}}"
     cwd: /workspace
     port: 16686
     healthcheck:
       type: http
-      path: /
+      path: "{{service.prefix}}/"
       # Jaeger booted in ~0.12s live in the feasibility investigation
       # (FINDINGS.md 1.2); 30s leaves real margin for a slower container
       # without hiding an actual failure to start.

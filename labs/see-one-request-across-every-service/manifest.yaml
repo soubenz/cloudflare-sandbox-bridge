@@ -108,18 +108,20 @@ env:
   GATEWAY_URL: "http://127.0.0.1:5001"
   WORKER_URL: "http://127.0.0.1:5002"
   STORAGE_URL: "http://127.0.0.1:5003"
-  JAEGER_QUERY_URL: "http://127.0.0.1:16686"
+  JAEGER_QUERY_URL: "http://127.0.0.1:16686/sessions/{{session.id}}/services/jaeger"
   OTLP_HTTP_ENDPOINT: "http://127.0.0.1:4318"
 
 services:
   - name: jaeger
     user: learner
     argv: ["jaeger", "--config", "file:/workspace/jaeger/jaeger-config.yaml"]
+    env:
+      JAEGER_BASE_PATH: "{{service.prefix}}"
     cwd: /workspace
     port: 16686
     healthcheck:
       type: http
-      path: /
+      path: "{{service.prefix}}/"
       # Jaeger booted in ~0.12s live in the feasibility investigation
       # (FINDINGS.md 1.2); 30s leaves real margin for a slower container
       # without hiding an actual failure to start.
