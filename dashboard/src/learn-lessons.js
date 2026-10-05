@@ -16,6 +16,7 @@
 
 import { lessonReason, planLessons, setOverride } from './learn-model.js';
 import { lessonCard, make } from './learn-ui.js';
+import { QUIZ_LEVELS } from './words.js';
 
 /** Whether a bundle has any lessons. */
 export const hasLessons = (learn) => (learn?.concepts || []).length > 0;
@@ -25,7 +26,7 @@ export function reasonChip(reason) {
   if (reason === 'known') return 'You know this';
   if (reason === 'skipped') return 'Skipped';
   if (reason === 'forced') return 'Opened by you';
-  if (reason === 'strong') return 'Familiar from your quiz';
+  if (reason === 'strong') return `${QUIZ_LEVELS.strong}, from your quiz`;
   return '';
 }
 

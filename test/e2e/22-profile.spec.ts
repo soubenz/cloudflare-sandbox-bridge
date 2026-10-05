@@ -111,6 +111,7 @@ const NEW_LEARNER = {
     locked: [{ id: 'first-lab', title: 'First steps', description: 'Finish your first lab.', icon: 'flag', tier: 'bronze', progress: { have: 0, need: 1 } }, ...LOCKED.map((a) => ({ ...a, progress: { have: 0, need: a.progress!.need } }))] as Award[],
   },
   overall: { score: 0, level: 'Not started', evaluation: 'Overall you have not started yet. Finish a lab to begin your score.' },
+  next_lab: { slug: 'see-what-a-gateway-does', title: 'See what a gateway does', skill: 'gateway', path: 'ai-platform', module: 1 },
   updated_at: EARNED_AT,
 };
 
@@ -154,6 +155,7 @@ const MID_LEARNER = {
     locked: LOCKED,
   },
   overall: { score: 11, level: 'Foundations', evaluation: 'Overall you are at Foundations level. Keep going: a few more labs will move your score.' },
+  next_lab: { slug: 'add-a-model-without-touching-app-code', title: 'Add a model without touching app code', skill: 'gateway', path: 'ai-platform', module: 1 },
   updated_at: EARNED_AT,
 };
 
@@ -172,6 +174,7 @@ const TOP_LEARNER = {
     locked: [] as Award[],
   },
   overall: { score: 92, level: 'Expert', evaluation: 'Overall you are at Expert level.' },
+  next_lab: null as null | { slug: string; title: string; skill: string; path: string; module: number },
   updated_at: EARNED_AT,
 };
 
@@ -184,6 +187,7 @@ const compact = (p: Profile) => ({
   streak: p.streak,
   top_skills: [...p.skills].sort((a, b) => b.score - a.score).slice(0, 3).map(({ area, title, score, level }) => ({ area, title, score, level })),
   recent_awards: p.awards.earned.slice(0, 3).map(({ id, title, description, icon, tier, earned_at }) => ({ id, title, description, icon, tier, earned_at })),
+  next_lab: p.next_lab,
   updated_at: p.updated_at,
 });
 
@@ -196,7 +200,7 @@ const PATH_A = {
     step('route-by-intent', 'Route by intent', 'upcoming', { area: 'mcp', estimated_minutes: 45 }),
     step('guard-the-spend', 'Guard the spend', 'upcoming'),
     step('retrieve-with-citations', 'Retrieve with citations', 'upcoming', { area: 'rag' }),
-    step('a-pro-only-lab', 'A pro only lab', 'locked', { why: 'Included with the Pro plan.', lock: 'plan' }),
+    step('a-pro-only-lab', 'A pro only lab', 'locked', { why: 'This lab is included with the Pro plan.', lock: 'plan' }),
   ],
   total_minutes: 165,
   weeks_estimate: 2,
@@ -211,7 +215,7 @@ const PATH_LOCKS = {
   steps: [
     PATH_A.steps[0]!,
     PATH_A.steps[1]!,
-    step('plan-locked-lab', 'Plan locked lab', 'locked', { why: 'Included with the Pro plan.', lock: 'plan' }),
+    step('plan-locked-lab', 'Plan locked lab', 'locked', { why: 'This lab is included with the Pro plan.', lock: 'plan' }),
     step('waits-for-a-lab', 'Waits for a lab', 'locked', { why: 'Unlocks after Plan locked lab.', lock: 'prerequisite' }),
     step('old-plan-lock', 'Old plan lock', 'locked', { why: 'Included with the Pro plan.' }),
     step('old-other-lock', 'Old other lock', 'locked', { why: 'Something else holds this one.' }),
@@ -435,12 +439,12 @@ test.describe('the profile page', () => {
 
     await expect(page.getByRole('heading', { level: 1, name: 'Your profile' })).toBeVisible();
     await expect(page).toHaveTitle('Your profile · Opalix labs');
-    await expect(page.locator('.profile-level-name')).toHaveText('Level 1 Newcomer');
-    const xp = page.getByRole('meter', { name: 'XP towards level 2' });
+    await expect(page.locator('.profile-level-name')).toHaveText('Rank: Newcomer');
+    const xp = page.getByRole('meter', { name: 'XP towards the next rank' });
     await expect(xp).toHaveAttribute('aria-valuenow', '0');
     await expect(xp).toHaveAttribute('aria-valuemax', '100');
     await expect(page.locator('.xp-line')).toContainText('0 XP');
-    await expect(page.locator('.xp-line')).toContainText('0 of 100 XP to level 2');
+    await expect(page.locator('.xp-line')).toContainText('0 of 100 XP to the next rank');
     await expect(page.locator('.streak')).toContainText('No streak yet');
     const overall = page.getByRole('meter', { name: 'Overall score' });
     await expect(overall).toHaveAttribute('aria-valuenow', '0');
@@ -479,34 +483,34 @@ test.describe('the profile page', () => {
     await page.setViewportSize(WIDE);
     await visit(page, '/profile');
 
-    await expect(page.locator('.profile-level-name')).toHaveText('Level 3 Apprentice');
-    const xp = page.getByRole('meter', { name: 'XP towards level 4' });
+    await expect(page.locator('.profile-level-name')).toHaveText('Rank: Apprentice');
+    const xp = page.getByRole('meter', { name: 'XP towards the next rank' });
     await expect(xp).toHaveAttribute('aria-valuenow', '25');
     await expect(xp).toHaveAttribute('aria-valuemax', '250');
-    await expect(xp).toHaveAttribute('aria-valuetext', '25 of 250 XP to level 4');
+    await expect(xp).toHaveAttribute('aria-valuetext', '25 of 250 XP to the next rank');
     await expect(page.locator('.xp-line')).toContainText('275 XP');
     await expect(page.locator('.streak')).toContainText('2-day streak');
     await expect(page.locator('.streak')).toContainText('Best: 4 days');
     await expect(page.getByRole('meter', { name: 'Overall score' })).toHaveAttribute('aria-valuenow', '11');
-    await expect(page.locator('.profile-overall .level-name')).toHaveText('Foundations');
+    await expect(page.locator('.profile-overall .level-name')).toHaveText('Skill: Foundations');
     await expect(page.locator('.overall-eval')).toContainText('Overall you are at Foundations level');
 
     const gateway = page.locator('.skill-card[data-area="gateway"]');
     await expect(gateway.getByRole('meter', { name: 'Gateway and access score' })).toHaveAttribute('aria-valuenow', '67');
     await expect(gateway.getByRole('meter', { name: 'Gateway and access score' })).toHaveAttribute('aria-valuetext', '67 out of 100, Proficient');
-    await expect(gateway.locator('.level-name')).toHaveText('Proficient');
+    await expect(gateway.locator('.level-name')).toHaveText('Skill: Proficient');
     await expect(gateway.locator('.skill-eval')).toHaveText('You are confident in Gateway and access: 3 of 6 labs finished, with strong results. Next up: "One endpoint, one key".');
     await expect(gateway.locator('.skill-labs-line')).toHaveText('3 of 6 labs done');
     await expect(gateway.getByRole('meter', { name: 'Labs done in Gateway and access' })).toHaveAttribute('aria-valuenow', '3');
-    await expect(gateway.locator('.skill-quiz')).toHaveText('Quiz starting point: Familiar');
+    await expect(gateway.locator('.skill-quiz')).toHaveText('Quiz starting point: Some experience');
     await expect(gateway.getByRole('link', { name: 'Next lab: One endpoint, one key' })).toHaveAttribute('href', '/labs/one-endpoint-one-key');
     // The level names, one per band.
     const names = SKILLS.map((a) => page.locator(`.skill-card[data-area="${a.area}"] .level-name`));
-    await expect(names[0]!).toHaveText('Proficient');
-    await expect(names[1]!).toHaveText('Practitioner');
-    await expect(names[2]!).toHaveText('Foundations');
+    await expect(names[0]!).toHaveText('Skill: Proficient');
+    await expect(names[1]!).toHaveText('Skill: Practitioner');
+    await expect(names[2]!).toHaveText('Skill: Foundations');
     await expect(names[3]!).toHaveText('Not started');
-    await expect(names[4]!).toHaveText('Expert');
+    await expect(names[4]!).toHaveText('Skill: Expert');
     // An area with no next lab says why: nothing to do, or nothing there yet.
     await expect(page.locator('.skill-card[data-area="platform"] .skill-all-done')).toHaveText('Every lab in this area is done.');
     await expect(page.locator('.skill-card[data-area="platform"] a.skill-next')).toHaveCount(0);
@@ -547,11 +551,11 @@ test.describe('the profile page', () => {
     await stub(page, { profile: TOP_LEARNER as unknown as Profile });
     await page.setViewportSize(WIDE);
     await visit(page, '/profile');
-    await expect(page.locator('.profile-level-name')).toHaveText('Level 10 Legend');
-    await expect(page.getByRole('meter', { name: 'XP' })).toHaveAttribute('aria-valuetext', 'Top level reached');
-    await expect(page.locator('.xp-line')).toContainText('Top level reached');
+    await expect(page.locator('.profile-level-name')).toHaveText('Rank: Legend');
+    await expect(page.getByRole('meter', { name: 'XP' })).toHaveAttribute('aria-valuetext', 'Top rank reached');
+    await expect(page.locator('.xp-line')).toContainText('Top rank reached');
     await expect(page.locator('.streak')).toContainText('30-day streak');
-    await expect(page.locator('.skill-card .level-name')).toHaveText(SKILLS.map(() => 'Expert'));
+    await expect(page.locator('.skill-card .level-name')).toHaveText(SKILLS.map(() => 'Skill: Expert'));
     await expect(page.locator('.skill-card .skill-all-done')).toHaveCount(6);
     await expect(page.getByRole('meter', { name: 'Overall score' })).toHaveAttribute('aria-valuenow', '92');
     const gold = page.locator('#awardsEarned .award-card[data-tier="gold"]');
@@ -623,7 +627,7 @@ test.describe('the profile page', () => {
     const outline = await page.locator('#labList').evaluate((root) => [...root.querySelectorAll('h1, h2, h3, h4')].map((h) => `${h.tagName.toLowerCase()}:${h.textContent!.trim()}`));
     expect(outline[0]).toBe('h1:Your profile');
     expect(outline.filter((h) => h.startsWith('h1:'))).toHaveLength(1);
-    expect(outline.filter((h) => h.startsWith('h2:'))).toEqual(['h2:Level 3 Apprentice', 'h2:Overall score', 'h2:Your skills', 'h2:Awards']);
+    expect(outline.filter((h) => h.startsWith('h2:'))).toEqual(['h2:Rank: Apprentice', 'h2:Overall score', 'h2:Your skills', 'h2:Awards']);
     // A level never skips a step down: a h3 only after a h2, a h4 only after a h3.
     let at = 0;
     for (const h of outline) {
@@ -728,10 +732,10 @@ test.describe('Home: Your progress', () => {
     const band = page.locator('#homeProgress');
     await expect(band).toBeVisible();
     await expect(band.getByRole('meter', { name: 'Overall score' })).toHaveAttribute('aria-valuenow', '11');
-    await expect(band.locator('.band-score .level-name')).toHaveText('Foundations');
-    await expect(band.locator('.band-level')).toHaveText('Level 3 · Apprentice');
-    await expect(band.getByRole('meter', { name: 'XP towards level 4' })).toHaveAttribute('aria-valuenow', '25');
-    await expect(band.locator('.band-xp-line')).toHaveText('25 of 250 XP to level 4');
+    await expect(band.locator('.band-score .level-name')).toHaveText('Skill: Foundations');
+    await expect(band.locator('.band-level')).toHaveText('Rank: Apprentice');
+    await expect(band.getByRole('meter', { name: 'XP towards the next rank' })).toHaveAttribute('aria-valuenow', '25');
+    await expect(band.locator('.band-xp-line')).toHaveText('25 of 250 XP to the next rank');
     await expect(band.locator('.streak')).toContainText('2-day streak');
     // The three best skills, best first.
     const skills = band.locator('.band-skill');
@@ -796,7 +800,7 @@ test.describe('Home: Your path', () => {
     const coming = band.locator('.mini-step');
     await expect(coming).toHaveCount(3);
     await expect(coming.locator('.mini-step-title')).toHaveText(['One endpoint, one key', 'Route by intent', 'Guard the spend']);
-    await expect(band.getByRole('heading', { level: 3, name: 'Coming up' })).toBeVisible();
+    await expect(band.getByRole('heading', { level: 3, name: 'After that' })).toBeVisible();
     await expect(band.locator('.path-totals')).toHaveText('2 h 45 min to go · about 2 weeks');
     await expect(band.getByRole('link', { name: 'See the whole path' })).toHaveAttribute('href', '/paths/mine');
     // The path band comes first, then the progress band, then the path cards.
@@ -906,14 +910,14 @@ test.describe('the award toast', () => {
     const s = await stub(page, { events: AWARD_EVENT('first-lab', 'First steps', 'bronze') });
     await page.setViewportSize(WIDE);
     await visit(page, '/', { mastery: DONE });
-    await expect(page.locator('#homeProgress .band-xp-line')).toHaveText('25 of 250 XP to level 4');
+    await expect(page.locator('#homeProgress .band-xp-line')).toHaveText('25 of 250 XP to the next rank');
     const before = s.profileCalls.length;
     // The answer is still fresh (30 seconds), so only the award can make Home ask again.
     s.profile = { ...MID_LEARNER, xp: 300, level: { ...MID_LEARNER.level, xp_into: 50 } };
     await page.locator('#homePath .next-card').getByRole('button', { name: 'Start' }).click();
     await expect(page.locator('#awardToasts .award-toast')).toHaveCount(1);
     await page.goBack();
-    await expect(page.locator('#homeProgress .band-xp-line')).toHaveText('50 of 250 XP to level 4');
+    await expect(page.locator('#homeProgress .band-xp-line')).toHaveText('50 of 250 XP to the next rank');
     expect(s.profileCalls.length).toBeGreaterThan(before);
   });
 });
@@ -949,7 +953,7 @@ test.describe('/paths/mine', () => {
     const statuses = await steps(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-status')));
     expect(statuses).toEqual(['done', 'next', 'upcoming', 'upcoming', 'upcoming', 'upcoming', 'locked']);
     // The state is a word on every step.
-    await expect(steps(page).locator('.step-status')).toHaveText(['Done', 'Next up', 'Coming up', 'Coming up', 'Coming up', 'Coming up', 'Locked']);
+    await expect(steps(page).locator('.step-status')).toHaveText(['Done', 'Next up', 'Not started', 'Not started', 'Not started', 'Not started', 'Locked']);
 
     const next = steps(page).nth(1);
     await expect(next.locator('.step-why')).toHaveText('A first step into Gateway and access, which is new to you.');
@@ -961,7 +965,7 @@ test.describe('/paths/mine', () => {
     // A done step can be opened again; a locked one says why, in plain words, and cannot start.
     await expect(steps(page).nth(0).getByRole('button', { name: 'Open again' })).toBeVisible();
     const locked = steps(page).nth(6);
-    await expect(locked.locator('.step-lock')).toHaveText('Part of the paid plan');
+    await expect(locked.locator('.step-lock')).toHaveText('This lab is included with the Pro plan.');
     // A plan lock offers the way out instead of a dead button: a link to the plans page.
     await expect(locked.getByRole('button')).toHaveCount(0);
     await expect(locked.getByRole('link', { name: 'Unlock A pro only lab with a plan' })).toHaveAttribute('href', PRICING);
@@ -982,14 +986,14 @@ test.describe('/paths/mine', () => {
 
     // Plan lock: the paid-plan line, and an Unlock link-button that is a real link (keyboard, middle-click), named for its lab.
     const plan = rows.nth(2);
-    await expect(plan.locator('.step-lock')).toHaveText('Part of the paid plan');
+    await expect(plan.locator('.step-lock')).toHaveText('This lab is included with the Pro plan.');
     const unlock = plan.getByRole('link', { name: 'Unlock Plan locked lab with a plan' });
     await expect(unlock).toHaveText('Unlock');
     await expect(unlock).toHaveAttribute('href', PRICING);
     await expect(unlock).not.toHaveAttribute('target', /.+/);
     await expect(unlock).toHaveClass(/\bbtn\b/);
     expect(await unlock.evaluate((e) => e.tagName)).toBe('A');
-    await expect(unlock).toHaveAccessibleDescription('Part of the paid plan');
+    await expect(unlock).toHaveAccessibleDescription('This lab is included with the Pro plan.');
     await expect(plan.getByRole('button')).toHaveCount(0);
 
     // Prerequisite lock: the service's sentence, the disabled Locked button, no Unlock.
@@ -1501,8 +1505,8 @@ test.describe('the quiz: where to start', () => {
     await expect(card(page).locator('.start-title')).toHaveText('Retrieval as a service');
     await expect(card(page).locator('.start-why')).toHaveText('You said this is new to you, so we begin here.');
     const row = (area: string) => host(page).locator(`.told-row[data-area="${area}"]`);
-    await expect(row('gateway')).toContainText('You know this well');
-    await expect(row('mcp')).toContainText('You have some experience');
+    await expect(row('gateway')).toContainText('Know it well');
+    await expect(row('mcp')).toContainText('Some experience');
     await expect(row('rag')).toContainText('New to you');
     // Level is shape and words, never colour alone: a full, a half and an empty dot, each beside its phrase.
     const dots = await host(page).locator('.told-dot').evaluateAll((els) =>
@@ -1617,7 +1621,7 @@ test.describe('the quiz: where to start', () => {
     await visitQuiz(page);
     await reach(page, {});
     await expect(host(page)).toContainText('We shorten lessons on what you already know and open them in full where it is new. You can still open or skip any lesson.');
-    await expect(host(page)).toContainText('You can retake this any time from the ? menu.');
+    await expect(host(page)).toContainText('You can retake this any time.');
     await host(page).locator('#btnOnboardingDone2').click();
     await expect(page.locator('#learnScreen')).toBeHidden();
     await expect(page).toHaveURL(/\/$/);

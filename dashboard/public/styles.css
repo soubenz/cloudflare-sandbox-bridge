@@ -619,8 +619,6 @@ kbd {
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3) var(--s5);
   margin-top: var(--s4); margin-bottom: var(--s5);
 }
-/* Under home's hero the search has room to breathe. */
-.hello + .lab-filters { margin-top: var(--s6); }
 .filter-search { display: flex; flex-wrap: wrap; flex: 1 1 280px; align-items: center; gap: var(--s2); max-width: 460px; }
 /* min-width: 0 lets the box shrink below its default width, so "Clear filters" wraps instead of leaving the page. */
 .filter-search input { flex: 1 1 200px; min-width: 0; }
@@ -665,6 +663,13 @@ kbd {
 [data-accent="indigo"] { --a: var(--accent-indigo); --a-soft: var(--accent-indigo-soft); --a-ink: var(--accent-indigo-ink); }
 
 .lab-list { display: flex; flex-direction: column; }
+/* Home draws the search and filters inside the list, between its bands and its path cards. */
+.lab-list > .lab-filters { margin-top: 28px; margin-bottom: var(--s4); }
+.lab-list > #labNoMatch { width: 100%; }
+.lab-list > .lab-filters ~ .path-cards { margin-top: 0; }
+/* The foot of a module's page: the neighbouring modules of the path. */
+.module-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s3); margin-top: 20px; }
+.module-foot-next { margin-left: auto; }
 /* The page's one block (a path's band, a module, a lab) sits under the trail. */
 .lab-list > .path, .lab-list > .module { margin-top: 28px; }
 
@@ -704,7 +709,6 @@ kbd {
 .path-summary { margin: 0; font-variant-numeric: tabular-nums; }
 .path-summary b { color: var(--ink); font-weight: 600; }
 .path-body { grid-column: 1 / -1; grid-row: 3; margin-top: 20px; }
-.modules { display: flex; flex-direction: column; gap: 20px; }
 
 /* A module: an info panel on the accent tint, beside its labs. */
 .module {
@@ -757,16 +761,15 @@ kbd {
   color: var(--a-ink); font: 500 12px/1.3 var(--mono);
 }
 .module-info .progress { background: color-mix(in srgb, var(--a) 18%, var(--surface)); }
-.module-progress { margin: 0; color: var(--a-ink); font: 500 12px/1.3 var(--mono); font-variant-numeric: tabular-nums; }
+.module-progress, .path-progress { margin: 0; color: var(--a-ink); font: 500 12px/1.3 var(--mono); font-variant-numeric: tabular-nums; }
 
-/* Badges: Free, Running, Optional, Suggested start. */
+/* Badges: Running, Optional, Suggested start, More labs coming. */
 .badge {
   display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px;
   font: 700 11px/1.3 var(--sans); white-space: nowrap;
 }
-.badge-free { background: var(--accent-fill); color: var(--on-accent); }
 .badge-running { background: var(--chip-strong-bg); color: var(--chip-strong-fg); }
-.badge-optional { border: 1px solid var(--a-ink); color: var(--a-ink); background: var(--surface); }
+.badge-optional, .badge-soon { border: 1px solid var(--a-ink); color: var(--a-ink); background: var(--surface); }
 .badge-suggested { background: var(--accent-soft); color: var(--accent-text); border: 1px solid color-mix(in srgb, var(--accent-text) 40%, transparent); }
 .badge-ok { background: var(--accent-green-soft); color: var(--accent-green-ink); }
 
@@ -857,13 +860,17 @@ kbd {
 .lab-locked .lab-num { border-style: dashed; }
 .lab-meta { grid-column: 2; grid-row: 1; min-width: 0; }
 .lab-title { margin: 0; font-family: var(--display); font-size: 19px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
-.lab-locked .lab-title { color: var(--ink-2); }
+.lab-locked .lab-title, .lab-plan-locked .lab-title { color: var(--ink-2); }
+.lab-title a { color: inherit; text-decoration: none; }
+.lab-title a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .lab-act { grid-column: 3; grid-row: 1; display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--ink-muted); }
 .lab-status { display: flex; align-items: center; gap: 8px; max-width: 220px; font-size: 13px; line-height: 1.35; text-align: right; }
 .lab-state { color: var(--ink-muted); white-space: nowrap; font-weight: 600; }
 .lab-running .lab-state { color: var(--accent); }
 .lab-lock { display: inline-flex; align-items: flex-start; gap: 6px; color: var(--ink-2); text-align: left; }
 .lab-lock svg { flex: none; margin-top: 1px; color: var(--ink-muted); }
+/* A plan lock: the chip, then the Unlock link, which may wrap under it in a narrow row. */
+.lab-status:has(.unlock-link) { flex-wrap: wrap; justify-content: flex-end; }
 .chip-done { color: var(--good); font-weight: 600; white-space: nowrap; }
 .lab-start { min-width: 96px; }
 .lab > .notice { grid-column: 1 / -1; margin-top: var(--s2); }

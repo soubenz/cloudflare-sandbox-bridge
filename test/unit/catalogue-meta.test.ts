@@ -54,14 +54,14 @@ describe('packages/catalogue/paths.json', () => {
     }
   });
 
-  it('gives each module two to four short skills and a unique number within its path', () => {
+  it('gives each module two to four short outcomes and a unique number within its path', () => {
     for (const p of meta.paths) {
       const numbers = p.modules.map((m) => m.number);
       expect(new Set(numbers).size, `${p.slug} module numbers are unique`).toBe(numbers.length);
       for (const m of p.modules) {
-        expect(m.skills.length, `${p.slug}#${m.number} skills`).toBeGreaterThanOrEqual(2);
-        expect(m.skills.length, `${p.slug}#${m.number} skills`).toBeLessThanOrEqual(4);
-        for (const s of m.skills) expect(s.length, `${p.slug}#${m.number} skill "${s}"`).toBeLessThanOrEqual(60);
+        expect(m.outcomes.length, `${p.slug}#${m.number} outcomes`).toBeGreaterThanOrEqual(2);
+        expect(m.outcomes.length, `${p.slug}#${m.number} outcomes`).toBeLessThanOrEqual(4);
+        for (const s of m.outcomes) expect(s.length, `${p.slug}#${m.number} outcome "${s}"`).toBeLessThanOrEqual(60);
       }
     }
   });

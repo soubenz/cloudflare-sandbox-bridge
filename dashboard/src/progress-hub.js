@@ -9,9 +9,10 @@
  */
 import { createLiveStore } from './live-store.js';
 import { createAwardToasts, createResultAwards } from './awards.js';
-import { progressBand, profilePage, startingParam } from './profile.js';
+import { gainBetween, progressBand, profilePage, standingOf, startingParam } from './profile.js';
 import { myPathPage, normalizePath, pathBand, pathInvite } from './path-view.js';
 import { pathInputsBody, saveGoal as rememberGoal } from './goal-fields.js';
+import { skillById } from './skills.js';
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
@@ -117,6 +118,9 @@ export function createProgressHub({
 
   /** The compact profile's `next_lab`: the lab object or null once it has answered, undefined until then. */
   const nextOf = (state) => (state.data && typeof state.data === 'object' && 'next_lab' in state.data ? (state.data.next_lab ?? null) : undefined);
+
+  /** The learner's standing when the lab on screen started (a promise), to say what finishing it earned. */
+  let startedWith = null;
 
   /** Something about the learner's progress changed (a check ran, an award came in): ask again next time. */
   function invalidate() {
@@ -266,6 +270,24 @@ export function createProgressHub({
       }
       result()?.add(data);
       invalidate();
+    },
+    /** A lab session begins: remember where the learner stands (reading the profile afresh if it is out of date). */
+    labStarted() {
+      startedWith = profileFull.ensure().then(() => standingOf(profileFull.get().data));
+      startedWith.catch(() => {});
+    },
+    /**
+     * A lab was completed: read the profile again and say what it earned, for the result card:
+     * `{ gain: { xp, skill: { title, from, to } | null } | null, next }`. `area` is the skill the lab feeds;
+     * `next` is the profile's `next_lab` (null when there is none, or it could not be read).
+     */
+    async finishedLab(area) {
+      const before = await (startedWith ?? Promise.resolve(null)).catch(() => null);
+      profileFull.invalidate();
+      profileCompact.invalidate();
+      await Promise.all([profileFull.ensure({ force: true }), profileCompact.ensure({ force: true })]);
+      const after = standingOf(profileFull.get().data);
+      return { gain: gainBetween(before, after, area, (id) => skillById(id)?.title ?? id), next: nextOf(profileCompact.get()) ?? null };
     },
     /** A new session starts with no awards on its result card. */
     clearResultAwards() {

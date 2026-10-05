@@ -124,7 +124,7 @@ describe('golden path', () => {
     const expected: PathJson = {
       steps: [
         { slug: 'gw-intro', title: 'See what a gateway does', area: 'gateway', why: 'You have already finished this lab.', estimated_minutes: 20, status: 'done' },
-        { slug: 'gw-routing', title: 'Add a model without touching app code', area: 'gateway', why: 'Included with the Pro plan.', estimated_minutes: 30, status: 'locked', lock: 'plan' },
+        { slug: 'gw-routing', title: 'Add a model without touching app code', area: 'gateway', why: 'This lab is included with the Pro plan.', estimated_minutes: 30, status: 'locked', lock: 'plan' },
         { slug: 'gw-followup', title: 'Read the spend report', area: 'gateway', why: 'Unlocks after Add a model without touching app code.', estimated_minutes: 15, status: 'locked', lock: 'prerequisite' },
       ],
       total_minutes: 0,
@@ -325,7 +325,7 @@ describe('locked steps say why', () => {
     const { path } = await saveInputsAndRecompute(env, 'u1', FREE_INPUTS, deps(echo()));
     const locked = path.steps.filter((s) => s.status === 'locked');
     expect(locked.map((s) => `${s.slug}:${s.lock}`)).toEqual(['gw-routing:plan', 'gw-capstone:plan', 'rag-basics:plan']);
-    for (const s of locked) expect(s.why).toBe('Included with the Pro plan.');
+    for (const s of locked) expect(s.why).toBe('This lab is included with the Pro plan.');
     // Only locked steps have the field.
     for (const s of path.steps.filter((x) => x.status !== 'locked')) expect(s).not.toHaveProperty('lock');
   });
@@ -340,7 +340,7 @@ describe('locked steps say why', () => {
     const { path } = await saveInputsAndRecompute(env, 'u1', FREE_INPUTS, deps(echo()));
     expect(path.steps.map((s) => [s.slug, s.status, s.lock, s.why])).toEqual([
       ['a', 'next', undefined, 'The next step on your path.'],
-      ['b', 'locked', 'plan', 'Included with the Pro plan.'],
+      ['b', 'locked', 'plan', 'This lab is included with the Pro plan.'],
       ['c', 'locked', 'prerequisite', 'Unlocks after Paid lab.'],
     ]);
   });

@@ -107,8 +107,8 @@ export async function inputHash(inputs: PathInputs, plan: Plan, rules: RulesResu
   );
 }
 
-/** The stock reason of a plan lock. */
-export const PLAN_LOCK_WHY = 'Included with the Pro plan.';
+/** The stock reason of a plan lock: the same sentence the console says (dashboard/src/words.js) and `plan_required` carries. */
+export const PLAN_LOCK_WHY = 'This lab is included with the Pro plan.';
 
 /** The reason and kind of a lock. A prerequisite's title is plain text, cut so the line stays within the 120 characters of a `why`. */
 export function lockedStep(info: LockInfo): { lock: StepLock; why: string } {

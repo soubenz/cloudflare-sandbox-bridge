@@ -490,6 +490,8 @@ body:has(#workspace:not([hidden])) .nav-account > #btnHelp { display: inline-fle
 .result-title { flex: 1 1 200px; min-width: 0; }
 .result-card h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; color: var(--accent-green-ink); }
 .result-lab { margin: 0; color: var(--ink-2); font-size: 14px; }
+.result-gain { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font: 600 13px/1.4 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.result-next { margin: 0; }
 .result-stats { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 0; }
 .result-stats dt { font-size: 11px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .result-stats dd { margin: 0; font: 600 13px/1.4 var(--mono); font-variant-numeric: tabular-nums; }

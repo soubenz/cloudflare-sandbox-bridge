@@ -8,6 +8,8 @@
  * service credential goes through this console's own Worker (`sameOrigin`
  * below), which holds it; the browser never does.
  */
+import { PLAN_LOCK_LONG } from './words.js';
+
 const DEFAULT_API = 'https://opalix-sandbox.soubenz94.workers.dev';
 
 /**
@@ -40,7 +42,7 @@ export function plainError(err) {
   const status = err?.status;
   if (!status) return "We can't reach the labs right now. Check your connection and try again.";
   if (status === 401) return 'You have been signed out. Reload the page to sign in again.';
-  if (status === 403) return err.code === 'plan_required' ? 'This lab is part of the Pro plan.' : "That isn't available to you right now.";
+  if (status === 403) return err.code === 'plan_required' ? PLAN_LOCK_LONG : "That isn't available to you right now.";
   if (status === 404) return 'It could not be found. It may have ended or been removed.';
   if (status === 408 || status === 504) return 'That took too long. Please try again.';
   if (status === 409 || status === 503) return 'Labs are busy right now. Please try again in a moment.';
@@ -125,12 +127,16 @@ async function sameOrigin(path, init = {}) {
   if (res.status === 401) throw statusError(401, 'signed out — reload to sign in again');
   if (!res.ok) {
     let detail = await res.text();
+    let apiError;
     try {
-      detail = JSON.parse(detail).error?.message ?? JSON.parse(detail).error ?? detail;
+      const body = JSON.parse(detail);
+      // The API's own error (`{ code, message }`) goes on the error, so a plan refusal reads as one.
+      if (body.error && typeof body.error === 'object') apiError = body.error;
+      detail = body.error?.message ?? body.error ?? detail;
     } catch {
       /* not JSON */
     }
-    throw statusError(res.status, detail);
+    throw statusError(res.status, detail, apiError);
   }
   return res.status === 204 ? undefined : res.json();
 }

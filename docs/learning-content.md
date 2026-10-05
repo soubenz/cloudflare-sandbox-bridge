@@ -252,7 +252,7 @@ The learner console (`dashboard/`) renders all of the above in the browser. The 
 | `POST /api/prepare` | `POST /sessions/prepare` | `{ lab }` plus the cookie's subject as `user_id`; answers `202 { prepared: true }` with no session id or token. Warms the lab up (see below); an API refusal is passed through and ignored by the page |
 | `POST /api/prepare/cancel` | `POST /sessions/prepare/cancel` | `{ lab? }` plus the cookie's subject; `POST` so a closing tab's `sendBeacon` can send it. The API ends the user's pre-warm only if it has not begun |
 
-All three need the console cookie like the other `/api` routes. The launcher's `has_learn` flag comes through `GET /api/labs` unchanged; a lab without it never asks for a bundle.
+All three need the console cookie like the other `/api` routes. The launcher's `has_learn` flag comes through `GET /api/labs` unchanged; a lab without it never asks for a bundle. The same route adds, to every lab, the learner's `progress` and (when the API says which plan they are on) `plan: 'free' | 'pro'`, plus `bypass: true` for the owner's own subject: the catalogue shows a Pro lab as locked for a free learner unless `bypass` is set.
 
 - **Platform quiz** (`onboarding.js`). Shown once after the first sign-in when the quiz exists; "Skip for now" is on every screen and is remembered; "Retake the quiz" sits next to the help control in the header and in the "?" dialog. It branches (see [The platform onboarding quiz](#the-platform-onboarding-quiz)): a checklist of the areas the learner has worked with, then at most two questions per ticked area. Its outcome is a level per quiz skill (strong, familiar or new; the quiz skills are `quiz` in `concepts.json`), which the personal path and the profile use. "Start here" and the launcher's "Suggested start" chip both point at the module that holds the learner's next lab (the profile's `next_lab`).
 - **Before you begin** (`before-you-begin.js`, with the order in `learn-flow.js`). Between Start and the boot: the story, then rounds of questions alternating with chunks of the lessons (`learn-lessons.js`, full screen, with a count of the lessons read in the chunk). A lesson for a known or skipped concept folds to its `recap` with "Show me the lesson anyway"; the others show in full with "I know this, skip". Every step has a Back button (to the story, the questions or the lessons before it; inside a round, to the previous question) and "Back to labs"; answers are kept, so Back never asks a question again and never posts one twice. The session starts only when "Start the lab" is pressed (the last lessons' button, or the last question's when the flow ends on a round); "Skip all, just start the lab" is on every step. Any failure to fetch the bundle goes straight to the boot.
@@ -284,7 +284,7 @@ The one-time quiz every learner sees first is not a lab's `quiz.yaml`: it is `pa
 ```json
 {
   "version": 1,
-  "intro": "Welcome … **no score** … where each module starts …",
+  "intro": "Welcome … **no score** … where each skill starts and which labs your path skips …",
   "areas": [
     { "area": "gateway", "blurb": "One place your apps call models through, with stable names and a spend log." }
   ],

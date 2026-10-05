@@ -2,12 +2,12 @@
  * The learner's own path: the "Your path" band on Home and the page at /paths/mine.
  *
  * The labs, their order and the reason for each (`why`) are the service's (GET /api/path). This file lays them out,
- * says what state each step is in (in words: Done, Next up, Coming up, Locked), and asks the same two questions
+ * says what state each step is in (in words: Done, Next up, Not started, Locked), and asks the same two questions
  * the quiz ends with when the learner wants to change their goal. A learner-written goal goes in through
  * textContent, like everything else from outside this file.
  */
 import { icon, svgIcon } from './icons.js';
-import { minutesLabel } from './launcher-model.js';
+import { PLAN_LOCK_LONG, PLAN_LOCK_SHORT, isPlanLockWhy, labTime, minutesLabel, statusWord } from './words.js';
 import { skillById, skillLook } from './skills.js';
 import { GOAL_KINDS, goalKindField, hoursField, loadGoal } from './goal-fields.js';
 import { adminOpenStep } from './admin-mode.js';
@@ -22,11 +22,14 @@ const el = (tag, className, text) => {
 const SLUG = /^[a-z0-9][a-z0-9._-]{0,80}$/;
 const STATUSES = ['done', 'next', 'upcoming', 'locked'];
 
-/** What a step's state is called, always in words (the dot beside it is only a picture). */
-export const STATUS_WORDS = { done: 'Done', next: 'Next up', upcoming: 'Coming up', locked: 'Locked' };
-/** Why a step cannot be started, in plain words. */
-export const LOCK_REASON = 'Part of the paid plan';
-/** The service's stock line for a plan lock; an older response without `lock` is read as a plan lock only when `why` is this. */
+/** What a step's state is called, always in words (the dot beside it is only a picture); words.js has them. */
+export const STATUS_WORDS = Object.fromEntries(STATUSES.map((status) => [status, statusWord(status)]));
+/** Why a step cannot be started, in plain words: the sentence the service says too. */
+export const LOCK_REASON = PLAN_LOCK_LONG;
+/**
+ * The service's older stock line for a plan lock. The service now says `LOCK_REASON`; a stored path or an older
+ * response without `lock` is still read as a plan lock when `why` is either.
+ */
 export const STOCK_PLAN_WHY = 'Included with the Pro plan.';
 const LOCKS = ['plan', 'prerequisite'];
 
@@ -36,7 +39,7 @@ const LOCKS = ['plan', 'prerequisite'];
  */
 function lockKind(s) {
   if (LOCKS.includes(s.lock)) return s.lock;
-  return s.why === STOCK_PLAN_WHY ? 'plan' : null;
+  return isPlanLockWhy(s.why) ? 'plan' : null;
 }
 
 /** The path as the page may rely on it: every step has a slug, a title, a status and a why line. */
@@ -101,6 +104,24 @@ function startButton(step, deps, row, kind = 'btn-strong') {
 
 const labHref = (slug) => `/labs/${encodeURIComponent(slug)}`;
 
+/**
+ * A plan lock as the catalogue and the path both draw it: `badge` is the lock glyph with the short plan wording
+ * (a chip), and `unlock` is the link to the plans page named for the lab (null when there is no address for it).
+ * `describedBy` is the id of the line that says why, so a screen reader hears the reason with the link.
+ */
+export function lockBadge({ text = PLAN_LOCK_SHORT, plansHref = null, title = '', describedBy = '' } = {}) {
+  const badge = el('span', 'lab-lock lock-badge');
+  badge.append(icon('lock', 14), document.createTextNode(text));
+  let unlock = null;
+  if (plansHref) {
+    unlock = el('a', 'btn btn-accent unlock-link', 'Unlock');
+    unlock.href = plansHref;
+    unlock.setAttribute('aria-label', `Unlock ${title || 'this lab'} with a plan`);
+    if (describedBy) unlock.setAttribute('aria-describedby', describedBy);
+  }
+  return { badge, unlock };
+}
+
 // ------------------------------------------------------------------ Home: "Your path"
 
 /**
@@ -141,7 +162,7 @@ export function pathBand(rawPath, deps = {}) {
     const meta = el('div', 'next-meta');
     const chip = areaChip(next.area);
     if (chip) meta.append(chip);
-    if (next.minutes > 0) meta.append(el('span', 'chip', minutesLabel(next.minutes)));
+    if (next.minutes > 0) meta.append(el('span', 'chip', labTime(next.minutes)));
     card.append(meta);
     const start = startButton(next, deps, card);
     if (start) {
@@ -158,7 +179,7 @@ export function pathBand(rawPath, deps = {}) {
   const side = el('div', 'mini-path');
   const upcoming = comingUp(path);
   if (upcoming.length) {
-    const sub = el('h3', 'band-sub', 'Coming up');
+    const sub = el('h3', 'band-sub', 'After that');
     sub.id = 'miniPathHeading';
     const steps = el('ol', 'mini-steps');
     steps.setAttribute('aria-labelledby', 'miniPathHeading');
@@ -170,7 +191,7 @@ export function pathBand(rawPath, deps = {}) {
       const a = el('a', 'mini-step-title', step.title);
       a.href = labHref(step.slug);
       text.append(a);
-      if (step.minutes > 0) text.append(el('span', 'mini-step-time', minutesLabel(step.minutes)));
+      if (step.minutes > 0) text.append(el('span', 'mini-step-time', labTime(step.minutes)));
       li.append(text);
       steps.append(li);
     }
@@ -219,10 +240,10 @@ function stepRow(step, index, deps) {
 
   const main = el('div', 'step-main');
   const top = el('div', 'step-top');
-  top.append(el('span', 'step-status', STATUS_WORDS[step.status]));
+  top.append(el('span', 'step-status', statusWord(step.status)));
   const chip = areaChip(step.area);
   if (chip) top.append(chip);
-  if (step.minutes > 0) top.append(el('span', 'chip', minutesLabel(step.minutes)));
+  if (step.minutes > 0) top.append(el('span', 'chip', labTime(step.minutes)));
   const title = el('h3', 'step-title');
   title.id = titleId;
   const link = el('a', '', step.title);
@@ -238,10 +259,7 @@ function stepRow(step, index, deps) {
     reason.id = `${titleId}-lock`;
     const plans = step.lock === 'plan' ? deps.plansHref?.() : null;
     if (plans) {
-      const unlock = el('a', 'btn btn-accent unlock-link', 'Unlock');
-      unlock.href = plans;
-      unlock.setAttribute('aria-label', `Unlock ${step.title} with a plan`);
-      unlock.setAttribute('aria-describedby', reason.id);
+      const { unlock } = lockBadge({ plansHref: plans, title: step.title, describedBy: reason.id });
       act.append(unlock, reason);
     } else {
       const locked = el('button', 'btn btn-ghost lab-start', 'Locked');

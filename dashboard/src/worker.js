@@ -204,7 +204,9 @@ function relayAudio(res) {
  * the route), a 500 or a malformed body all read as "no progress yet", never
  * as a failed catalogue -- the launcher still has to list the labs. Only the
  * catalogue's own failure is passed through. Each lab gets
- * `progress: {attempts, best_score, passed_all, last_run_at} | null`.
+ * `progress: {attempts, best_score, passed_all, last_run_at} | null`, and, when the API said which plan this person
+ * is on, `plan: 'free' | 'pro'` (the catalogue marks a Pro lab as locked for a free learner), plus `bypass: true`
+ * for the owner's own subject (`canAdmin`), who is never held back by a plan (see `bypass_tier` below).
  */
 async function labsWithProgress(env, subject) {
   const [labsRes, progressRes] = await Promise.all([
@@ -222,19 +224,24 @@ async function labsWithProgress(env, subject) {
   if (!Array.isArray(labs)) return json({ error: 'The labs could not be loaded right now. Please try again in a moment.' }, 502);
 
   const bySlug = new Map();
+  let plan = null;
   if (progressRes?.ok) {
     try {
       const body = await progressRes.json();
       for (const p of Array.isArray(body?.labs) ? body.labs : []) bySlug.set(p.slug, p);
+      if (body?.plan === 'free' || body?.plan === 'pro') plan = body.plan;
     } catch {
       /* unreadable progress is no progress */
     }
   }
+  const bypass = canAdmin(subject, env);
   return json(
     labs.map((lab) => {
       const p = bySlug.get(lab.slug);
       return {
         ...lab,
+        ...(plan ? { plan } : {}),
+        ...(bypass ? { bypass: true } : {}),
         progress: p
           ? {
               attempts: p.attempts ?? 0,

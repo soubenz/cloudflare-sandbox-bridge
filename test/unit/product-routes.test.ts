@@ -288,8 +288,17 @@ describe('progress and history routes (B-14)', () => {
   it('GET /users/:uid/progress aggregates from check_runs for that user', async () => {
     const { env, calls } = makeEnv({ d1: () => [{ slug: 'lab-a', attempts: 2, best_score: 1, passed_all: 1, last_run_at: 7, sessions: 1 }] });
     const res = await call(env, 'GET', '/users/u1/progress', { headers: SERVICE });
-    expect(await res.json()).toEqual({ labs: [{ slug: 'lab-a', attempts: 2, best_score: 1, passed_all: true, last_run_at: 7, sessions: 1 }] });
+    expect(await res.json()).toEqual({ labs: [{ slug: 'lab-a', attempts: 2, best_score: 1, passed_all: true, last_run_at: 7, sessions: 1 }], plan: 'free' });
     expect(calls[0]!.params).toEqual(['u1']);
+  });
+
+  it('GET /users/:uid/progress carries the plan: free without a row, pro for a paid user', async () => {
+    const plan = (row: unknown) =>
+      makeEnv({ d1: (c) => (/FROM users WHERE id/.test(c.sql) ? row : /FROM check_runs/.test(c.sql) ? [] : undefined) });
+    const free = plan(undefined);
+    expect(await (await call(free.env, 'GET', '/users/u1/progress', { headers: SERVICE })).json()).toEqual({ labs: [], plan: 'free' });
+    const pro = plan({ plan: 'pro' });
+    expect(await (await call(pro.env, 'GET', '/users/u1/progress', { headers: SERVICE })).json()).toEqual({ labs: [], plan: 'pro' });
   });
 
   it('service routes refuse a session token', async () => {

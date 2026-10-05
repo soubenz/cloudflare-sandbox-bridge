@@ -80,7 +80,8 @@
 
     <nav class="nav-links" id="navLinks" aria-label="Console">
       <a class="nav-launcher" href="/" id="navLabs" aria-current="page">Labs</a>
-      <a class="nav-launcher" href="/" id="navPaths">Paths</a>
+      <a class="nav-launcher" href="/#paths" id="navPaths">Paths</a>
+      <a class="nav-launcher" href="/paths/mine" id="navMyPath">Your path</a>
       <a class="nav-launcher" href="/profile" id="navProfile">Profile</a>
       <button id="btnHelp" type="button" aria-haspopup="dialog" title="How this console works">Help</button>
     </nav>
@@ -125,7 +126,7 @@
       <div class="nav-account" id="navAccount">
         <button id="btnTheme" class="icon-btn" type="button" aria-label="Theme: system. Switch to light."><span id="themeIcon" aria-hidden="true"></span></button>
         <!-- Shown only when the platform quiz exists (GET /api/onboarding answered). -->
-        <button id="btnRetakeQuiz" class="btn btn-quiet" type="button" title="Retake the platform quiz that sets where each module starts" hidden>Retake the quiz</button>
+        <button id="btnRetakeQuiz" class="btn btn-quiet" type="button" title="Retake the platform quiz that sets where each skill starts" hidden>Retake the quiz</button>
         <span class="who" id="identity" title="Signed in as" hidden><span class="sr-only">Signed in as </span><i class="who-initials" id="identityInitials" aria-hidden="true"></i><span id="identityName"></span></span>
         <button id="btnSignOut" class="btn btn-quiet nav-signout" type="button" title="Sign out of the console on this browser">Sign out</button>
       </div>
@@ -144,7 +145,7 @@
     <div class="hello-row">
       <div class="hello-copy">
         <h1 class="h-hero" id="heroTitle" tabindex="-1">Pick your next <span class="mark">lab.</span></h1>
-        <p class="lede" id="heroLede">Each path is a run of hands-on labs. Start with an explore lab, then build or fix the real thing. Your progress is kept on this browser.</p>
+        <p class="lede" id="heroLede">Each path is a run of hands-on labs.</p>
       </div>
       <!-- Filled when a lab is remembered and the API says it is still up. -->
       <aside class="resume" id="resumeCard" aria-label="Lab in progress" hidden></aside>
@@ -303,8 +304,11 @@
                 <div><dt>Time</dt><dd id="resultTime"></dd></div>
                 <div><dt>Hints used</dt><dd id="resultHints"></dd></div>
               </dl>
+              <!-- Filled from the profile once the lab is done: what it earned, and the lab to do next. -->
+              <p class="result-gain" id="resultGain" hidden></p>
               <!-- Filled when the lab earns an award (progress-hub.js). -->
               <div class="result-awards" id="resultAwards" hidden></div>
+              <p class="result-next" id="resultNext" hidden><a class="btn btn-sm btn-accent" id="resultNextLink" href="/"></a></p>
               <form class="result-feedback" id="feedbackForm">
                 <fieldset>
                   <legend>How was this lab?</legend>

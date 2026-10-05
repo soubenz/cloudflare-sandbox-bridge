@@ -629,11 +629,11 @@ test.describe('the platform quiz', () => {
       const row = page.locator(`.told-row[data-area="${a.area}"]`);
       await expect(row).toContainText(a.title);
       await expect(row).not.toContainText(`Module ${a.module}`);
-      await expect(levelOf(page, a.area)).toHaveText(a.area === 'mcp' ? 'You know this well' : 'New to you');
+      await expect(levelOf(page, a.area)).toHaveText(a.area === 'mcp' ? 'Know it well' : 'New to you');
     }
     await expect(summaryCard(page).locator('.start-title')).toHaveText('Gateway and access');
     await expect(summaryCard(page)).toContainText('You said this is new to you, so we begin here.');
-    await expect(screen(page)).toContainText('You can retake this any time from the ? menu.');
+    await expect(screen(page)).toContainText('You can retake this any time.');
     expect(await screen(page).innerText()).not.toMatch(/\b(score|scored|grade|graded|points|percent)\b|\d+\s*%/i);
 
     await expect.poll(() => s.posted.length).toBe(1);
@@ -675,7 +675,7 @@ test.describe('the platform quiz', () => {
     expect(asked.map((q) => q.id)).toEqual([probe('gateway', 'basic').id, probe('gateway', 'advanced').id, probe('rag', 'basic').id]);
 
     await expect(heading(page)).toHaveText('Where to start');
-    await expect(levelOf(page, 'gateway')).toHaveText('You have some experience');
+    await expect(levelOf(page, 'gateway')).toHaveText('Some experience');
     await expect(levelOf(page, 'rag')).toHaveText('New to you');
     // Gateway is familiar, retrieval new, and the unticked areas new too: the first NEW area is the one to start with.
     await expect(summaryCard(page).locator('.start-title')).toHaveText('Tools and MCP');
@@ -693,7 +693,7 @@ test.describe('the platform quiz', () => {
     expect(asked).toHaveLength(2);
     for (const q of asked) expect(q.concept.startsWith('otel.')).toBe(true);
     await expect(heading(page)).toHaveText('Where to start');
-    for (const a of AREAS) await expect(levelOf(page, a.area)).toHaveText(a.area === 'otel' ? 'You know this well' : 'New to you');
+    for (const a of AREAS) await expect(levelOf(page, a.area)).toHaveText(a.area === 'otel' ? 'Know it well' : 'New to you');
     await expect.poll(() => s.posted.length).toBe(1);
     for (const a of s.posted[0]!.answers) expect(a.concept.startsWith('otel.')).toBe(true);
     expect(s.posted[0]!.answers).toHaveLength(2);
@@ -770,7 +770,7 @@ test.describe('the platform quiz', () => {
     await nextQuestion(page);
 
     await expect(levelOf(page, 'gateway')).toHaveText('New to you');
-    await expect(levelOf(page, 'mcp')).toHaveText('You have some experience');
+    await expect(levelOf(page, 'mcp')).toHaveText('Some experience');
     await expect.poll(() => s.posted.length).toBe(1);
     expect(s.posted[0]!.answers.map((a: any) => a.correct)).toEqual([false, true, false]);
   });
@@ -856,11 +856,11 @@ test.describe('the platform quiz', () => {
     expect(s.posted).toEqual([]);
   });
 
-  test('can be retaken from the ? menu, and the summary says so', async ({ page }) => {
+  test('can be retaken, and the summary says so', async ({ page }) => {
     await stub(page);
     await open(page);
     await startQuiz(page, 'none');
-    await expect(screen(page)).toContainText('You can retake this any time from the ? menu.');
+    await expect(screen(page)).toContainText('You can retake this any time.');
     await page.getByRole('button', { name: 'Browse all labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
 
@@ -884,7 +884,7 @@ test.describe('the platform quiz', () => {
     await probeAll(page, () => true);
     await expect(heading(page)).toHaveText('Where to start');
     // Unticked areas are new on a retake too: the suggestion moves to module 2.
-    await expect(levelOf(page, 'gateway')).toHaveText('You know this well');
+    await expect(levelOf(page, 'gateway')).toHaveText('Know it well');
     await expect(levelOf(page, 'mcp')).toHaveText('New to you');
     await page.getByRole('button', { name: 'Browse all labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
@@ -1235,7 +1235,7 @@ test.describe('Before you begin', () => {
     for (const c of bundle.concepts) {
       const card = page.locator(`.lesson[data-concept="${c.id}"]`);
       await expect(card).toHaveAttribute('data-state', 'collapsed');
-      await expect(card.locator('.lesson-chip')).toHaveText('Familiar from your quiz');
+      await expect(card.locator('.lesson-chip')).toHaveText('Know it well, from your quiz');
     }
     expect(s.posted).toEqual([]);
     expect(s.starts).toEqual([]);

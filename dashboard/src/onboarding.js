@@ -38,6 +38,7 @@ import { mountMarkdown } from './markdown.js';
 import { goalKindField, hoursField, loadGoal } from './goal-fields.js';
 // Each area of the quiz is drawn with the icon and colour of its skill (the module it opens).
 import { skillById, skillForPlacement, skillLook } from './skills.js';
+import { QUIZ_LEVELS } from './words.js';
 
 /** The steps of the quiz: what you know, a question or two about it, your goal, where to start. */
 const STEPS = 4;
@@ -46,7 +47,7 @@ const STEPS = 4;
 const moduleLook = (area) => skillLook(area.area);
 
 /** What the summary says about an area, by level. Words about knowledge, never about marks. */
-export const LEVEL_LABELS = { strong: 'You know this well', ok: 'You have some experience', new: 'New to you' };
+export const LEVEL_LABELS = QUIZ_LEVELS;
 
 /** Why the "Start here" card suggests its area, in the learner's own terms, by that area's level. */
 export const START_REASONS = {
@@ -490,7 +491,7 @@ export function runOnboarding({ host, onboarding, store, post, onExit, onGoal, i
     // --- one short explanation, and the way out
     nodes.push(
       make('p', 'learn-note muted small', 'We shorten lessons on what you already know and open them in full where it is new. You can still open or skip any lesson.'),
-      make('p', 'learn-note muted small', 'You can retake this any time from the ? menu.'),
+      make('p', 'learn-note muted small', 'You can retake this any time.'),
       actionBar([button('Browse all labs', { kind: 'quiet', onClick: () => leave(true), id: 'btnOnboardingDone2' })])
     );
 

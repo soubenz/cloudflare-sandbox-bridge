@@ -61,12 +61,13 @@ test.describe('lab launcher', () => {
   test('shows each lab with its slug, version and family', async ({ page }) => {
     await openFirstLabList(page);
     const sub = await page.locator('.lab .lab-sub').first().textContent();
-    // e.g. "hello@1.0.0 · agent · build · intro · 60 min", or with the newer
-    // manifest fields "… · ~20 min · 60 min limit · Free". Difficulty, the
+    // e.g. "hello@1.0.0 · agent · build · intro · 1 h", or with the newer
+    // manifest fields "… · 20 min · 1 h limit · Free". Difficulty, the
     // time chip and the tier chip are optional, so they are matched as such
     // rather than pinned, but slug, version, family and type always lead.
+    const time = '(?:\\d+ h(?: \\d+ min)?|\\d+ min)';
     expect(sub).toMatch(
-      /^[a-z0-9-]+@\d+\.\d+\.\d+ · (agent|gateway) · (build|break-fix|scale|explore|tune|exam)( · (intro|core|advanced))?( · (~\d+ min · \d+ min limit|\d+ min))?( · Free)?$/
+      new RegExp(`^[a-z0-9-]+@\\d+\\.\\d+\\.\\d+ · (agent|gateway) · (build|break-fix|scale|explore|tune|exam)( · (intro|core|advanced))?( · ${time}( · ${time} limit)?)?( · Free)?$`)
     );
   });
 

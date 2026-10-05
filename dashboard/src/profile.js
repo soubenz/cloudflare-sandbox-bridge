@@ -9,6 +9,7 @@
 import { icon, svgIcon } from './icons.js';
 import { skillLook } from './skills.js';
 import { awardsShelf, miniAward } from './awards.js';
+import { QUIZ_LEVELS, labsDone, quizLevelWord, rankLabel, skillLevelLabel } from './words.js';
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
@@ -38,12 +39,36 @@ export function startingParam(levels) {
     .join(',');
 }
 
-/** The words for an onboarding level on a skill ("Quiz starting point: Familiar"). */
-export const STARTING_WORDS = { new: 'New to it', ok: 'Familiar', strong: 'Strong' };
+/** The words for an onboarding level on a skill ("Quiz starting point: Some experience"): the quiz's own. */
+export const STARTING_WORDS = QUIZ_LEVELS;
 
 /** The icon and accent family of a skill: its module's or its path's (a slate grid for an id the list does not know). */
 export function areaLook(area) {
   return skillLook(area);
+}
+
+/**
+ * What a profile says about a learner at one moment, for comparing two of them (before and after a lab):
+ * `{ xp, scores: { <skill id>: <score> } }`, or null for an answer that is not a profile.
+ */
+export function standingOf(profile) {
+  if (!profile || typeof profile !== 'object' || !Array.isArray(profile.skills)) return null;
+  const scores = {};
+  for (const s of profile.skills) if (s && typeof s.area === 'string') scores[s.area] = clampScore(s.score);
+  return { xp: Math.max(0, num(profile.xp)), scores };
+}
+
+/**
+ * What a lab earned between two standings: `{ xp, skill }`. `xp` is the XP gained (0 when none), `skill` is
+ * `{ title, from, to }` for `area` when its score rose (null otherwise). Null when nothing is known to compare.
+ */
+export function gainBetween(before, after, area, titleOf = (id) => id) {
+  if (!before || !after) return null;
+  const xp = Math.max(0, after.xp - before.xp);
+  const from = before.scores[area];
+  const to = after.scores[area];
+  const skill = Number.isFinite(from) && Number.isFinite(to) && to > from ? { title: titleOf(area), from, to } : null;
+  return xp > 0 || skill ? { xp, skill } : null;
 }
 
 /** A brand-new learner: no XP, no score anywhere, no award. Home asks them to finish a lab instead of showing zeroes. */
@@ -51,12 +76,15 @@ export function isNewLearner(compact) {
   return num(compact?.xp) === 0 && num(compact?.overall?.score) === 0 && list(compact?.recent_awards).length === 0;
 }
 
-/** "25 of 250 XP to level 4", or "Top level reached" at the last level. */
+/** "25 of 250 XP to the next rank", or "Top rank reached" at the last one. */
 export function xpLine(level) {
   const needed = num(level?.xp_needed);
-  if (needed <= 0) return 'Top level reached';
-  return `${num(level?.xp_into)} of ${needed} XP to level ${num(level?.n, 1) + 1}`;
+  if (needed <= 0) return 'Top rank reached';
+  return `${num(level?.xp_into)} of ${needed} XP to the next rank`;
 }
+
+/** "Rank: Newcomer": the XP side of the profile, apart from a skill's "Skill: Practitioner". */
+const rankName = (level) => rankLabel(String(level?.title ?? '').trim() || 'Newcomer');
 
 /** "3-day streak", "No streak yet". */
 export function streakText(streak) {
@@ -124,7 +152,7 @@ const flame = (size = 18) =>
 
 /** A level name as a chip: the word always, so the colour never has to be read. */
 const levelChip = (name) => {
-  const chip = el('span', 'level-name', name);
+  const chip = el('span', 'level-name', skillLevelLabel(name));
   chip.dataset.level = name;
   return chip;
 };
@@ -163,12 +191,12 @@ function skillCard(skill, startingLevels) {
   const done = Math.max(0, num(skill.labs_done));
   const total = Math.max(0, num(skill.labs_total));
   const labs = el('div', 'skill-labs');
-  labs.append(el('p', 'skill-labs-line', total ? `${done} of ${total} labs done` : 'No labs here yet'));
+  labs.append(el('p', 'skill-labs-line', total ? labsDone(done, total) : 'No labs here yet'));
   if (total) labs.append(meterBar({ label: `Labs done in ${title}`, now: done, max: total, text: `${done} of ${total} labs`, className: 'meter meter-thin' }));
   card.append(labs);
 
   const hint = skill.starting_level ?? startingLevels?.[area];
-  if (STARTING_WORDS[hint]) card.append(el('p', 'skill-quiz', `Quiz starting point: ${STARTING_WORDS[hint]}`));
+  if (quizLevelWord(hint)) card.append(el('p', 'skill-quiz', `Quiz starting point: ${quizLevelWord(hint)}`));
 
   const next = skill.next_lab;
   if (next && typeof next.slug === 'string' && /^[a-z0-9][a-z0-9._-]{0,80}$/.test(next.slug)) {
@@ -188,7 +216,6 @@ function skillCard(skill, startingLevels) {
 export function profileContent(data, { startingLevels } = {}) {
   const root = document.createDocumentFragment();
   const level = data.level ?? {};
-  const levelNum = num(level.n, 1);
   const overall = data.overall ?? {};
   const overallLevel = LEVEL_NAMES.includes(overall.level) ? overall.level : 'Not started';
 
@@ -198,12 +225,12 @@ export function profileContent(data, { startingLevels } = {}) {
   const levelBox = el('div', 'profile-level');
   const levelHeading = el('h2', 'profile-level-name');
   levelHeading.id = 'profileLevelHeading';
-  levelHeading.append(el('span', 'profile-level-num', `Level ${levelNum}`), document.createTextNode(' '), el('span', 'profile-level-title', String(level.title ?? '')));
+  levelHeading.append(el('span', 'profile-level-title', rankName(level)));
   levelBox.append(levelHeading);
   const needed = num(level.xp_needed);
   levelBox.append(
     meterBar({
-      label: needed > 0 ? `XP towards level ${levelNum + 1}` : 'XP',
+      label: needed > 0 ? 'XP towards the next rank' : 'XP',
       now: needed > 0 ? num(level.xp_into) : 1,
       max: needed > 0 ? needed : 1,
       text: xpLine(level),
@@ -324,10 +351,9 @@ export function progressBand(data) {
 
   const xp = el('div', 'band-xp');
   const needed = num(level.xp_needed);
-  const levelNum = num(level.n, 1);
-  xp.append(el('p', 'band-level', `Level ${levelNum} · ${level.title ?? ''}`.trim()));
+  xp.append(el('p', 'band-level', rankName(level)));
   xp.append(
-    meterBar({ label: needed > 0 ? `XP towards level ${levelNum + 1}` : 'XP', now: needed > 0 ? num(level.xp_into) : 1, max: needed > 0 ? needed : 1, text: xpLine(level), className: 'meter xp-bar meter-thin' })
+    meterBar({ label: needed > 0 ? 'XP towards the next rank' : 'XP', now: needed > 0 ? num(level.xp_into) : 1, max: needed > 0 ? needed : 1, text: xpLine(level), className: 'meter xp-bar meter-thin' })
   );
   xp.append(el('p', 'band-xp-line', xpLine(level)));
   const streak = el('p', 'streak band-streak');
@@ -349,7 +375,7 @@ export function progressBand(data) {
     li.dataset.accent = areaLook(s.area).accent;
     const title = String(s.title ?? s.area);
     li.append(el('span', 'band-skill-name', title));
-    li.append(meterBar({ label: `${title} score`, now: clampScore(s.score), max: 100, text: `${clampScore(s.score)} out of 100, ${s.level ?? ''}`.replace(/, $/, ''), className: 'meter meter-thin' }));
+    li.append(meterBar({ label: `${title} score`, now: clampScore(s.score), max: 100, text: `${clampScore(s.score)} out of 100${s.level ? `, ${skillLevelLabel(s.level)}` : ''}`, className: 'meter meter-thin' }));
     li.append(el('span', 'band-skill-score', `${clampScore(s.score)}`));
     skillList.append(li);
   }

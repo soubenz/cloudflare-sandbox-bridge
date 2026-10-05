@@ -20,7 +20,7 @@ interface ModuleMeta {
   number: number;
   title: string;
   intro: string;
-  skills: string[];
+  outcomes: string[];
   icon: string;
   accent: string;
   optional?: boolean;
@@ -232,8 +232,8 @@ describe('renderLabsPage with the catalogue copy', () => {
         icon: 'no-such-glyph',
         accent: 'not-an-accent',
         modules: [
-          { number: 1, title: 'First <b>module</b>', intro: 'About the first.', skills: ['Skill one', 'Skill <two>'], icon: 'route', accent: 'teal' },
-          { number: 3, title: 'Third', intro: 'About the third.', skills: ['Skill three', 'Skill four'], icon: 'plug', accent: 'amber', optional: true },
+          { number: 1, title: 'First <b>module</b>', intro: 'About the first.', outcomes: ['Skill one', 'Skill <two>'], icon: 'route', accent: 'teal' },
+          { number: 3, title: 'Third', intro: 'About the third.', outcomes: ['Skill three', 'Skill four'], icon: 'plug', accent: 'amber', optional: true },
         ],
       },
     ],
@@ -264,7 +264,7 @@ describe('renderLabsPage with the catalogue copy', () => {
     expect(section('multi')).toContain('PATH 02');
   });
 
-  it('prints each module card: eyebrow, title, intro, skills, accent, and its own counts', () => {
+  it('prints each module card: eyebrow, title, intro, outcomes, accent, and its own counts', () => {
     const multi = section('multi');
     expect(multi).toContain('id="multi-module-1"');
     expect(multi).toContain('data-accent="teal"');
@@ -328,7 +328,7 @@ describe('the committed labs page and the catalogue copy', () => {
     for (const m of platform().modules) {
       expect(committed).toContain(`<h3 id="ai-platform-module-${m.number}-title">${mod.escapeHtml(m.title)}</h3>`);
       expect(committed).toContain(mod.escapeHtml(m.intro));
-      for (const skill of m.skills) expect(committed).toContain(`<li>${mod.escapeHtml(skill)}</li>`);
+      for (const skill of m.outcomes) expect(committed).toContain(`<li>${mod.escapeHtml(skill)}</li>`);
     }
     // No module card on a path whose copy lists none.
     expect(committed.match(/<section class="labs-module"/g)?.length).toBe(platform().modules.length);

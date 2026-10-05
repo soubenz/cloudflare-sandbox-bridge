@@ -33,7 +33,7 @@
           "accent": "blue",
           "icon": "route",
           "intro": "One front door for every model call. You start by watching a real LLM gateway route a request, then give each team its own key and models, stop spend before it passes a budget, and keep answering when a provider fails.",
-          "skills": ["Scope keys and models per team", "Stop spend before the limit, not after", "Fail over without hammering a broken provider"]
+          "outcomes": ["Scope keys and models per team", "Stop spend before the limit, not after", "Fail over without hammering a broken provider"]
         },
         {
           "number": 2,
@@ -42,7 +42,7 @@
           "accent": "teal",
           "icon": "plug",
           "intro": "How tools reach an agent. You put many tool servers behind one MCP endpoint, give each agent only the tools it needs, write a tool server the platform can host, and change tool definitions without breaking anyone who uses them.",
-          "skills": ["Serve many tool servers through one endpoint", "Grant tools per agent, not per platform", "Version tool definitions and roll back safely"]
+          "outcomes": ["Serve many tool servers through one endpoint", "Grant tools per agent, not per platform", "Version tool definitions and roll back safely"]
         },
         {
           "number": 3,
@@ -51,7 +51,7 @@
           "accent": "green",
           "icon": "search",
           "intro": "Search that teams call instead of build. You trace why a document matched, offer retrieval as a service, build the ingestion pipeline behind it, blend keyword and vector search with reranking, and refresh the index while it keeps answering.",
-          "skills": ["Explain and debug a match", "Ingest, update and delete without duplicates", "Combine keyword and vector search"]
+          "outcomes": ["Explain and debug a match", "Ingest, update and delete without duplicates", "Combine keyword and vector search"]
         },
         {
           "number": 4,
@@ -60,7 +60,7 @@
           "accent": "amber",
           "icon": "chart",
           "intro": "See where every request and every dollar goes. You follow a request across services with traces, collect telemetry without dropping the errors, and answer finance's question: who spent what?",
-          "skills": ["Connect one trace across services", "Sample telemetry without losing failures", "Attribute spend to a team and a feature"]
+          "outcomes": ["Connect one trace across services", "Sample telemetry without losing failures", "Attribute spend to a team and a feature"]
         },
         {
           "number": 5,
@@ -70,7 +70,7 @@
           "icon": "stack",
           "optional": true,
           "intro": "Optional. Running agents that outlive a single process. One lab so far: two replicas of a chat service that must behave like one conversation, and a refund that must happen exactly once.",
-          "skills": ["Share state across replicas", "Make side effects happen exactly once"]
+          "outcomes": ["Share state across replicas", "Make side effects happen exactly once"]
         },
         {
           "number": 6,
@@ -79,7 +79,7 @@
           "accent": "rose",
           "icon": "compass",
           "intro": "Make the platform easy to adopt. You walk the path a new team takes, onboard a team in under an hour, publish a paved road for a new AI feature, keep the docs and the example true, and build the page where teams request access.",
-          "skills": ["Onboard a team end to end", "Publish a safe default for new features", "Keep documentation from drifting"]
+          "outcomes": ["Onboard a team end to end", "Publish a safe default for new features", "Keep documentation from drifting"]
         },
         {
           "number": 7,
@@ -88,7 +88,7 @@
           "accent": "indigo",
           "icon": "lock",
           "intro": "Prove where data went and keep it where it belongs. You follow one request's data across regions, keep EU data on EU routes, strip personal data before it reaches a model or a log, control what can leave the platform, and set retention that actually runs.",
-          "skills": ["Prove where a request's data went", "Redact personal data in more than one language", "Enforce retention and deletion"]
+          "outcomes": ["Prove where a request's data went", "Redact personal data in more than one language", "Enforce retention and deletion"]
         }
       ]
     },

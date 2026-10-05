@@ -17,7 +17,7 @@ import { serveConsole, serveWorker } from './console-server';
  *     acts on that page's labs, and an address that Back, Forward and a refresh keep;
  *   - a deep link opens the screen it names, and a refresh keeps the learner there;
  *   - Back and Forward move between screens (lessons -> story -> the lab's page), and Back out of a running
- *     lab goes to the lab's page, without ending it; home still carries the "lab running" card;
+ *     lab goes to its module's page, without ending it; home still carries the "lab running" card;
  *   - a session's address is /u/<user>/labs/<slug>/session/<session>[/<tab>]: the old address redirects
  *     to it once the session is known, another learner's id is "not found", a session that is not the
  *     learner's active one is "not active" (with Rejoin when they have another for the lab), and a
@@ -651,7 +651,7 @@ test.describe('Back and Forward', () => {
     expect(s.errors).toEqual([]);
   });
 
-  test('Ending the lab replaces the session\'s address with the lab\'s page, so Back cannot lead to a session that is gone', async ({ page }) => {
+  test('Ending the lab replaces the session\'s address with its module\'s page, so Back cannot lead to a session that is gone', async ({ page }) => {
     const s = await stub(page);
     await wide(page);
     await visit(page, '/');
@@ -659,9 +659,9 @@ test.describe('Back and Forward', () => {
     await inSession(page);
     await page.locator('#btnEnd').click();
     await page.locator('#endDialog').getByRole('button', { name: 'Discard' }).click();
-    await expect(page.locator('.lab-detail')).toBeVisible();
-    expect(here_(page)).toBe(`/labs/${PLAIN}`);
-    await expect(page.locator('.lab-detail .lab-start')).toHaveText('Start');
+    await expect(page.locator('.module')).toBeVisible();
+    expect(here_(page)).toBe(MODULE_1);
+    await expect(page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`)).toHaveText('Start');
     expect(s.ends).toHaveLength(1);
     // Back is the module the learner came from, not the dead session.
     await page.goBack();
@@ -670,20 +670,20 @@ test.describe('Back and Forward', () => {
     expect(s.starts).toEqual([PLAIN]);
   });
 
-  test('"Back to labs" in a running lab leaves it running and goes to the lab\'s page', async ({ page }) => {
+  test('"Back to labs" in a running lab leaves it running and goes to its module\'s page, where the lab says Resume', async ({ page }) => {
     const s = await stub(page);
     await wide(page);
     await visit(page, '/');
     await startCard(page, PLAIN);
     await inSession(page);
     await page.locator('#btnBackToLabs').click();
-    await expect(page.locator('.lab-detail')).toBeVisible();
+    await expect(page.locator('.module')).toBeVisible();
     await expect(page.locator('#workspace')).toBeHidden();
-    expect(here_(page)).toBe(`/labs/${PLAIN}`);
-    await expect(page.locator('.lab-detail .lab-start')).toHaveText('Resume');
+    expect(here_(page)).toBe(MODULE_1);
+    await expect(page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`)).toHaveText('Resume');
     expect(s.ends).toEqual([]);
     // Resume is the same session: one press, the same address. The API's start is what rejoins it (as for the resume card).
-    await page.locator('.lab-detail .lab-start').click();
+    await page.locator(`.lab[data-slug="${PLAIN}"] .lab-start`).click();
     await inSession(page);
     expect(here_(page)).toBe(sessionUrl(PLAIN));
     expect(s.starts).toEqual([PLAIN, PLAIN]);
@@ -1213,17 +1213,17 @@ test.describe('the launcher is four pages', () => {
     await expect(card.getByRole('link', { name: 'AI platform engineering' })).toHaveAttribute('href', '/paths/ai-platform');
     await expect(card.locator('.path-card-intro')).not.toBeEmpty();
     // One module (all five labs are in it), five labs of twenty minutes.
-    await expect(card.locator('.path-card-line')).toHaveText('1 module · 5 labs · about 1 h 40 min');
+    await expect(card.locator('.path-card-line')).toHaveText('1 module · 5 labs · About 1 h 40 min');
     await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '5');
     await expect(card.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
-    await expect(card.locator('.path-card-progress')).toHaveText('0 of 5 done');
+    await expect(card.locator('.path-card-progress')).toHaveText('0 of 5 labs done');
     // None of what belongs to the pages below it.
     for (const sel of ['.module', '.module-card', '.lab', '.lab-rows', '.lab-detail']) await expect(page.locator(sel), sel).toHaveCount(0);
     await expect(page.locator('#heroTitle')).toBeVisible();
     await expect(page.locator('#labFilters')).toBeVisible();
     await expect(page.locator('#labCount')).toHaveText('5 of 5 labs');
-    expect(await crumbTexts(page)).toEqual(['Home']);
-    await expect(crumbs(page).locator('[aria-current="page"]')).toHaveText('Home');
+    // A lone "Home" on Home says nothing: the trail starts on the pages below it.
+    await expect(crumbs(page)).toBeHidden();
     expect(s.errors).toEqual([]);
   });
 
@@ -1245,7 +1245,7 @@ test.describe('the launcher is four pages', () => {
     await expect(card.getByRole('heading', { level: 2 })).toHaveText('Gateway and access');
     await expect(card.locator('.module-intro')).not.toBeEmpty();
     await expect(card.locator('.module-meta')).toContainText('5 labs');
-    await expect(card.locator('.module-progress')).toHaveText('0 of 5 done');
+    await expect(card.locator('.module-progress')).toHaveText('0 of 5 labs done');
     await expect(card.getByRole('link', { name: 'Gateway and access' })).toHaveAttribute('href', MODULE_1);
     for (const sel of ['.path-card', '.module', '.lab', '.lab-rows']) await expect(page.locator(sel), sel).toHaveCount(0);
     expect(await crumbTexts(page)).toEqual(['Home', 'AI platform engineering']);
@@ -1264,7 +1264,7 @@ test.describe('the launcher is four pages', () => {
     await expect(info.locator('.skills-label')).toHaveText('You will learn to');
     await expect(info.locator('.skill-list li')).toHaveCount(3);
     await expect(info.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '5');
-    await expect(info.locator('.module-progress')).toHaveText('0 of 5 done');
+    await expect(info.locator('.module-progress')).toHaveText('0 of 5 labs done');
     await expect(page.locator('#routeLive')).toHaveText('Module 1: Gateway and access');
     await expect(page).toHaveTitle('Gateway and access · AI platform engineering · Opalix labs');
 
@@ -1274,7 +1274,7 @@ test.describe('the launcher is four pages', () => {
     await expect(first.locator('.lab-num')).toHaveText('1');
     await expect(first.getByRole('heading', { level: 2 })).toHaveText(EXPLORE_TITLE);
     await expect(first.locator('.chip-difficulty')).toHaveText('intro');
-    await expect(first.locator('.chip-time')).toContainText('~20 min');
+    await expect(first.locator('.chip-time')).toContainText('20 min');
     await expect(first.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
     await expect(first.getByRole('link', { name: 'About this lab' })).toHaveAttribute('href', `/labs/${EXPLORE}`);
     // The panel is on the left of the rows, side by side on a wide screen.
@@ -1302,7 +1302,7 @@ test.describe('the launcher is four pages', () => {
     await expect(detail.locator('.lab-objectives li')).toHaveText(['do the thing']);
     await expect(detail.locator('.lab-sub .chip-type')).toHaveText('explore');
     await expect(detail.locator('.lab-sub .chip-difficulty')).toHaveText('intro');
-    await expect(detail.locator('.lab-sub .chip-time')).toContainText('~20 min');
+    await expect(detail.locator('.lab-sub .chip-time')).toContainText('20 min');
     await expect(detail.locator('.lab-prereq-section')).toContainText('None. You can start right away.');
     await expect(detail.locator('.lab-start')).toHaveText('Start');
     await expect(detail.locator('.lab-status')).toHaveText('Not started');
@@ -1414,6 +1414,15 @@ test.describe('the launcher is four pages', () => {
     await expect(page.locator('.path-card')).toBeVisible();
     expect(here_(page)).toBe('/');
     await expect(page.locator('.path-card-title a').first()).toBeFocused();
+    // The link that says where the learner is: Labs on Home, Paths on a path's pages, Your path on /paths/mine.
+    await expect(page.locator('#navLabs')).toHaveAttribute('aria-current', 'page');
+    await page.locator('.path-card-title a').first().click();
+    await expect(page.locator('#navPaths')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('#navLabs')).not.toHaveAttribute('aria-current', 'page');
+    await page.locator('#navMyPath').click();
+    expect(here_(page)).toBe('/paths/mine');
+    await expect(page.locator('#navMyPath')).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('#navPaths')).not.toHaveAttribute('aria-current', 'page');
     await page.locator('#brandLink').click();
     expect(here_(page)).toBe('/');
   });
@@ -1466,7 +1475,7 @@ test.describe('search and filters act on the page they are on', () => {
     await page.locator('#labSearch').fill('beta two');
     // Home: only the path that holds a match keeps its card, and says how many match.
     await expect(page.locator('.path-card')).toHaveCount(1);
-    await expect(page.locator('#path-ai-platform .path-card-progress')).toHaveText('0 of 4 done · 1 match');
+    await expect(page.locator('#path-ai-platform .path-card-progress')).toHaveText('0 of 4 labs done · 1 match');
     await expect(page.locator('#path-securing-agents')).toHaveCount(0);
     await expect(page.locator('#labCount')).toHaveText('1 of 5 labs');
 
@@ -1879,7 +1888,7 @@ test.describe('archived labs', () => {
     await openModule(page);
     await expect(page.locator('.lab')).toHaveCount(LABS.length);
     for (const l of WITH_ARCHIVED.filter((x) => x.archived)) await expect(page.locator(`.lab[data-slug="${l.slug}"]`)).toHaveCount(0);
-    await expect(page.locator('.module-progress')).toHaveText(`0 of ${LABS.length} done`);
+    await expect(page.locator('.module-progress')).toHaveText(`0 of ${LABS.length} labs done`);
     expect(s.starts).toEqual([]);
     expect(s.errors).toEqual([]);
   });

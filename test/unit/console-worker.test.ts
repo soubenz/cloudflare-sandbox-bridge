@@ -547,6 +547,45 @@ describe('GET /api/labs', () => {
     expect(labs[1]!.archived).toBe(true);
     expect('archived' in labs[0]!).toBe(false);
   });
+
+  describe('the plan', () => {
+    const catalogue = [
+      { slug: 'free-lab', tier: 'free', title: 'A' },
+      { slug: 'pro-lab', tier: 'pro', title: 'B' },
+    ];
+    const answerWith = (plan: unknown) =>
+      replies.push((u) => (u.endsWith('/labs') ? { body: catalogue } : /\/users\/[^/]+\/progress$/.test(u) ? { body: { labs: [], ...(plan === undefined ? {} : { plan }) } } : undefined));
+    /** The catalogue as a learner (a subject that is not on the admin list) gets it. */
+    const asLearner = async () => {
+      const b64 = (v: string) => btoa(v).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const payload = b64(JSON.stringify({ sub: 'ada@example.com', exp: Math.floor(Date.now() / 1000) + 3600 }));
+      const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('cookie-secret'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
+      const res = await worker.default.fetch(new Request(`${ORIGIN}/api/labs`, { headers: { cookie: `__Host-opx_console=${payload}.${b64(String.fromCharCode(...sig))}` } }), e);
+      return (await res.json()) as Array<Record<string, unknown>>;
+    };
+
+    it('puts the learner\'s plan on every lab, and no bypass', async () => {
+      answerWith('free');
+      const labs = await asLearner();
+      expect(labs.map((l) => l.plan)).toEqual(['free', 'free']);
+      expect(labs.some((l) => 'bypass' in l)).toBe(false);
+    });
+
+    it('adds bypass: true for the owner\'s subject', async () => {
+      answerWith('free');
+      const labs = (await (await call('/api/labs', { cookie })).json()) as Array<Record<string, unknown>>;
+      expect(labs.map((l) => [l.plan, l.bypass])).toEqual([['free', true], ['free', true]]);
+    });
+
+    it('says nothing about the plan when the API did not (an API from before it, or a plan it does not know)', async () => {
+      answerWith(undefined);
+      expect((await asLearner()).some((l) => 'plan' in l)).toBe(false);
+      replies.length = 0;
+      answerWith('enterprise');
+      expect((await asLearner()).some((l) => 'plan' in l)).toBe(false);
+    });
+  });
 });
 
 describe('deep links and signing in', () => {

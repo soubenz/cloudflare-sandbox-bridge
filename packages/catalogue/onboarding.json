@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "intro": "Welcome to Larkfield's AI platform. Tell us which areas you have already worked with, and we will ask just one or two short questions about each of those, and nothing about the rest. There is **no score** and nothing is graded. Your answers only decide **where each module starts**: topics you know open as short recaps, and topics that are new open as full lessons. You can skip this for now and retake it whenever you like. Every lab also asks a few questions of its own, and you can always open any lesson, or skip it.",
+  "intro": "Welcome to Larkfield's AI platform. Tell us which areas you have already worked with, and we will ask just one or two short questions about each of those, and nothing about the rest. There is **no score** and nothing is graded. Your answers decide where each skill starts and which labs your path skips. You can skip this for now and retake it whenever you like. Every lab also asks a few questions of its own, and you can always open any lesson, or skip it.",
   "areas": [
     { "area": "gateway", "blurb": "One place your apps call models through, with stable names and a spend log." },
     { "area": "mcp", "blurb": "A standard way for agents to find and call tools and data sources." },

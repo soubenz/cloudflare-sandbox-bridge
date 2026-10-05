@@ -9,7 +9,7 @@ import type { Page } from '@playwright/test';
  *
  * The API is stubbed (`/api/labs` returns a catalogue in the shape the console's
  * Worker serves, progress included), so every number below is derived from the
- * fixture. The copy that is checked (titles, intros, skills, the optional flag)
+ * fixture. The copy that is checked (titles, intros, outcomes, the optional flag)
  * is read from packages/catalogue/paths.json itself, so editing the copy
  * cannot break this spec and a card that shows something else does.
  */
@@ -18,7 +18,7 @@ interface ModuleMeta {
   number: number;
   title: string;
   intro: string;
-  skills: string[];
+  outcomes: string[];
   optional?: boolean;
 }
 interface PathMeta {
@@ -124,13 +124,13 @@ test.describe('home: path cards', () => {
       await expect(c.locator('.path-card-intro')).toHaveText(pathMeta(slug).intro);
       await expect(c.locator('.path-tile svg')).toBeVisible();
     }
-    await expect(pathCard(page, 'production-agents').locator('.path-card-line')).toHaveText('4 labs · about 2.5 h');
-    await expect(pathCard(page, 'ai-platform').locator('.path-card-line')).toHaveText('3 modules · 8 labs · about 4.5 h');
-    await expect(pathCard(page, 'production-agents').locator('.path-card-progress')).toHaveText('1 of 4 done');
-    await expect(pathCard(page, 'ai-platform').locator('.path-card-progress')).toHaveText('2 of 8 done');
+    await expect(pathCard(page, 'production-agents').locator('.path-card-line')).toHaveText('4 labs · About 2.5 h');
+    await expect(pathCard(page, 'ai-platform').locator('.path-card-line')).toHaveText('3 modules · 8 labs · About 4.5 h');
+    await expect(pathCard(page, 'production-agents').locator('.path-card-progress')).toHaveText('1 of 4 labs done');
+    await expect(pathCard(page, 'ai-platform').locator('.path-card-progress')).toHaveText('2 of 8 labs done');
     await expect(pathCard(page, '').locator('h2.path-card-title')).toHaveText('Other labs');
     await expect(pathCard(page, '').locator('.path-card-intro')).toHaveCount(0);
-    await expect(pathCard(page, '').locator('.path-card-line')).toHaveText('1 lab · about 15 min');
+    await expect(pathCard(page, '').locator('.path-card-line')).toHaveText('1 lab · About 15 min');
   });
 
   test('the bar of a path counts the labs passed', async ({ page }) => {
@@ -161,7 +161,8 @@ test.describe('a path\'s page', () => {
     await expect(band.locator('> h1.group-head')).toHaveText(pathMeta('production-agents').title);
     await expect(band.locator('> .path-intro')).toHaveText(pathMeta('production-agents').intro);
     await expect(band.locator('> .path-tile svg')).toBeVisible();
-    await expect(band.locator('.path-summary')).toHaveText('4 labs · about 2.5 h · 2 free · 1 done');
+    await expect(band.locator('.path-summary')).toHaveText('4 labs · About 2.5 h · 2 free');
+    await expect(band.locator('.path-progress')).toHaveText('1 of 4 labs done');
     await expect(page.locator('.module, .module-card')).toHaveCount(0);
     await expect(band.locator('.lab')).toHaveCount(4);
     await expect(band.locator('.lab .lab-num')).toHaveText(['1', '2', '3', '4']);
@@ -177,7 +178,8 @@ test.describe('a path\'s page', () => {
   test('the overall bar and totals of a path are on its page', async ({ page }) => {
     await stubLabs(page);
     await openLauncher(page, { at: AI });
-    await expect(page.locator('.path-summary')).toHaveText('8 labs · about 4.5 h · 1 free · 2 done');
+    await expect(page.locator('.path-summary')).toHaveText('8 labs · About 4.5 h · 1 free');
+    await expect(page.locator('.path-progress')).toHaveText('2 of 8 labs done');
     const bar = page.locator('.path-stats .progress');
     await expect(bar).toHaveAttribute('aria-valuemax', '8');
     await expect(bar).toHaveAttribute('aria-valuenow', '2');
@@ -216,16 +218,16 @@ test.describe('a path\'s page', () => {
     await stubLabs(page);
     await openLauncher(page, { at: AI });
     const one = moduleCard(page, 1);
-    await expect(one.locator('.module-meta')).toHaveText('5 labs · ~2.5 h · 1 free');
-    await expect(one.locator('.module-progress')).toHaveText('2 of 5 done');
+    await expect(one.locator('.module-meta')).toHaveText('5 labs · About 2.5 h · 1 free');
+    await expect(one.locator('.module-progress')).toHaveText('2 of 5 labs done');
     const bar = one.locator('.progress');
     await expect(bar).toHaveAttribute('aria-valuenow', '2');
     await expect(bar).toHaveAttribute('aria-valuemax', '5');
     const [fill, track] = await bar.evaluate((el) => [(el.firstElementChild as HTMLElement).getBoundingClientRect().width, el.getBoundingClientRect().width]);
     expect(fill / track).toBeCloseTo(0.4, 1);
-    await expect(moduleCard(page, 2).locator('.module-meta')).toHaveText('2 labs · ~1 h');
-    await expect(moduleCard(page, 2).locator('.module-progress')).toHaveText('0 of 2 done');
-    await expect(moduleCard(page, 5).locator('.module-meta')).toHaveText('1 lab · ~1 h');
+    await expect(moduleCard(page, 2).locator('.module-meta')).toHaveText('2 labs · About 1 h');
+    await expect(moduleCard(page, 2).locator('.module-progress')).toHaveText('0 of 2 labs done');
+    await expect(moduleCard(page, 5).locator('.module-meta')).toHaveText('1 lab · About 1 h');
   });
 });
 
@@ -239,13 +241,13 @@ test.describe('a module\'s page', () => {
     await expect(panel.locator('h1.module-title')).toHaveText(m.title);
     await expect(panel.locator('.module-intro')).toHaveText(m.intro);
     await expect(panel.locator('.skills-label')).toHaveText('You will learn to');
-    await expect(panel.locator('.skill-list li')).toHaveText(m.skills);
-    expect(m.skills.length).toBeGreaterThanOrEqual(2);
-    expect(m.skills.length).toBeLessThanOrEqual(4);
+    await expect(panel.locator('.skill-list li')).toHaveText(m.outcomes);
+    expect(m.outcomes.length).toBeGreaterThanOrEqual(2);
+    expect(m.outcomes.length).toBeLessThanOrEqual(4);
     await expect(panel.locator('.module-bignum')).toHaveText('02');
     await expect(panel.locator('.module-bignum')).toHaveAttribute('aria-hidden', 'true');
     await expect(panel.locator('.module-tile svg')).toBeVisible();
-    await expect(panel.locator('.module-progress')).toHaveText('0 of 2 done');
+    await expect(panel.locator('.module-progress')).toHaveText('0 of 2 labs done');
     await expect(panel.getByRole('progressbar', { name: `Labs done in ${m.title}` })).toHaveAttribute('aria-valuemax', '2');
     // The Optional badge is on the panel of the module the copy flags.
     await goInApp(page, moduleUrl(5));
@@ -256,20 +258,20 @@ test.describe('a module\'s page', () => {
     await stubLabs(page);
     await openLauncher(page, { at: moduleUrl(1) });
     const one = page.locator('.module');
-    await expect(one.locator('.module-meta')).toHaveText('5 labs · ~2.5 h · 1 free');
-    await expect(one.locator('.module-progress')).toHaveText('2 of 5 done');
+    await expect(one.locator('.module-meta')).toHaveText('5 labs · About 2.5 h · 1 free');
+    await expect(one.locator('.module-progress')).toHaveText('2 of 5 labs done');
     await expect(one.locator('.lab')).toHaveCount(5);
     await expect(one.locator('.lab .lab-num')).toHaveText(['1', '2', '3', '4', '5']);
     await expect(one.locator('.lab h2.lab-title')).toHaveText(['See the gateway', 'One endpoint, one key', 'Hard budget', 'Add a model', 'Provider fails']);
 
     const first = row(page, 'g1');
     await expect(first.locator('.chip-type')).toHaveText('explore');
-    await expect(first.locator('.chip-time')).toContainText('~20 min');
+    await expect(first.locator('.chip-time')).toContainText('20 min');
     await expect(first.locator('.chip-difficulty')).toHaveText('intro');
     await expect(first.locator('.chip-tier')).toHaveText('Free');
     await expect(row(page, 'g2').locator('.chip-tier')).toHaveCount(0);
     // The row's text is still the plain "slug@version · family · type …" line.
-    await expect(first.locator('.lab-sub')).toHaveText(/^g1@1\.0\.0 · agent · explore · intro · ~20 min · 60 min limit · Free$/);
+    await expect(first.locator('.lab-sub')).toHaveText(/^g1@1\.0\.0 · agent · explore · intro · 20 min · 1 h limit · Free$/);
   });
 
   test('"About this lab" is a link to the lab\'s own page, with its summary and objectives', async ({ page }) => {
@@ -361,7 +363,7 @@ test.describe('search and filters over paths and modules', () => {
     await expect(page.locator('#labCount')).toHaveText(`1 of ${LABS.length} labs`);
     await expect(page.locator('.path-card')).toHaveCount(1);
     await expect(pathCard(page, 'ai-platform')).toBeVisible();
-    await expect(pathCard(page, 'ai-platform').locator('.path-card-progress')).toHaveText('2 of 8 done · 1 match');
+    await expect(pathCard(page, 'ai-platform').locator('.path-card-progress')).toHaveText('2 of 8 labs done · 1 match');
 
     await pathCard(page, 'ai-platform').getByRole('link', { name: pathMeta('ai-platform').title }).click();
     await expect(page.locator('#labCount')).toHaveText('1 of 8 labs');
@@ -401,8 +403,8 @@ test.describe('search and filters over paths and modules', () => {
     await expect(row(page, 'g1')).toBeVisible();
     await expect(page.locator('.lab')).toHaveCount(2);
     // Leaving labs out does not change what the module says about itself.
-    await expect(page.locator('.module-meta')).toHaveText('5 labs · ~2.5 h · 1 free');
-    await expect(page.locator('.module-progress')).toHaveText('2 of 5 done');
+    await expect(page.locator('.module-meta')).toHaveText('5 labs · About 2.5 h · 1 free');
+    await expect(page.locator('.module-progress')).toHaveText('2 of 5 labs done');
     await goInApp(page, moduleUrl(2));
     await expect(page.locator('.lab')).toHaveCount(0);
 
@@ -638,7 +640,7 @@ test.describe('the launcher, as the landing page draws it', () => {
     await openLauncher(page);
     await expect(page.locator('#heroTitle')).toHaveText('Pick your next lab.');
     await expect(page.locator('#resumeCard')).toBeHidden();
-    await expect(page.locator('#heroLede')).toHaveText(/^Two paths, each a run of hands-on labs\. Start with an explore lab/);
+    await expect(page.locator('#heroLede')).toHaveText('Two paths, each a run of hands-on labs.');
     await goInApp(page, moduleUrl(1));
     await expect(row(page, 'g1').locator('.lab-start')).toHaveText('Open again');
     await expect(row(page, 'g5').locator('.lab-start')).toHaveText('Start');
@@ -657,6 +659,10 @@ test.describe('the launcher, as the landing page draws it', () => {
     await expect(page.locator('.brand')).toContainText('opalix');
     await expect(page.locator('.brand .beta-tag')).toHaveText('LABS');
     await expect(nav.getByRole('link', { name: 'Labs' })).toHaveAttribute('aria-current', 'page');
+    // Three more links, each to its own address: the path cards on Home, the learner's own path, and the profile.
+    await expect(nav.getByRole('link', { name: 'Paths' })).toHaveAttribute('href', '/#paths');
+    await expect(nav.getByRole('link', { name: 'Your path' })).toHaveAttribute('href', '/paths/mine');
+    await expect(nav.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile');
     await expect(nav.getByRole('button', { name: 'Help' })).toBeVisible();
     await expect(page.locator('#identityInitials')).toHaveText('CO');
     const radius = await page.locator('.nav').evaluate((el) => getComputedStyle(el).borderTopLeftRadius);

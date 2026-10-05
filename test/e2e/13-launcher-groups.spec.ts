@@ -56,8 +56,8 @@ test.describe('launcher groups', () => {
     await expect(modules).toHaveCount(2);
     await expect(modules.nth(0)).toHaveAttribute('data-module', '1');
     await expect(modules.nth(1)).toHaveAttribute('data-module', '2');
-    await expect(modules.nth(0).locator('.module-progress')).toHaveText('0 of 1 done');
-    await expect(page.locator('.path-summary')).toContainText('0 done');
+    await expect(modules.nth(0).locator('.module-progress')).toHaveText('0 of 1 lab done');
+    await expect(page.locator('.path-progress')).toHaveText('0 of 2 labs done');
     await expect(page.locator('.path .progress').first()).toBeVisible();
     await expect(page.locator('h1.group-head')).toContainText('Foundations');
 
@@ -92,7 +92,7 @@ test.describe('launcher groups', () => {
     await expect(page.locator('.lab[data-slug="a"] .chip-done')).toHaveText('Done · best 100%');
     // One module in a path the catalogue metadata does not describe: no module card, the totals on the path's page.
     await expect(page.locator('.module, .module-card')).toHaveCount(0);
-    await expect(page.locator('.lab-group .path-summary')).toContainText('1 done');
+    await expect(page.locator('.lab-group .path-progress')).toContainText('1 of');
     const bar = page.locator('.lab-group .progress').first();
     await expect(bar).toHaveAttribute('aria-valuenow', '1');
     await expect(bar).toHaveAttribute('aria-valuemax', '2');

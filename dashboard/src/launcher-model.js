@@ -6,7 +6,7 @@
  *   buildLauncherModel(labs, meta, { passed })
  *     labs    the catalogue as GET /api/labs returns it (progress merged in)
  *     meta    packages/catalogue/paths.json: title, intro, icon, accent and
- *             skills of each path and module. It may be missing, partly
+ *             outcomes of each path and module. It may be missing, partly
  *             filled or out of date; nothing here throws for want of it.
  *     passed  Set of slugs this person has passed every check of (defaults
  *             to the labs whose progress says so)
@@ -22,6 +22,8 @@
  * They are still in the catalogue the caller holds, which is what a lookup by
  * slug (a deep link, the resume card, starting a lab) must use.
  */
+
+import { approxTime, labCount, moduleCount } from './words.js';
 
 /** The accent families the design tokens define (packages/design/tokens.css). */
 export const ACCENTS = ['blue', 'teal', 'green', 'amber', 'rose', 'violet', 'indigo', 'slate'];
@@ -61,31 +63,9 @@ export function humanize(slug) {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/**
- * Minutes as "2 h 10 min", "45 min" or "3 h". Anything that is not a
- * positive number reads "0 min".
- */
-export function minutesLabel(minutes) {
-  const total = Math.round(Number(minutes));
-  if (!Number.isFinite(total) || total <= 0) return '0 min';
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  if (!h) return `${m} min`;
-  return m ? `${h} h ${m} min` : `${h} h`;
-}
-
-/**
- * A length for a summary line, rounded the way people say it: to five
- * minutes under two hours, to the half hour under ten, else to the hour.
- * "about 21 h" for a path of 1230 minutes. Empty when there is no time.
- */
-export function approxMinutes(minutes) {
-  const n = Number(minutes);
-  if (!Number.isFinite(n) || n <= 0) return '';
-  if (n < 120) return minutesLabel(Math.max(5, Math.round(n / 5) * 5));
-  if (n < 600) return `${Math.round(n / 30) / 2} h`;
-  return `${Math.round(n / 60)} h`;
-}
+// The words for time, counts and status live in words.js (the console's one vocabulary); these two are re-exported
+// because the pages and tests have always read them from here.
+export { minutesLabel, approxMinutes } from './words.js';
 
 /** True for a lab the manifest archived: hidden from learners, still startable by slug. */
 export const isArchived = (lab) => lab?.archived === true;
@@ -112,6 +92,13 @@ export function labStatus(lab) {
 export function unmetPrerequisite(lab, passed) {
   return (lab.prerequisites ?? []).find((slug) => !passed.has(slug)) ?? null;
 }
+
+/**
+ * True for a lab a free learner cannot start: a Pro lab, on the free plan, for someone the plan does not
+ * excuse (`bypass` is the owner's own subject). `plan` and `bypass` come from the console Worker on every lab;
+ * a catalogue that did not say which plan this is leaves every lab open (the service refuses a Pro lab anyway).
+ */
+export const isPlanLocked = (lab) => lab?.tier === 'pro' && lab?.plan === 'free' && lab?.bypass !== true;
 
 const accentOf = (value) => (ACCENTS.includes(value) ? value : 'slate');
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
@@ -151,6 +138,7 @@ export function buildLauncherModel(labs, meta, { passed } = {}) {
       locked: lockedBy !== null,
       lockedBy,
       lockedByTitle: lockedBy === null ? null : (titleOf.get(lockedBy) ?? lockedBy),
+      planLocked: isPlanLocked(lab),
       free: lab.tier === 'free',
       minutes,
     };
@@ -198,7 +186,7 @@ export function buildLauncherModel(labs, meta, { passed } = {}) {
           eyebrow: `Module ${number}`,
           title: text(m?.title) || `Module ${number}`,
           intro: text(m?.intro),
-          skills: Array.isArray(m?.skills) ? m.skills.filter((s) => typeof s === 'string' && s.trim()) : [],
+          outcomes: Array.isArray(m?.outcomes) ? m.outcomes.filter((s) => typeof s === 'string' && s.trim()) : [],
           icon: text(m?.icon),
           accent: accentOf(m?.accent),
           optional: m?.optional === true,
@@ -232,7 +220,7 @@ export function buildLauncherModel(labs, meta, { passed } = {}) {
   if (noPath.length) {
     const entries = noPath.sort((a, b) => cmp(String(a.slug), String(b.slug))).map((lab, i) => entry(lab, i + 1));
     const totals = totalsOf(entries);
-    const module = { number: null, known: false, eyebrow: '', title: '', intro: '', skills: [], icon: '', accent: 'slate', optional: false, labs: entries, totals };
+    const module = { number: null, known: false, eyebrow: '', title: '', intro: '', outcomes: [], icon: '', accent: 'slate', optional: false, labs: entries, totals };
     paths.push({
       slug: '',
       number: paths.length + 1,
@@ -253,42 +241,35 @@ export function buildLauncherModel(labs, meta, { passed } = {}) {
   return { paths, totals: totalsOf(paths.flatMap((p) => p.labs)) };
 }
 
-/** "31 labs · about 21 h · 2 free · 3 done": the line under a path's title. */
+/** "31 labs · About 21 h · 2 free": the line under a path's title. How far along the learner is has its own line (`labsDone`). */
 export function summaryLine(totals) {
-  const parts = [`${totals.labs} ${totals.labs === 1 ? 'lab' : 'labs'}`];
-  const approx = approxMinutes(totals.minutes);
-  if (approx) parts.push(`about ${approx}`);
+  const parts = [labCount(totals.labs)];
+  const approx = approxTime(totals.minutes);
+  if (approx) parts.push(approx);
   if (totals.free) parts.push(`${totals.free} free`);
-  parts.push(`${totals.done} done`);
   return parts.join(' · ');
 }
 
-/** "5 labs · ~2 h · 1 free": the line under a module's skills. */
+/** "5 labs · About 2 h · 1 free": the line under a module's outcomes. */
 export function moduleMetaLine(totals) {
-  const parts = [`${totals.labs} ${totals.labs === 1 ? 'lab' : 'labs'}`];
-  const approx = approxMinutes(totals.minutes);
-  if (approx) parts.push(`~${approx}`);
-  if (totals.free) parts.push(`${totals.free} free`);
-  return parts.join(' · ');
+  return summaryLine(totals);
 }
 
 // ---------------------------------------------------------------------------
-// The hero, the running lab's place in the catalogue, and which modules open.
+// The hero and the running lab's place in the catalogue.
 
 const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
-const LEDE_TAIL = 'Start with an explore lab, then build or fix the real thing. Your progress is kept on this browser.';
 
 /**
- * The line under the hero: how many paths there are, then the same advice.
- * "Four paths, each a run of hands-on labs. Start with an explore lab, …"
+ * The line under the hero: how many paths there are. "Four paths, each a run of hands-on labs."
  * `count` is the number of real paths (not the "Other labs" group).
  */
 export function heroLede(count) {
   const n = Math.floor(Number(count));
-  if (!Number.isFinite(n) || n < 1) return `Each path is a run of hands-on labs. ${LEDE_TAIL}`;
-  if (n === 1) return `One path, a run of hands-on labs. ${LEDE_TAIL}`;
+  if (!Number.isFinite(n) || n < 1) return 'Each path is a run of hands-on labs.';
+  if (n === 1) return 'One path, a run of hands-on labs.';
   const word = NUMBER_WORDS[n] ?? String(n);
-  return `${word.charAt(0).toUpperCase() + word.slice(1)} paths, each a run of hands-on labs. ${LEDE_TAIL}`;
+  return `${word.charAt(0).toUpperCase() + word.slice(1)} paths, each a run of hands-on labs.`;
 }
 
 /**
@@ -304,37 +285,6 @@ export function locateLab(model, slug) {
     }
   }
   return null;
-}
-
-/** A path with more modules than this opens only the ones worth opening; the rest are cards to open. */
-export const MINI_AFTER = 4;
-/** How many modules, from the first, always open. */
-export const OPEN_FIRST = 2;
-
-/**
- * Which modules of a path show in full and which as a condensed card:
- * a Map of module number to 'full' | 'mini'.
- *
- * A path of up to MINI_AFTER modules, and a path with no module cards, shows
- * everything. A longer one opens its first OPEN_FIRST modules, any module with
- * a lab under way, the one holding the running lab, the one the quiz suggests,
- * and any module in `open` (the ones the learner opened); the others are minis.
- * Nothing is ever dropped: a mini opens in place, and a search or filter opens
- * every module that has a match (app.js, `is-filtering`).
- */
-export function moduleViews(path, { suggested = null, running = null, open = [] } = {}) {
-  const views = new Map();
-  const condense = Boolean(path?.cards) && path.modules.length > MINI_AFTER;
-  path.modules.forEach((module, i) => {
-    let full = !condense || i < OPEN_FIRST || new Set(open).has(module.number);
-    if (!full) {
-      full =
-        module.labs.some((e) => e.status === 'started' || e.lab.slug === running) ||
-        (suggested && suggested.path === path.slug && suggested.number === module.number);
-    }
-    views.set(module.number, full ? 'full' : 'mini');
-  });
-  return views;
 }
 
 // ---------------------------------------------------------------------------
@@ -360,14 +310,28 @@ export function findModule(path, number) {
 /** "Module 3" or "Module 3: Retrieval", as a crumb or a heading says it. */
 export const moduleLabel = (module) => (module.known && module.title ? `${module.eyebrow}: ${module.title}` : module.eyebrow || 'Module');
 
-/** "7 modules · 31 labs · about 21 h": the line under a path's title on its card. */
+/** "7 modules · 31 labs · About 21 h": the line under a path's title on its card. */
 export function pathCardLine(path) {
   const parts = [];
-  if (path.cards) parts.push(`${path.modules.length} ${path.modules.length === 1 ? 'module' : 'modules'}`);
-  parts.push(`${path.totals.labs} ${path.totals.labs === 1 ? 'lab' : 'labs'}`);
-  const approx = approxMinutes(path.totals.minutes);
-  if (approx) parts.push(`about ${approx}`);
+  if (path.cards) parts.push(moduleCount(path.modules.length));
+  parts.push(labCount(path.totals.labs));
+  const approx = approxTime(path.totals.minutes);
+  if (approx) parts.push(approx);
   return parts.join(' · ');
+}
+
+/**
+ * True for a path that is just starting: no modules and two labs or fewer. Its card says "More labs coming",
+ * so a one-lab path reads as a path that is growing rather than a mistake.
+ */
+export const moreLabsComing = (path) => !path.other && !path.cards && path.totals.labs <= 2;
+
+/** The module before and after this one in its path: `{ prev, next }`, each a module or null. */
+export function siblingModules(path, module) {
+  const modules = path?.cards ? path.modules : [];
+  const at = modules.findIndex((m) => m.number === module?.number);
+  if (at < 0) return { prev: null, next: null };
+  return { prev: modules[at - 1] ?? null, next: modules[at + 1] ?? null };
 }
 
 /**

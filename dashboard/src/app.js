@@ -7,18 +7,35 @@ import {
   findModule,
   findPath,
   heroLede,
+  isPlanLocked,
   labStatus,
   locateLab,
   moduleLabel,
   moduleMetaLine,
+  moreLabsComing,
   passedSlugs,
   pathCardLine,
   pathId,
   scopeEntries,
+  siblingModules,
   summaryLine,
   unmetPrerequisite,
   visibleLabs,
 } from './launcher-model.js';
+import {
+  PLAN_LOCK_LONG,
+  STATUS_FILTERS,
+  STATUS_WORDS,
+  difficultyWord,
+  familyWord,
+  labTime,
+  labsDone,
+  nextLabText,
+  skillChangeText,
+  xpGainText,
+} from './words.js';
+import { skillForPlacement } from './skills.js';
+import { lockBadge } from './path-view.js';
 import { isPhoneLike, readDevice } from './device.js';
 import { createRouter } from './router.js';
 import { installCodeCopy } from './code-copy.js';
@@ -46,7 +63,7 @@ import {
   tabBadge,
   windowTitle,
 } from './session-layout.js';
-// The presentation copy of every path and module: title, intro, skills, icon
+// The presentation copy of every path and module: title, intro, outcomes, icon
 // and accent. The public /labs page reads the same file.
 import pathMeta from '../../packages/catalogue/paths.json';
 // The owner's developer view (admin-mode.js): a client-side view mode, shown only when /api/me says can_admin.
@@ -209,6 +226,9 @@ function siteHref(path) {
   }
 }
 
+/** The plans page of the public site: where an Unlock link goes. Null (no link) when the footer's address is missing. */
+const plansHref = () => siteHref('/#pricing');
+
 /** What this browser knows about the learner's learning (learn-model.js); never sent anywhere. */
 const mastery = createMasteryStore();
 
@@ -223,7 +243,7 @@ const progress = createProgressHub({
   hasQuiz: () => Object.keys(mastery.get().onboarding?.levels ?? {}).length > 0,
   isRunning: (slug) => slug === runningSlug,
   labKnown: (slug) => labsBySlug.has(slug),
-  plansHref: () => siteHref('/#pricing'),
+  plansHref,
   startLab: (slug, card) => {
     const lab = labsBySlug.get(slug);
     if (lab) beginLab(lab, card);
@@ -511,6 +531,10 @@ async function openSessionRoute(route, stale) {
   }
 
   const at = locateLab(launcherModel, slug);
+  if (at?.entry.planLocked && !adminMode.isOn()) {
+    toast(PLAN_LOCK_LONG);
+    return landOnLabPage(slug);
+  }
   if (at?.entry.locked && !adminMode.isOn()) {
     toast(`Locked until ${at.entry.lockedByTitle ?? at.entry.lockedBy} passes. Pass every check of that lab to unlock this one.`);
     return landOnLabPage(slug);
@@ -703,10 +727,6 @@ let catalogueFailed = false;
 
 const DIFFICULTY_LEVEL = { intro: 1, core: 2, advanced: 3 };
 const DIFFICULTIES = ['intro', 'core', 'advanced'];
-const STATUS_FILTERS = [
-  ['todo', 'Not started'],
-  ['done', 'Done'],
-];
 
 /**
  * A launch error is shown inside the card that failed, so it has to be
@@ -719,9 +739,20 @@ function parkLaunchError() {
   $('launcher').append(error);
 }
 
+/**
+ * Home draws the filters between its bands and its path cards, inside the list. Anything that empties the list
+ * (the skeleton, an error) first puts them back above it, or they would be taken off the page with it.
+ */
+function parkFilters() {
+  const list = $('labList');
+  const filtersBar = document.getElementById('labFilters');
+  if (filtersBar && list.contains(filtersBar)) list.before(filtersBar, $('labNoMatch'));
+}
+
 function showLabSkeleton() {
   const list = $('labList');
   parkLaunchError();
+  parkFilters();
   list.setAttribute('aria-busy', 'true');
   list.innerHTML =
     '<div class="lab-skeleton" aria-hidden="true"></div>'.repeat(3) + '<p class="sr-only">Loading labs…</p>';
@@ -759,6 +790,7 @@ async function loadLabs() {
   } catch (err) {
     if (/^401:/.test(err.message)) {
       // The console cookie is gone (expired, or signed out in another tab).
+      parkFilters();
       list.innerHTML = `
         <div class="empty-state" id="signedOut">
           <p>You are signed out.</p>
@@ -771,6 +803,7 @@ async function loadLabs() {
     }
     if (refreshing) return;
     catalogueFailed = true;
+    parkFilters();
     list.innerHTML = `
       <div class="empty-state">
         <p class="error"></p>
@@ -928,9 +961,16 @@ function renderBrowse(route = router.current(), { quiet = false, initial = false
   $('btnClearFilters').hidden = !filtersActive();
   list.className = `lab-list lab-page-${view.kind}`;
 
+  // The search and filters sit between Home's bands and its path cards; on every other page (and on a Home with
+  // no labs to filter) they are above the list.
+  const filtersBar = $('labFilters');
+  const noMatch = $('labNoMatch');
+  const filtersInList = home && filterable;
+  if (!filtersInList && list.contains(filtersBar)) list.before(filtersBar, noMatch);
+
   switch (view.kind) {
     case 'home':
-      list.replaceChildren(progress.homeBands(), homePage());
+      withFocusKept(filtersBar, () => list.replaceChildren(progress.homeBands(), ...(filtersInList ? [filtersBar, noMatch] : []), homePage()));
       break;
     case 'profile':
       list.replaceChildren(progress.profileScreen());
@@ -942,7 +982,7 @@ function renderBrowse(route = router.current(), { quiet = false, initial = false
       list.replaceChildren(pathPage(view.path, suggestedStart()));
       break;
     case 'module':
-      list.replaceChildren(moduleCard(view.path, view.module, suggestedStart()));
+      list.replaceChildren(moduleCard(view.path, view.module, suggestedStart()), ...[moduleFoot(view.path, view.module)].filter(Boolean));
       break;
     default:
       list.replaceChildren(labPage(view.lab));
@@ -952,7 +992,10 @@ function renderBrowse(route = router.current(), { quiet = false, initial = false
 
   $('launcher').scrollTo({ top: 0, behavior: 'auto' });
   window.scrollTo(0, 0);
-  if (initial) return;
+  if (initial) {
+    if (home && location.hash === '#paths') scrollToPaths();
+    return;
+  }
   const toPaths = focusFirstPath;
   focusFirstPath = false;
   const [target, said] =
@@ -968,22 +1011,58 @@ function renderBrowse(route = router.current(), { quiet = false, initial = false
               ? [list.querySelector('.module-title'), moduleLabel(view.module)]
               : [list.querySelector('.lab-detail-title'), view.lab.title || view.lab.slug];
   target?.focus({ preventScroll: true });
+  if (home && toPaths) scrollToPaths();
   announceRoute(said);
+}
+
+/**
+ * Runs `draw`, which takes `bar` out of the page and puts it back (Home's filters move into the list), and gives
+ * focus back to whatever inside it had it, so typing in the search box or pressing a chip is not interrupted.
+ */
+function withFocusKept(bar, draw) {
+  const active = document.activeElement;
+  const held = active && bar.contains(active) ? active : null;
+  const caret = held instanceof HTMLInputElement ? [held.selectionStart, held.selectionEnd] : null;
+  draw();
+  if (!held || document.activeElement === held || !held.isConnected) return;
+  held.focus({ preventScroll: true });
+  if (caret) {
+    try {
+      held.setSelectionRange(caret[0], caret[1]);
+    } catch {
+      /* a type that has no selection */
+    }
+  }
+}
+
+/** Scrolls Home to its path cards (the header's Paths link, and an address ending in #paths). */
+function scrollToPaths() {
+  const cards = document.getElementById('paths');
+  if (!cards) return;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  cards.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
 }
 
 /** The header's "Paths" asked for home with focus on the first path rather than on the heading. */
 let focusFirstPath = false;
 
-/** The header's links say which page is open: Profile on /profile, Labs on the others. */
+/**
+ * The header's links say which page is open: Profile on /profile, Your path on /paths/mine, Paths on a path's
+ * pages, Labs on Home and on a lab's page.
+ */
 function syncNav(route) {
-  const profile = route.name === 'profile';
-  if (profile) $('navProfile').setAttribute('aria-current', 'page');
-  else $('navProfile').removeAttribute('aria-current');
-  if (profile) $('navLabs').removeAttribute('aria-current');
-  else $('navLabs').setAttribute('aria-current', 'page');
+  const current =
+    route.name === 'profile' ? 'navProfile' : route.name === 'my-path' ? 'navMyPath' : route.name === 'path' || route.name === 'module' ? 'navPaths' : 'navLabs';
+  for (const id of ['navLabs', 'navPaths', 'navMyPath', 'navProfile']) {
+    if (id === current) $(id).setAttribute('aria-current', 'page');
+    else $(id).removeAttribute('aria-current');
+  }
 }
 
-/** The trail above the page: Home > Path > Module > Lab, as a nav landmark; the page itself is the last item. */
+/**
+ * The trail above the page: Home > Path > Module > Lab, as a nav landmark; the page itself is the last item.
+ * Home's own trail is just itself, and a lone "Home" says nothing: it is not drawn.
+ */
 function renderCrumbs(route, lab) {
   const items = breadcrumbs(launcherModel, route, lab);
   const trail = $('crumbList');
@@ -999,7 +1078,7 @@ function renderCrumbs(route, lab) {
     }
     trail.append(li);
   }
-  $('crumbs').hidden = false;
+  $('crumbs').hidden = items.length < 2;
 }
 
 /** Home: one card per path with its title, a line about it, how many modules and labs, and how far along the learner is. */
@@ -1014,6 +1093,7 @@ function homePage() {
   }
   $('heroLede').textContent = heroLede(model.paths.filter((p) => !p.other).length);
   const cards = node('div', 'path-cards');
+  cards.id = 'paths';
   const suggested = suggestedStart();
   for (const path of model.paths) {
     if (shown(path.labs).length) cards.append(pathCard(path, suggested));
@@ -1041,12 +1121,14 @@ function pathCard(path, suggested = null) {
   const top = node('div', 'path-card-top');
   top.append(tile);
   if (suggested && suggested.path === path.slug) top.append(node('span', 'badge badge-suggested', 'Suggested start'));
+  // A path of one or two labs reads as one that is growing, not as one that is unfinished.
+  if (moreLabsComing(path)) top.append(node('span', 'badge badge-soon', 'More labs coming'));
   card.append(top, title);
   if (path.intro) card.append(node('p', 'path-card-intro', path.intro));
   card.append(node('p', 'path-card-line', pathCardLine(path)));
   card.append(progressBar(path.totals.done, path.totals.labs, `Labs done in ${path.title}`));
   const match = filtersActive() ? ` · ${shown(path.labs).length} match` : '';
-  card.append(node('p', 'path-card-progress', `${path.totals.done} of ${path.totals.labs} done${match}`));
+  card.append(node('p', 'path-card-progress', `${labsDone(path.totals.done, path.totals.labs)}${match}`));
   return card;
 }
 
@@ -1077,7 +1159,7 @@ function pathPage(path, suggested = null) {
   const [first, ...rest] = summaryLine(path.totals).split(' · ');
   const summary = node('p', 'path-summary');
   summary.append(node('b', '', first), document.createTextNode(rest.length ? ` · ${rest.join(' · ')}` : ''));
-  stats.append(summary, progressBar(path.totals.done, path.totals.labs, `Labs done in ${path.title}`));
+  stats.append(summary, progressBar(path.totals.done, path.totals.labs, `Labs done in ${path.title}`), node('p', 'path-progress', labsDone(path.totals.done, path.totals.labs)));
 
   section.append(tile, head);
   if (path.intro) section.append(node('p', 'path-intro', path.intro));
@@ -1123,7 +1205,7 @@ function moduleSummaryCard(path, module, suggested = null) {
   const match = filtersActive() ? ` · ${shown(module.labs).length} match` : '';
   card.append(node('p', 'module-meta', moduleMetaLine(totals)));
   card.append(progressBar(totals.done, totals.labs, `Labs done in ${module.title}`));
-  card.append(node('p', 'module-progress', `${totals.done} of ${totals.labs} done${match}`));
+  card.append(node('p', 'module-progress', `${labsDone(totals.done, totals.labs)}${match}`));
   return card;
 }
 
@@ -1172,22 +1254,33 @@ function moduleCard(path, module, suggested = null) {
   info.append(title);
 
   if (module.intro) info.append(node('p', 'module-intro', module.intro));
-  if (module.skills.length) {
-    const skills = node('div', 'module-skills');
+  if (module.outcomes.length) {
+    const outcomes = node('div', 'module-skills');
     const label = node('p', 'skills-label', 'You will learn to');
     const items = node('ul', 'skill-list');
-    for (const skill of module.skills) items.append(node('li', '', skill));
-    skills.append(label, items);
-    info.append(skills);
+    for (const outcome of module.outcomes) items.append(node('li', '', outcome));
+    outcomes.append(label, items);
+    info.append(outcomes);
   }
 
   const { totals } = module;
   info.append(node('p', 'module-meta', moduleMetaLine(totals)));
   info.append(progressBar(totals.done, totals.labs, `Labs done in ${module.title}`));
-  info.append(node('p', 'module-progress', `${totals.done} of ${totals.labs} done`));
+  info.append(node('p', 'module-progress', labsDone(totals.done, totals.labs)));
 
   card.append(info, labRows(shown(module.labs), 'lab-rows'));
   return card;
+}
+
+/** The foot of a module's page: the module before it and the one after it in the path; null when it has neither. */
+function moduleFoot(path, module) {
+  const { prev, next } = siblingModules(path, module);
+  const foot = node('nav', 'module-foot');
+  foot.setAttribute('aria-label', 'Other modules in this path');
+  const link = (to, className, label) => routeLink(`btn btn-ghost module-foot-link ${className}`, label, { name: 'module', path: pathId(path), module: to.number });
+  if (prev) foot.append(link(prev, 'module-foot-prev', `\u2190 Previous module: ${prev.title}`));
+  if (next) foot.append(link(next, 'module-foot-next', `Next module: ${next.title} \u2192`));
+  return prev || next ? foot : null;
 }
 
 function labRows(entries, className) {
@@ -1213,9 +1306,9 @@ function fillFacts(sub, lab) {
   // The expected time and the kill timer are different promises: say both
   // when the manifest gives both.
   if (lab.estimated_minutes) {
-    facts.push(['time', `~${lab.estimated_minutes} min`, lab.timeout_minutes ? ` · ${lab.timeout_minutes} min limit` : '']);
+    facts.push(['time', labTime(lab.estimated_minutes), lab.timeout_minutes ? ` · ${labTime(lab.timeout_minutes)} limit` : '']);
   } else if (lab.timeout_minutes) {
-    facts.push(['time', `${lab.timeout_minutes} min`]);
+    facts.push(['time', labTime(lab.timeout_minutes)]);
   }
   if (lab.tier === 'free') facts.push(['tier', 'Free']);
   facts.forEach(([kind, text, limit], i) => {
@@ -1231,7 +1324,7 @@ function fillFacts(sub, lab) {
     if (kind === 'difficulty') chip.dataset.level = String(DIFFICULTY_LEVEL[text] ?? 0);
     if (kind === 'time') {
       chip.title = lab.estimated_minutes
-        ? `Expected about ${lab.estimated_minutes} min to finish${lab.timeout_minutes ? `; the session ends after ${lab.timeout_minutes} min` : ''}`
+        ? `Expected about ${labTime(lab.estimated_minutes)} to finish${lab.timeout_minutes ? `; the session ends after ${labTime(lab.timeout_minutes)}` : ''}`
         : 'Time limit for this lab';
     }
     chip.textContent = text;
@@ -1241,12 +1334,24 @@ function fillFacts(sub, lab) {
 }
 
 /**
- * Where this person stands on a lab: done with the best score, locked until a named lab passes, in progress, or
- * not started; and the button's state to match. Shared by a lab's row and its page.
+ * Where this person stands on a lab: locked by the plan (a Pro lab on the free plan), done with the best score,
+ * locked until a named lab passes, in progress, or not started; and the button's state to match. Shared by a
+ * lab's row and its page.
  */
-function fillStanding(status, button, lab, { done, locked, lockedBy, lockedByTitle }) {
-  if (done) {
-    status.append(node('span', 'chip chip-done', `Done · best ${percent(lab.progress.best_score)}%`));
+function fillStanding(status, button, lab, { done, locked, lockedBy, lockedByTitle, planLocked }) {
+  if (planLocked && adminMode.isOn()) {
+    // The owner's developer view: startable, with the lock said in words (the service lets the owner's own subject through).
+    adminMode.openLock(status, button, 'the Pro plan');
+  } else if (planLocked) {
+    // The same lock and Unlock link as a locked step on the learner's path. Start is off: it would only be refused.
+    const { badge, unlock } = lockBadge({ plansHref: plansHref(), title: lab.title || lab.slug });
+    status.append(badge);
+    if (unlock) status.append(unlock);
+    button.disabled = true;
+    button.setAttribute('aria-disabled', 'true');
+    button.title = PLAN_LOCK_LONG;
+  } else if (done) {
+    status.append(node('span', 'chip chip-done', `${STATUS_WORDS.done} · best ${percent(lab.progress.best_score)}%`));
   } else if (locked && adminMode.isOn()) {
     adminMode.openLock(status, button, lockedByTitle ?? lockedBy);
   } else if (locked) {
@@ -1260,15 +1365,15 @@ function fillStanding(status, button, lab, { done, locked, lockedBy, lockedByTit
     button.title = `Locked until ${need} passes. Pass every check of that lab to unlock this one.`;
   } else if (lab.progress?.attempts > 0) {
     const best = Number.isFinite(Number(lab.progress.best_score)) && lab.progress.best_score !== null;
-    status.append(node('span', 'lab-state', best ? `In progress · best ${percent(lab.progress.best_score)}%` : 'In progress'));
+    status.append(node('span', 'lab-state', best ? `${STATUS_WORDS.started} · best ${percent(lab.progress.best_score)}%` : STATUS_WORDS.started));
   } else {
-    status.append(node('span', 'lab-state', 'Not started'));
+    status.append(node('span', 'lab-state', STATUS_WORDS.todo));
   }
 }
 
-function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
+function labCard({ lab, index, done, locked, lockedBy, lockedByTitle, planLocked }) {
   const row = document.createElement('article');
-  row.className = `lab${done ? ' lab-done' : ''}${locked ? ' lab-locked' : ''}`;
+  row.className = `lab${done ? ' lab-done' : ''}${locked ? ' lab-locked' : ''}${planLocked ? ' lab-plan-locked' : ''}`;
   // The slug is the lab's identity. It is rendered inside .lab-sub as
   // prose, where "hello" is also a substring of "gateway-hello", so
   // carry it as an attribute too: that is what lets anything selecting
@@ -1291,7 +1396,8 @@ function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
   row.querySelector('.lab-num').textContent = String(index);
   const title = row.querySelector('.lab-title');
   title.id = titleId;
-  title.textContent = lab.title;
+  // The title opens the lab's own page, like the "About this lab" link under it.
+  title.append(routeLink('lab-title-link', lab.title, { name: 'lab', slug: lab.slug }));
 
   // The summary and objectives are one click away, on the lab's own page.
   const about = row.querySelector('.lab-about');
@@ -1302,7 +1408,7 @@ function labCard({ lab, index, done, locked, lockedBy, lockedByTitle }) {
 
   const status = row.querySelector('.lab-status');
   const button = row.querySelector('.lab-start');
-  fillStanding(status, button, lab, { done, locked, lockedBy, lockedByTitle });
+  fillStanding(status, button, lab, { done, locked, lockedBy, lockedByTitle, planLocked });
   button.addEventListener('click', () => {
     if (button.getAttribute('aria-disabled') === 'true') return;
     beginLab(lab, row);
@@ -1324,8 +1430,9 @@ function labPage(lab) {
     locked: lockedBy !== null,
     lockedBy,
     lockedByTitle: lockedBy === null ? null : (labsBySlug.get(lockedBy)?.title ?? lockedBy),
+    planLocked: at ? at.entry.planLocked : isPlanLocked(lab),
   };
-  const page = node('article', `lab-detail${standing.done ? ' lab-done' : ''}${standing.locked ? ' lab-locked' : ''}`);
+  const page = node('article', `lab-detail${standing.done ? ' lab-done' : ''}${standing.locked ? ' lab-locked' : ''}${standing.planLocked ? ' lab-plan-locked' : ''}`);
   page.dataset.slug = lab.slug;
   if (at) page.dataset.accent = at.module.known ? at.module.accent : at.path.accent;
   const titleId = `lab-title-${lab.slug}`;
@@ -1359,8 +1466,10 @@ function labPage(lab) {
   const prerequisites = node('section', 'lab-prereq-section');
   prerequisites.append(node('h2', '', 'Prerequisites'));
   const needs = (lab.prerequisites ?? []).filter((s) => typeof s === 'string' && s);
+  const lockedAtAll = standing.locked || standing.planLocked;
   if (!needs.length) {
-    prerequisites.append(node('p', 'lab-detail-note', 'None. You can start right away.'));
+    // "You can start right away" is not true of a lab the plan holds back: the side panel says why instead.
+    if (!lockedAtAll) prerequisites.append(node('p', 'lab-detail-note', 'None. You can start right away.'));
   } else {
     const items = node('ul', 'lab-prereqs');
     for (const slug of needs) {
@@ -1375,7 +1484,7 @@ function labPage(lab) {
     }
     prerequisites.append(items);
   }
-  main.append(prerequisites);
+  if (needs.length || !lockedAtAll) main.append(prerequisites);
 
   const side = node('aside', 'lab-detail-side');
   side.setAttribute('aria-label', 'Your progress and the way in');
@@ -1389,10 +1498,12 @@ function labPage(lab) {
     beginLab(lab, page);
   });
   side.append(status, button);
-  if (standing.locked && !adminMode.isOn()) {
+  if (standing.planLocked && !adminMode.isOn()) {
+    side.append(node('p', 'lab-detail-note', PLAN_LOCK_LONG));
+  } else if (standing.locked && !adminMode.isOn()) {
     side.append(node('p', 'lab-detail-note', `Pass every check of ${standing.lockedByTitle} first, then this lab opens.`));
   } else if (lab.estimated_minutes) {
-    side.append(node('p', 'lab-detail-note', `About ${lab.estimated_minutes} min${lab.timeout_minutes ? `; the session ends after ${lab.timeout_minutes} min.` : '.'}`));
+    side.append(node('p', 'lab-detail-note', `Expected ${labTime(lab.estimated_minutes)}${lab.timeout_minutes ? `; the session ends after ${labTime(lab.timeout_minutes)}.` : '.'}`));
   }
   page.append(main, side);
   styleStartButton(page);
@@ -1408,10 +1519,12 @@ function labPage(lab) {
 function styleStartButton(row) {
   const button = row.querySelector('.lab-start');
   const running = row.classList.contains('lab-running');
-  const locked = row.classList.contains('lab-locked') && !adminMode.isOn();
+  // A plan lock keeps its Start (disabled, with the Unlock link beside it); a lock behind another lab says Locked.
+  const planLocked = row.classList.contains('lab-plan-locked') && !adminMode.isOn();
+  const locked = row.classList.contains('lab-locked') && !adminMode.isOn() && !planLocked;
   const done = row.classList.contains('lab-done');
   button.textContent = locked ? 'Locked' : running ? 'Resume' : done ? 'Open again' : 'Start';
-  button.className = `btn lab-start ${locked ? 'btn-ghost' : running ? 'btn-accent' : done ? 'btn-ghost' : 'btn-strong'}`;
+  button.className = `btn lab-start ${locked || planLocked ? 'btn-ghost' : running ? 'btn-accent' : done ? 'btn-ghost' : 'btn-strong'}`;
 }
 
 /** Marks a row (or a lab's page) as the lab that is running (or clears it), keeping the status line and the button in step. */
@@ -1472,8 +1585,8 @@ function renderFilters(labs) {
   // A saved family that has since left the catalogue would hide everything.
   filters.family = new Set([...filters.family].filter((f) => families.includes(f)));
   const facets = [
-    ['difficulty', 'Difficulty', DIFFICULTIES.map((d) => [d, d])],
-    ['family', 'Family', families.map((f) => [f, f])],
+    ['difficulty', 'Difficulty', DIFFICULTIES.map((d) => [d, difficultyWord(d)])],
+    ['family', 'Family', families.map((f) => [f, familyWord(f)])],
     ['status', 'Status', STATUS_FILTERS],
   ];
   for (const [key, label, options] of facets) {
@@ -1860,6 +1973,11 @@ async function fetchLearn(slug) {
  * already running that Start would only rejoin) goes straight to the boot.
  */
 let beginning = false;
+/** The Start of a lab the plan holds back stays off when the other buttons come back on (the owner's view excepted). */
+function isPlanLockedButton(button) {
+  return Boolean(button.closest('.lab-plan-locked')) && !adminMode.isOn();
+}
+
 async function beginLab(lab, card) {
   if (beginning) return;
   // Start, Open again and Rejoin all come through here: on a phone they show the desktop notice.
@@ -1881,7 +1999,7 @@ async function beginLab(lab, card) {
   try {
     entry = await fetchLearn(lab.slug);
   } finally {
-    buttons.forEach((b) => (b.disabled = false));
+    buttons.forEach((b) => (b.disabled = isPlanLockedButton(b)));
     if (button) {
       button.textContent = label;
       button.removeAttribute('aria-busy');
@@ -2498,7 +2616,7 @@ async function startSession(slug, card) {
     error.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     return false;
   } finally {
-    buttons.forEach((b) => (b.disabled = false));
+    buttons.forEach((b) => (b.disabled = isPlanLockedButton(b)));
     if (button) {
       button.textContent = label;
       button.removeAttribute('aria-busy');
@@ -2541,6 +2659,7 @@ function enterSession() {
   state.lastResults = null;
   state.landed = false;
   resetSessionFeedback();
+  progress.labStarted();
   $('fileList').innerHTML = '';
   $('serviceTabs').innerHTML = '';
   $('serviceList').innerHTML = '';
@@ -3378,13 +3497,24 @@ function teardownSession() {
   setServicesOpen(false);
 }
 
-/** An ended session leaves a dead workspace on screen; this is the way out. The address becomes the lab's page. */
+/**
+ * Where "Back to labs" goes from a lab: the module it belongs to (its labs, this one among them), else its path,
+ * else Home. As `router.navigate` takes it: `[name, params]`.
+ */
+function labsRoute(slug) {
+  const at = slug ? locateLab(launcherModel, slug) : null;
+  if (!at) return ['launcher', {}];
+  if (at.path.cards) return ['module', { path: pathId(at.path), module: at.module.number }];
+  return ['path', { path: pathId(at.path) }];
+}
+
+/** An ended session leaves a dead workspace on screen; this is the way out. The address becomes the lab's module page. */
 function backToLabs() {
   const slug = state.session?.lab;
   leaveSessionScreen(true);
   // Replaced, not pushed: Back must not lead to the address of a session that is gone (it would start another).
-  if (slug) router.navigate('lab', { slug }, { replace: true });
-  else router.navigate('launcher', {}, { replace: true });
+  const [name, params] = labsRoute(slug);
+  router.navigate(name, params, { replace: true });
 }
 
 /**
@@ -4354,12 +4484,46 @@ function showResultCard(run, celebrate) {
   $('resultTime').textContent = state.result.time;
   updateResultHints();
   $('resultCard').hidden = false;
+  showResultEarnings(state.session.lab);
   if (celebrate) {
     announce('Lab complete. Every check passed.');
     // The result card is in the guide: if the guide is hidden, say where it is.
     if (!guide.open) toast('Lab complete. Every check passed. Open the guide to see your result.', 'good');
   }
   if (celebrate && !matchMedia('(prefers-reduced-motion: reduce)').matches) confettiBurst();
+}
+
+/**
+ * What the lab just finished earned, on its result card: "+N XP", "Skill: Retrieval 12 → 31" and the next lab
+ * ("Next lab: ..."), all from the profile read again once the lab is done. Nothing is shown for what the
+ * profile does not say (no XP gained, a profile that could not be read).
+ */
+function showResultEarnings(slug) {
+  const lab = labsBySlug.get(slug);
+  const area = skillForPlacement(lab?.path, lab?.module)?.id ?? null;
+  progress
+    .finishedLab(area)
+    .then(({ gain, next }) => {
+      // The learner may have left, or started another lab, while the profile was loading.
+      if (!state.session || state.session.lab !== slug) return;
+      const earned = $('resultGain');
+      earned.replaceChildren();
+      if (gain?.xp > 0) earned.append(node('span', 'result-xp', xpGainText(gain.xp)));
+      if (gain?.skill) earned.append(node('span', 'result-skill', skillChangeText(gain.skill.title, gain.skill.from, gain.skill.to)));
+      earned.hidden = earned.childElementCount === 0;
+      const follow = $('resultNext');
+      if (next && typeof next.slug === 'string' && next.slug !== slug) {
+        const link = $('resultNextLink');
+        link.href = buildRoute('lab', { slug: next.slug });
+        link.textContent = nextLabText(next.title || next.slug);
+        follow.hidden = false;
+      } else {
+        follow.hidden = true;
+      }
+    })
+    .catch(() => {
+      /* the card is complete without it */
+    });
 }
 
 function hintsUsedText() {
@@ -4403,6 +4567,9 @@ function resetSessionFeedback() {
   state.resultShown = false;
   state.result = null;
   $('resultCard').hidden = true;
+  $('resultGain').hidden = true;
+  $('resultGain').replaceChildren();
+  $('resultNext').hidden = true;
   $('confetti').innerHTML = '';
   progress.clearResultAwards();
   $('feedbackForm').reset();
@@ -5062,16 +5229,17 @@ $('navLabs').addEventListener('click', goHome);
 $('navPaths').addEventListener('click', (event) => {
   const first = $('labList').querySelector('.path-card-title a');
   if (state.session || $('launcher').hidden || router.current().name !== 'launcher' || !first) {
-    // From another page: home, with focus on the first path once it is drawn.
+    // From another page: home, with focus on the first path (and the path cards in view) once it is drawn.
     focusFirstPath = !state.session;
     return goHome(event);
   }
   event.preventDefault();
   setMenu(false);
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  $('labList').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  scrollToPaths();
   first.focus({ preventScroll: true });
 });
+// "Your path" is a page of its own: the router opens it (the link is /paths/mine); the menu only has to close.
+$('navMyPath').addEventListener('click', () => setMenu(false));
 
 // On a phone the links and account controls live behind a menu button inside the pill.
 function setMenu(open) {
@@ -5193,8 +5361,8 @@ $('btnImHere').addEventListener('click', imHere);
 
 $('btnBackToLabs').addEventListener('click', () => {
   if ($('statePill').dataset.state === 'ended') backToLabs();
-  // The lab keeps running: its page is where the learner left from, and offers Resume.
-  else if (state.session) router.navigate('lab', { slug: state.session.lab });
+  // The lab keeps running: its module page lists it with Resume, and the lab's own page is one click from there.
+  else if (state.session) router.navigate(...labsRoute(state.session.lab));
 });
 $('btnSignOut')?.addEventListener('click', async () => {
   // POST-only on the Worker; a GET is refused. The page reload lands on the

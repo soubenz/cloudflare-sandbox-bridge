@@ -25,7 +25,7 @@ import { loadProfile } from './profile/store';
 import { compactProfile } from './profile/compute';
 import { parseUserId, parseStartingLevels } from './profile/request';
 import { parsePathInputs } from './path/inputs';
-import { ensurePath, loadPlan, saveInputsAndRecompute, type PathResult } from './path/service';
+import { PLAN_LOCK_WHY, ensurePath, loadPlan, saveInputsAndRecompute, type PathResult } from './path/service';
 
 export function createRouter(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
@@ -613,7 +613,10 @@ export function createRouter(): Hono<{ Bindings: Env }> {
 
   app.get('/users/:uid/progress', async (c) => {
     requireServiceAuth(c.req.raw, c.env);
-    return c.json(await userProgress(c.env, c.req.param('uid')));
+    const uid = c.req.param('uid');
+    // The plan rides along so the console can show which labs a free learner cannot start (`labs` is unchanged).
+    const [progress, plan] = await Promise.all([userProgress(c.env, uid), loadPlan(c.env, uid)]);
+    return c.json({ ...progress, plan });
   });
 
   app.get('/users/:uid/checks', async (c) => {
@@ -737,7 +740,7 @@ async function createSession(env: Env, lab: string, userId: string, ipHash?: str
   // A pro lab needs a paid plan. The caller vouches for `bypassTier` (an operator, or the console for its admin
   // subject); a plain `user_id` never earns it.
   if (!bypassTier && manifest.tier === 'pro' && (await loadPlan(env, userId)) === 'free') {
-    throw new ApiError(403, 'plan_required', 'This lab is included with the Pro plan.');
+    throw new ApiError(403, 'plan_required', PLAN_LOCK_WHY);
   }
 
   // Refuse before reserving anything in D1: a session the pool cannot give a

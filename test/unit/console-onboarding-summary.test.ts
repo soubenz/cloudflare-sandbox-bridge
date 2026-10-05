@@ -77,10 +77,10 @@ describe('the starting point: which area, and why', () => {
   });
 
   it('says each level in plain words', () => {
-    expect(o.LEVEL_LABELS).toEqual({ strong: 'You know this well', ok: 'You have some experience', new: 'New to you' });
+    expect(o.LEVEL_LABELS).toEqual({ strong: 'Know it well', ok: 'Some experience', new: 'New to you' });
     const { rows } = o.summarise(mix({ gateway: 'strong', mcp: 'ok' }));
-    expect(rows.find((r) => r.area === 'gateway')?.phrase).toBe('You know this well');
-    expect(rows.find((r) => r.area === 'mcp')?.phrase).toBe('You have some experience');
+    expect(rows.find((r) => r.area === 'gateway')?.phrase).toBe('Know it well');
+    expect(rows.find((r) => r.area === 'mcp')?.phrase).toBe('Some experience');
     expect(rows.find((r) => r.area === 'rag')?.phrase).toBe('New to you');
   });
 

@@ -104,3 +104,25 @@ describe('the guide tabs and their panels', () => {
     for (const use of html.matchAll(/<use href="#([\w-]+)"/g)) expect(html.includes(`<symbol id="${use[1]}"`), `<use href="#${use[1]}"> has no symbol`).toBe(true);
   });
 });
+
+/** The header and Home keep to the order and the addresses the console promises. */
+describe('the header links and Home', () => {
+  it('goes Labs to /, Paths to the path cards, Your path to /paths/mine, Profile to /profile', () => {
+    const link = (id: string) => html.match(new RegExp(`<a[^>]*href="([^"]*)"[^>]*id="${id}"`))?.[1];
+    expect(link('navLabs')).toBe('/');
+    expect(link('navPaths')).toBe('/#paths');
+    expect(link('navMyPath')).toBe('/paths/mine');
+    expect(link('navProfile')).toBe('/profile');
+  });
+
+  it('draws Home as its bands, then the filters and "No labs match", then the path cards', () => {
+    expect(app).toMatch(/list\.replaceChildren\(progress\.homeBands\(\), \.\.\.\(filtersInList \? \[filtersBar, noMatch\] : \[\]\), homePage\(\)\)/);
+    expect(app).toMatch(/cards\.id = 'paths'/);
+  });
+
+  it('leaves out the lone Home crumb and the old advice under the hero', () => {
+    expect(app).toMatch(/\$\('crumbs'\)\.hidden = items\.length < 2/);
+    expect(html).not.toContain('kept on this browser');
+    expect(html).not.toContain('Start with an explore lab');
+  });
+});

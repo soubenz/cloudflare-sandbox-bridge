@@ -17,6 +17,8 @@ interface Lab {
   module?: number;
   order?: number;
   tier?: string;
+  plan?: string;
+  bypass?: boolean;
   estimated_minutes?: number;
   prerequisites?: string[];
   progress?: { attempts: number; best_score: number | null; passed_all: boolean } | null;
@@ -29,6 +31,7 @@ interface Entry {
   locked: boolean;
   lockedBy: string | null;
   lockedByTitle: string | null;
+  planLocked: boolean;
   free: boolean;
   minutes: number;
 }
@@ -44,7 +47,7 @@ interface Module {
   eyebrow: string;
   title: string;
   intro: string;
-  skills: string[];
+  outcomes: string[];
   icon: string;
   accent: string;
   optional: boolean;
@@ -94,8 +97,8 @@ const meta = {
       icon: 'layers',
       intro: 'About the platform.',
       modules: [
-        { number: 1, title: 'Gateway', accent: 'teal', icon: 'route', intro: 'One door.', skills: ['a', 'b'] },
-        { number: 2, title: 'Tools', accent: 'amber', icon: 'plug', intro: 'Tools.', skills: ['c', 'd'], optional: true },
+        { number: 1, title: 'Gateway', accent: 'teal', icon: 'route', intro: 'One door.', outcomes: ['a', 'b'] },
+        { number: 2, title: 'Tools', accent: 'amber', icon: 'plug', intro: 'Tools.', outcomes: ['c', 'd'], optional: true },
       ],
     },
   ],
@@ -164,7 +167,7 @@ describe('buildLauncherModel: metadata', () => {
     const m = buildLauncherModel([lab('p1', { path: 'platform', module: 1 })], meta);
     const p = m.paths[0]!;
     expect(p).toMatchObject({ title: 'Platform', intro: 'About the platform.', icon: 'layers', accent: 'violet', known: true, cards: true });
-    expect(p.modules[0]).toMatchObject({ number: 1, eyebrow: 'Module 1', title: 'Gateway', intro: 'One door.', skills: ['a', 'b'], icon: 'route', accent: 'teal', optional: false, known: true });
+    expect(p.modules[0]).toMatchObject({ number: 1, eyebrow: 'Module 1', title: 'Gateway', intro: 'One door.', outcomes: ['a', 'b'], icon: 'route', accent: 'teal', optional: false, known: true });
   });
 
   it('flags an optional module and leaves the others alone', () => {
@@ -188,10 +191,10 @@ describe('buildLauncherModel: metadata', () => {
     expect(m.paths.map((p) => p.slug)).toEqual(['platform', 'aaa', 'zzz', '']);
   });
 
-  it('falls back to "Module N" and no skills for a module the metadata does not know', () => {
+  it('falls back to "Module N" and no outcomes for a module the metadata does not know', () => {
     const m = buildLauncherModel([lab('a', { path: 'platform', module: 1 }), lab('b', { path: 'platform', module: 9 })], meta);
     const nine = m.paths[0]!.modules[1]!;
-    expect(nine).toMatchObject({ number: 9, known: false, title: 'Module 9', intro: '', skills: [], icon: '', accent: 'slate', optional: false });
+    expect(nine).toMatchObject({ number: 9, known: false, title: 'Module 9', intro: '', outcomes: [], icon: '', accent: 'slate', optional: false });
   });
 
   it('shows module cards for an unknown path only when its labs span several modules', () => {
@@ -351,13 +354,14 @@ describe('approxMinutes and the summary lines', () => {
   });
 
   it('prints the path line the design asks for, leaving out what is zero', () => {
-    expect(summaryLine({ labs: 31, done: 3, minutes: 1230, free: 2 })).toBe('31 labs · about 21 h · 2 free · 3 done');
-    expect(summaryLine({ labs: 1, done: 0, minutes: 0, free: 0 })).toBe('1 lab · 0 done');
+    // How far along the learner is has its own line ("3 of 31 labs done"), so the totals line holds only what the path is.
+    expect(summaryLine({ labs: 31, done: 3, minutes: 1230, free: 2 })).toBe('31 labs · About 21 h · 2 free');
+    expect(summaryLine({ labs: 1, done: 0, minutes: 0, free: 0 })).toBe('1 lab');
   });
 
   it('prints the module line', () => {
-    expect(moduleMetaLine({ labs: 5, done: 2, minutes: 125, free: 1 })).toBe('5 labs · ~2 h · 1 free');
-    expect(moduleMetaLine({ labs: 1, done: 0, minutes: 60, free: 0 })).toBe('1 lab · ~1 h');
+    expect(moduleMetaLine({ labs: 5, done: 2, minutes: 125, free: 1 })).toBe('5 labs · About 2 h · 1 free');
+    expect(moduleMetaLine({ labs: 1, done: 0, minutes: 60, free: 0 })).toBe('1 lab · About 1 h');
   });
 });
 
@@ -422,7 +426,7 @@ describe('the real catalogue', () => {
       expect(built.intro).toBe(p.intro);
       for (const mod of p.modules) {
         const bm = built.modules.find((x) => x.number === mod.number)!;
-        expect(bm.skills).toEqual(mod.skills);
+        expect(bm.outcomes).toEqual(mod.outcomes);
         expect(bm.optional).toBe(Boolean((mod as { optional?: boolean }).optional));
       }
     }
@@ -435,25 +439,20 @@ describe('the real catalogue', () => {
 const extra = (await import('../../dashboard/src/launcher-model.js' as string)) as {
   heroLede: (count: unknown) => string;
   locateLab: (model: Model, slug: string) => { path: Path; module: Module; entry: Entry; position: number; total: number } | null;
-  moduleViews: (
-    path: Path,
-    opts?: { suggested?: { path: string; number: number } | null; running?: string | null; open?: number[] },
-  ) => Map<number, 'full' | 'mini'>;
-  MINI_AFTER: number;
-  OPEN_FIRST: number;
+  moreLabsComing: (path: Path) => boolean;
+  siblingModules: (path: Path, module: Module) => { prev: Module | null; next: Module | null };
+  isPlanLocked: (lab: unknown) => boolean;
 };
 
 describe('heroLede', () => {
-  it('counts the paths in words, then gives the same advice', () => {
-    expect(extra.heroLede(4)).toBe(
-      'Four paths, each a run of hands-on labs. Start with an explore lab, then build or fix the real thing. Your progress is kept on this browser.',
-    );
+  it('counts the paths in words and says nothing about what to do first', () => {
+    expect(extra.heroLede(4)).toBe('Four paths, each a run of hands-on labs.');
     expect(extra.heroLede(2)).toMatch(/^Two paths, each a run of hands-on labs\./);
     expect(extra.heroLede(11)).toMatch(/^11 paths, each/);
   });
   it('copes with one path and with none', () => {
-    expect(extra.heroLede(1)).toMatch(/^One path, a run of hands-on labs\./);
-    for (const n of [0, -1, NaN, undefined, 'x']) expect(extra.heroLede(n)).toMatch(/^Each path is a run of hands-on labs\./);
+    expect(extra.heroLede(1)).toBe('One path, a run of hands-on labs.');
+    for (const n of [0, -1, NaN, undefined, 'x']) expect(extra.heroLede(n)).toBe('Each path is a run of hands-on labs.');
   });
 });
 
@@ -482,51 +481,59 @@ describe('locateLab', () => {
   });
 });
 
-describe('moduleViews', () => {
-  const many = (n: number, extraLabs: Lab[] = []) =>
-    buildLauncherModel(
-      [...Array.from({ length: n }, (_, i) => lab(`m${i + 1}`, { path: 'platform', module: i + 1, order: 1 })), ...extraLabs],
+describe('moreLabsComing', () => {
+  const pathOf = (labs: Lab[], slug: string) => buildLauncherModel(labs, meta).paths.find((p) => p.slug === slug)!;
+  it('is true for a path with no modules and two labs or fewer', () => {
+    expect(extra.moreLabsComing(pathOf([lab('x', { path: 'agents' })], 'agents'))).toBe(true);
+    expect(extra.moreLabsComing(pathOf([lab('x', { path: 'agents' }), lab('y', { path: 'agents' })], 'agents'))).toBe(true);
+  });
+  it('is false once the path has three labs, has module cards, or is the Other labs group', () => {
+    expect(extra.moreLabsComing(pathOf(['x', 'y', 'z'].map((s) => lab(s, { path: 'agents' })), 'agents'))).toBe(false);
+    expect(extra.moreLabsComing(pathOf([lab('x', { path: 'platform', module: 1 })], 'platform'))).toBe(false);
+    expect(extra.moreLabsComing(buildLauncherModel([lab('loose')], meta).paths.find((p) => p.other)!)).toBe(false);
+  });
+});
+
+describe('siblingModules', () => {
+  const platform = buildLauncherModel(
+    [1, 2, 3].map((n) => lab(`m${n}`, { path: 'platform', module: n, order: 1 })),
+    meta,
+  ).paths.find((p) => p.slug === 'platform')!;
+  it('names the module before and the one after, and none past either end', () => {
+    const [one, two, three] = platform.modules as [Module, Module, Module];
+    expect(extra.siblingModules(platform, two)).toEqual({ prev: one, next: three });
+    expect(extra.siblingModules(platform, one)).toEqual({ prev: null, next: two });
+    expect(extra.siblingModules(platform, three)).toEqual({ prev: two, next: null });
+  });
+  it('has none for a path without module cards, or a module that is not in it', () => {
+    const flat = buildLauncherModel([lab('x', { path: 'agents' })], meta).paths.find((p) => p.slug === 'agents')!;
+    expect(extra.siblingModules(flat, flat.modules[0]!)).toEqual({ prev: null, next: null });
+    expect(extra.siblingModules(platform, { number: 9 } as Module)).toEqual({ prev: null, next: null });
+  });
+});
+
+describe('plan locks', () => {
+  it('a Pro lab on the free plan is locked, unless the subject bypasses the plan', () => {
+    expect(extra.isPlanLocked({ tier: 'pro', plan: 'free' })).toBe(true);
+    expect(extra.isPlanLocked({ tier: 'pro', plan: 'free', bypass: true })).toBe(false);
+    expect(extra.isPlanLocked({ tier: 'pro', plan: 'pro' })).toBe(false);
+    expect(extra.isPlanLocked({ tier: 'free', plan: 'free' })).toBe(false);
+  });
+  it('is not locked when the catalogue did not say which plan this is', () => {
+    expect(extra.isPlanLocked({ tier: 'pro' })).toBe(false);
+    expect(extra.isPlanLocked(null)).toBe(false);
+  });
+  it('puts the lock on the lab\'s entry, apart from a lock behind another lab', () => {
+    const m = buildLauncherModel(
+      [lab('free-one', { path: 'agents', order: 1, tier: 'free', plan: 'free' }), lab('pro-one', { path: 'agents', order: 2, tier: 'pro', plan: 'free' }), lab('pro-admin', { path: 'agents', order: 3, tier: 'pro', plan: 'free', bypass: true })],
       meta,
-    ).paths.find((p) => p.slug === 'platform')!;
-  const modes = (v: Map<number, string>) => [...v.values()];
-
-  it('shows every module of a short path in full', () => {
-    const path = many(extra.MINI_AFTER);
-    expect(modes(extra.moduleViews(path))).toEqual(Array(extra.MINI_AFTER).fill('full'));
-  });
-
-  it('opens the first modules of a long path and condenses the rest', () => {
-    const path = many(7);
-    const views = extra.moduleViews(path);
-    expect(modes(views)).toEqual(['full', 'full', 'mini', 'mini', 'mini', 'mini', 'mini']);
-    expect(extra.OPEN_FIRST).toBe(2);
-  });
-
-  it('opens a module with a lab under way, the running lab, the suggested start and the ones the learner opened', () => {
-    const path = many(7);
-    const started = buildLauncherModel(
-      [
-        ...Array.from({ length: 7 }, (_, i) => lab(`m${i + 1}`, { path: 'platform', module: i + 1, order: 1, progress: i === 3 ? { attempts: 1, best_score: 0.2, passed_all: false } : null })),
-      ],
-      meta,
-    ).paths.find((p) => p.slug === 'platform')!;
-    expect(extra.moduleViews(started).get(4)).toBe('full');
-    expect(extra.moduleViews(started).get(3)).toBe('mini');
-    expect(extra.moduleViews(path, { running: 'm5' }).get(5)).toBe('full');
-    expect(extra.moduleViews(path, { suggested: { path: 'platform', number: 6 } }).get(6)).toBe('full');
-    expect(extra.moduleViews(path, { suggested: { path: 'elsewhere', number: 6 } }).get(6)).toBe('mini');
-    expect(extra.moduleViews(path, { open: [7] }).get(7)).toBe('full');
-  });
-
-  it('never condenses a path that has no module cards', () => {
-    const flat = buildLauncherModel([lab('x', { path: 'agents' }), lab('y', { path: 'agents' })], meta).paths.find((p) => p.slug === 'agents')!;
-    expect(flat.cards).toBe(false);
-    expect(modes(extra.moduleViews(flat))).toEqual(['full']);
-  });
-
-  it('keeps every module in the result, however many are condensed', () => {
-    const path = many(7);
-    expect([...extra.moduleViews(path).keys()]).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      { passed: new Set() },
+    );
+    expect(m.paths[0]!.labs.map((e) => [e.lab.slug, e.planLocked, e.locked])).toEqual([
+      ['free-one', false, false],
+      ['pro-one', true, false],
+      ['pro-admin', false, false],
+    ]);
   });
 });
 
@@ -687,8 +694,8 @@ describe('the pages: paths, modules, trail and scope', () => {
   });
 
   it('prints a path card line: modules, labs and about how long, leaving out what is zero', () => {
-    expect(pages.pathCardLine(pages.findPath(m, 'platform')!)).toBe('2 modules · 3 labs · about 1 h 30 min');
-    expect(pages.pathCardLine(pages.findPath(m, 'agents')!)).toBe('2 labs · about 2 h');
+    expect(pages.pathCardLine(pages.findPath(m, 'platform')!)).toBe('2 modules · 3 labs · About 1 h 30 min');
+    expect(pages.pathCardLine(pages.findPath(m, 'agents')!)).toBe('2 labs · About 2 h');
     const one = buildLauncherModel([lab('x', { path: 'platform', module: 1, estimated_minutes: 0 })], meta).paths[0]!;
     expect(pages.pathCardLine(one)).toBe('1 module · 1 lab');
   });

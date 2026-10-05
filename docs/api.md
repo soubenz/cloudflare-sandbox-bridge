@@ -89,7 +89,7 @@ minutes are usable now.
 | POST | `/sessions/:id/touch` | session | refreshes the idle clock ("I'm here") exactly as a file write does, without doing any work; 204, or `409 not_running` |
 | POST | `/sessions/:id/resume` | session | requires an `ended` session with a snapshot; `{ meta, token }` with a new token. Passes the same gates as a start: `503 at_capacity` when the pool cannot admit, `409 active_session_exists` (with `details.active_session_id`) while the user has any other live session, `409 cannot_resume` when it is not ended or another resume of it is under way. See [Resume](#resume) |
 | DELETE | `/sessions/:id?snapshot=0` | session | ends the session; snapshots by default (never a `ready` one: it has no work to keep, and it cancels the pre-warm) |
-| GET | `/users/:uid/progress` | service | per-lab standing from D1 `check_runs` → `{ labs: [{ slug, attempts, best_score, passed_all, last_run_at, sessions }] }`, most recently attempted first. `best_score` is the best weighted share of checks passed in one run (0-1); `passed_all` is true if any run passed every check of the lab; `sessions` counts distinct sessions that ran checks |
+| GET | `/users/:uid/progress` | service | per-lab standing from D1 `check_runs` → `{ labs: [{ slug, attempts, best_score, passed_all, last_run_at, sessions }], plan }` (`plan` is `free` or `pro`; the console shows a Pro lab as locked for a free learner), most recently attempted first. `best_score` is the best weighted share of checks passed in one run (0-1); `passed_all` is true if any run passed every check of the lab; `sessions` counts distinct sessions that ran checks |
 | GET | `/users/:uid/checks?lab=&limit=&before=` | service | a user's runs across sessions, newest first → `{ runs: [...] }` (same shape as the session route, plus `session_id` and `lab_slug`). `lab` filters to one lab; `before` is an epoch-ms cursor (pass the last `started_at` you saw); `limit` default 20, max 100 |
 | GET | `/users/:uid/profile?compact=&starting=` | service | the learner's skill scores, XP, streak and awards → see [Profile, XP and awards](#profile-xp-and-awards). `compact=1` returns only what the Home widget needs; `starting=gateway:ok,mcp:new` is the browser's copy of the onboarding quiz result, used only when no quiz result is stored with the learner's path inputs. `400 bad_user_id`; an unknown user is a `200` with an empty profile |
 | GET | `/users/:uid/awards` | service | `{ user_id, earned, locked }`, the same two lists as `profile.awards` |
@@ -546,7 +546,7 @@ answer `404 no_inputs` when the user never sent inputs. All three routes
     { "slug": "add-a-model-without-touching-app-code", "title": "Add a model without touching app code", "area": "gateway",
       "why": "A first step into LLM gateway, which is new to you.", "estimated_minutes": 30, "status": "next" },
     { "slug": "hard-budget-per-team", "title": "Hard budget per team", "area": "gateway",
-      "why": "Included with the Pro plan.", "estimated_minutes": 45, "status": "locked", "lock": "plan" },
+      "why": "This lab is included with the Pro plan.", "estimated_minutes": 45, "status": "locked", "lock": "plan" },
     { "slug": "read-the-spend-report", "title": "Read the spend report", "area": "gateway",
       "why": "Unlocks after Hard budget per team.", "estimated_minutes": 15, "status": "locked", "lock": "prerequisite" }
   ],
@@ -566,7 +566,7 @@ answer `404 no_inputs` when the user never sent inputs. All three routes
   `plan` when the lab's tier is `pro` and the learner is on the free plan, so a
   paid plan unlocks it; `prerequisite` when the plan could start the lab but a
   prerequisite of it is itself locked, so it opens only after that one. A plan
-  lock keeps the stock `why` ("Included with the Pro plan."); a prerequisite lock's
+  lock keeps the stock `why` ("This lab is included with the Pro plan.", the sentence `plan_required` carries too); a prerequisite lock's
   `why` is "Unlocks after <title of the prerequisite>." (a title over 80
   characters is cut). A pro-tier lab that also sits behind a locked prerequisite is a
   `plan` lock. The console shows an Unlock button, linking to the plans page,

@@ -38,6 +38,8 @@ const profile = (await import('../../dashboard/src/profile.js' as string)) as {
   xpLine: (l: unknown) => string;
   streakText: (s: unknown) => string;
   areaLook: (a: string) => { icon: string; accent: string };
+  standingOf: (p: unknown) => { xp: number; scores: Record<string, number> } | null;
+  gainBetween: (before: unknown, after: unknown, area: string | null, titleOf?: (id: string) => string) => { xp: number; skill: { title: string; from: number; to: number } | null } | null;
 };
 const path = (await import('../../dashboard/src/path-view.js' as string)) as {
   normalizePath: (raw: unknown) => null | { steps: Array<{ slug: string; status: string; minutes: number; why: string; lock: string | null }>; totalMinutes: number; weeks: number; goal: { text: string; kind: string } };
@@ -46,6 +48,7 @@ const path = (await import('../../dashboard/src/path-view.js' as string)) as {
   totalsLine: (p: unknown) => string;
   goalKindLabel: (k: string) => string;
   LOCK_REASON: string;
+  STATUS_WORDS: Record<string, string>;
 };
 
 describe('the new addresses', () => {
@@ -236,11 +239,30 @@ describe('the profile, as the page reads it', () => {
   });
 
   it('says the XP and the streak in words', () => {
-    expect(profile.xpLine({ n: 3, xp_into: 25, xp_needed: 250 })).toBe('25 of 250 XP to level 4');
-    expect(profile.xpLine({ n: 10, xp_into: 400, xp_needed: 0 })).toBe('Top level reached');
+    // XP has ranks; "level" is the word for a skill's score, so the two are never confused.
+    expect(profile.xpLine({ n: 3, xp_into: 25, xp_needed: 250 })).toBe('25 of 250 XP to the next rank');
+    expect(profile.xpLine({ n: 10, xp_into: 400, xp_needed: 0 })).toBe('Top rank reached');
     expect(profile.streakText({ days: 2 })).toBe('2-day streak');
     expect(profile.streakText({ days: 0, best: 5 })).toBe('No streak yet');
     expect(profile.streakText(undefined)).toBe('No streak yet');
+  });
+
+  it('compares a learner before and after a lab: the XP gained and the skill that moved', () => {
+    const at = (xp: number, scores: Record<string, number>) => ({ xp, skills: Object.entries(scores).map(([area, score]) => ({ area, score })) });
+    const before = profile.standingOf(at(100, { rag: 12, otel: 0 }));
+    expect(before).toEqual({ xp: 100, scores: { rag: 12, otel: 0 } });
+    const after = profile.standingOf(at(220, { rag: 31, otel: 0 }));
+    expect(profile.gainBetween(before, after, 'rag', (id) => `T-${id}`)).toEqual({ xp: 120, skill: { title: 'T-rag', from: 12, to: 31 } });
+    // The lab fed another skill: only the XP is said.
+    expect(profile.gainBetween(before, after, 'otel')).toEqual({ xp: 120, skill: null });
+    // Nothing moved, or nothing to compare with: nothing is said.
+    expect(profile.gainBetween(before, before, 'rag')).toBeNull();
+    expect(profile.gainBetween(null, after, 'rag')).toBeNull();
+    expect(profile.gainBetween(before, after, null)?.skill).toBeNull();
+  });
+
+  it('reads no standing from an answer that is not a profile', () => {
+    for (const bad of [null, undefined, 3, {}, { skills: 'no' }]) expect(profile.standingOf(bad)).toBeNull();
   });
 
   it('gives every skill the icon and colour of its module, or of its path', () => {
@@ -278,6 +300,8 @@ describe('the path, as the page reads it', () => {
 
   it('reads why a step is locked: the service\'s lock, else the stock plan line as a plan lock, else unknown', () => {
     const lockOf = (o: Record<string, unknown>) => path.normalizePath({ steps: [step('g', 'locked', o)] })!.steps[0]!.lock;
+    expect(lockOf({ lock: 'plan', why: 'This lab is included with the Pro plan.' })).toBe('plan');
+    expect(lockOf({ why: 'This lab is included with the Pro plan.' })).toBe('plan');
     expect(lockOf({ lock: 'plan', why: 'Included with the Pro plan.' })).toBe('plan');
     expect(lockOf({ lock: 'prerequisite', why: 'Included with the Pro plan.' })).toBe('prerequisite');
     expect(lockOf({ why: 'Included with the Pro plan.' })).toBe('plan'); // an older response
@@ -304,6 +328,7 @@ describe('the path, as the page reads it', () => {
     expect(path.goalKindLabel('specific-skill')).toBe('Learn a specific skill');
     expect(path.goalKindLabel('explore')).toBe('Explore');
     expect(path.goalKindLabel('what')).toBe('Explore');
-    expect(path.LOCK_REASON).toBe('Part of the paid plan');
+    expect(path.LOCK_REASON).toBe('This lab is included with the Pro plan.');
+    expect(path.STATUS_WORDS).toEqual({ done: 'Done', next: 'Next up', upcoming: 'Not started', locked: 'Locked' });
   });
 });

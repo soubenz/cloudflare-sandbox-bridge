@@ -14,7 +14,7 @@
 // labs/*/manifest.yaml; a lab is listed when its manifest has a `path` field,
 // so the fixture labs (hello, fragile, impatient, gateway-hello,
 // gateway-litellm-hello) and labs without a catalogue slot are skipped. The
-// words about each path and module (title, intro, skills, icon, accent, the
+// words about each path and module (title, intro, outcomes, icon, accent, the
 // optional flag) come from packages/catalogue/paths.json, the same file the
 // console launcher reads, so an intro is written once. Grouping, ordering and
 // totals are dashboard/src/launcher-model.js, the same code the launcher runs.
@@ -144,12 +144,12 @@ function renderModule(path, module) {
   if (module.intro) head.push(`              <p class="labs-module-intro">${escapeHtml(module.intro)}</p>`);
   head.push(`              <p class="labs-module-meta mono">${moduleMeta(module.totals)}</p>`);
   head.push('            </div>');
-  if (module.skills.length) {
+  if (module.outcomes.length) {
     head.push(
       '            <div class="labs-skills">',
       '              <p class="labs-skills-label mono">You will learn to</p>',
       '              <ul role="list">',
-      ...module.skills.map((skill) => `                <li>${escapeHtml(skill)}</li>`),
+      ...module.outcomes.map((skill) => `                <li>${escapeHtml(skill)}</li>`),
       '              </ul>',
       '            </div>',
     );
