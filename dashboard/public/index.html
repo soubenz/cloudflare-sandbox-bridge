@@ -83,7 +83,6 @@
       <a class="nav-launcher" href="/#paths" id="navPaths">Paths</a>
       <a class="nav-launcher" href="/paths/mine" id="navMyPath">Your path</a>
       <a class="nav-launcher" href="/profile" id="navProfile">Profile</a>
-      <button id="btnHelp" type="button" aria-haspopup="dialog" title="How this console works">Help</button>
     </nav>
 
     <div class="bar-session" id="sessionBar" hidden>
@@ -124,6 +123,9 @@
       </div>
       <button id="btnBackToLabs" class="btn btn-primary" hidden>← Back to labs</button>
       <div class="nav-account" id="navAccount">
+        <!-- Help explains a running lab (checks, hints, the timer): session.css shows it only while a lab is open, and
+             it sits with the account controls because the bar hides the links in a lab. -->
+        <button id="btnHelp" class="btn btn-quiet" type="button" aria-haspopup="dialog" title="How this console works">Help</button>
         <button id="btnTheme" class="icon-btn" type="button" aria-label="Theme: system. Switch to light."><span id="themeIcon" aria-hidden="true"></span></button>
         <!-- Shown only when the platform quiz exists (GET /api/onboarding answered). -->
         <button id="btnRetakeQuiz" class="btn btn-quiet" type="button" title="Retake the platform quiz that sets where each skill starts" hidden>Retake the quiz</button>

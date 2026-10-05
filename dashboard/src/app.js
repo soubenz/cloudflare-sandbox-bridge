@@ -993,7 +993,12 @@ function renderBrowse(route = router.current(), { quiet = false, initial = false
   $('launcher').scrollTo({ top: 0, behavior: 'auto' });
   window.scrollTo(0, 0);
   if (initial) {
-    if (home && location.hash === '#paths') scrollToPaths();
+    // A page loaded at its anchor lands there at once (there is nothing to animate from), and stays there while
+    // the bands above the cards (Your path, Your progress) fill in.
+    if (home && location.hash === '#paths') {
+      scrollToPaths({ instant: true });
+      holdPathsInView();
+    }
     return;
   }
   const toPaths = focusFirstPath;
@@ -1036,11 +1041,34 @@ function withFocusKept(bar, draw) {
 }
 
 /** Scrolls Home to its path cards (the header's Paths link, and an address ending in #paths). */
-function scrollToPaths() {
+function scrollToPaths({ instant = false } = {}) {
   const cards = document.getElementById('paths');
   if (!cards) return;
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduce = instant || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   cards.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+}
+
+/**
+ * After a load at /#paths: Home's bands fill in after the first drawing and push the path cards down, so the
+ * cards are put back at the top each time the list changes size, until the learner scrolls, presses a key or
+ * a pointer, leaves Home, or a few seconds pass.
+ */
+function holdPathsInView() {
+  if (typeof ResizeObserver !== 'function') return;
+  const events = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+  let timer = 0;
+  const observer = new ResizeObserver(() => {
+    if (location.hash === '#paths' && document.getElementById('paths')) scrollToPaths({ instant: true });
+    else stop();
+  });
+  function stop() {
+    observer.disconnect();
+    clearTimeout(timer);
+    for (const type of events) window.removeEventListener(type, stop, true);
+  }
+  observer.observe($('labList'));
+  for (const type of events) window.addEventListener(type, stop, { capture: true, passive: true });
+  timer = setTimeout(stop, 5000);
 }
 
 /** The header's "Paths" asked for home with focus on the first path rather than on the heading. */

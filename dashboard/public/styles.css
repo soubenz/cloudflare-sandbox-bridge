@@ -428,7 +428,7 @@ code { font-family: var(--mono); font-size: 0.92em; }
 }
 .nav-links a:hover, .nav-links button:hover { background: var(--surface-3); }
 .nav-links a[aria-current="page"] { background: var(--surface-3); font-weight: 600; }
-/* Labs and Paths navigate the launcher; in a lab, and on a learning or notice screen, only Help is left. */
+/* The links navigate the launcher: in a lab, and on a learning or notice screen, they are hidden. */
 body:has(#workspace:not([hidden])) .nav-links .nav-launcher,
 body:has(#learnScreen:not([hidden])) .nav-links .nav-launcher,
 body:has(#desktopNotice:not([hidden])) .nav-links .nav-launcher { display: none; }

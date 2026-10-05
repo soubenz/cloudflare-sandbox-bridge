@@ -451,9 +451,11 @@ test.describe('the profile page', () => {
     await expect(overall).toHaveAttribute('aria-valuetext', '0 out of 100, Not started');
     await expect(page.locator('.overall-eval')).toContainText('Finish a lab to begin your score');
 
-    // Six skills, in the quiz's order, each Not started with its sentence and a way to the first lab.
+    // Ten skills, one per module of the platform's path and one per path without modules, in the catalogue's order,
+    // each Not started with its sentence and a way to the first lab.
+    expect(SKILLS).toHaveLength(10);
     const cards = page.locator('.skill-card');
-    await expect(cards).toHaveCount(6);
+    await expect(cards).toHaveCount(SKILLS.length);
     await expect(cards.locator('.skill-title')).toHaveText(SKILLS.map((a) => a.title));
     for (const a of SKILLS) {
       const card = page.locator(`.skill-card[data-area="${a.area}"]`);
@@ -504,13 +506,14 @@ test.describe('the profile page', () => {
     await expect(gateway.getByRole('meter', { name: 'Labs done in Gateway and access' })).toHaveAttribute('aria-valuenow', '3');
     await expect(gateway.locator('.skill-quiz')).toHaveText('Quiz starting point: Some experience');
     await expect(gateway.getByRole('link', { name: 'Next lab: One endpoint, one key' })).toHaveAttribute('href', '/labs/one-endpoint-one-key');
-    // The level names, one per band.
-    const names = SKILLS.map((a) => page.locator(`.skill-card[data-area="${a.area}"] .level-name`));
-    await expect(names[0]!).toHaveText('Skill: Proficient');
-    await expect(names[1]!).toHaveText('Skill: Practitioner');
-    await expect(names[2]!).toHaveText('Skill: Foundations');
-    await expect(names[3]!).toHaveText('Not started');
-    await expect(names[4]!).toHaveText('Skill: Expert');
+    // The level names, one per band; the skills with nothing done yet are Not started.
+    const name = (area: string) => page.locator(`.skill-card[data-area="${area}"] .level-name`);
+    await expect(name('gateway')).toHaveText('Skill: Proficient');
+    await expect(name('mcp')).toHaveText('Skill: Practitioner');
+    await expect(name('rag')).toHaveText('Skill: Foundations');
+    await expect(name('otel')).toHaveText('Not started');
+    await expect(name('platform')).toHaveText('Skill: Expert');
+    for (const area of ['sovereignty', 'runtime', 'agents', 'security', 'evals']) await expect(name(area)).toHaveText('Not started');
     // An area with no next lab says why: nothing to do, or nothing there yet.
     await expect(page.locator('.skill-card[data-area="platform"] .skill-all-done')).toHaveText('Every lab in this area is done.');
     await expect(page.locator('.skill-card[data-area="platform"] a.skill-next')).toHaveCount(0);
@@ -556,7 +559,7 @@ test.describe('the profile page', () => {
     await expect(page.locator('.xp-line')).toContainText('Top rank reached');
     await expect(page.locator('.streak')).toContainText('30-day streak');
     await expect(page.locator('.skill-card .level-name')).toHaveText(SKILLS.map(() => 'Skill: Expert'));
-    await expect(page.locator('.skill-card .skill-all-done')).toHaveCount(6);
+    await expect(page.locator('.skill-card .skill-all-done')).toHaveCount(SKILLS.length);
     await expect(page.getByRole('meter', { name: 'Overall score' })).toHaveAttribute('aria-valuenow', '92');
     const gold = page.locator('#awardsEarned .award-card[data-tier="gold"]');
     await expect(gold).toHaveCount(1);
@@ -583,7 +586,7 @@ test.describe('the profile page', () => {
     await expect(page.locator('.skill-card')).toHaveCount(0);
     s.profile = MID_LEARNER;
     await alert.getByRole('button', { name: 'Try again' }).click();
-    await expect(page.locator('.skill-card')).toHaveCount(6);
+    await expect(page.locator('.skill-card')).toHaveCount(SKILLS.length);
     await expect(page.getByRole('alert')).toHaveCount(0);
     expect(s.errors).toEqual([]);
   });
@@ -622,7 +625,7 @@ test.describe('the profile page', () => {
     await stub(page);
     await page.setViewportSize(WIDE);
     await visit(page, '/profile');
-    await expect(page.locator('.skill-card')).toHaveCount(6);
+    await expect(page.locator('.skill-card')).toHaveCount(SKILLS.length);
 
     const outline = await page.locator('#labList').evaluate((root) => [...root.querySelectorAll('h1, h2, h3, h4')].map((h) => `${h.tagName.toLowerCase()}:${h.textContent!.trim()}`));
     expect(outline[0]).toBe('h1:Your profile');
@@ -657,7 +660,7 @@ test.describe('the profile page', () => {
     await stub(page);
     await page.setViewportSize(PHONE);
     await visit(page, '/profile');
-    await expect(page.locator('.skill-card')).toHaveCount(6);
+    await expect(page.locator('.skill-card')).toHaveCount(SKILLS.length);
     await noHorizontalScroll(page);
     const xs = await page.locator('.skill-card').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));
     expect(new Set(xs).size).toBe(1);
@@ -673,7 +676,7 @@ test.describe('the profile page', () => {
       await page.emulateMedia({ colorScheme: scheme });
       await page.setViewportSize(WIDE);
       await visit(page, '/profile');
-      await expect(page.locator('.skill-card')).toHaveCount(6);
+      await expect(page.locator('.skill-card')).toHaveCount(SKILLS.length);
       const look = await page.evaluate(() => {
         const css = (sel: string, prop: string) => getComputedStyle(document.querySelector(sel)!).getPropertyValue(prop);
         return {
@@ -702,7 +705,7 @@ test.describe('the profile page', () => {
     await stub(page);
     await page.setViewportSize(WIDE);
     await visit(page, '/profile');
-    await expect(page.locator('.skill-card')).toHaveCount(6);
+    await expect(page.locator('.skill-card')).toHaveCount(SKILLS.length);
     await expectLearnerCopy(page);
   });
 });
@@ -756,7 +759,7 @@ test.describe('Home: Your progress', () => {
     // "View profile" opens the page.
     await band.getByRole('link', { name: 'View profile' }).click();
     await expect(page).toHaveURL(/\/profile$/);
-    await expect(page.locator('.skill-card')).toHaveCount(6);
+    await expect(page.locator('.skill-card')).toHaveCount(SKILLS.length);
   });
 
   test('a profile that cannot be read leaves Home as it was: no band, no error', async ({ page }) => {
@@ -1468,12 +1471,14 @@ test.describe('the quiz: where to start', () => {
     await expect(heading(page)).toHaveText('Where to start');
   }
 
-  const visitQuiz = async (page: Page, init: Partial<Stub> = {}, size = WIDE, goal?: Record<string, unknown>, modules = true) => {
+  /** `allDone` marks every lab of the catalogue done, so that the console's own rule names no next lab either. */
+  const visitQuiz = async (page: Page, init: Partial<Stub> = {}, size = WIDE, goal?: Record<string, unknown>, modules = true, allDone = false) => {
     const s = await stub(page, init);
     // A lab in every module of the platform's path, so that every area has a page to open (answers before the stub's own).
     if (modules) {
       const spread = [...LABS, ...AREAS.filter((a) => a.module > 1).map((a) => lab({ slug: `a-lab-in-module-${a.module}`, title: `A lab in module ${a.module}`, module: a.module, order: 1 }))];
-      await page.route('**/api/labs', (route) => json(route, spread));
+      const labs = allDone ? spread.map((l) => ({ ...l, progress: { attempts: 1, best_score: 1, passed_all: true, last_run_at: 1 } })) : spread;
+      await page.route('**/api/labs', (route) => json(route, labs));
     }
     await page.setViewportSize(size);
     await visit(page, '/onboarding', { mastery: { onboarding: { status: null } }, goal });
@@ -1483,15 +1488,20 @@ test.describe('the quiz: where to start', () => {
 
   const card = (page: Page) => host(page).locator('.start-card');
   const allStrong = Object.fromEntries(AREAS.map((a) => [a.area, 'strong'])) as Mix;
+  /** The quiz area that holds the saved path's next lab (PATH_B: "Retrieve with citations"). */
+  const RAG = AREAS.find((a) => a.area === 'rag')!;
+  /** No next lab anywhere: the profile names none, every lab is done, and the path is not saved. */
+  const NOTHING_NEXT: Partial<Stub> = { profile: { ...MID_LEARNER, next_lab: null } as unknown as Profile, putStatus: 500, path: null };
 
-  test('everything new: the first area is the one answer, with "new to you" as the reason', async ({ page }) => {
-    await visitQuiz(page);
+  test('the one answer is the next lab: "Start here" is the skill that holds it, and says which lab', async ({ page }) => {
+    // The profile and the saved path agree on the next lab (PATH_A's next step).
+    await visitQuiz(page, { next: PATH_A });
     await reach(page, {});
     await expect(heading(page)).toBeFocused();
     await expect(host(page).locator('.learn-eyebrow')).toHaveText('Your starting point');
     await expect(card(page).getByRole('heading', { level: 2 })).toHaveText('Start here');
     await expect(card(page).locator('.start-title')).toHaveText(AREAS[0]!.title);
-    await expect(card(page).locator('.start-why')).toHaveText('You said this is new to you, so we begin here.');
+    await expect(card(page).locator('.start-why')).toHaveText('Your next lab is "Add a model without touching app code".');
     await expect(card(page).locator('.tile svg')).toHaveCount(1);
     await expect(card(page).getByRole('button', { name: `Start with ${AREAS[0]!.title}` })).toBeVisible();
     // One card, not six: a quiet line per area below it.
@@ -1499,11 +1509,13 @@ test.describe('the quiz: where to start', () => {
     await expect(host(page).locator('.told-row')).toHaveCount(AREAS.length);
   });
 
-  test('a mix of strong, familiar and new: the first area that is NEW is the answer', async ({ page }) => {
-    await visitQuiz(page);
+  test('once the path is saved, its next lab is "Start here"; the levels are a quiet line per area', async ({ page }) => {
+    const s = await visitQuiz(page);
     await reach(page, { gateway: 'strong', mcp: 'ok' });
-    await expect(card(page).locator('.start-title')).toHaveText('Retrieval as a service');
-    await expect(card(page).locator('.start-why')).toHaveText('You said this is new to you, so we begin here.');
+    await expect.poll(() => s.puts.length).toBe(1);
+    // The path just built (PATH_B) names "Retrieve with citations": its skill is where to start.
+    await expect(card(page).locator('.start-title')).toHaveText(RAG.title);
+    await expect(card(page).locator('.start-why')).toHaveText('Your next lab is "Retrieve with citations".');
     const row = (area: string) => host(page).locator(`.told-row[data-area="${area}"]`);
     await expect(row('gateway')).toContainText('Know it well');
     await expect(row('mcp')).toContainText('Some experience');
@@ -1517,16 +1529,17 @@ test.describe('the quiz: where to start', () => {
     expect(dot('strong').fill).not.toBe(dot('new').fill);
   });
 
-  test('familiar and strong only: the first familiar area, "a good place to build on"', async ({ page }) => {
-    await visitQuiz(page);
+  test('with no next lab anywhere, the quiz picks: familiar and strong only is the first familiar area, "a good place to build on"', async ({ page }) => {
+    await visitQuiz(page, NOTHING_NEXT, WIDE, undefined, true, true);
     await reach(page, { ...allStrong, rag: 'ok', otel: 'ok' });
     await expect(card(page).locator('.start-title')).toHaveText('Retrieval as a service');
     await expect(card(page).locator('.start-why')).toHaveText('You know part of this already — a good place to build on.');
   });
 
-  test('everything strong: it says so, and each area can be opened from its own line', async ({ page }) => {
-    await visitQuiz(page);
+  test('with no next lab anywhere and everything strong: it says so, and each area can be opened from its own line', async ({ page }) => {
+    await visitQuiz(page, NOTHING_NEXT, WIDE, undefined, true, true);
     await reach(page, allStrong);
+    await expect(card(page).locator('.start-title')).toHaveText(AREAS[0]!.title);
     await expect(card(page).locator('.start-why')).toHaveText('You know all of this well. Pick the area you want to sharpen.');
     await expect(host(page).locator('.told-row[data-level="strong"]')).toHaveCount(AREAS.length);
     const last = AREAS[AREAS.length - 1]!;
@@ -1538,7 +1551,8 @@ test.describe('the quiz: where to start', () => {
   test('"Start with ..." leaves the quiz and opens that area\'s page, in place of the quiz in the history', async ({ page }) => {
     const s = await visitQuiz(page);
     await reach(page, { gateway: 'strong' });
-    const next = AREAS[1]!;
+    // The saved path's next lab is in retrieval.
+    const next = RAG;
     await expect(card(page).locator('.start-title')).toHaveText(next.title);
     const history = await page.evaluate(() => window.history.length);
     await card(page).getByRole('button', { name: `Start with ${next.title}` }).click();
@@ -1580,10 +1594,11 @@ test.describe('the quiz: where to start', () => {
     await host(page).getByRole('button', { name: 'See where to start' }).click();
     await expect(heading(page)).toHaveText('Where to start');
     await expect(host(page).locator('.goal-recap')).toContainText('Your goal: explore · about 2 hours a week');
-    // The new goal is saved again, and the start card is as it was.
+    // The new goal is saved again, and the start card follows the path it rebuilt (PATH_B: retrieval).
     await expect.poll(() => s.puts.length).toBe(2);
     expect(s.puts[1]).toMatchObject({ goal_kind: 'explore', hours_per_week: 2 });
-    await expect(card(page).locator('.start-title')).toHaveText(AREAS[0]!.title);
+    await expect(card(page).locator('.start-title')).toHaveText(RAG.title);
+    await expect(card(page).locator('.start-why')).toHaveText('Your next lab is "Retrieve with citations".');
   });
 
   test('skipping the goal questions still shows the recap, from the defaults', async ({ page }) => {
@@ -1668,10 +1683,10 @@ test.describe('the quiz: where to start', () => {
     await expect(host(page).getByRole('button', { name: 'Change your goal' })).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(host(page).getByRole('button', { name: 'Browse all labs' })).toBeFocused();
-    // Enter on the start card's button opens the area.
+    // Enter on the start card's button opens the area that holds the saved path's next lab.
     await card(page).getByRole('button', { name: /^Start with / }).focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(new RegExp(`/paths/ai-platform/modules/${AREAS[0]!.module}$`));
+    await expect(page).toHaveURL(new RegExp(`/paths/ai-platform/modules/${RAG.module}$`));
   });
 
   for (const scheme of ['light', 'dark'] as const) {

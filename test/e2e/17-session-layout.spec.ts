@@ -825,7 +825,21 @@ test.describe('the workspace window', () => {
     await expect(page.locator('#serviceDown')).toBeHidden();
     await expect(page.locator('#serviceOpen')).toHaveAttribute('href', new RegExp(`^${API}/sessions/`));
     expect(await page.locator('#serviceOpen').getAttribute('href')).not.toContain('token=');
-    // Restart, from the service's own toolbar.
+    // The toolbar's Restart is the owner's (admin mode): a learner does not see it.
+    await expect(page.locator('#btnServiceRestart')).toBeHidden();
+    expect(s.restarts).toEqual([]);
+  });
+
+  test('in admin mode the service tab\'s toolbar has Restart, and it restarts the service', async ({ page }) => {
+    const s = await stub(page);
+    s.admin = true;
+    await page.addInitScript(() => localStorage.setItem('opalixAdminMode', '1'));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page);
+    await startLab(page, BUILD);
+    await page.locator('#serviceTabs .tab[data-service="echo"]').click();
+    await expect(page.locator('#viewService')).toBeVisible();
+    await expect(page.frameLocator('#serviceFrame').getByRole('heading', { name: 'Echo service' })).toBeVisible();
     await page.locator('#btnServiceRestart').click();
     await expect.poll(() => s.restarts.length).toBe(1);
     await expect(page.locator('#btnServiceRestart')).toHaveText('Restart');

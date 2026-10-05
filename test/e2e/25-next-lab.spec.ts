@@ -372,8 +372,10 @@ test.describe('modules and labs', () => {
     await stub(page);
     await visit(page, moduleUrl(1));
     await expect(page.locator('.skills-label')).toHaveText('You will learn to');
-    await expect(page.locator('.module-meta')).toHaveText('2 labs · About 40 min');
+    // The module's line is the path's: how many labs, the time as About, and how many are free (both, here).
+    await expect(page.locator('.module-meta')).toHaveText('2 labs · About 40 min · 2 free');
     await expect(page.locator('.module-progress')).toHaveText('1 of 2 labs done');
-    await expect(row(page, 'hard-budget').locator('.chip-time')).toHaveText('20 min');
+    // A lab's own time in the words of every lab time ("20 min", "1 h 45 min"), then its session's limit.
+    await expect(row(page, 'hard-budget').locator('.chip-time')).toHaveText('20 min · 30 min limit');
   });
 });

@@ -316,17 +316,13 @@ async function startBuildLab(page: Page, s: Stub, { hold = false }: { hold?: boo
 // =========================================================================
 
 test.describe('before a lab starts', () => {
-  test('home, a path, a module, a lab\'s page, the help dialog and a page that is not there', async ({ page }) => {
+  test('home, a path, a module, a lab\'s page and a page that is not there', async ({ page }) => {
     await stub(page);
     await open(page);
     await expect(page.locator('#path-ai-platform')).toBeVisible();
     await saysNothingOfThePlatform(page, 'home (the paths)');
-
-    await page.locator('#btnHelp').click();
-    await expect(page.locator('#onboarding')).toBeVisible();
-    await expect(page.locator('#onboarding')).toContainText('How this console works');
-    await saysNothingOfThePlatform(page, 'the help dialog');
-    await page.keyboard.press('Escape');
+    // Help explains a running lab, so it is in the bar only while a lab is open (its dialog is read in "a lab session").
+    await expect(page.locator('#btnHelp')).toBeHidden();
 
     await page.goto(PATH_PAGE, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('body[data-booted="1"]');
@@ -423,7 +419,7 @@ test.describe('before a lab starts', () => {
 // =========================================================================
 
 test.describe('a lab session', () => {
-  test('the dialog while the lab starts, then every guide tab, the checks and the result card', async ({ page }) => {
+  test('the dialog while the lab starts, then the help dialog, every guide tab, the checks and the result card', async ({ page }) => {
     const s = await stub(page);
     await open(page, MODULE_PAGE);
     await startBuildLab(page, s, { hold: true });
@@ -436,6 +432,14 @@ test.describe('a lab session', () => {
     await expect(page.locator('#bootModal')).toBeHidden();
     await expect(page.locator('#guide')).toHaveAttribute('data-ready', 'true');
     await saysNothingOfThePlatform(page, 'the session header, brief and dock');
+
+    // In a lab, Help is in the bar.
+    await page.locator('#btnHelp').click();
+    await expect(page.locator('#onboarding')).toBeVisible();
+    await expect(page.locator('#onboarding')).toContainText('How this console works');
+    await saysNothingOfThePlatform(page, 'the help dialog');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#onboarding')).toBeHidden();
 
     await page.getByRole('tab', { name: 'Hints' }).click();
     await saysNothingOfThePlatform(page, 'the hints tab');

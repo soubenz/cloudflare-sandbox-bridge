@@ -386,8 +386,9 @@ test.describe('the switch', () => {
     await page.keyboard.press('Enter');
     await expect(sw).toHaveAttribute('aria-checked', 'false');
     await expect(sw).toBeFocused();
-    // It is a tab stop in the header, before the theme toggle.
-    await page.locator('#btnHelp').focus();
+    // It is a tab stop in the header, after the links (the last is Profile; Help is only there in a lab) and before the theme toggle.
+    await expect(page.locator('#btnHelp')).toBeHidden();
+    await page.locator('#navProfile').focus();
     let reached = false;
     for (let i = 0; i < 6 && !reached; i++) {
       await page.keyboard.press('Tab');

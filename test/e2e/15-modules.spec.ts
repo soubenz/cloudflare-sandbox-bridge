@@ -588,7 +588,8 @@ test.describe('themes and small screens', () => {
     await page.locator('#btnMenu').click();
     await expect(page.locator('#btnMenu')).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#btnSignOut')).toBeVisible();
-    await expect(page.locator('#btnHelp')).toBeVisible();
+    // Help is only shown inside a lab.
+    await expect(page.locator('#btnHelp')).toBeHidden();
     await expect(page.locator('#btnTheme')).toBeVisible();
     // Every header control ends inside the viewport (the identity text is dropped below 520px).
     expect(await headerRight()).toBeLessThanOrEqual(390);

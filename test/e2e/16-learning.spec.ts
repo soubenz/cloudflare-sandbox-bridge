@@ -490,6 +490,11 @@ async function probeAll(page: Page, right: (q: Question) => boolean): Promise<Qu
 
 const levelOf = (page: Page, area: string) => page.locator(`.told-row[data-area="${area}"] .told-phrase`);
 const summaryCard = (page: Page) => page.locator(".start-card");
+/**
+ * "Start here" is the one next lab's skill, whatever the quiz said: with no profile and no saved path (this spec
+ * stubs neither), the console's copy of the catalogue rule names it: the first lab not done, in module 1.
+ */
+const NEXT_LAB_WHY = 'Your next lab is "See what a gateway does".';
 
 test.describe('the platform quiz', () => {
   test('opens on "What have you worked with?": a checklist of the six areas, and nothing about a number of questions', async ({ page }) => {
@@ -591,7 +596,7 @@ test.describe('the platform quiz', () => {
     await expect(heading(page)).toBeFocused();
     for (const a of AREAS) await expect(levelOf(page, a.area)).toHaveText('New to you');
     await expect(summaryCard(page).locator('.start-title')).toHaveText('Gateway and access');
-    await expect(summaryCard(page).locator('.start-why')).toHaveText('You said this is new to you, so we begin here.');
+    await expect(summaryCard(page).locator('.start-why')).toHaveText(NEXT_LAB_WHY);
 
     // Only the two questions that were asked went out, once, anonymously.
     await expect.poll(() => s.posted.length).toBe(1);
@@ -632,7 +637,7 @@ test.describe('the platform quiz', () => {
       await expect(levelOf(page, a.area)).toHaveText(a.area === 'mcp' ? 'Know it well' : 'New to you');
     }
     await expect(summaryCard(page).locator('.start-title')).toHaveText('Gateway and access');
-    await expect(summaryCard(page)).toContainText('You said this is new to you, so we begin here.');
+    await expect(summaryCard(page)).toContainText(NEXT_LAB_WHY);
     await expect(screen(page)).toContainText('You can retake this any time.');
     expect(await screen(page).innerText()).not.toMatch(/\b(score|scored|grade|graded|points|percent)\b|\d+\s*%/i);
 
@@ -642,9 +647,9 @@ test.describe('the platform quiz', () => {
     await page.getByRole('button', { name: 'Browse all labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
     await expect(screen(page)).toBeHidden();
-    // The first module that is new gets the chip: module 1, not the strong module 2.
+    // The chip is where the next lab is, as "Start here" said: module 1.
     await expect(page.locator('.badge-suggested')).toHaveCount(1);
-    // Home marks the path that holds it; the path's page marks the module: module 1, not the strong module 2.
+    // Home marks the path that holds it; the path's page marks the module.
     await expect(page.locator('#path-ai-platform .badge-suggested')).toHaveText('Suggested start');
     await onPath(page);
     await expect(page.locator('.badge-suggested')).toHaveCount(1);
@@ -677,9 +682,9 @@ test.describe('the platform quiz', () => {
     await expect(heading(page)).toHaveText('Where to start');
     await expect(levelOf(page, 'gateway')).toHaveText('Some experience');
     await expect(levelOf(page, 'rag')).toHaveText('New to you');
-    // Gateway is familiar, retrieval new, and the unticked areas new too: the first NEW area is the one to start with.
-    await expect(summaryCard(page).locator('.start-title')).toHaveText('Tools and MCP');
-    await expect(summaryCard(page).locator('.start-why')).toHaveText('You said this is new to you, so we begin here.');
+    // Familiar is not done: the next lab is still the first gateway lab, so its skill is where to start.
+    await expect(summaryCard(page).locator('.start-title')).toHaveText('Gateway and access');
+    await expect(summaryCard(page).locator('.start-why')).toHaveText(NEXT_LAB_WHY);
     await expect.poll(() => s.posted.length).toBe(1);
     expect(s.posted[0]!.answers).toHaveLength(3);
     expect((await stored(page)).onboarding.levels.gateway).toBe('ok');
@@ -715,7 +720,8 @@ test.describe('the platform quiz', () => {
     expect(asked).toHaveLength(AREAS.length * 2);
     expect(asked.map((q) => q.level)).toEqual(AREAS.flatMap(() => ['basic', 'advanced']));
     await expect(page.locator('.told-row[data-level="strong"]')).toHaveCount(AREAS.length);
-    await expect(summaryCard(page).locator('.start-why')).toHaveText('You know all of this well. Pick the area you want to sharpen.');
+    // Even all strong, the one answer is the next lab (a saved path would skip what is known; none is saved here).
+    await expect(summaryCard(page).locator('.start-why')).toHaveText(NEXT_LAB_WHY);
     await expect(summaryCard(page).locator('.start-title')).toHaveText(AREAS[0]!.title);
     expect(asked.some((q) => q.type === 'multi')).toBe(true);
   });
@@ -803,8 +809,9 @@ test.describe('the platform quiz', () => {
     await expect(screen(page)).toBeHidden();
     expect((await stored(page)).onboarding.status).toBe('skipped');
     expect(s.posted).toEqual([]);
-    // No "Suggested start" without a quiz.
-    await expect(page.locator('.badge-suggested')).toHaveCount(0);
+    // "Suggested start" does not wait for the quiz: it marks the path that holds the next lab.
+    await expect(page.locator('.badge-suggested')).toHaveCount(1);
+    await expect(page.locator('#path-ai-platform .badge-suggested')).toHaveText('Suggested start');
 
     await page.reload();
     await page.waitForSelector('body[data-booted="1"]');
@@ -841,12 +848,14 @@ test.describe('the platform quiz', () => {
     await expect(page.locator('.path-card').first()).toBeVisible();
     await expect(screen(page)).toBeHidden();
 
-    // Next to the help control.
+    // In the header, next to the theme toggle (Help is only in the bar while a lab is open).
     const retake = page.locator('#btnRetakeQuiz');
     await expect(retake).toBeVisible();
-    const help = await page.locator('#btnHelp').boundingBox();
+    await expect(page.locator('#btnHelp')).toBeHidden();
+    const theme = await page.locator('#btnTheme').boundingBox();
     const at = await retake.boundingBox();
-    expect(Math.abs(at!.y - help!.y)).toBeLessThan(20);
+    expect(Math.abs(at!.y + at!.height / 2 - (theme!.y + theme!.height / 2))).toBeLessThan(20);
+    expect(Math.abs(at!.x - (theme!.x + theme!.width))).toBeLessThan(40);
 
     await retake.click();
     await expect(heading(page)).toHaveText('What have you worked with?');
@@ -864,18 +873,52 @@ test.describe('the platform quiz', () => {
     await page.getByRole('button', { name: 'Browse all labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
 
-    await page.locator('#btnHelp').click();
-    await expect(page.locator('#onboarding')).toHaveAttribute('open', '');
-    await expect(page.locator('#btnOnboardingRetake')).toBeVisible();
-    await page.locator('#btnOnboardingRetake').click();
+    // Retaken from the header (Help, and the retake in its dialog, are only there while a lab is open).
+    await expect(page.locator('#btnHelp')).toBeHidden();
+    await page.locator('#btnRetakeQuiz').click();
     await expect(heading(page)).toHaveText('What have you worked with?');
     await expect(page.locator('#onboarding')).not.toHaveAttribute('open', '');
     // A fresh checklist each time: nothing pre-ticked.
     await expect(page.locator('.ob-choice input:checked')).toHaveCount(0);
   });
 
-  test('a finished retake replaces the levels and moves the suggestion', async ({ page }) => {
+  test('a finished retake replaces the levels, and the suggestion follows the next lab of the path it rebuilt', async ({ page }) => {
     await stub(page);
+    // The service: no goal and no profile until the retake saves one; then the rebuilt path (gateway known well, so
+    // skipped) and the profile both name the module-2 lab as the next one.
+    const routed = { title: 'See how requests are routed', skill: 'mcp', path: 'ai-platform', module: 2 };
+    const pathSaved: unknown[] = [];
+    const rebuilt = {
+      steps: [
+        { slug: PLAIN, title: routed.title, area: 'mcp', why: 'A first step into Tools and MCP, which is new to you.', estimated_minutes: 20, status: 'next' },
+        { slug: 'see-why-a-document-matched', title: 'See why a document matched', area: 'rag', why: 'Then retrieval.', estimated_minutes: 20, status: 'upcoming' },
+      ],
+      total_minutes: 40,
+      weeks_estimate: 1,
+      goal: { text: '', kind: 'explore' },
+      source: 'rules',
+      generated_at: 1767700000000,
+    };
+    await page.route('**/api/path-inputs', (route) => {
+      pathSaved.push(JSON.parse(route.request().postData() ?? '{}'));
+      return json(route, rebuilt);
+    });
+    await page.route('**/api/path', (route) => (pathSaved.length ? json(route, rebuilt) : json(route, { error: { code: 'no_inputs', message: 'none' } }, 404)));
+    await page.route('**/api/profile**', (route) =>
+      pathSaved.length
+        ? json(route, {
+            user_id: 'console',
+            overall: { score: 0, level: 'Not started', evaluation: 'Overall you have not started yet.' },
+            level: { n: 1, title: 'Newcomer', xp_into: 0, xp_needed: 100 },
+            xp: 0,
+            streak: { days: 0, best: 0, last_active: null },
+            top_skills: [],
+            recent_awards: [],
+            next_lab: { slug: PLAIN, ...routed },
+            updated_at: 1767700000000,
+          })
+        : json(route, { error: 'none yet' }, 404)
+    );
     await open(page, { mastery: { onboarding: { status: 'done', at: 5, levels: { gateway: 'new', mcp: 'strong' } } } });
     await onPath(page);
     await expect(page.locator('.module-card[data-module="1"] .badge-suggested')).toHaveCount(1);
@@ -883,9 +926,12 @@ test.describe('the platform quiz', () => {
     await startQuiz(page, 'gateway');
     await probeAll(page, () => true);
     await expect(heading(page)).toHaveText('Where to start');
-    // Unticked areas are new on a retake too: the suggestion moves to module 2.
     await expect(levelOf(page, 'gateway')).toHaveText('Know it well');
     await expect(levelOf(page, 'mcp')).toHaveText('New to you');
+    // Once the path is saved, its next lab is "Start here": the skill that holds it, and the lab by name.
+    await expect.poll(() => pathSaved.length).toBe(1);
+    await expect(summaryCard(page).locator('.start-title')).toHaveText('Tools and MCP');
+    await expect(summaryCard(page).locator('.start-why')).toHaveText('Your next lab is "See how requests are routed".');
     await page.getByRole('button', { name: 'Browse all labs' }).click();
     await expect(page.locator('#launcher')).toBeVisible();
     await expect(page.locator('.badge-suggested')).toHaveCount(1);

@@ -144,9 +144,8 @@ test.describe('first run, header and footer', () => {
     await page.waitForSelector('body[data-booted="1"]');
     await expect(page.locator('dialog#onboarding[open]')).toHaveCount(0);
 
-    // The header "?" brings it back.
-    await page.locator('#btnHelp').click();
-    await expect(page.locator('dialog#onboarding[open]')).toBeVisible();
+    // Help is in the bar only while a lab is open, so Home has none.
+    await expect(page.locator('#btnHelp')).toBeHidden();
   });
 
   test('the theme toggle puts data-theme on <html>', async ({ page }) => {

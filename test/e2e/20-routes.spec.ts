@@ -1534,8 +1534,11 @@ test.describe('search and filters act on the page they are on', () => {
     await expect(rowsOn(page)).toHaveCount(1);
     await expect(rowsOn(page).first()).toHaveAttribute('data-slug', 'alpha-two');
     await expect(page.locator('#labCount')).toHaveText('1 of 2 labs');
-    // The family chip of a lab on another page is offered everywhere (the facets are the catalogue's).
-    await expect(page.locator('button.filter-chip[data-filter="family"]')).toHaveText(['gateway', 'mcp']);
+    // The family chip of a lab on another page is offered everywhere (the facets are the catalogue's), each in words
+    // ("gateway" reads "Gateway") while the filter keeps the catalogue's value.
+    const families = page.locator('button.filter-chip[data-filter="family"]');
+    await expect(families).toHaveText(['Gateway', 'Mcp']);
+    expect(await families.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.value))).toEqual(['gateway', 'mcp']);
     await page.locator('button.filter-chip[data-filter="family"][data-value="mcp"]').click();
     await expect(page.locator('#labNoMatch')).toBeVisible();
     await page.locator('#btnClearFilters').click();
@@ -1883,7 +1886,8 @@ test.describe('archived labs', () => {
     await expect(page.locator('.path-card-line')).toContainText(`${LABS.length} labs`);
     await expect(page.locator('.path-card .progress').first()).toHaveAttribute('aria-valuemax', String(LABS.length));
     // The archived labs' own family (agent) is not offered as a filter.
-    await expect(page.locator('button.filter-chip[data-filter="family"]')).toHaveText(['gateway']);
+    await expect(page.locator('button.filter-chip[data-filter="family"]')).toHaveText(['Gateway']);
+    await expect(page.locator('button.filter-chip[data-filter="family"]')).toHaveAttribute('data-value', 'gateway');
     // The module's page lists the five, and none of the archived ones.
     await openModule(page);
     await expect(page.locator('.lab')).toHaveCount(LABS.length);
