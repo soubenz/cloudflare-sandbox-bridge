@@ -809,7 +809,9 @@ kbd {
 }
 .module-card:has(.module-title a:focus-visible) { outline: 3px solid var(--accent); outline-offset: 4px; }
 .module-card .module-tile { background: var(--surface); color: var(--a-ink); box-shadow: var(--shadow-sm); }
-.module-card .module-title { font-size: 26px; }
+/* Static, so the title link's ::after anchors to the card and the whole card opens the module (a positioned title shrank it to the title). */
+.module-card .module-title { position: static; font-size: 26px; }
+.module-card { cursor: pointer; }
 .module-card .module-title a { color: var(--ink); text-decoration: none; }
 .module-card .module-title a:focus-visible { outline: none; }
 .module-card .module-title a::after { content: ''; position: absolute; inset: 0; border-radius: inherit; }
