@@ -47,5 +47,3 @@ The questions use two queries:
 
 - the succulent query: `python3 -B query.py "How often should I water my succulents?"`
 - the tungsten query: `python3 -B query.py "What's the boiling point of tungsten in Kelvin?" --top-k 24`
-
-Done means `answers-match-the-service` agrees with the live service for those two queries.

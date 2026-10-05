@@ -24,5 +24,3 @@ comes back. It has six spans. Click a row to see its **Tags**. The LLM call
 ## Answer these
 
 The questions are in the **Questions** tab, next to this brief. Answer them there; your answers are saved for you.
-
-Done means `answers-match-the-trace` agrees with what Jaeger's API reports for the trace right now.
