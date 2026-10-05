@@ -270,7 +270,12 @@
 .svc-dot[data-health="unhealthy"], .svc-dot[data-health="restarting"] { background: var(--win-warn); }
 
 /* Tabs: pills on the navy. */
-.wtabs { display: flex; gap: 4px; padding: 10px 14px; border-bottom: 1px solid var(--navy-line); overflow-x: auto; scrollbar-width: none; flex: none; }
+.wtabs-row { display: flex; align-items: center; flex: none; min-width: 0; border-bottom: 1px solid var(--navy-line); }
+.wtabs { display: flex; gap: 4px; padding: 10px 14px; overflow-x: auto; scrollbar-width: none; flex: 1 1 auto; min-width: 0; }
+/* The open service's actions sit at the right end of the tab row instead of on a bar of their own. */
+.wtab-tools { display: flex; align-items: center; gap: 6px; flex: none; padding: 0 12px 0 8px; font-size: 12px; color: var(--navy-muted); }
+.wtab-tools[hidden] { display: none; }
+.wtab-tools .service-status { max-width: 22ch; }
 .wtabs::-webkit-scrollbar { display: none; }
 .service-tabs { display: contents; }
 .wtab {
@@ -343,12 +348,12 @@
 .files-pane .notice { margin: 6px 0 0; background: var(--win-fail-bg); color: var(--win-fail); border-color: var(--navy-line-2); }
 
 .editor-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.editor-head, .service-head {
+.editor-head {
   display: flex; align-items: center; gap: 10px; flex: none; min-width: 0; min-height: 44px; padding: 0 12px 0 16px;
   background: var(--win-strip); border-bottom: 1px solid var(--navy-line);
   font-size: 12px; color: var(--navy-muted);
 }
-.editor-path, #serviceName { font-size: 13px; color: var(--on-accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.editor-path { font-size: 13px; color: var(--on-accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 /* The dot is decoration on the name, not part of it. */
 #editorPath[data-dirty]::after { content: ' ●'; color: var(--win-warn); }
 .editor-status, .service-status { color: var(--navy-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }

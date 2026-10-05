@@ -33,20 +33,7 @@ panel (about 30 seconds), then send `fast` a call again.
 
 ## Answer these
 
-1. Which deployment does the `support` alias route to?
-2. Send `support` exactly `hello gateway`. What total token count comes back?
-3. Ask for the alias `does-not-exist`. What HTTP status do you get?
-
-Write the answers into `/workspace/answers.json` (deployment letter, then
-two numbers):
-
-```json
-{
-  "support_deployment": null,
-  "support_tokens_hello": null,
-  "unknown_alias_status": null
-}
-```
+The questions are in the **Questions** tab, next to this brief. Answer them there; your answers are saved for you.
 
 ## Checking your work
 

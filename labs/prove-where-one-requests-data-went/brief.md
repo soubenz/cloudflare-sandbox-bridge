@@ -33,23 +33,9 @@ curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" http://127.0.0.1:4000/v1/
 
 ## Answer these
 
-Send one request through `support-us` and one through `support-eu`, and answer from what their traces show right now:
+The questions are in the **Questions** tab, next to this brief. Answer them there; your answers are saved for you.
 
-1. Which single region does a `support-us` trace show the data reaching?
-2. How many distinct services appear in a `support-eu` trace, counting the gateway itself?
-3. Does every region tag in a `support-eu` trace agree with its declared `model_info.region`? `true` if all agree, `false` if any hop disagrees.
-
-Write them into `/workspace/answers.json`, which starts as:
-
-```json
-{
-  "support_us_region_reached": null,
-  "support_eu_hop_count": null,
-  "support_eu_stays_in_declared_region": null
-}
-```
-
-Replace each `null`: a region string exactly as the trace spells it, a number, and `true` or `false`.
+Send one request through `support-us` and one through `support-eu`, and answer from what their traces show right now.
 
 ## Checking your work
 

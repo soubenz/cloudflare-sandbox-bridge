@@ -23,24 +23,6 @@ comes back. It has six spans. Click a row to see its **Tags**. The LLM call
 
 ## Answer these
 
-1. Which single span, other than the top-level `handle_support_request`, took
-   the longest to run?
-2. Add up `gen_ai.usage.total_tokens` across every span tagged as an LLM call
-   in this trace. What is the total?
-3. Find the span named `cache.get`. Which span is its *direct* parent?
+The questions are in the **Questions** tab, next to this brief. Answer them there; your answers are saved for you.
 
-Write your answers into `/workspace/answers.json`, which starts out as:
-
-```json
-{
-  "longest_span_name": null,
-  "llm_total_tokens": null,
-  "cache_get_parent_span": null
-}
-```
-
-Replace each `null`: the first and third with a span name (a string, exactly as
-it appears in the trace), the second with a number.
-
-Done means `answers-match-the-trace` agrees with what Jaeger's API reports for
-the trace right now.
+Done means `answers-match-the-trace` agrees with what Jaeger's API reports for the trace right now.

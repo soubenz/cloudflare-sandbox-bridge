@@ -25,21 +25,7 @@ The new team should get `fast-draft` only, and its own tool server `weather-tool
 
 ## Answer these
 
-1. How many separate systems does this path touch, end to end? Count distinct components you talked to, not API calls.
-2. Can the new team's key reach `legacy-writer`?
-3. Did the real end-to-end call succeed: the model call through the new key, then the tool call through the new tool access?
-
-Write your answers into `/workspace/answers.json`, which starts as:
-
-```json
-{
-  "systems_touched_end_to_end": null,
-  "new_key_reaches_legacy_alias": null,
-  "end_to_end_call_succeeded": null
-}
-```
-
-Replace each `null`: a number for the first, `true` or `false` for the other two.
+The questions are in the **Questions** tab, next to this brief. Answer them there; your answers are saved for you.
 
 ## Checking your work
 

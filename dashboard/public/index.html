@@ -406,10 +406,19 @@
         </span>
       </div>
 
+      <!-- One row: the tabs, and on the right the open service's own actions (shown only on a service tab). -->
+      <div class="wtabs-row">
       <div class="wtabs" id="workspaceTabs" role="tablist" aria-label="Workspace views">
         <button type="button" class="tab wtab" data-view="terminal" role="tab" id="tabTerminal" aria-selected="false" aria-controls="viewTerminal" tabindex="-1"><svg width="15" height="15" aria-hidden="true" focusable="false"><use href="#i-term"/></svg>Terminal</button>
         <button type="button" class="tab wtab" data-view="editor" role="tab" id="tabEditor" aria-selected="false" aria-controls="viewEditor" tabindex="-1"><svg width="15" height="15" aria-hidden="true" focusable="false"><use href="#i-code"/></svg>Editor</button>
         <span id="serviceTabs" class="service-tabs" role="presentation"></span>
+      </div>
+        <div class="wtab-tools" id="serviceTools" hidden>
+          <span class="small service-status" id="serviceStatus" aria-live="polite"></span>
+          <button id="btnServiceRestart" class="files-btn" type="button" title="Stop this service and start it again, so it picks up changed files">Restart</button>
+          <button id="btnServiceReload" class="files-btn">Reload</button>
+          <a id="serviceOpen" class="files-btn" target="_blank" rel="noopener noreferrer" href="#">Open in new tab ↗</a>
+        </div>
       </div>
 
       <div class="view" id="viewTerminal" role="tabpanel" aria-label="Terminal">
@@ -454,14 +463,6 @@
       </div>
 
       <div class="view" id="viewService" role="tabpanel" aria-label="Service">
-        <div class="service-head">
-          <span class="mono" id="serviceName"></span>
-          <span class="small service-status" id="serviceStatus" aria-live="polite"></span>
-          <span class="editor-head-spacer"></span>
-          <button id="btnServiceRestart" class="files-btn" type="button" title="Stop this service and start it again, so it picks up changed files">Restart</button>
-          <button id="btnServiceReload" class="files-btn">Reload</button>
-          <a id="serviceOpen" class="files-btn" target="_blank" rel="noopener noreferrer" href="#">Open in new tab ↗</a>
-        </div>
         <div class="service-body" id="servicePanel">
           <iframe id="serviceFrame" title="Service UI"></iframe>
           <div class="service-down" id="serviceDown" role="alert" hidden>

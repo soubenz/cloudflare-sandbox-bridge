@@ -4836,7 +4836,6 @@ async function openService(name, tab, { reload = false } = {}) {
   const frame = $('serviceFrame');
   const { id, token } = state.session;
   const base = serviceBaseUrl(id, name);
-  $('serviceName').textContent = name;
   $('serviceOpen').href = base;
   state.service = name;
 
@@ -4941,6 +4940,7 @@ function showView(view, tabEl, { focus = true } = {}) {
   tab?.setAttribute('aria-selected', 'true');
   if (tab) tab.tabIndex = 0;
   state.view = view;
+  $('serviceTools').hidden = view !== 'service';
   updateWindowTitle();
   if (view === 'terminal') {
     state.terminal?.refit();

@@ -29,23 +29,7 @@ call adds a row to the log in the **view** tab.
 
 ## Answer these
 
-1. How many tools does the virtual server `toy-tools` expose right now?
-2. Call `calculator-tools-add` with exactly `{"a": 17, "b": 25}`. What
-   number comes back?
-3. Call a tool that was never registered, `does-not-exist`, the same way.
-   The HTTP status is 200 either way, so read the JSON-RPC result itself.
-   Is the call marked as an error?
-
-Write the answers into `/workspace/answers.json` (two numbers, then
-`true` or `false`):
-
-```json
-{
-  "virtual_server_tool_count": null,
-  "calculator_add_result": null,
-  "unregistered_tool_call_is_error": null
-}
-```
+The questions are in the **Questions** tab, next to this brief. Answer them there; your answers are saved for you.
 
 ## Checking your work
 

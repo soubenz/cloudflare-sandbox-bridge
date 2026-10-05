@@ -41,26 +41,11 @@ Postgres's `EXPLAIN` plan for the same search, with and without the
 
 ## Answer these
 
-1. Run `python3 -B query.py "How often should I water my succulents?"`.
-   What is the `id` of the top result?
-2. For that same query, how many documents came back with a distance below
-   **0.72**?
-3. Run `python3 -B query.py "What's the boiling point of tungsten in
-   Kelvin?" --top-k 24`. Does *any* result come back with a distance below
-   **0.65**?
+The questions are in the **Questions** tab, next to this brief. Answer them there; your answers are saved for you.
 
-Write your answers into `/workspace/answers.json`, which starts out as:
+The questions use two queries:
 
-```json
-{
-  "top_match_id": null,
-  "close_match_count": null,
-  "out_of_corpus_has_close_match": null
-}
-```
+- the succulent query: `python3 -B query.py "How often should I water my succulents?"`
+- the tungsten query: `python3 -B query.py "What's the boiling point of tungsten in Kelvin?" --top-k 24`
 
-Replace each `null`: the first with the document id (a string), the second
-with a number, the third with `true` or `false`.
-
-Done means `answers-match-the-service` agrees with the live service for those
-two queries.
+Done means `answers-match-the-service` agrees with the live service for those two queries.
