@@ -9,6 +9,8 @@
     "build:dashboard": "node dashboard/build.mjs",
     "deploy:dashboard": "npm run build:dashboard && wrangler deploy --config dashboard/wrangler.jsonc",
     "dev:dashboard": "npm run build:dashboard && wrangler dev --config dashboard/wrangler.jsonc --port 8788",
+    "dev:zakat": "wrangler dev --config zakat/wrangler.jsonc --port 8791",
+    "deploy:zakat": "wrangler deploy --config zakat/wrangler.jsonc",
     "dev:site": "wrangler dev --config site/wrangler.jsonc --port 8789",
     "deploy:site": "wrangler deploy --config site/wrangler.jsonc",
     "types": "wrangler types",

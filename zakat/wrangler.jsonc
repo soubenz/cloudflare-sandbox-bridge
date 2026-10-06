@@ -1,0 +1,11 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "zakat-calculator",
+  "compatibility_date": "2026-09-22",
+
+  // Assets-only Worker: a static page, all maths runs in the browser and
+  // data stays in localStorage. No backend, bindings or secrets.
+  "assets": {
+    "directory": "./public"
+  }
+}

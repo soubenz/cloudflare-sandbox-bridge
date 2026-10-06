@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zakat Calculator</title>
+<style>
+  :root { --bg:#f7f6f2; --card:#fff; --ink:#1d2321; --mute:#68716d; --line:#e2e0d8; --accent:#1f6f54; --warn:#9a5b00; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141816; --card:#1d2321; --ink:#ecefed; --mute:#98a39e; --line:#2e3834; --accent:#5cc79c; --warn:#e0a84a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 system-ui,sans-serif; }
+  main { max-width:720px; margin:0 auto; padding:20px 16px 120px; }
+  h1 { font-size:1.5rem; margin:0 0 4px; }
+  .sub { color:var(--mute); margin:0 0 20px; font-size:.9rem; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  h2 { font-size:1rem; margin:0; display:flex; justify-content:space-between; gap:8px; }
+  h2 small { color:var(--mute); font-weight:400; }
+  .hint { color:var(--mute); font-size:.82rem; margin:2px 0 8px; }
+  .row { display:flex; gap:6px; margin-bottom:6px; }
+  input, select, button { font:inherit; color:var(--ink); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px; min-width:0; }
+  .row .label { flex:1 1 auto; } .row .amount { width:7.5em; flex:none; } .row select { width:5.5em; flex:none; }
+  button { cursor:pointer; } button.x { flex:none; width:2.2em; padding:0; color:var(--mute); }
+  button.add { background:none; border-style:dashed; color:var(--accent); width:100%; }
+  .rates { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; }
+  .rates label { font-size:.8rem; color:var(--mute); display:block; } .rates input { width:100%; }
+  .result { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line); padding:12px 16px; }
+  .result > div { max-width:720px; margin:0 auto; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+  .due { font-size:1.6rem; font-weight:700; color:var(--accent); }
+  details { margin-top:6px; color:var(--mute); font-size:.85rem; } details table { width:100%; margin-top:6px; }
+  td:last-child { text-align:right; font-variant-numeric:tabular-nums; }
+  .note { color:var(--warn); font-size:.85rem; margin-top:4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Zakat Calculator</h1>
+  <p class="sub">Values in EUR. Everything stays in your browser. Zakat date: 7 October.</p>
+
+  <section>
+    <h2>Currency rates <small>1 unit = ? EUR</small></h2>
+    <p class="hint">Update before calculating, the defaults are rough.</p>
+    <div class="rates" id="rates"></div>
+  </section>
+
+  <div id="groups"></div>
+
+  <section>
+    <h2>Debts <small>deducted from cash-like assets</small></h2>
+    <p class="hint">Debts due soon (loans, tax, bills).</p>
+    <div id="debts"></div>
+  </section>
+
+  <section>
+    <h2>Nisab check <small>optional</small></h2>
+    <p class="hint">Gold price per gram in EUR. Nisab = 85 g of gold; below it, nothing is due.</p>
+    <input id="gold" type="number" inputmode="decimal" placeholder="e.g. 95">
+  </section>
+</main>
+
+<div class="result"><div>
+  <div><div style="color:var(--mute);font-size:.8rem">Zakat due (2.5%)</div><div class="due" id="due">0.00</div></div>
+  <div style="text-align:right;font-size:.85rem;color:var(--mute)">Zakatable base<br><b id="base" style="color:var(--ink)">0.00</b></div>
+</div></div>
+<div style="max-width:720px;margin:0 auto;padding:0 16px 140px">
+  <details><summary>Breakdown</summary><table id="breakdown"></table><div class="note" id="note"></div></details>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
