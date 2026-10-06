@@ -1,9 +1,11 @@
 import { GROUPS, calculate } from './calc.js';
 
-const KEY = 'zakat-state-v1';
+const KEY = 'zakat-state-v2';
 const DEFAULT = {
   rates: { EUR: 1, GBP: 1.15, USD: 0.86, DZD: 0.0066 },
-  groups: {}, debts: [],
+  groups: {},
+  // From the Notion Debts page, net of all entries (IN - OUT).
+  debts: [{ label: 'Held for a family member', amount: 10627.2, currency: 'EUR' }],
 };
 let state = structuredClone(DEFAULT);
 try { state = { ...state, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch {}
