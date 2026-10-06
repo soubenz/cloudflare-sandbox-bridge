@@ -10,7 +10,10 @@ try { state = { ...state, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } 
 
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => n.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };
+const save = () => {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+  $('saved').textContent = `saved ${new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })}`;
+};
 
 function itemList(items, onChange, rerender) {
   const wrap = document.createElement('div');
@@ -77,3 +80,22 @@ function update() {
 
 $('gold').oninput = () => { state.goldPricePerGram = $('gold').value; update(); };
 render();
+
+$('export').onclick = () => {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: `zakat-${new Date().toISOString().slice(0, 10)}.json` });
+  a.click(); URL.revokeObjectURL(url);
+};
+$('import').onclick = () => $('file').click();
+$('file').onchange = async () => {
+  try {
+    const data = JSON.parse(await $('file').files[0].text());
+    if (typeof data !== 'object' || !data.rates || !data.groups) throw new Error('bad file');
+    state = { ...structuredClone(DEFAULT), ...data };
+    render();
+  } catch { alert('That file is not a zakat save.'); }
+  $('file').value = '';
+};
+$('reset').onclick = () => {
+  if (confirm('Clear all entries? Save to file first if you want a backup.')) { state = structuredClone(DEFAULT); render(); }
+};
