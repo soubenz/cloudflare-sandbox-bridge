@@ -6,7 +6,6 @@
 //  - debts are deducted from the cash-like assets
 export const ZAKAT_RATE = 0.025;
 export const STOCK_FACTOR = 0.4;
-export const NISAB_GOLD_GRAMS = 85;
 
 // key, label, factor (share of the value that is zakatable), hint
 export const GROUPS = [
@@ -35,9 +34,9 @@ export function sum(items = [], rates) {
   return items.reduce((s, i) => s + toBase(i, rates), 0);
 }
 
-// state: { rates, groups: { [key]: items[] }, debts: items[], goldPricePerGram }
+// state: { rates, groups: { [key]: items[] }, debts: items[] }
 export function calculate(state) {
-  const { rates, groups = {}, debts = [], goldPricePerGram = 0 } = state;
+  const { rates, groups = {}, debts = [] } = state;
   const totals = {};
   for (const g of GROUPS) totals[g.key] = sum(groups[g.key], rates);
 
@@ -47,9 +46,7 @@ export function calculate(state) {
   const stocksZakatable = totals.stocks * STOCK_FACTOR;
   const base = netCashLike + stocksZakatable;
 
-  const nisab = num(goldPricePerGram) * NISAB_GOLD_GRAMS;
-  const belowNisab = nisab > 0 && base < nisab;
-  const zakat = belowNisab ? 0 : base * ZAKAT_RATE;
+  const zakat = base * ZAKAT_RATE;
 
-  return { totals, cashLike, debtTotal, netCashLike, stocksZakatable, base, nisab, belowNisab, zakat };
+  return { totals, cashLike, debtTotal, netCashLike, stocksZakatable, base, zakat };
 }

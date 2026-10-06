@@ -24,9 +24,4 @@ describe('zakat calculate', () => {
     const r = calculate({ rates, groups: { cash: [{ amount: 100, currency: 'EUR' }], stocks: [{ amount: 1000, currency: 'EUR' }] }, debts: [{ amount: 500, currency: 'EUR' }] });
     expect(r.base).toBe(400);
   });
-  it('nothing due below nisab', () => {
-    const r = calculate({ rates, groups: { cash: [{ amount: 1000, currency: 'EUR' }] }, goldPricePerGram: 100 });
-    expect(r.nisab).toBe(8500);
-    expect(r.zakat).toBe(0);
-  });
 });

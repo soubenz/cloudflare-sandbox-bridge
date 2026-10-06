@@ -3,7 +3,7 @@ import { GROUPS, calculate } from './calc.js';
 const KEY = 'zakat-state-v1';
 const DEFAULT = {
   rates: { EUR: 1, GBP: 1.15, USD: 0.86, DZD: 0.0066 },
-  groups: {}, debts: [], goldPricePerGram: '',
+  groups: {}, debts: [],
 };
 let state = structuredClone(DEFAULT);
 try { state = { ...state, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch {}
@@ -61,7 +61,6 @@ function render() {
 
   $('debts').innerHTML = '';
   $('debts').append(itemList(state.debts, update, render));
-  $('gold').value = state.goldPricePerGram;
   update();
 }
 
@@ -73,12 +72,8 @@ function update() {
   const rows = GROUPS.map((g) => [g.label, r.totals[g.key]]);
   rows.push(['Debts', -r.debtTotal], ['Cash-like net of debts', r.netCashLike], ['Stocks (40%)', r.stocksZakatable]);
   $('breakdown').innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)}</td></tr>`).join('');
-  $('note').textContent = r.nisab > 0
-    ? (r.belowNisab ? `Below nisab (${fmt(r.nisab)}): no zakat due.` : `Above nisab (${fmt(r.nisab)}).`)
-    : '';
 }
 
-$('gold').oninput = () => { state.goldPricePerGram = $('gold').value; update(); };
 render();
 
 $('export').onclick = () => {

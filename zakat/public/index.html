@@ -30,7 +30,6 @@
   .due { font-size:1.6rem; font-weight:700; color:var(--accent); }
   details { margin-top:6px; color:var(--mute); font-size:.85rem; } details table { width:100%; margin-top:6px; }
   td:last-child { text-align:right; font-variant-numeric:tabular-nums; }
-  .note { color:var(--warn); font-size:.85rem; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -63,11 +62,6 @@
     <div id="debts"></div>
   </section>
 
-  <section>
-    <h2>Nisab check <small>optional</small></h2>
-    <p class="hint">Gold price per gram in EUR. Nisab = 85 g of gold; below it, nothing is due.</p>
-    <input id="gold" type="number" inputmode="decimal" placeholder="e.g. 95">
-  </section>
 </main>
 
 <div class="result"><div>
@@ -75,7 +69,7 @@
   <div style="text-align:right;font-size:.85rem;color:var(--mute)">Zakatable base<br><b id="base" style="color:var(--ink)">0.00</b></div>
 </div></div>
 <div style="max-width:720px;margin:0 auto;padding:0 16px 140px">
-  <details><summary>Breakdown</summary><table id="breakdown"></table><div class="note" id="note"></div></details>
+  <details><summary>Breakdown</summary><table id="breakdown"></table></details>
 </div>
 <script type="module" src="app.js"></script>
 </body>
