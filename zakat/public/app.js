@@ -1,10 +1,10 @@
 import { GROUPS, calculate } from './calc.js';
 
-const KEY = 'zakat-state-v2';
+const KEY = 'zakat-state-v3';
 const DEFAULT = {
   rates: { EUR: 1, GBP: 1.15, USD: 0.86, DZD: 0.0066 },
-  groups: {},
   // From the Notion Debts page, net of all entries (IN - OUT).
+  groups: { cash: [{ label: 'Owed to me by Wafa', amount: 4588.88, currency: 'EUR' }] },
   debts: [{ label: 'Held for a family member', amount: 10627.2, currency: 'EUR' }],
 };
 let state = structuredClone(DEFAULT);
