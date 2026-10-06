@@ -195,6 +195,51 @@ describe('publishLab', () => {
   });
 });
 
+describe('publishLab: a warm-up', () => {
+  const warmUp = (extra: Record<string, unknown> = {}) => ({
+    slug: 'first-steps',
+    version: '1.0.0',
+    title: 'First steps',
+    type: 'warm-up',
+    tier: 'free',
+    difficulty: 'intro',
+    estimated_minutes: 10,
+    ...extra,
+  });
+  const learnJson = {
+    version: 1,
+    story: { title: 'Monday at Larkfield', minutes: 2, body: 'You start on Monday.' },
+    concepts: [],
+    questions: [],
+  };
+
+  it('publishes with no tarballs, and its index entry has no family or session cap', async () => {
+    const { env, store } = fakeBucket();
+    await publishLab(env, { manifestJson: warmUp(), learnJson });
+    expect(store.has(manifestKey('first-steps', '1.0.0'))).toBe(true);
+    expect(store.has(workspaceKey('first-steps', '1.0.0'))).toBe(false);
+    expect(store.has(privateKey('first-steps', '1.0.0'))).toBe(false);
+    const [entry] = await loadCatalogue(env);
+    expect(entry).toMatchObject({ slug: 'first-steps', type: 'warm-up', tier: 'free', estimated_minutes: 10, has_learn: true });
+    expect(entry!.family).toBeUndefined();
+    expect(entry!.timeout_minutes).toBeUndefined();
+  });
+
+  it('is 400 invalid_learn_bundle without a learn bundle, and stores nothing', async () => {
+    const { env, store } = fakeBucket();
+    const err = await publishLab(env, { manifestJson: warmUp() }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 400, code: 'invalid_learn_bundle', message: 'a warm-up needs learn/' });
+    expect(store.size).toBe(0);
+  });
+
+  it('a build lab still needs both tarballs', async () => {
+    const { env, store } = fakeBucket();
+    const err = await publishLab(env, { manifestJson: manifest('one-lab'), privateTgz: bytes() }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 400, code: 'bad_publish_payload' });
+    expect(store.size).toBe(0);
+  });
+});
+
 describe('listCatalogue', () => {
   async function catalogue() {
     const { env, store } = fakeBucket();

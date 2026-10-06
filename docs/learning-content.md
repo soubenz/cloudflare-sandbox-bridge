@@ -13,6 +13,8 @@ labs/<slug>/
     concepts/<id>.md         one lesson per concept, file name = concept id
     quiz.yaml                diagnostic questions, several per concept
     questions.yaml           explore labs: the graded fields
+    closing.md, closing.yaml optional closing story and comic, shown after the lab
+    games.yaml               optional games, played after the closing
   workspace/answers.json     explore labs: the template the fields fill
 ```
 
@@ -227,6 +229,56 @@ git add labs/<slug>/learn/audio.json labs/<slug>/learn/audio
 - **Always text too.** Captions, bubbles and "Read as text" (which includes the voiceovers) are all still there, so nothing depends on hearing.
 
 Tests drive the voice without sound: with `?comicTest=1` the player never calls `play()`, and `window.__comicClock.audio` lists the scheduled clips (key, start, end), `audioLog()` what it decided to play and stop, and `?comicAudio=blocked` makes play() refuse as a browser does (`test/e2e/19-comic-audio.spec.ts`, which carries its own small comic and narration in `test/e2e/comic-fixture.ts`).
+
+## Closing comic (optional): `learn/closing.md` and `learn/closing.yaml`
+
+A lab can end with a second story: what the case turned out to be. `closing.md` has the same front matter as `story.md` (`title`, `minutes`, a body), and `closing.yaml` is a comic of exactly the shape of `comic.yaml` and is held to the same rules (its problems are reported prefixed `closing:`). Both files are needed: `closing.yaml` without `closing.md` is an error, as is the reverse.
+
+`labs narrate` narrates the closing in the same run as the opener: its clips go into the same `learn/audio/` (same 16-hex keys, a line both comics say is one file) and its index into `learn/closing-audio.json`, the shape of `audio.json`. A clip either comic uses is kept. `labs learn-check` refuses a `closing-audio.json` that no longer matches `closing.yaml`, and the 80-clip limit counts both comics together. Commit `closing-audio.json` with `audio.json`.
+
+## Games (optional): `learn/games.yaml`
+
+Up to six small games, played after the closing. A lab with games needs a closing and has no `questions.yaml` fields. Every game has an `id` (lowercase, unique across the lab's games), a `title`, a `prompt` and an `explanation` shown once it is solved; `kind` picks one of four shapes:
+
+```yaml
+games:
+  - kind: sort                       # drag each card into its bucket
+    id: who-pays
+    title: Who pays?
+    prompt: Put each call where its cost lands.
+    explanation: The gateway bills the team that owns the key.
+    buckets: [{ id: team, label: The team }, { id: platform, label: The platform }]   # 2 to 4
+    cards:                                                                             # 3 to 10, bucket must exist
+      - { id: c1, text: A call with the team key, bucket: team }
+  - kind: flag                       # mark the items that are a problem
+    id: spot-the-leak
+    title: Spot the leak
+    prompt: Flag the lines that leak a secret.
+    explanation: Keys never belong in logs.
+    items:                           # 3 to 10; at least one flagged and one not; why is optional
+      - { id: a, text: "key=sk-123", flag: true, why: A raw key. }
+  - kind: sliders                    # move the inputs, watch the readout, answer a question
+    id: daily-cost
+    title: What a day costs
+    prompt: Move the sliders.
+    explanation: Calls times price is the bill.
+    inputs:                          # 1 to 4; min < max, default between them; unit optional
+      - { id: calls, label: Calls a day, min: 0, max: 1000, step: 10, default: 100 }
+      - { id: price, label: Price per call, min: 0, max: 1, step: 0.01, default: 0.1, unit: USD }
+    formula: [{ input: calls, op: "*" }, { input: price, op: "*" }]   # folded left; the first op is ignored
+    readout: { label: Daily cost, unit: USD, decimals: 2 }
+    ask: { prompt: Which input moves the bill most?, answer: calls }  # answer is an input id
+  - kind: order-and-nest             # order the steps and nest each under its parent
+    id: request-path
+    title: Follow one request
+    prompt: Order the steps and nest them.
+    explanation: The gateway wraps the provider call.
+    steps:                           # 3 to 10; exactly one root (parent: null), parents exist, no cycles,
+      - { id: gw, text: Gateway receives the call, parent: null, order: 0 }   # siblings have distinct order
+      - { id: alias, text: Alias resolves, parent: gw, order: 0 }
+```
+
+All text is plain single-line text, as in `quiz.yaml`.
 
 ## Trimming the brief
 

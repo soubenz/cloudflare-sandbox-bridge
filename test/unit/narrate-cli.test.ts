@@ -350,6 +350,112 @@ describe('what narration does to learn-check and publish', () => {
   });
 });
 
+const CLOSING = (voice = 'The alias had moved and nobody had noticed.') => `title: What we found
+panels:
+  - scene: desk
+    cast: [maren]
+    voiceover: By Friday we knew which provider had answered.
+    bubbles:
+      - { who: maren, text: "So that was it." }
+  - scene: portrait
+    cast: [tomasz]
+    voiceover: ${voice}
+  - scene: screen
+    voiceover: Here is the line that told us.
+    lines: ["alias: fast = provider-b"]
+  - scene: you
+    voiceover: Now you know where to look.
+    lines: ["$ done"]
+`;
+
+/** A lab with an opener and a closing comic. */
+function labWithClosing(closing = CLOSING()): string {
+  const dir = lab();
+  writeFileSync(join(dir, 'learn', 'closing.md'), '---\ntitle: Friday\nminutes: 2\n---\nBy Friday we knew.\n');
+  writeFileSync(join(dir, 'learn', 'closing.yaml'), closing);
+  return dir;
+}
+
+describe('labs narrate and the closing comic', () => {
+  it('narrates the opener and the closing in one run into learn/audio, writing audio.json and closing-audio.json', async () => {
+    const dir = labWithClosing();
+    try {
+      const s = stub();
+      const r = await narrateLab(dir, opts(s));
+      expect(r).toMatchObject({ lines: 8, clips: 8, made: 8, reused: 0, removed: 0, wroteIndex: true });
+      expect(clipFiles(dir)).toHaveLength(8);
+      const opener = AudioSchema.parse(JSON.parse(readFileSync(join(dir, 'learn', 'audio.json'), 'utf8')));
+      const closing = AudioSchema.parse(JSON.parse(readFileSync(join(dir, 'learn', 'closing-audio.json'), 'utf8')));
+      expect(opener.lines).toHaveLength(4);
+      expect(closing.lines.map((l) => l.panel)).toEqual([0, 1, 2, 3]);
+      expect(Object.values(closing.clips).map((c) => c.text)).toContain('Now you know where to look.');
+      expect(Object.keys(closing.clips).every((k) => clipFiles(dir).includes(`${k}.mp3`))).toBe(true);
+      expect(compileLearnDir(dir)!.problems).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('never removes the closing clips as orphans, and a second run makes nothing', async () => {
+    const dir = labWithClosing();
+    try {
+      await narrateLab(dir, opts(stub()));
+      const s = stub();
+      const r = await narrateLab(dir, { fetchImpl: s.fetchImpl });
+      expect(s.calls).toHaveLength(0);
+      expect(r).toMatchObject({ made: 0, reused: 8, removed: 0, wroteIndex: false });
+      // Changing only the opener replaces one opener clip and leaves the closing's alone.
+      writeFileSync(join(dir, 'learn', 'comic.yaml'), COMIC('Find out why it does that.'));
+      const r2 = await narrateLab(dir, opts(stub()));
+      expect(r2).toMatchObject({ made: 1, reused: 7, removed: 1 });
+      expect(compileLearnDir(dir)!.problems).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('learn-check says closing-audio.json is stale when closing.yaml changed, or a closing clip is gone', async () => {
+    const dir = labWithClosing();
+    try {
+      await narrateLab(dir, opts(stub()));
+      writeFileSync(join(dir, 'learn', 'closing.yaml'), CLOSING('Something else entirely.'));
+      expect(compileLearnDir(dir)!.problems.join('\n')).toMatch(/learn\/closing-audio\.json is out of date with closing\.yaml.*labs narrate/);
+      await narrateLab(dir, opts(stub()));
+      expect(compileLearnDir(dir)!.problems).toEqual([]);
+      const closing = JSON.parse(readFileSync(join(dir, 'learn', 'closing-audio.json'), 'utf8')) as { lines: { clip: string }[] };
+      rmSync(join(dir, 'learn', 'audio', `${closing.lines[3]!.clip}.mp3`));
+      expect(compileLearnDir(dir)!.problems.join('\n')).toMatch(/closing-audio\.json names clip [0-9a-f]{16}, but .* does not exist; run `labs narrate`/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a closing comic with nothing to speak, before any call', async () => {
+    const dir = labWithClosing(CLOSING().replace(/voiceover:/g, 'caption:'));
+    try {
+      const s = stub();
+      await expect(narrateLab(dir, opts(s))).rejects.toThrow(/closing comic has nothing to speak/);
+      expect(s.calls).toHaveLength(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('publish uploads the closing clips beside the opener clips, each once', async () => {
+    const dir = labWithClosing();
+    try {
+      await narrateLab(dir, opts(stub()));
+      const up = buildLearnUpload(dir)!;
+      const bundle = JSON.parse(up.json);
+      const want = [...new Set([...Object.keys(bundle.audio.clips), ...Object.keys(bundle.closing.audio.clips)])].sort();
+      expect(want).toHaveLength(8);
+      expect(up.audio.map((c) => c.name.slice(0, -4)).sort()).toEqual(want);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('the account id', () => {
   it('comes from the environment, else from wrangler.jsonc vars', () => {
     expect(accountIdFrom({ CLOUDFLARE_ACCOUNT_ID: 'from-env' }, join(ROOT, 'wrangler.jsonc'))).toBe('from-env');

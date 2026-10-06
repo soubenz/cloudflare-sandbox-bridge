@@ -219,7 +219,7 @@ describe('gradeOutline', () => {
   });
   it('is wrong when the depths are right but two rows are swapped', () => {
     const swapped = [...solvedRows];
-    [swapped[2], swapped[3]] = [swapped[3], swapped[2]];
+    [swapped[2], swapped[3]] = [swapped[3]!, swapped[2]!];
     const res = g.gradeOutline(outlineGame, swapped);
     expect(res.correct).toBe(false);
     expect(res.wrong).toEqual(['a2', 'a1']);

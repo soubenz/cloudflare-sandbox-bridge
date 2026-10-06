@@ -33,7 +33,7 @@ truth — this doc summarizes it).
 slug: duplicate-emails       # lowercase, hyphenated, 3-64 chars
 version: 1.0.0                # semver; you bump this by hand
 title: "Customers are getting duplicate emails"
-type: break-fix                # build | break-fix | scale
+type: break-fix                # build | break-fix | scale | explore | warm-up (see Warm-ups)
 family: agent                  # agent | gateway — which container image/pool this lab uses
 timeout_minutes: 90            # 60-120, required
 # Catalogue placement — all optional (see the table below)
@@ -135,6 +135,23 @@ expanded.
 ### Archiving a lab
 
 Set `archived: true` for a lab learners should not see: a test fixture, or a lab you have retired. The lab stays published and startable by slug (`POST /sessions`, `/labs/<slug>/session` and the test suites keep working), and `GET /labs` still lists it with `archived: true`. The learner console leaves it out of the launcher, path and module counts, search, suggestions and progress totals; the admin Catalogue tab shows it with an "Archived" chip. Republish the lab for the flag to reach the catalogue index.
+
+### Warm-ups
+
+A `type: warm-up` lab has no container: it is a `learn/` folder (story, lessons,
+quiz, comic) and nothing to run, the free way into a path before the first real
+lab. It is published and listed like any lab, but it never starts a session:
+`POST /sessions`, `/sessions/start` and `/sessions/prepare` answer
+`400 not_startable`.
+
+| | |
+|---|---|
+| Required | `type: warm-up`, `tier: free`, `difficulty: intro`, `estimated_minutes`, and a `learn/` folder (publish is `400 invalid_learn_bundle` "a warm-up needs learn/" without one) |
+| Forbidden | `services`, `checks`, `pressure`, `hints` (the manifest does not parse with any of them) |
+| Not needed | `family`, `timeout_minutes`, `workspace/`, `checks/`; the Worker stores no workspace or private archive for a warm-up, and ignores any that are sent |
+
+Everything else (`summary`, `objectives`, `path`, `module`, `order`,
+`prerequisites`, `archived`) works as for any lab.
 
 ### Templated strings
 

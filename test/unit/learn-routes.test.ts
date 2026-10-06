@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import type { Env } from '../../src/env';
 import { mintSessionToken } from '../../src/auth';
-import { learnKey, manifestKey, solutionKey, privateKey, currentKey, loadCatalogue } from '../../src/labs/bundle';
+import { learnKey, manifestKey, solutionKey, privateKey, workspaceKey, currentKey, loadCatalogue } from '../../src/labs/bundle';
 import { loadOnboarding } from '../../src/labs/onboarding';
 import { parseOnboarding, type Onboarding } from '../../src/labs/learn';
 import { sqliteD1 } from './sqlite-d1';
@@ -146,7 +146,7 @@ describe('publish with a learn part', () => {
     expect(store.has(privateKey('gw-lab', '1.0.0'))).toBe(true);
     const body = await j(await call(env, 'GET', '/labs/gw-lab/learn', { headers: SERVICE }));
     expect(Object.keys(body).sort()).toEqual(['learn', 'slug', 'version']);
-    expect(Object.keys(body.learn).sort()).toEqual(['answers_file', 'concepts', 'fields', 'questions', 'story', 'version']);
+    expect(Object.keys(body.learn).sort()).toEqual(['answers_file', 'concepts', 'fields', 'games', 'questions', 'story', 'version']);
   });
 
   it('sets has_learn on the catalogue entry, true and false', async () => {
@@ -217,6 +217,40 @@ describe('publish with a learn part', () => {
     const res = await call(env, 'GET', '/labs/gw-lab/learn', { headers: SERVICE });
     expect(res.status).toBe(404);
     expect((await j(res)).error.code).toBe('no_learn');
+  });
+});
+
+describe('publish a warm-up', () => {
+  const warmUp = { slug: 'first-steps', version: '1.0.0', title: 'First steps', type: 'warm-up', tier: 'free', difficulty: 'intro', estimated_minutes: 10 };
+  const form = (m: unknown, learn?: string) => {
+    const f = new FormData();
+    f.set('manifest', new Blob([JSON.stringify(m)], { type: 'application/json' }), 'manifest.json');
+    if (learn !== undefined) f.set('learn', new Blob([learn], { type: 'application/json' }), 'learn.json');
+    return f;
+  };
+
+  it('needs only the manifest and the learn part', async () => {
+    const { env, store } = makeEnv();
+    const res = await call(env, 'POST', '/labs/publish', { body: form(warmUp, JSON.stringify(learnBundle())), headers: SERVICE });
+    expect(res.status).toBe(201);
+    expect(store.has(learnKey('first-steps', '1.0.0'))).toBe(true);
+    expect(store.has(workspaceKey('first-steps', '1.0.0'))).toBe(false);
+    expect(store.has(privateKey('first-steps', '1.0.0'))).toBe(false);
+  });
+
+  it('without a learn part is 400 invalid_learn_bundle', async () => {
+    const { env, store } = makeEnv();
+    const res = await call(env, 'POST', '/labs/publish', { body: form(warmUp), headers: SERVICE });
+    expect(res.status).toBe(400);
+    expect((await j(res)).error.code).toBe('invalid_learn_bundle');
+    expect(store.size).toBe(0);
+  });
+
+  it('a build lab without the workspace and private parts is still 400 bad_publish_payload', async () => {
+    const { env } = makeEnv();
+    const res = await call(env, 'POST', '/labs/publish', { body: form(manifest('gw-lab'), JSON.stringify(learnBundle())), headers: SERVICE });
+    expect(res.status).toBe(400);
+    expect((await j(res)).error.code).toBe('bad_publish_payload');
   });
 });
 

@@ -58,8 +58,18 @@ const manifest = parseManifest({
   ],
   pressure: [{ id: 'p1', at_minutes: 15, argv: ['true'], title: 'T', message: 'M' }],
 });
+// A lab with no container: every start route refuses it.
+const warmUp = parseManifest({
+  slug: 'warm-lab',
+  version: '1.0.0',
+  title: 'Warm',
+  type: 'warm-up',
+  tier: 'free',
+  difficulty: 'intro',
+  estimated_minutes: 10,
+});
 vi.mock('../../src/labs/bundle', () => ({
-  loadCurrentManifest: async () => ({ version: '1.0.0', manifest }),
+  loadCurrentManifest: async (_env: unknown, slug: string) => ({ version: '1.0.0', manifest: slug === 'warm-lab' ? warmUp : manifest }),
   listCatalogue: async () => ({ labs: [] }),
   publishLab: async () => ({}),
   INDEX_KEY: 'labs/index.json',
@@ -286,6 +296,28 @@ describe('POST /sessions/prepare: parks without clocks', () => {
     const cold = await w.call('POST', '/sessions/start', { lab: 'lab-a', user_id: 'u1' });
     expect(cold.status).toBe(202);
     expect((await w.json(cold)).state).toBe('starting');
+  });
+});
+
+describe('a warm-up never starts a session', () => {
+  it('POST /sessions, /sessions/start and /sessions/prepare are 400 not_startable, before the pool is asked', async () => {
+    const w = makeWorld();
+    for (const path of ['/sessions', '/sessions/start', '/sessions/prepare']) {
+      const res = await w.call('POST', path, { lab: 'warm-lab', user_id: 'u1' });
+      expect(res.status, path).toBe(400);
+      expect((await w.json(res)).error.code, path).toBe('not_startable');
+    }
+    expect(pool.admit).not.toHaveBeenCalled();
+    expect(w.rows()).toBe(0);
+  });
+
+  it('does not cost the user the lab they prepared', async () => {
+    const w = makeWorld();
+    const id = await prepared(w);
+    for (const path of ['/sessions/start', '/sessions/prepare']) {
+      expect((await w.call('POST', path, { lab: 'warm-lab', user_id: 'u1' })).status, path).toBe(400);
+    }
+    expect((await w.meta(id)).state).toBe('ready');
   });
 });
 
