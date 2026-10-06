@@ -321,11 +321,11 @@ test.describe('in Before you begin', () => {
     expect(s.errors).toEqual([]);
   });
 
-  test('has exactly two buttons, Replay and Skip, and nothing else to press on the stage', async ({ page }) => {
+  test('has three buttons, Pause, Replay and Skip, and nothing else to press on the stage', async ({ page }) => {
     await beforeYouBegin(page, EXPLORE);
     const controls = page.locator('#learnHost .cm-controls');
-    await expect(controls.getByRole('button')).toHaveText(['Replay', 'Skip']);
-    expect(await page.locator('#learnHost .cm button').count()).toBe(2);
+    await expect(controls.getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip']);
+    expect(await page.locator('#learnHost .cm button').count()).toBe(3);
     expect(await page.locator('#learnHost .cm-stage button, #learnHost .cm-stage a, #learnHost .cm-stage input, #learnHost .cm-stage [tabindex]').count()).toBe(0);
     await expect(replayBtn(page, '#learnHost')).toBeEnabled();
     await expect(skipBtn(page, '#learnHost')).toBeEnabled();
@@ -386,6 +386,27 @@ test.describe('in Before you begin', () => {
     await expect(page.locator('#learnHost .cm')).toHaveAttribute('data-state', 'playing');
     await skipBtn(page, '#learnHost').click();
     await expect(page.locator('#learnHost .cm')).toHaveAttribute('data-state', 'done');
+  });
+
+  test('Pause stops the clock where it is, Play carries on from there, and Replay un-pauses', async ({ page }) => {
+    await beforeYouBegin(page, EXPLORE);
+    const pause = page.locator('#btnComicPause');
+    const cm = page.locator('#learnHost .cm');
+    await expect.poll(() => timecode(page, '#learnHost').textContent()).not.toMatch(/^0:00 \//);
+    await pause.click();
+    await expect(pause).toHaveText('Play');
+    await expect(pause).toHaveAttribute('aria-pressed', 'true');
+    await expect(cm).toHaveAttribute('data-paused', '');
+    const held = await timecode(page, '#learnHost').textContent();
+    await page.waitForTimeout(1500);
+    expect(await timecode(page, '#learnHost').textContent()).toBe(held);
+    await pause.click();
+    await expect(pause).toHaveText('Pause');
+    await expect.poll(() => timecode(page, '#learnHost').textContent()).not.toBe(held);
+    await pause.click();
+    await replayBtn(page, '#learnHost').click();
+    await expect(pause).toHaveText('Pause');
+    await expect(cm).not.toHaveAttribute('data-paused', '');
   });
 
   test('the buttons work from the keyboard and show where focus is', async ({ page }) => {
@@ -516,7 +537,7 @@ test.describe('in the session', () => {
 // =========================================================================
 
 test.describe('reduced motion', () => {
-  test('shows the comic finished from the first moment: every panel drawn, no camera, the same two buttons', async ({ page }) => {
+  test('shows the comic finished from the first moment: every panel drawn, no camera, the same buttons with Pause disabled', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await beforeYouBegin(page, EXPLORE);
     const cm = page.locator('#learnHost .cm');
@@ -524,8 +545,9 @@ test.describe('reduced motion', () => {
     await expect(cm).toHaveAttribute('data-reduced', '1');
     await expect(cm.locator('.cm-pane.on')).toHaveCount(panelCount(single));
     expect(await cm.locator('.cm-w:not(.on)').count()).toBe(0);
-    await expect(cm.locator('.cm-controls').getByRole('button')).toHaveText(['Replay', 'Skip']);
+    await expect(cm.locator('.cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip']);
     await expect(skipBtn(page, '#learnHost')).toBeDisabled();
+    await expect(page.locator('#btnComicPause')).toBeDisabled();
     const parts = (await timecode(page, '#learnHost').textContent())!.split(' / ');
     expect(parts[0]).toBe(parts[1]);
     // No camera: the reel sits at the one fit that shows the whole comic, and it does not move.

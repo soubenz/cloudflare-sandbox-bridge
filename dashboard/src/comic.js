@@ -18,8 +18,10 @@
  * (CSS only eases a class flip, and the ambient loops of the art; both are
  * switched off for reduced motion, for a finished comic and for the test clock.)
  *
- * Two playback buttons, no more: Replay and Skip. Skip goes to the finished comic and
- * calls onDone; Replay starts again from page 1. With prefers-reduced-motion
+ * Three playback buttons: Pause, Replay and Skip. Pause stops the clock and the voice where they
+ * are and turns into Play, which carries on from the same moment (the voice resumes mid-sentence);
+ * it is disabled once the comic has finished. Skip goes to the finished comic and
+ * calls onDone; Replay starts again from page 1 (and un-pauses). With prefers-reduced-motion
  * the comic starts finished (every page drawn, no camera, nothing typing).
  *
  * Narration (`{ audio }`, the lab's learn.audio plus its slug): when the lab has a storyteller
@@ -211,6 +213,8 @@ function buildPanel(panel, tp, placement) {
 
 /** Replay's glyph, built as DOM like the console's others. */
 const replayIcon = () => svgIcon('<path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/>', 16, 24, 1.8);
+const pauseIcon = () => svgIcon('<path d="M5 3.5v9M11 3.5v9"/>', 16, 16, 2);
+const playIcon = () => svgIcon('<path d="M5 3.5l8 4.5-8 4.5z"/>', 16, 16, 1.6);
 const arrowIcon = () => svgIcon('<path d="M3 8h10M9 4l4 4-4 4"/>', 16, 16, 1.8);
 const SPEAKER = '<path d="M2.5 6h2.7L9 3v10L5.2 10H2.5z"/>';
 const soundIcon = (on) => svgIcon(on ? `${SPEAKER}<path d="M11.4 5.6a3.4 3.4 0 0 1 0 4.8M13 3.8a6 6 0 0 1 0 8.4"/>` : `${SPEAKER}<path d="M11.5 6l3 4M14.5 6l-3 4"/>`, 16, 16, 1.6);
@@ -236,6 +240,8 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   let raf = 0;
   let lastTs = null;
   let paused = testMode;
+  /** The learner's own Pause (the test seam's `paused` is separate, so a test can step a paused comic). */
+  let userPaused = false;
   let visible = true;
   let gone = false;
   let lastKey = '';
@@ -301,12 +307,20 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   skip.type = 'button';
   skip.id = 'btnComicSkip';
   skip.append(document.createTextNode('Skip'), arrowIcon());
+  const pauseBtn = el('button', 'btn btn-ghost cm-btn cm-pause');
+  pauseBtn.type = 'button';
+  pauseBtn.id = 'btnComicPause';
+  const paintPause = () => {
+    pauseBtn.setAttribute('aria-pressed', String(userPaused));
+    pauseBtn.replaceChildren(userPaused ? playIcon() : pauseIcon(), document.createTextNode(userPaused ? 'Play' : 'Pause'));
+  };
+  paintPause();
   const time = el('span', 'cm-time');
   time.setAttribute('aria-hidden', 'true');
   const controls = el('div', 'cm-controls');
   controls.setAttribute('role', 'group');
   controls.setAttribute('aria-label', 'Comic playback');
-  controls.append(replay, skip);
+  controls.append(pauseBtn, replay, skip);
 
   // Sound: only a comic with voices has these two.
   let sound = hasAudio ? readSound() : false;
@@ -407,6 +421,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     const label = `${mmss(done ? tl.total : t)} / ${mmss(tl.total)}`;
     if (time.textContent !== label) time.textContent = label;
     if (skip.disabled !== done) skip.disabled = done;
+    if (pauseBtn.disabled !== done) pauseBtn.disabled = done;
     if (root.dataset.state !== clock.status) root.dataset.state = clock.status;
   }
 
@@ -567,7 +582,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     }
   }
 
-  const running = () => !gone && !paused && visible && width > 0 && !document.hidden && clock.status === 'playing';
+  const running = () => !gone && !paused && !userPaused && visible && width > 0 && !document.hidden && clock.status === 'playing';
 
   function frame(ts) {
     raf = 0;
@@ -595,8 +610,21 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   replay.addEventListener('click', () => {
     status.textContent = '';
     lastKey = '';
+    userPaused = false;
+    root.removeAttribute('data-paused');
+    paintPause();
     clock = { t: 0, status: 'playing' };
     render();
+    syncAudio();
+    ensureLoop();
+  });
+  pauseBtn.addEventListener('click', () => {
+    if (clock.status !== 'playing') return;
+    userPaused = !userPaused;
+    root.toggleAttribute('data-paused', userPaused);
+    paintPause();
+    status.textContent = userPaused ? 'Paused.' : 'Playing.';
+    lastTs = null;
     syncAudio();
     ensureLoop();
   });
@@ -665,6 +693,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     timeline: () => tl,
     audio: tl.audio.map((c) => ({ ...c, url: hasAudio ? clipUrl(voices.slug, c.key) : null })),
     audioLog: () => audioLog.slice(),
+    userPaused: () => userPaused,
     audioState: () => ({ sound, blocked: ast.blocked, current: ast.current, failed: [...ast.failed] }),
   };
   if (testMode) window.__comicClock = seam;

@@ -257,6 +257,7 @@
 
 /* Still: a finished comic, reduced motion and the test clock hold every loop and every ease. */
 .cm[data-state="done"] .cm-reel *, .cm[data-reduced] .cm-reel *, .cm[data-test] .cm-reel * { animation: none !important; }
+.cm[data-paused] .cm-reel * { animation-play-state: paused !important; }
 .cm[data-reduced] .cm-reel *, .cm[data-test] .cm-reel * { transition: none !important; }
 .cm[data-state="done"] .cm-pane, .cm[data-state="done"] .cm-banner { transition: none; }
 @media (prefers-reduced-motion: reduce) {
