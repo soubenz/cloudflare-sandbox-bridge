@@ -1,95 +1,106 @@
 {
   "model": "@cf/deepgram/aura-2-en",
   "clips": {
-    "e1758c1ce1f18eb8": {
+    "0e9ed906cf155b7c": {
       "voice": "thalia",
-      "text": "Tuesday afternoon, Priya in Support sent us a screenshot. A customer had waited so long for our assistant to reply that they'd started talking to themselves.",
-      "seconds": 8.66,
-      "bytes": 51984
+      "text": "Last Tuesday, a customer asked our support assistant a simple question. Then they waited. By the time the reply arrived, they'd typed hello three times, and the third one was in capitals.",
+      "seconds": 11.66,
+      "bytes": 69984
     },
-    "a779106176ebe8cc": {
+    "8a5a5d37719d45eb": {
       "voice": "thalia",
-      "text": "Ten minutes later, Jonas in Finance replied on the same thread. He didn't care why it was slow. He wanted to know what it cost, per request, so he can split our bill by team.",
-      "seconds": 9.89,
-      "bytes": 59328
+      "text": "First, how our apps reach a model. They never call the provider, the company that runs the model, themselves. Every call goes through one front door that we run. We call it the AI gateway.",
+      "seconds": 12.46,
+      "bytes": 74736
     },
-    "423e1c677e9c782d": {
+    "607b2933260257b5": {
       "voice": "thalia",
-      "text": "That one request went through our gateway, out to a model, into the vector store and into a cache. Four services, four sets of logs, and Tomasz spent an hour scrolling through them.",
-      "seconds": 10.61,
-      "bytes": 63648
+      "text": "We didn't always have one. Each team used to keep its own key for its provider. One of those keys ended up in a chat screenshot, and the screenshot got eleven thumbs up.",
+      "seconds": 10.06,
+      "bytes": 60336
     },
-    "3163d3443d8db612": {
+    "d86808cbda3038d2": {
       "voice": "thalia",
-      "text": "And guessing won't do. If we blame the wrong part, someone spends a week speeding up the wrong thing. If we hand Finance a hunch, it ends up in a budget.",
-      "seconds": 9.62,
-      "bytes": 57744
+      "text": "Then Support's provider went down in the middle of the night. Its name was written into their code, so moving to another provider meant Tomasz editing that code at three in the morning.",
+      "seconds": 10.46,
+      "bytes": 62784
     },
-    "312f785207c20872": {
+    "56eab906e3f710fa": {
       "voice": "thalia",
-      "text": "Here's the good news. That request was traced from start to finish, so every step it took was written down on one timeline, with how long it ran and notes about what it did.",
-      "seconds": 10.7,
-      "bytes": 64224
+      "text": "Now the keys live in the gateway and nowhere else. When a provider fails, the gateway sends the call to another one and no app has to change. It also writes down every call that goes through it.",
+      "seconds": 11.66,
+      "bytes": 69984
     },
-    "2e7da4c8b70db8f2": {
+    "0e985cb91538af56": {
       "voice": "thalia",
-      "text": "You see it as a waterfall. One bar per step, each step tucked under the one that called it, every bar with its own clock and its own notes. Everything we need is in there.",
-      "seconds": 10.58,
-      "bytes": 63504
+      "text": "Back to our customer. Their question went in through the gateway and touched three more parts. The model wrote the reply. The vector store found our help articles. The cache checked for a recent answer.",
+      "seconds": 12.41,
+      "bytes": 74448
     },
-    "cb975d69ca1b4379": {
+    "b73cdeb0e2c92741": {
       "voice": "thalia",
-      "text": "Here's your part. Find the step that took longest, not counting the whole request. Work out how many tokens the model calls used in total. And find what the cache lookup sits under.",
-      "seconds": 11.86,
-      "bytes": 71136
+      "text": "Each part keeps its own log. Tomasz read all four for an hour. Every line said the request went fine, and not one of them said how long the customer had been sitting there.",
+      "seconds": 10.82,
+      "bytes": 64944
     },
-    "6cf2a964e7c4d2e5": {
+    "c134446aebd2953d": {
       "voice": "thalia",
-      "text": "And please don't tell me what it looks like. Read it off the trace, write the numbers down, and we'll give Priya and Jonas a proper answer.",
-      "seconds": 7.49,
-      "bytes": 44928
+      "text": "So the gateway also keeps a trace of each request. It's like a parcel tracking page, every stop on one page with when it arrived and how long it stayed. In a trace, each stop is called a span.",
+      "seconds": 13.13,
+      "bytes": 78768
+    },
+    "98ad96f88550c590": {
+      "voice": "thalia",
+      "text": "That customer's request has a trace waiting for you in Jaeger, our trace viewer. Find the slowest step, and add up the tokens, the bits of text the model charges for. Then find what the cache lookup sits under.",
+      "seconds": 12.62,
+      "bytes": 75744
     }
   },
   "lines": [
     {
       "panel": 0,
       "kind": "voiceover",
-      "clip": "e1758c1ce1f18eb8"
+      "clip": "0e9ed906cf155b7c"
     },
     {
       "panel": 1,
       "kind": "voiceover",
-      "clip": "a779106176ebe8cc"
+      "clip": "8a5a5d37719d45eb"
     },
     {
       "panel": 2,
       "kind": "voiceover",
-      "clip": "423e1c677e9c782d"
+      "clip": "607b2933260257b5"
     },
     {
       "panel": 3,
       "kind": "voiceover",
-      "clip": "3163d3443d8db612"
+      "clip": "d86808cbda3038d2"
     },
     {
       "panel": 4,
       "kind": "voiceover",
-      "clip": "312f785207c20872"
+      "clip": "56eab906e3f710fa"
     },
     {
       "panel": 5,
       "kind": "voiceover",
-      "clip": "2e7da4c8b70db8f2"
+      "clip": "0e985cb91538af56"
     },
     {
       "panel": 6,
       "kind": "voiceover",
-      "clip": "cb975d69ca1b4379"
+      "clip": "b73cdeb0e2c92741"
     },
     {
       "panel": 7,
       "kind": "voiceover",
-      "clip": "6cf2a964e7c4d2e5"
+      "clip": "c134446aebd2953d"
+    },
+    {
+      "panel": 8,
+      "kind": "voiceover",
+      "clip": "98ad96f88550c590"
     }
   ]
 }
