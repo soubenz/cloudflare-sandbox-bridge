@@ -1300,7 +1300,7 @@ test.describe('the launcher is four pages', () => {
     await expect(detail.getByRole('heading', { level: 1 })).toBeFocused();
     await expect(detail.locator('.lab-summary')).toHaveText(`About ${EXPLORE}`);
     await expect(detail.locator('.lab-objectives li')).toHaveText(['do the thing']);
-    await expect(detail.locator('.lab-sub .chip-type')).toHaveText('explore');
+    await expect(detail.locator('.lab-sub .chip-type')).toHaveText('Explore');
     await expect(detail.locator('.lab-sub .chip-difficulty')).toHaveText('intro');
     await expect(detail.locator('.lab-sub .chip-time')).toContainText('20 min');
     await expect(detail.locator('.lab-prereq-section')).toContainText('None. You can start right away.');

@@ -265,13 +265,13 @@ test.describe('a module\'s page', () => {
     await expect(one.locator('.lab h2.lab-title')).toHaveText(['See the gateway', 'One endpoint, one key', 'Hard budget', 'Add a model', 'Provider fails']);
 
     const first = row(page, 'g1');
-    await expect(first.locator('.chip-type')).toHaveText('explore');
+    await expect(first.locator('.chip-type')).toHaveText('Explore');
     await expect(first.locator('.chip-time')).toContainText('20 min');
     await expect(first.locator('.chip-difficulty')).toHaveText('intro');
     await expect(first.locator('.chip-tier')).toHaveText('Free');
     await expect(row(page, 'g2').locator('.chip-tier')).toHaveCount(0);
     // The row's text is still the plain "slug@version · family · type …" line.
-    await expect(first.locator('.lab-sub')).toHaveText(/^g1@1\.0\.0 · agent · explore · intro · 20 min · 1 h limit · Free$/);
+    await expect(first.locator('.lab-sub')).toHaveText(/^g1@1\.0\.0 · agent · Explore · intro · 20 min · 1 h limit · Free$/);
   });
 
   test('"About this lab" is a link to the lab\'s own page, with its summary and objectives', async ({ page }) => {

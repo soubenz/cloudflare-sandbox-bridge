@@ -7,7 +7,7 @@ import { parseAnswersBody, recordAnswers } from './labs/learn-answers';
 import { loadOnboarding } from './labs/onboarding';
 import { MAX_AUDIO_CLIPS, MAX_AUDIO_CLIP_BYTES } from './labs/learn';
 import { parseByteRange } from './lib/range';
-import { parseManifest } from './labs/manifest';
+import { isWarmUp, parseManifest, requireRunnable } from './labs/manifest';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
 import { workspacePath } from './lib/paths';
@@ -155,10 +155,17 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     const manifestFile = form.get('manifest');
     const workspaceFile = form.get('workspace');
     const privateFile = form.get('private');
-    if (!(manifestFile instanceof File) || !(workspaceFile instanceof File) || !(privateFile instanceof File)) {
+    if (!(manifestFile instanceof File)) {
       throw ApiError.badRequest('bad_publish_payload', 'multipart form must include manifest, workspace, private files');
     }
     const manifestJson = JSON.parse(await manifestFile.text());
+    // A warm-up has no container, so nothing to put in one: its workspace and
+    // private parts are optional (and ignored). Every other lab needs both.
+    // publishLab parses the manifest again; a bad one only fails here first.
+    const warmUp = isWarmUp(parseManifest(manifestJson));
+    if (!warmUp && (!(workspaceFile instanceof File) || !(privateFile instanceof File))) {
+      throw ApiError.badRequest('bad_publish_payload', 'multipart form must include manifest, workspace, private files');
+    }
     // Optional: a lab with no solution/ sends no part (an empty one counts as none).
     const solutionFile = form.get('solution');
     const solutionTgz = solutionFile instanceof File && solutionFile.size > 0 ? await solutionFile.arrayBuffer() : undefined;
@@ -185,8 +192,8 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     }
     const result = await publishLab(c.env, {
       manifestJson,
-      workspaceTgz: await workspaceFile.arrayBuffer(),
-      privateTgz: await privateFile.arrayBuffer(),
+      ...(!warmUp && workspaceFile instanceof File ? { workspaceTgz: await workspaceFile.arrayBuffer() } : {}),
+      ...(!warmUp && privateFile instanceof File ? { privateTgz: await privateFile.arrayBuffer() } : {}),
       ...(solutionTgz ? { solutionTgz } : {}),
       ...(learnJson !== undefined ? { learnJson } : {}),
       ...(audioClips.length > 0 ? { audioClips } : {}),
@@ -325,6 +332,9 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     type PrepareBody = { lab?: string; user_id?: string; bypass_tier?: boolean };
     const body = await c.req.json<PrepareBody>().catch((): PrepareBody => ({}));
     if (!body.lab || !body.user_id) throw ApiError.badRequest('missing_fields', 'lab and user_id are required');
+    // Before the user's prepared session is touched: a warm-up must not cost
+    // them the one they have. createSession checks again for the other routes.
+    requireRunnable((await loadCurrentManifest(c.env, body.lab)).manifest);
 
     const existing = await activeSessionFor(c.env, body.user_id);
     if (existing && (await healIfStale(c.env, existing.id)) === 'live') {
@@ -734,7 +744,10 @@ async function deepHealth(env: Env) {
 
 /** Shared by POST /sessions and POST /sessions/start; the only difference between them is who may call. */
 async function createSession(env: Env, lab: string, userId: string, ipHash?: string, prepare = false, bypassTier = false) {
-  const { version, manifest } = await loadCurrentManifest(env, lab);
+  const loaded = await loadCurrentManifest(env, lab);
+  const version = loaded.version;
+  // A warm-up has no container: refuse it before the pool or D1 is touched.
+  const manifest = requireRunnable(loaded.manifest);
   if (!isFamily(manifest.family)) throw ApiError.internal(`lab "${lab}" has an unknown family "${manifest.family}"`);
 
   // A pro lab needs a paid plan. The caller vouches for `bypassTier` (an operator, or the console for its admin

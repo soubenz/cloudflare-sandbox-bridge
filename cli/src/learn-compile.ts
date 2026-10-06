@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { LearnBundleSchema, checkLearnBundle, type LearnBundle } from '../../src/labs/learn';
+import { LearnBundleSchema, checkLearnBundle, type LearnAudio, type LearnBundle } from '../../src/labs/learn';
 import { ComicSchema, checkComic, type Comic } from '../../src/labs/comic';
 
 /** Splits `---\nyaml\n---\nbody`; a file with no front matter has empty data. */
@@ -28,6 +28,10 @@ export interface LearnCompileResult {
  *   learn/concepts/<id>.md       front matter: id (must equal the file name), title, minutes, recap; body: the lesson
  *   learn/quiz.yaml              questions: [ ... ]
  *   learn/questions.yaml         answers_file, fields: [ ... ]   (explore labs)
+ *   learn/closing.md             optional closing story, front matter as story.md
+ *   learn/closing.yaml           its comic, the shape of comic.yaml (needs closing.md)
+ *   learn/closing-audio.json     its narration, written by `labs narrate` (clips share learn/audio/)
+ *   learn/games.yaml             games: [ ... ]   (played after the closing; docs/learning-content.md)
  */
 export function compileLearnDir(labDir: string): LearnCompileResult | null {
   const dir = join(labDir, 'learn');
@@ -96,6 +100,53 @@ export function compileLearnDir(labDir: string): LearnCompileResult | null {
     }
   }
 
+  // The closing: a second story and comic, read like the opener's.
+  let closing: Record<string, unknown> | undefined;
+  const closingText = read('closing.md');
+  const closingComicText = read('closing.yaml');
+  const closingAudioText = read('closing-audio.json');
+  if (closingText !== null || closingComicText !== null || closingAudioText !== null) {
+    const c: Record<string, unknown> = {};
+    if (closingText !== null) {
+      const { data, body } = splitFrontMatter(closingText);
+      c.story = { title: data.title, minutes: data.minutes, body };
+    }
+    if (closingComicText !== null) {
+      try {
+        c.comic = parseYaml(closingComicText);
+      } catch (e) {
+        problems.push(`closing.yaml: not valid YAML (${(e as Error).message})`);
+      }
+    }
+    if (closingAudioText !== null) {
+      try {
+        c.audio = JSON.parse(closingAudioText);
+      } catch (e) {
+        problems.push(`closing-audio.json: not valid JSON (${(e as Error).message})`);
+      }
+    }
+    if (closingComicText === null) {
+      if (closingText !== null) problems.push('learn/closing.md is the text of a closing comic, but there is no closing.yaml');
+      if (closingAudioText !== null) problems.push('learn/closing-audio.json narrates the closing comic, but there is no closing.yaml');
+    } else if (closingText === null) {
+      problems.push('closing.yaml needs learn/closing.md too: the text story is what screen readers, skipped comics and old consoles show');
+    } else {
+      closing = c;
+    }
+  }
+
+  let games: unknown[] = [];
+  const gamesText = read('games.yaml');
+  if (gamesText !== null) {
+    try {
+      const y = parseYaml(gamesText) as { games?: unknown[] } | null;
+      games = Array.isArray(y?.games) ? y!.games! : [];
+      if (!Array.isArray(y?.games)) problems.push('games.yaml: expected a top-level `games:` list');
+    } catch (e) {
+      problems.push(`games.yaml: not valid YAML (${(e as Error).message})`);
+    }
+  }
+
   let answersFile: string | undefined;
   let fields: unknown[] = [];
   const qText = read('questions.yaml');
@@ -119,6 +170,8 @@ export function compileLearnDir(labDir: string): LearnCompileResult | null {
     questions,
     ...(answersFile !== undefined ? { answers_file: answersFile } : {}),
     fields,
+    ...(closing !== undefined ? { closing } : {}),
+    games,
   });
   if (!parsed.success) {
     for (const i of parsed.error.issues) problems.push(`${i.path.join('.') || '(root)'}: ${i.message}`);
@@ -126,11 +179,17 @@ export function compileLearnDir(labDir: string): LearnCompileResult | null {
   }
   problems.push(...checkLearnBundle(parsed.data));
 
-  // Every clip the narration names must be on disk, as long as the index says.
-  for (const [key, clip] of Object.entries(parsed.data.audio?.clips ?? {})) {
-    const file = join(dir, 'audio', `${key}.mp3`);
-    if (!existsSync(file)) problems.push(`audio.json names clip ${key}, but learn/audio/${key}.mp3 does not exist; run \`labs narrate\``);
-    else if (statSync(file).size !== clip.bytes) problems.push(`learn/audio/${key}.mp3 is ${statSync(file).size} bytes but audio.json says ${clip.bytes}; run \`labs narrate\``);
+  // Every clip the narration names must be on disk, as long as the index says; the closing's clips share learn/audio/.
+  const indexes: [string, LearnAudio | undefined][] = [
+    ['audio.json', parsed.data.audio],
+    ['closing-audio.json', parsed.data.closing?.audio],
+  ];
+  for (const [name, audio] of indexes) {
+    for (const [key, clip] of Object.entries(audio?.clips ?? {})) {
+      const file = join(dir, 'audio', `${key}.mp3`);
+      if (!existsSync(file)) problems.push(`${name} names clip ${key}, but learn/audio/${key}.mp3 does not exist; run \`labs narrate\``);
+      else if (statSync(file).size !== clip.bytes) problems.push(`learn/audio/${key}.mp3 is ${statSync(file).size} bytes but ${name} says ${clip.bytes}; run \`labs narrate\``);
+    }
   }
 
   // The console writes the learner's answers into the file the lab's grader
@@ -156,21 +215,22 @@ export function compileLearnDir(labDir: string): LearnCompileResult | null {
 }
 
 /**
- * Just the comic of `<labDir>/learn/comic.yaml`, validated like the full compile does (schema and
+ * Just the comic of `<labDir>/learn/comic.yaml` (or `closing.yaml`), validated like the full compile does (schema and
  * checkComic), for `labs narrate`: narrating must work while the existing narration is stale.
  * `comic` is absent when there is no file or it has problems.
  */
-export function readComic(labDir: string): { comic?: Comic; problems: string[] } {
-  const file = join(labDir, 'learn', 'comic.yaml');
-  if (!existsSync(file)) return { problems: [`${labDir} has no learn/comic.yaml to narrate`] };
+export function readComic(labDir: string, name: 'comic.yaml' | 'closing.yaml' = 'comic.yaml'): { comic?: Comic; problems: string[] } {
+  const file = join(labDir, 'learn', name);
+  if (!existsSync(file)) return { problems: [`${labDir} has no learn/${name} to narrate`] };
   let raw: unknown;
   try {
     raw = parseYaml(readFileSync(file, 'utf8'));
   } catch (e) {
-    return { problems: [`comic.yaml: not valid YAML (${(e as Error).message})`] };
+    return { problems: [`${name}: not valid YAML (${(e as Error).message})`] };
   }
   const parsed = ComicSchema.safeParse(raw);
-  if (!parsed.success) return { problems: parsed.error.issues.map((i) => `comic.${i.path.join('.') || '(root)'}: ${i.message}`) };
+  const prefix = name === 'comic.yaml' ? 'comic' : 'closing.comic';
+  if (!parsed.success) return { problems: parsed.error.issues.map((i) => `${prefix}.${i.path.join('.') || '(root)'}: ${i.message}`) };
   const problems = checkComic(parsed.data);
   return problems.length > 0 ? { problems } : { comic: parsed.data, problems: [] };
 }

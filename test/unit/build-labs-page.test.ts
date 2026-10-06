@@ -134,7 +134,21 @@ describe('renderLabsPage on fixture data', () => {
 
   it('shows type, minutes and difficulty chips, and omits difficulty when unset', () => {
     const html = mod.renderLabsPage([lab({ slug: 'x', title: 'X', path: 'production-agents', difficulty: undefined, type: 'explore', estimated_minutes: 15 })]);
-    expect(html).toContain('<span class="lab-chip">explore</span><span class="lab-chip">~15 min</span><span class="lab-chip lab-chip-pro">Pro</span>');
+    expect(html).toContain('<span class="lab-chip">Explore</span><span class="lab-chip">~15 min</span><span class="lab-chip lab-chip-pro">Pro</span>');
+  });
+
+  it('words every known type and writes an unknown one as it is', () => {
+    const html = mod.renderLabsPage([lab({ slug: 'bf', path: 'production-agents', type: 'break-fix' }), lab({ slug: 'odd', path: 'production-agents', type: 'mystery' })]);
+    expect(html).toContain('<span class="lab-chip">Fix it</span>');
+    expect(html).toContain('<span class="lab-chip">mystery</span>');
+  });
+
+  it('shows a warm-up with its type, Start here, ten minutes and Free, and no family chip', () => {
+    const html = mod.renderLabsPage([lab({ slug: 'w', title: 'Warm up', path: 'production-agents', type: 'warm-up', tier: 'free', difficulty: 'intro', estimated_minutes: 10 })]);
+    expect(html).toContain(
+      '<span class="lab-chip">Warm-up</span><span class="lab-chip">Start here</span><span class="lab-chip">~10 min</span><span class="lab-chip">intro</span><span class="lab-chip lab-chip-free">Free</span>',
+    );
+    expect(html).not.toContain('undefined');
   });
 
   it('escapes everything that comes from a manifest', () => {

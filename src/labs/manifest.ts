@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ApiError } from '../lib/errors';
 import { SERVICE_USERS, defaultServiceUser } from './service-user';
 
 const slugPattern = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
@@ -118,8 +119,15 @@ export const labManifestSchema = z.object({
   slug: z.string().regex(slugPattern, 'slug must be lowercase, hyphenated, 3-64 chars'),
   version: z.string().regex(versionPattern, 'version must be semver, e.g. 1.0.0'),
   title: z.string().min(1).max(200),
-  type: z.enum(['build', 'break-fix', 'scale', 'explore']),
-  family: z.enum(['agent', 'gateway']),
+  /**
+   * `warm-up` is a lab with no container: a learn bundle and nothing to
+   * run. It is published and listed like any other lab but never starts a
+   * session (see `requireRunnable`), so it carries no family, services,
+   * checks or session cap; the refinement below enforces that.
+   */
+  type: z.enum(['build', 'break-fix', 'scale', 'explore', 'warm-up']),
+  /** Required for every type but `warm-up`, which has no container to place. */
+  family: z.enum(['agent', 'gateway']).optional(),
   /**
    * One sentence for the launcher card: what this lab is about, before a
    * learner has spent a container finding out. The title alone cannot
@@ -135,7 +143,8 @@ export const labManifestSchema = z.object({
   objectives: z.array(z.string().min(1).max(200)).max(6).default([]),
   /** Rough level, for sorting and for setting expectations on the card. */
   difficulty: z.enum(['intro', 'core', 'advanced']).optional(),
-  timeout_minutes: z.number().int().min(60).max(120),
+  /** The session cap. Required for every type but `warm-up`. */
+  timeout_minutes: z.number().int().min(60).max(120).optional(),
   /**
    * Catalogue placement. All optional so a lab without them still parses;
    * the index sorts by (path, module, order, slug) and the console groups by
@@ -175,17 +184,59 @@ export const labManifestSchema = z.object({
     (env) => Object.keys(env).every((k) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k)),
     { message: 'env keys must be shell identifiers: letters, digits and underscore, not starting with a digit' }
   ),
-  services: z.array(serviceSchema).min(1),
+  // At least one each for a runnable lab, none for a warm-up: see below.
+  services: z.array(serviceSchema).default([]),
   pressure: z.array(pressureEventSchema).default([]),
-  checks: z.array(checkSchema).min(1),
+  checks: z.array(checkSchema).default([]),
   hints: z.array(hintSchema).default([]),
   egress: egressSchema.default({ allow: [] }),
+}).superRefine((m, ctx) => {
+  const issue = (path: string, message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+  if (m.type !== 'warm-up') {
+    if (m.family === undefined) issue('family', 'Required');
+    if (m.timeout_minutes === undefined) issue('timeout_minutes', 'Required');
+    // Same wording as the old .min(1), so an author sees the same message.
+    if (m.services.length < 1) issue('services', 'Array must contain at least 1 element(s)');
+    if (m.checks.length < 1) issue('checks', 'Array must contain at least 1 element(s)');
+    return;
+  }
+  // A warm-up has no container, so anything that only means something inside
+  // one is a mistake rather than something to ignore. It is the free,
+  // intro-level way in, and the card needs an honest time since there is no
+  // session cap to fall back on.
+  if (m.services.length > 0) issue('services', 'a warm-up has no container, so no services');
+  if (m.checks.length > 0) issue('checks', 'a warm-up has no container, so no checks');
+  if (m.pressure.length > 0) issue('pressure', 'a warm-up has no container, so no pressure events');
+  if (m.hints.length > 0) issue('hints', 'a warm-up has no session, so no timed hints');
+  if (m.tier !== 'free') issue('tier', 'a warm-up must be tier: free');
+  if (m.difficulty !== 'intro') issue('difficulty', 'a warm-up must be difficulty: intro');
+  if (m.estimated_minutes === undefined) issue('estimated_minutes', 'a warm-up needs estimated_minutes');
 });
 
 export type LabManifest = z.infer<typeof labManifestSchema>;
 export type ServiceSpec = z.infer<typeof serviceSchema>;
 export type PressureEvent = z.infer<typeof pressureEventSchema>;
 export type CheckSpec = z.infer<typeof checkSchema>;
+
+/**
+ * A manifest that can start a session: anything but a warm-up, so the
+ * refinement guarantees `family` and `timeout_minutes`. Everything from
+ * session create onwards (the Session DO, lifecycle, the stored manifest)
+ * takes this rather than `LabManifest`.
+ */
+export type RunnableManifest = LabManifest & { family: NonNullable<LabManifest['family']>; timeout_minutes: number };
+
+export function isWarmUp(m: Pick<LabManifest, 'type'>): boolean {
+  return m.type === 'warm-up';
+}
+
+/** Narrows a manifest to one that can start a session; a warm-up is `400 not_startable`. */
+export function requireRunnable(m: LabManifest): RunnableManifest {
+  if (isWarmUp(m) || m.family === undefined || m.timeout_minutes === undefined) {
+    throw ApiError.badRequest('not_startable', `Lab "${m.slug}" is a warm-up: it has no container, so it cannot start a session`);
+  }
+  return m as RunnableManifest;
+}
 
 export function parseManifest(json: unknown): LabManifest {
   const result = labManifestSchema.safeParse(json);
@@ -268,7 +319,7 @@ function serviceCtx(sessionId: string, baseUrl: string, serviceName: string): Te
  * key. Called once at session start (lifecycle.start); the result is what
  * services.ts and pressure.ts read from, never the raw manifest again.
  */
-export function renderManifest(manifest: LabManifest, sessionId: string, baseUrl: string, llmHost: string): LabManifest {
+export function renderManifest<M extends LabManifest>(manifest: M, sessionId: string, baseUrl: string, llmHost: string): M {
   const renderStr = (s: string, serviceName: string) =>
     renderTemplate(s, { ...serviceCtx(sessionId, baseUrl, serviceName), llm: { host: llmHost } });
 

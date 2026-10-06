@@ -140,6 +140,7 @@ export function buildLauncherModel(labs, meta, { passed } = {}) {
       lockedByTitle: lockedBy === null ? null : (titleOf.get(lockedBy) ?? lockedBy),
       planLocked: isPlanLocked(lab),
       free: lab.tier === 'free',
+      isWarmUp: lab.type === 'warm-up',
       minutes,
     };
   };

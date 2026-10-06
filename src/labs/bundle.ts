@@ -1,8 +1,8 @@
 import type { Env } from '../env';
 import type { LabManifest } from './manifest';
-import { parseManifest } from './manifest';
+import { isWarmUp, parseManifest } from './manifest';
 import { ApiError } from '../lib/errors';
-import { LearnBundleSchema, MAX_AUDIO_CLIPS, MAX_AUDIO_CLIP_BYTES, parseLearnBundle, type LearnBundle } from './learn';
+import { LearnBundleSchema, MAX_AUDIO_CLIPS, MAX_AUDIO_CLIP_BYTES, learnAudioClips, parseLearnBundle, type LearnBundle } from './learn';
 import { looksLikeMp3 } from './mp3';
 
 export function manifestKey(slug: string, version: string): string {
@@ -56,12 +56,14 @@ export interface LabIndexEntry {
   version: string;
   title: string;
   type: LabManifest['type'];
-  family: LabManifest['family'];
+  /** Absent for a warm-up, which has no container. */
+  family?: LabManifest['family'];
   /** Catalogue context, so a learner can choose without starting a container. */
   summary?: string;
   objectives: string[];
   difficulty?: LabManifest['difficulty'];
-  timeout_minutes: number;
+  /** Absent for a warm-up, which never starts a session. */
+  timeout_minutes?: number;
   /** Catalogue placement (all optional except `tier`, which defaults to 'pro'). */
   path?: string;
   module?: number;
@@ -121,9 +123,11 @@ export function checkAudioUpload(learn: LearnBundle | undefined, clips: readonly
   const bad = (message: string): never => {
     throw ApiError.badRequest('invalid_audio', message);
   };
-  if (clips.length === 0 && !learn?.audio) return;
-  if (!learn?.audio) bad('audio clips were uploaded but the learn bundle has no audio index');
-  const index = learn!.audio!.clips;
+  // The opener's and the closing comic's narration together (learnAudioClips).
+  const hasIndex = learn?.audio !== undefined || learn?.closing?.audio !== undefined;
+  if (clips.length === 0 && !hasIndex) return;
+  if (!hasIndex) bad('audio clips were uploaded but the learn bundle has no audio index');
+  const index = learnAudioClips(learn!);
   if (clips.length > MAX_AUDIO_CLIPS) bad(`a lab may carry at most ${MAX_AUDIO_CLIPS} audio clips (got ${clips.length})`);
   const seen = new Set<string>();
   for (const c of clips) {
@@ -207,6 +211,9 @@ export function compareCatalogueEntries(a: LabIndexEntry, b: LabIndexEntry): num
  * Publishes a lab bundle: validates the manifest, writes manifest +
  * workspace.tgz + private.tgz under the version path, records the old
  * `current` in `previous`, flips `current`, and rebuilds the catalogue.
+ * A warm-up has no container, so it carries no tarballs (any sent are not
+ * stored) and must carry a learn bundle instead: without one it is
+ * `400 invalid_learn_bundle`.
  * `solution/` is never part of either of those archives. When the CLI sends
  * one it is stored on its own, at `solutionKey`, and never served by a
  * catalogue route; a forced re-publish that carries none removes the one the
@@ -228,8 +235,10 @@ export async function publishLab(
   env: Env,
   input: {
     manifestJson: unknown;
-    workspaceTgz: ReadableStream | ArrayBuffer;
-    privateTgz: ReadableStream | ArrayBuffer;
+    /** Required unless the manifest is a warm-up. */
+    workspaceTgz?: ReadableStream | ArrayBuffer;
+    /** Required unless the manifest is a warm-up. */
+    privateTgz?: ReadableStream | ArrayBuffer;
     /** Optional: the lab's solution/ as a gzip tarball (see `solutionKey`). */
     solutionTgz?: ReadableStream | ArrayBuffer;
     /** Optional: the compiled learn/ folder, as parsed JSON (see `learnKey`). Validated here. */
@@ -241,6 +250,10 @@ export async function publishLab(
 ): Promise<{ slug: string; version: string; warnings: string[] }> {
   const manifest = parseManifest(input.manifestJson);
   const { slug, version } = manifest;
+  const warmUp = isWarmUp(manifest);
+  if (!warmUp && (input.workspaceTgz === undefined || input.privateTgz === undefined)) {
+    throw ApiError.badRequest('bad_publish_payload', 'a lab needs both workspace and private archives');
+  }
 
   let learn: LearnBundle | undefined;
   if (input.learnJson !== undefined) {
@@ -250,6 +263,9 @@ export async function publishLab(
       throw ApiError.badRequest('invalid_learn_bundle', err instanceof Error ? err.message : String(err));
     }
   }
+
+  // A warm-up is nothing but its learning layer.
+  if (warmUp && learn === undefined) throw ApiError.badRequest('invalid_learn_bundle', 'a warm-up needs learn/');
 
   const audioClips = input.audioClips ?? [];
   checkAudioUpload(learn, audioClips);
@@ -265,8 +281,8 @@ export async function publishLab(
     env.LABS_BUCKET.put(manifestKey(slug, version), JSON.stringify(manifest, null, 2), {
       httpMetadata: { contentType: 'application/json' },
     }),
-    env.LABS_BUCKET.put(workspaceKey(slug, version), input.workspaceTgz),
-    env.LABS_BUCKET.put(privateKey(slug, version), input.privateTgz),
+    !warmUp ? env.LABS_BUCKET.put(workspaceKey(slug, version), input.workspaceTgz!) : Promise.resolve(),
+    !warmUp ? env.LABS_BUCKET.put(privateKey(slug, version), input.privateTgz!) : Promise.resolve(),
     input.solutionTgz !== undefined
       ? env.LABS_BUCKET.put(solutionKey(slug, version), input.solutionTgz)
       : input.force === true

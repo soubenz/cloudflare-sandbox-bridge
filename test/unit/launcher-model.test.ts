@@ -20,6 +20,9 @@ interface Lab {
   plan?: string;
   bypass?: boolean;
   estimated_minutes?: number;
+  type?: string;
+  family?: string;
+  timeout_minutes?: number;
   prerequisites?: string[];
   progress?: { attempts: number; best_score: number | null; passed_all: boolean } | null;
 }
@@ -33,6 +36,7 @@ interface Entry {
   lockedByTitle: string | null;
   planLocked: boolean;
   free: boolean;
+  isWarmUp: boolean;
   minutes: number;
 }
 interface Totals {
@@ -735,5 +739,38 @@ describe('the pages: paths, modules, trail and scope', () => {
     // A lab's own page has none, and neither does a page the catalogue does not know.
     expect(pages.scopeEntries(m, { name: 'lab', slug: 'a1' })).toEqual([]);
     expect(pages.scopeEntries(m, { name: 'path', path: 'nope' })).toEqual([]);
+  });
+});
+
+describe('a warm-up', () => {
+  const warmUp = lab('warm-up-1', { path: 'platform', module: 1, order: 1, type: 'warm-up', tier: 'free', estimated_minutes: 10, progress: null });
+  const labs = [lab('p1-a', { path: 'platform', module: 1, order: 2, type: 'build', family: 'gateway', timeout_minutes: 60 }), warmUp];
+
+  it('is the first row of its module, flagged, with its own ten minutes and no family or limit', () => {
+    const m = buildLauncherModel(labs, meta);
+    const mod1 = m.paths[0]!.modules[0]!;
+    expect(slugs(mod1.labs)).toEqual(['warm-up-1', 'p1-a']);
+    const row = mod1.labs[0]!;
+    expect(row.index).toBe(1);
+    expect(row.isWarmUp).toBe(true);
+    expect(mod1.labs[1]!.isWarmUp).toBe(false);
+    expect(row.minutes).toBe(10);
+    expect(row.free).toBe(true);
+    expect(row.status).toBe('todo');
+    expect(row.locked).toBe(false);
+  });
+
+  it('counts in the module totals like any lab, once passed', () => {
+    const m = buildLauncherModel([{ ...warmUp, progress: { attempts: 1, best_score: 1, passed_all: true } }, labs[0]!], meta);
+    const t = m.paths[0]!.modules[0]!.totals;
+    expect(t).toMatchObject({ labs: 2, done: 1, free: 1, minutes: 40 });
+  });
+
+  it('puts no undefined or NaN in a row or in any line built from the totals', () => {
+    const m = buildLauncherModel(labs, meta);
+    const mod1 = m.paths[0]!.modules[0]!;
+    for (const e of mod1.labs) expect(JSON.stringify({ ...e, lab: undefined, lockedBy: undefined, lockedByTitle: undefined })).not.toMatch(/undefined|null|NaN/);
+    for (const line of [summaryLine(mod1.totals), moduleMetaLine(mod1.totals), summaryLine(m.totals)]) expect(line).not.toMatch(/undefined|null|NaN/);
+    expect(mod1.labs[0]!.lockedByTitle).toBeNull();
   });
 });

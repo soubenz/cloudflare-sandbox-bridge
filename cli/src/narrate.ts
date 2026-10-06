@@ -82,7 +82,7 @@ export interface NarrateOptions {
 
 export interface NarrateResult {
   lab: string;
-  /** Voiceovers in the comic, and the distinct clips they need. */
+  /** Voiceovers in the comic and the closing comic, and the distinct clips they need together. */
   lines: number;
   clips: number;
   /** Clips synthesised by this run (or that a dry run would synthesise), and their characters. */
@@ -157,32 +157,52 @@ async function pool<T>(items: readonly T[], width: number, fn: (item: T) => Prom
   if (failure !== undefined) throw failure;
 }
 
-/** Narrates one lab directory. Throws an Error with the reason when it cannot. */
+/**
+ * Narrates one lab directory: the opener (learn/comic.yaml into learn/audio.json) and, when the lab has
+ * one, the closing (learn/closing.yaml into learn/closing-audio.json). Both share learn/audio/, so the
+ * clips are planned together: a clip either comic uses is kept, and only clips neither uses are removed.
+ * Throws an Error with the reason when it cannot.
+ */
 export async function narrateLab(labDir: string, opts: NarrateOptions = {}): Promise<NarrateResult> {
   const log = opts.log ?? (() => {});
   const { comic, problems } = readComic(labDir);
   if (!comic) throw new Error(`cannot narrate ${labDir}:\n${problems.map((p) => `  - ${p}`).join('\n')}`);
   const plan = planNarration(comic);
   if (plan.lines.length === 0) throw new Error(`${labDir}: the comic has nothing to speak: no panel has a \`voiceover\` (the storyteller reads the voiceovers; see docs/learning-content.md)`);
-  if (plan.clips.length > MAX_AUDIO_CLIPS) {
-    throw new Error(`${labDir}: the comic needs ${plan.clips.length} distinct clips and a lab may carry at most ${MAX_AUDIO_CLIPS}; shorten it`);
+
+  let closingPlan: NarrationPlan | undefined;
+  if (existsSync(join(labDir, 'learn', 'closing.yaml'))) {
+    const closing = readComic(labDir, 'closing.yaml');
+    if (!closing.comic) throw new Error(`cannot narrate the closing of ${labDir}:\n${closing.problems.map((p) => `  - ${p}`).join('\n')}`);
+    closingPlan = planNarration(closing.comic);
+    if (closingPlan.lines.length === 0) {
+      throw new Error(`${labDir}: the closing comic has nothing to speak: no panel of closing.yaml has a \`voiceover\` (see docs/learning-content.md)`);
+    }
+  }
+
+  // The distinct clips of both comics, in order of first use (a line both say is one clip).
+  const all = new Map<string, PlannedClip>();
+  for (const c of [...plan.clips, ...(closingPlan?.clips ?? [])]) if (!all.has(c.key)) all.set(c.key, c);
+  const clips = [...all.values()];
+  if (clips.length > MAX_AUDIO_CLIPS) {
+    throw new Error(`${labDir}: the comic${closingPlan ? ' and the closing' : ''} need${closingPlan ? '' : 's'} ${clips.length} distinct clips and a lab may carry at most ${MAX_AUDIO_CLIPS}; shorten it`);
   }
 
   const audioDir = join(labDir, 'learn', 'audio');
   const onDisk = existsSync(audioDir) ? readdirSync(audioDir).filter((f) => CLIP_FILE.test(f)) : [];
   const have = (key: string) => onDisk.includes(`${key}.mp3`) && statSync(join(audioDir, `${key}.mp3`)).size > 0;
-  const missing = plan.clips.filter((c) => !have(c.key));
-  const wanted = new Set(plan.clips.map((c) => `${c.key}.mp3`));
+  const missing = clips.filter((c) => !have(c.key));
+  const wanted = new Set(clips.map((c) => `${c.key}.mp3`));
   const orphans = onDisk.filter((f) => !wanted.has(f));
   const characters = missing.reduce((n, c) => n + c.text.length, 0);
 
   const result: NarrateResult = {
     lab: labDir,
-    lines: plan.lines.length,
-    clips: plan.clips.length,
+    lines: plan.lines.length + (closingPlan?.lines.length ?? 0),
+    clips: clips.length,
     made: missing.length,
     characters,
-    reused: plan.clips.length - missing.length,
+    reused: clips.length - missing.length,
     removed: orphans.length,
     requests: 0,
     seconds: 0,
@@ -225,7 +245,7 @@ export async function narrateLab(labDir: string, opts: NarrateOptions = {}): Pro
   }
 
   const measured = new Map<string, { seconds: number; bytes: number }>();
-  for (const c of plan.clips) {
+  for (const c of clips) {
     const bytes = readFileSync(join(audioDir, `${c.key}.mp3`));
     const seconds = mp3Seconds(bytes);
     if (!(seconds > 0)) throw new Error(`${c.key}.mp3 holds no audio (clip for "${c.text.slice(0, 40)}"); delete it and run again`);
@@ -233,12 +253,16 @@ export async function narrateLab(labDir: string, opts: NarrateOptions = {}): Pro
     result.seconds += seconds;
     result.bytes += bytes.length;
   }
-  const index = `${JSON.stringify(buildAudioIndex(plan, measured), null, 2)}\n`;
-  const indexPath = join(labDir, 'learn', 'audio.json');
-  const before = existsSync(indexPath) ? readFileSync(indexPath, 'utf8') : null;
-  if (before !== index) {
-    writeFileSync(indexPath, index);
-    result.wroteIndex = true;
+  const indexes: [string, NarrationPlan][] = [['audio.json', plan]];
+  if (closingPlan) indexes.push(['closing-audio.json', closingPlan]);
+  for (const [name, p] of indexes) {
+    const index = `${JSON.stringify(buildAudioIndex(p, measured), null, 2)}\n`;
+    const indexPath = join(labDir, 'learn', name);
+    const before = existsSync(indexPath) ? readFileSync(indexPath, 'utf8') : null;
+    if (before !== index) {
+      writeFileSync(indexPath, index);
+      result.wroteIndex = true;
+    }
   }
   return result;
 }

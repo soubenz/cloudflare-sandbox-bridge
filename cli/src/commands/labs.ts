@@ -8,6 +8,7 @@ import { parse as parseYaml } from 'yaml';
 import { OpalixClient } from '../client';
 import { fileURLToPath } from 'node:url';
 import { compileLearnDir } from '../learn-compile';
+import { learnAudioClips } from '../../../src/labs/learn';
 import { accountIdFrom, narrateLab } from '../narrate';
 
 /**
@@ -124,8 +125,8 @@ export function buildLearnUpload(
     );
   }
   const b = result.bundle!;
-  // The narration's clips go up beside the bundle (compileLearnDir already checked each is on disk).
-  const audio = Object.keys(b.audio?.clips ?? {}).map((key) => ({ name: `${key}.mp3`, bytes: readFileSync(join(dir, 'learn', 'audio', `${key}.mp3`)) }));
+  // The narration's clips, opener and closing, go up beside the bundle (compileLearnDir already checked each is on disk).
+  const audio = Object.keys(learnAudioClips(b)).map((key) => ({ name: `${key}.mp3`, bytes: readFileSync(join(dir, 'learn', 'audio', `${key}.mp3`)) }));
   return { json: JSON.stringify(b), lessons: b.concepts.length, questions: b.questions.length, fields: b.fields.length, audio };
 }
 

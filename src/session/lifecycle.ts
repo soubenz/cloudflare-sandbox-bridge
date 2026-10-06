@@ -1,5 +1,5 @@
 import type { Env, Family } from '../env';
-import type { LabManifest } from '../labs/manifest';
+import type { LabManifest, RunnableManifest } from '../labs/manifest';
 import { renderManifest } from '../labs/manifest';
 import type { SessionRuntime, SessionMeta, SnapshotEntry, TimerKind, TimerEntry } from './state';
 import { isStuck } from './state';
@@ -74,7 +74,7 @@ export interface CreateSessionInput {
   labSlug: string;
   labVersion: string;
   family: Family;
-  manifest: LabManifest;
+  manifest: RunnableManifest;
   /** Pre-warm: boot the container but park in `ready` with no lab clocks until `begin`. */
   prepare?: boolean;
 }

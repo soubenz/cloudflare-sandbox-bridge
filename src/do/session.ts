@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env, Family } from '../env';
-import type { LabManifest } from '../labs/manifest';
+import type { RunnableManifest } from '../labs/manifest';
 import { SessionRuntime } from '../session/state';
 import { buildStatus } from '../session/state';
 import type { SessionMeta, ChecksRun, ServiceRuntime, SnapshotEntry, SessionStatus } from '../session/state';
@@ -40,7 +40,7 @@ export class Session extends DurableObject<Env> {
 
   // --- RPC surface ---
 
-  async create(input: { userId: string; labSlug: string; labVersion: string; family: Family; manifest: LabManifest; prepare?: boolean }) {
+  async create(input: { userId: string; labSlug: string; labVersion: string; family: Family; manifest: RunnableManifest; prepare?: boolean }) {
     return lifecycle.createSession(this.rt, input);
   }
 

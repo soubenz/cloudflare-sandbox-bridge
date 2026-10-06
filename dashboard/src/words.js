@@ -96,6 +96,29 @@ export function difficultyWord(value) {
   return DIFFICULTY_WORDS[value] ?? capitalise(value);
 }
 
+/** The lab types the catalogue knows, as a chip says them. */
+export const LAB_TYPE_WORDS = { build: 'Build', 'break-fix': 'Fix it', scale: 'Scale', explore: 'Explore', 'warm-up': 'Warm-up' };
+
+/** "break-fix" -> "Fix it", "warm-up" -> "Warm-up". A type the console does not know is written as it is. */
+export function labTypeLabel(type) {
+  const value = String(type ?? '');
+  return Object.hasOwn(LAB_TYPE_WORDS, value) ? LAB_TYPE_WORDS[value] : value;
+}
+
+/** The chip a warm-up carries in the catalogue: the lab to open first. */
+export const WARM_UP_CHIP = 'Start here';
+
+/**
+ * The word on a lab's one button, shared by a lab's row and its page: Locked behind another lab, Resume for the
+ * lab that is running, Open again once passed, Open for a warm-up (there is nothing to start), else Start.
+ */
+export function labButtonWord({ type, locked = false, running = false, done = false } = {}) {
+  if (locked) return 'Locked';
+  if (running) return 'Resume';
+  if (done) return 'Open again';
+  return type === 'warm-up' ? 'Open' : 'Start';
+}
+
 /** "agent-foundations" -> "Agent foundations": a family as a person reads it. */
 export function familyWord(value) {
   return capitalise(String(value ?? '').replace(/[-_]+/g, ' ').trim());

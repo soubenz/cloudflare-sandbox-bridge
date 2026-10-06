@@ -1,0 +1,73 @@
+/* Warm-up games (dashboard/src/games.js). Console tokens only; buttons are .btn from styles.css. */
+.game { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; max-width: 100%; }
+.game-title { margin: 0; font-family: var(--display); font-size: clamp(20px, 2.4vw, 26px); line-height: 1.2; letter-spacing: -0.02em; font-weight: 650; overflow-wrap: anywhere; }
+.game-title:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.game-prompt { margin: 0; color: var(--ink-2); line-height: 1.5; overflow-wrap: anywhere; }
+.game-hint { margin: 0; color: var(--ink-muted); font-size: var(--fs-md); }
+.game-status { margin: 0; min-height: 1.5em; line-height: 1.5; font-weight: 600; }
+.game-status:empty { display: none; }
+.game-status[data-state="correct"] { color: var(--good); }
+.game-status[data-state="incorrect"] { color: var(--warn); }
+.game .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.game .btn[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+
+.game-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+
+/* sort */
+.game-card {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3);
+  padding: var(--s3) var(--s4); min-width: 0;
+  background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius);
+}
+.game-card-text { flex: 1 1 200px; min-width: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.game-card-buckets { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.game-card-note { flex-basis: 100%; font-size: var(--fs-md); font-weight: 600; color: var(--bad); }
+.game-card-note:empty { display: none; }
+.game-card[data-state="wrong"] { outline: 2px solid var(--bad); outline-offset: 1px; border-color: var(--bad); }
+.game-card[data-state="right"] { border-color: color-mix(in oklab, var(--good) 60%, var(--border)); background: color-mix(in oklab, var(--good) 8%, var(--surface)); }
+
+/* flag and sliders reuse the quiz; its own heading and progress bar would repeat the game's */
+.game-embed .quiz-head { display: none; }
+.game-why { padding: var(--s4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.game-why-title { margin: 0 0 var(--s2); font-size: var(--fs-lg); }
+.game-why-list { margin: 0; padding-left: 1.2em; display: grid; gap: var(--s2); line-height: 1.5; }
+.game-why-item { overflow-wrap: anywhere; }
+
+/* sliders */
+.game-sliders { display: grid; gap: var(--s4); padding: var(--s4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.game-slider { display: grid; gap: var(--s2); min-width: 0; }
+.game-slider-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s1) var(--s3); }
+.game-slider-label { font-weight: 600; overflow-wrap: anywhere; }
+.game-slider-value { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.game-range { width: 100%; min-height: 32px; margin: 0; accent-color: var(--accent-fill); }
+.game-range:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.game-readout {
+  display: block; padding: var(--s3) var(--s4); border-radius: var(--radius-sm);
+  background: var(--accent-soft); color: var(--ink); line-height: 1.4; overflow-wrap: anywhere;
+}
+.game-readout-value { font-size: var(--fs-xl); font-variant-numeric: tabular-nums; }
+
+/* order-and-nest */
+.game-row {
+  --depth: 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3);
+  margin-left: calc(var(--depth) * 20px); padding: var(--s3) var(--s4); min-width: 0;
+  background: var(--surface); border: 1.5px solid var(--border); border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+.game-row-text { flex: 1 1 180px; min-width: 0; line-height: 1.45; overflow-wrap: anywhere; }
+.game-row-level { font-size: var(--fs-sm); color: var(--ink-muted); }
+.game-row-actions { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.game-row[data-state="wrong"] { outline: 2px solid var(--bad); outline-offset: 1px; border-color: var(--bad); }
+.game-row[data-state="right"] { border-color: color-mix(in oklab, var(--good) 60%, var(--border)); border-left-color: var(--good); }
+
+.game-explain { padding: var(--s4) 20px; border-radius: var(--radius); border: 1px solid color-mix(in oklab, var(--good) 50%, var(--border)); background: var(--surface-2); }
+.game-explain-head { color: var(--good); }
+.game-explain-body { margin: var(--s1) 0 0; line-height: 1.55; }
+
+@media (max-width: 480px) {
+  .game .btn { min-height: 44px; }
+  .game-row { margin-left: calc(var(--depth) * 12px); }
+  .game-row-actions .btn { flex: 1 1 calc(50% - var(--s1)); }
+  .game-card-buckets .btn { flex: 1 1 auto; }
+}

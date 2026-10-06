@@ -33,6 +33,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
 import { ICONS, approxMinutes, buildLauncherModel } from '../dashboard/src/launcher-model.js';
+import { WARM_UP_CHIP, labTypeLabel } from '../dashboard/src/words.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const LABS_DIR = join(root, 'labs');
@@ -79,7 +80,8 @@ function chip(text, extraClass = '') {
 function renderLab(lab) {
   const free = isFree(lab);
   const chips = [];
-  if (lab.type) chips.push(chip(lab.type));
+  if (lab.type) chips.push(chip(labTypeLabel(lab.type)));
+  if (lab.type === 'warm-up') chips.push(chip(WARM_UP_CHIP));
   if (lab.estimated_minutes) chips.push(chip(`~${lab.estimated_minutes} min`));
   if (lab.difficulty) chips.push(chip(lab.difficulty));
   chips.push(free ? chip('Free', 'lab-chip-free') : chip('Pro', 'lab-chip-pro'));

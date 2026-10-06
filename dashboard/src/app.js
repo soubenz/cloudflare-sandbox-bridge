@@ -26,9 +26,12 @@ import {
   PLAN_LOCK_LONG,
   STATUS_FILTERS,
   STATUS_WORDS,
+  WARM_UP_CHIP,
   difficultyWord,
   familyWord,
+  labButtonWord,
   labTime,
+  labTypeLabel,
   labsDone,
   nextLabText,
   skillChangeText,
@@ -1327,9 +1330,10 @@ function fillFacts(sub, lab) {
   // different string. The chips are shown in a different order (type first) by CSS `order`.
   const facts = [
     ['id', `${lab.slug}@${lab.version}`],
-    ['family', lab.family],
-    ['type', lab.type],
   ];
+  if (lab.family) facts.push(['family', lab.family]);
+  facts.push(['type', labTypeLabel(lab.type)]);
+  if (lab.type === 'warm-up') facts.push(['start', WARM_UP_CHIP]);
   if (lab.difficulty) facts.push(['difficulty', lab.difficulty]);
   // The expected time and the kill timer are different promises: say both
   // when the manifest gives both.
@@ -1408,6 +1412,7 @@ function labCard({ lab, index, done, locked, lockedBy, lockedByTitle, planLocked
   // a row — a test, a deep link — name one lab rather than a family of
   // labs whose names happen to overlap.
   row.dataset.slug = lab.slug;
+  row.dataset.type = lab.type ?? '';
   const titleId = `lab-title-${lab.slug}`;
   row.setAttribute('aria-labelledby', titleId);
   row.innerHTML = `
@@ -1462,6 +1467,7 @@ function labPage(lab) {
   };
   const page = node('article', `lab-detail${standing.done ? ' lab-done' : ''}${standing.locked ? ' lab-locked' : ''}${standing.planLocked ? ' lab-plan-locked' : ''}`);
   page.dataset.slug = lab.slug;
+  page.dataset.type = lab.type ?? '';
   if (at) page.dataset.accent = at.module.known ? at.module.accent : at.path.accent;
   const titleId = `lab-title-${lab.slug}`;
   page.setAttribute('aria-labelledby', titleId);
@@ -1551,7 +1557,7 @@ function styleStartButton(row) {
   const planLocked = row.classList.contains('lab-plan-locked') && !adminMode.isOn();
   const locked = row.classList.contains('lab-locked') && !adminMode.isOn() && !planLocked;
   const done = row.classList.contains('lab-done');
-  button.textContent = locked ? 'Locked' : running ? 'Resume' : done ? 'Open again' : 'Start';
+  button.textContent = labButtonWord({ type: row.dataset.type, locked, running, done });
   button.className = `btn lab-start ${locked || planLocked ? 'btn-ghost' : running ? 'btn-accent' : done ? 'btn-ghost' : 'btn-strong'}`;
 }
 

@@ -20,6 +20,9 @@ type Words = {
   STATUS_FILTERS: Array<[string, string]>;
   difficultyWord: (v: string) => string;
   familyWord: (v: string) => string;
+  labTypeLabel: (type: unknown) => string;
+  WARM_UP_CHIP: string;
+  labButtonWord: (lab?: { type?: string; locked?: boolean; running?: boolean; done?: boolean }) => string;
   QUIZ_LEVELS: Record<string, string>;
   quizLevelWord: (v: unknown) => string;
   skillLevelLabel: (name: string) => string;
@@ -92,6 +95,25 @@ describe('filters', () => {
     expect(words.familyWord('build')).toBe('Build');
     expect(words.familyWord('agent-foundations')).toBe('Agent foundations');
     expect(words.familyWord(undefined as unknown as string)).toBe('');
+  });
+});
+
+describe('lab types and the button', () => {
+  it('words the five types and writes an unknown one as it is', () => {
+    expect(['build', 'break-fix', 'scale', 'explore', 'warm-up'].map(words.labTypeLabel)).toEqual(['Build', 'Fix it', 'Scale', 'Explore', 'Warm-up']);
+    expect(words.labTypeLabel('mystery')).toBe('mystery');
+    expect(words.labTypeLabel(undefined)).toBe('');
+    expect(words.WARM_UP_CHIP).toBe('Start here');
+  });
+  it('says Start, but Open for a warm-up, with the same Locked, Resume and Open again for both', () => {
+    expect(words.labButtonWord({ type: 'build' })).toBe('Start');
+    expect(words.labButtonWord({})).toBe('Start');
+    expect(words.labButtonWord({ type: 'warm-up' })).toBe('Open');
+    expect(words.labButtonWord({ type: 'warm-up', done: true })).toBe('Open again');
+    expect(words.labButtonWord({ type: 'warm-up', running: true })).toBe('Resume');
+    expect(words.labButtonWord({ type: 'build', locked: true, running: true, done: true })).toBe('Locked');
+    expect(words.labButtonWord({ type: 'build', running: true, done: true })).toBe('Resume');
+    expect(words.labButtonWord({ type: 'build', done: true })).toBe('Open again');
   });
 });
 

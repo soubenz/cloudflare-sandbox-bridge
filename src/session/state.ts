@@ -1,6 +1,6 @@
 import type { Env, Family } from '../env';
 import type { Terminal } from '@cloudflare/sandbox';
-import type { LabManifest, ServiceSpec } from '../labs/manifest';
+import type { RunnableManifest, ServiceSpec } from '../labs/manifest';
 import type { Backend } from './backend';
 import type { SolutionStatus } from './solution';
 import { ApiError } from '../lib/errors';
@@ -195,7 +195,7 @@ export interface SessionStatus {
   server_time: number;
 }
 
-export function summarizeManifest(manifest: LabManifest): ManifestSummary {
+export function summarizeManifest(manifest: RunnableManifest): ManifestSummary {
   return {
     title: manifest.title,
     objectives: manifest.objectives,
@@ -221,7 +221,7 @@ export function buildStatus(input: {
   snapshots: SnapshotEntry[];
   checks?: ChecksRun;
   cost: CostState;
-  manifest?: LabManifest;
+  manifest?: RunnableManifest;
   delivered: HintDelivered[];
   pressure: Record<string, { status: PressureStatus; fired_at?: number }>;
   checksHistory: CheckHistoryEntry[];
@@ -365,15 +365,17 @@ export class SessionRuntime {
     return next;
   }
 
-  async manifest(): Promise<LabManifest | undefined> {
-    return this.storage.get<LabManifest>(KEYS.manifest);
+  // Only a runnable manifest is ever stored: the router narrows with
+  // requireRunnable before a session is created.
+  async manifest(): Promise<RunnableManifest | undefined> {
+    return this.storage.get<RunnableManifest>(KEYS.manifest);
   }
-  async requireManifest(): Promise<LabManifest> {
+  async requireManifest(): Promise<RunnableManifest> {
     const manifest = await this.manifest();
     if (!manifest) throw new Error(`Session ${this.sessionId} has no manifest`);
     return manifest;
   }
-  async putManifest(manifest: LabManifest): Promise<void> {
+  async putManifest(manifest: RunnableManifest): Promise<void> {
     await this.storage.put(KEYS.manifest, manifest);
   }
 

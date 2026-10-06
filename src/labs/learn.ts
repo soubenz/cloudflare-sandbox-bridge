@@ -2,7 +2,7 @@ import { z } from 'zod';
 import registry from '../../packages/catalogue/concepts.json';
 import { QUIZ_SKILLS } from '../skills';
 import { KNOWN_DIAGRAMS, diagramRefs } from './diagram';
-import { ComicSchema, checkComic } from './comic';
+import { ComicSchema, checkComic, type Comic } from './comic';
 import { VOICEOVER_MAX, legacyNarrationLines, narrationLines, usesVoiceover } from './comic-kit';
 
 /**
@@ -162,6 +162,133 @@ export const FieldSchema = z
     if (f.kind === 'choice' && f.options) ctx.addIssue({ code: 'custom', message: `field ${f.key}: a choice field has choices, not options` });
   });
 
+/**
+ * The games of the closing (learn/games.yaml): small declarative exercises the console plays after the
+ * closing comic, each solved in the browser and followed by its `explanation`. Every kind is data only;
+ * the console owns the interaction. Ids are local to the lab and unique across its games.
+ */
+const GameBase = {
+  id: localId,
+  title: plain(80),
+  prompt: plain(300),
+  /** Shown once the game is solved. */
+  explanation: plain(420),
+};
+
+/** Drag each card into the bucket it belongs to. */
+const SortGameShape = z.object({
+  kind: z.literal('sort'),
+  ...GameBase,
+  buckets: z.array(z.object({ id: localId, label: plain(60) })).min(2).max(4),
+  cards: z.array(z.object({ id: localId, text: plain(160), bucket: localId })).min(3).max(10),
+});
+
+/** Mark the items that are a problem; `why` is shown beside an item once the game is solved. */
+const FlagGameShape = z.object({
+  kind: z.literal('flag'),
+  ...GameBase,
+  items: z.array(z.object({ id: localId, text: plain(160), flag: z.boolean(), why: plain(300).optional() })).min(3).max(10),
+});
+
+/**
+ * Move the sliders and watch the readout: `formula` folds left from its first input
+ * (`readout = in0 op1 in1 op2 in2 ...`; the first entry's op is ignored), and `ask` asks which input moves it most.
+ */
+const SlidersGameShape = z.object({
+  kind: z.literal('sliders'),
+  ...GameBase,
+  inputs: z
+    .array(
+      z.object({
+        id: localId,
+        label: plain(80),
+        min: z.number().finite(),
+        max: z.number().finite(),
+        step: z.number().finite().positive(),
+        default: z.number().finite(),
+        unit: plain(20).optional(),
+      })
+    )
+    .min(1)
+    .max(4),
+  formula: z.array(z.object({ input: localId, op: z.enum(['*', '+', '-', '/']) })).min(1).max(8),
+  readout: z.object({ label: plain(80), unit: plain(20), decimals: z.number().int().min(0).max(6) }),
+  ask: z.object({ prompt: plain(300), answer: localId }),
+});
+
+/** Put the steps in order and nest each under its parent: one root, every parent a step of the game, no cycles. */
+const OrderAndNestGameShape = z.object({
+  kind: z.literal('order-and-nest'),
+  ...GameBase,
+  steps: z.array(z.object({ id: localId, text: plain(160), parent: localId.nullable(), order: z.number().int().min(0).max(99) })).min(3).max(10),
+});
+
+const GameUnion = z.discriminatedUnion('kind', [SortGameShape, FlagGameShape, SlidersGameShape, OrderAndNestGameShape]);
+
+function refineGame(g: z.infer<typeof GameUnion>, ctx: z.RefinementCtx): void {
+  const issue = (message: string) => ctx.addIssue({ code: 'custom', message: `game ${g.id}: ${message}` });
+  const unique = (what: string, ids: string[]) => {
+    if (new Set(ids).size !== ids.length) issue(`${what} ids must be unique`);
+  };
+  switch (g.kind) {
+    case 'sort': {
+      const buckets = g.buckets.map((b) => b.id);
+      unique('bucket', buckets);
+      unique('card', g.cards.map((c) => c.id));
+      for (const c of g.cards) if (!buckets.includes(c.bucket)) issue(`card ${c.id} goes in bucket "${c.bucket}", which is not one of its buckets`);
+      break;
+    }
+    case 'flag': {
+      unique('item', g.items.map((i) => i.id));
+      if (!g.items.some((i) => i.flag)) issue('flag at least one item');
+      if (g.items.every((i) => i.flag)) issue('leave at least one item unflagged');
+      break;
+    }
+    case 'sliders': {
+      const inputs = g.inputs.map((i) => i.id);
+      unique('input', inputs);
+      for (const i of g.inputs) {
+        if (!(i.min < i.max)) issue(`input ${i.id}: min must be below max`);
+        else if (i.default < i.min || i.default > i.max) issue(`input ${i.id}: default must be between min and max`);
+      }
+      for (const f of g.formula) if (!inputs.includes(f.input)) issue(`the formula uses "${f.input}", which is not one of its inputs`);
+      if (!inputs.includes(g.ask.answer)) issue(`ask.answer "${g.ask.answer}" is not one of its inputs`);
+      break;
+    }
+    case 'order-and-nest': {
+      const ids = g.steps.map((s) => s.id);
+      unique('step', ids);
+      const roots = g.steps.filter((s) => s.parent === null);
+      if (roots.length !== 1) issue(`needs exactly one step with no parent (has ${roots.length})`);
+      const parentOf = new Map(g.steps.map((s) => [s.id, s.parent]));
+      for (const s of g.steps) {
+        if (s.parent !== null && !parentOf.has(s.parent)) issue(`step ${s.id} has parent "${s.parent}", which is not one of its steps`);
+      }
+      for (const p of new Set(g.steps.map((s) => s.parent))) {
+        const orders = g.steps.filter((s) => s.parent === p).map((s) => s.order);
+        if (new Set(orders).size !== orders.length) issue(`two steps under ${p === null ? 'the root' : `"${p}"`} have the same order`);
+      }
+      // Walking up from any step must reach the root within as many hops as there are steps.
+      for (const s of g.steps) {
+        let at: string | null | undefined = s.id;
+        let hops = 0;
+        while (at != null && hops <= g.steps.length) {
+          at = parentOf.get(at);
+          hops += 1;
+        }
+        if (hops > g.steps.length) {
+          issue(`step ${s.id} is in a cycle of parents`);
+          break;
+        }
+      }
+      break;
+    }
+  }
+}
+
+export const GameSchema = GameUnion.superRefine(refineGame);
+export type LearnGame = z.infer<typeof GameSchema>;
+
 /** Most distinct narration clips one lab may carry, and the largest one, in bytes (about 70 s of speech at 48 kbps is 400 KB). */
 export const MAX_AUDIO_CLIPS = 80;
 export const MAX_AUDIO_CLIP_BYTES = 400 * 1024;
@@ -227,15 +354,85 @@ export const LearnBundleSchema = z.object({
   questions: z.array(QuestionSchema).max(40),
   answers_file: z.string().regex(/^[A-Za-z0-9._-]+$/).default('answers.json'),
   fields: z.array(FieldSchema).max(12).default([]),
+  /**
+   * Optional closing of the lab (learn/closing.md, learn/closing.yaml, learn/closing-audio.json): a second
+   * story and comic shown after the lab, narrated like the opener. Its clips share learn/audio/.
+   */
+  closing: z.object({ story: StorySchema, comic: ComicSchema, audio: AudioSchema.optional() }).optional(),
+  /** Games played after the closing (learn/games.yaml); a lab with games has a closing and no fields. */
+  games: z.array(GameSchema).max(6).default([]),
 });
 
 export type LearnBundle = z.infer<typeof LearnBundleSchema>;
 export type LearnQuestion = z.infer<typeof QuestionSchema>;
 export type LearnConcept = z.infer<typeof ConceptSchema>;
 export type LearnField = z.infer<typeof FieldSchema>;
+export type LearnClosing = NonNullable<LearnBundle['closing']>;
 
 /** Every concept id the platform knows about (packages/catalogue/concepts.json). */
 export const KNOWN_CONCEPTS: ReadonlySet<string> = new Set(registry.concepts.map((c) => c.id));
+
+/**
+ * Whether a narration index is of exactly the words of its comic, or the voice would say something the
+ * panel does not. `label` names the two files in the messages (learn/audio.json and comic.yaml for the
+ * opener, learn/closing-audio.json and closing.yaml for the closing).
+ */
+export function checkNarration(comic: Comic, audio: LearnAudio, label: { audio: string; comic: string }): string[] {
+  const problems: string[] = [];
+  // The narration must be of exactly these words, or the voice would say something the panel does not.
+  const stale = (msg: string) => problems.push(`${label.audio} is out of date with ${label.comic} (${msg}); run \`labs narrate\` on the lab again`);
+  const have = audio.lines;
+  const clipOf = (clip: string) => audio.clips[clip];
+  if (usesVoiceover(comic)) {
+    // The voiceover contract: one clip per panel voiceover, all in the one narrator voice.
+    const want = narrationLines(comic);
+    if (have.some((l) => l.kind !== 'voiceover')) {
+      stale('it is in the old caption-and-bubble format, and the comic is now told by a voiceover');
+    } else if (want.length !== have.length) {
+      stale(`the comic has ${want.length} voiceover${want.length === 1 ? '' : 's'}, the narration ${have.length}`);
+    } else {
+      for (let i = 0; i < want.length; i++) {
+        const w = want[i]!;
+        const h = have[i]!;
+        const clip = clipOf(h.clip);
+        if (w.panel !== h.panel) {
+          stale(`voiceover ${i + 1} is not where the comic has it`);
+          break;
+        }
+        if (!clip || clip.text !== w.text || clip.voice !== w.voice) {
+          stale(`panel ${w.panel + 1}: the voiceover or the narrator\x27s voice changed`);
+          break;
+        }
+      }
+    }
+  } else {
+    // An older comic (no voiceover) keeps its older narration (caption and bubble lines) until it is rewritten.
+    const want = legacyNarrationLines(comic);
+    if (want.length !== have.length) {
+      stale(`the comic has ${want.length} spoken lines, the narration ${have.length}`);
+    } else {
+      for (let i = 0; i < want.length; i++) {
+        const w = want[i]!;
+        const h = have[i]!;
+        const clip = clipOf(h.clip);
+        if (w.panel !== h.panel || w.kind !== h.kind || (w.bubble ?? -1) !== (h.bubble ?? -1)) {
+          stale(`line ${i + 1} is not where the comic has it`);
+          break;
+        }
+        if (!clip || clip.text !== w.text || clip.voice !== w.voice) {
+          stale(`panel ${w.panel + 1}: ${w.kind === 'caption' ? 'the caption' : `bubble ${(w.bubble ?? 0) + 1}`} or its voice changed`);
+          break;
+        }
+      }
+    }
+  }
+  return problems;
+}
+
+/** Every clip the bundle's narration names, opener and closing together (they share learn/audio/). */
+export function learnAudioClips(bundle: Pick<LearnBundle, 'audio' | 'closing'>): LearnAudio['clips'] {
+  return { ...(bundle.audio?.clips ?? {}), ...(bundle.closing?.audio?.clips ?? {}) };
+}
 
 /**
  * Cross-checks a schema-valid bundle: every reference must resolve, and every
@@ -252,6 +449,7 @@ export function checkLearnBundle(
   // `::diagram[id]` lines must name a diagram in packages/catalogue/diagrams.json.
   const bodies: [string, string][] = bundle.concepts.map((c) => [`lesson "${c.id}"`, c.body]);
   if (bundle.story) bodies.push(['the story', bundle.story.body]);
+  if (bundle.closing) bodies.push(['the closing story', bundle.closing.story.body]);
   for (const [where, body] of bodies) {
     for (const ref of diagramRefs(body)) {
       if (!diagrams.has(ref)) problems.push(`${where} embeds diagram "${ref}", which is not in packages/catalogue/diagrams.json`);
@@ -282,64 +480,29 @@ export function checkLearnBundle(
   }
 
   if (bundle.audio) {
-    if (!bundle.comic) {
-      problems.push('learn/audio.json narrates the comic, but there is no comic.yaml');
-    } else {
-      // The narration must be of exactly these words, or the voice would say something the panel does not.
-      const stale = (msg: string) => problems.push(`learn/audio.json is out of date with comic.yaml (${msg}); run \`labs narrate\` on the lab again`);
-      const have = bundle.audio.lines;
-      const clipOf = (clip: string) => bundle.audio!.clips[clip];
-      if (usesVoiceover(bundle.comic)) {
-        // The voiceover contract: one clip per panel voiceover, all in the one narrator voice.
-        const want = narrationLines(bundle.comic);
-        if (have.some((l) => l.kind !== 'voiceover')) {
-          stale('it is in the old caption-and-bubble format, and the comic is now told by a voiceover');
-        } else if (want.length !== have.length) {
-          stale(`the comic has ${want.length} voiceover${want.length === 1 ? '' : 's'}, the narration ${have.length}`);
-        } else {
-          for (let i = 0; i < want.length; i++) {
-            const w = want[i]!;
-            const h = have[i]!;
-            const clip = clipOf(h.clip);
-            if (w.panel !== h.panel) {
-              stale(`voiceover ${i + 1} is not where the comic has it`);
-              break;
-            }
-            if (!clip || clip.text !== w.text || clip.voice !== w.voice) {
-              stale(`panel ${w.panel + 1}: the voiceover or the narrator\x27s voice changed`);
-              break;
-            }
-          }
-        }
-      } else {
-        // An older comic (no voiceover) keeps its older narration (caption and bubble lines) until it is rewritten.
-        const want = legacyNarrationLines(bundle.comic);
-        if (want.length !== have.length) {
-          stale(`the comic has ${want.length} spoken lines, the narration ${have.length}`);
-        } else {
-          for (let i = 0; i < want.length; i++) {
-            const w = want[i]!;
-            const h = have[i]!;
-            const clip = clipOf(h.clip);
-            if (w.panel !== h.panel || w.kind !== h.kind || (w.bubble ?? -1) !== (h.bubble ?? -1)) {
-              stale(`line ${i + 1} is not where the comic has it`);
-              break;
-            }
-            if (!clip || clip.text !== w.text || clip.voice !== w.voice) {
-              stale(`panel ${w.panel + 1}: ${w.kind === 'caption' ? 'the caption' : `bubble ${(w.bubble ?? 0) + 1}`} or its voice changed`);
-              break;
-            }
-          }
-        }
-      }
-    }
+    if (!bundle.comic) problems.push('learn/audio.json narrates the comic, but there is no comic.yaml');
+    else problems.push(...checkNarration(bundle.comic, bundle.audio, { audio: 'learn/audio.json', comic: 'comic.yaml' }));
+  }
+
+  if (bundle.closing) {
+    problems.push(...checkComic(bundle.closing.comic).map((p) => `closing: ${p}`));
+    if (bundle.closing.audio) problems.push(...checkNarration(bundle.closing.comic, bundle.closing.audio, { audio: 'learn/closing-audio.json', comic: 'closing.yaml' }));
+  }
+  const clips = new Set(Object.keys(learnAudioClips(bundle)));
+  if (clips.size > MAX_AUDIO_CLIPS) problems.push(`the opener and the closing need ${clips.size} distinct clips together; a lab may carry at most ${MAX_AUDIO_CLIPS}`);
+
+  if (bundle.games.length > 0) {
+    if (!bundle.closing) problems.push('games are played after the closing: write learn/closing.md and learn/closing.yaml too');
+    if (bundle.fields.length > 0) problems.push('a lab has either games (games.yaml) or fields (questions.yaml), not both');
+    const gameIds = bundle.games.map((g) => g.id);
+    if (new Set(gameIds).size !== gameIds.length) problems.push('two games have the same id');
   }
 
   const keys = bundle.fields.map((f) => f.key);
   if (new Set(keys).size !== keys.length) problems.push('two fields have the same answers.json key');
 
   if (bundle.concepts.length === 0 && bundle.questions.length > 0) problems.push('questions without any lesson: write at least one concepts/<id>.md');
-  if (!bundle.story && !bundle.comic && bundle.concepts.length === 0 && bundle.fields.length === 0) problems.push('the learn/ folder has no story, no lesson and no field');
+  if (!bundle.story && !bundle.comic && !bundle.closing && bundle.concepts.length === 0 && bundle.fields.length === 0) problems.push('the learn/ folder has no story, no lesson and no field');
   return problems;
 }
 
