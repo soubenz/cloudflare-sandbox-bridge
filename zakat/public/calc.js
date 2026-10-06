@@ -1,5 +1,5 @@
 // Pure zakat logic, no DOM. Rules come from the "Zakat" page in Notion:
-//  - cash, gold/silver, company cash, receivables (Godwin, Qardus/Kapitalboost,
+//  - cash, company cash, receivables (Godwin, Qardus/Kapitalboost,
 //    yielders): zakatable in full at 2.5%
 //  - stocks / equity ETFs: 40% of the value is zakatable (= 1% overall)
 //  - sukuk, property and REIT funds: not zakatable
@@ -10,7 +10,6 @@ export const STOCK_FACTOR = 0.4;
 // key, label, factor (share of the value that is zakatable), hint
 export const GROUPS = [
   { key: 'cash', label: 'Cash', factor: 1, hint: 'Bank accounts, broker cash, wallets, cash in hand, company cash.' },
-  { key: 'metals', label: 'Gold & silver', factor: 1, hint: 'Market value today.' },
   { key: 'qardus', label: 'Qardus / Kapitalboost', factor: 1, hint: 'Outstanding balance owed to you: capital + profit due.' },
   { key: 'godwin', label: 'Godwin Capital', factor: 1, hint: 'Current value of the investment.' },
   { key: 'yielders', label: 'Yielders: rental income', factor: 1, hint: 'Rental income received while the property is not yet sold.' },
@@ -20,7 +19,7 @@ export const GROUPS = [
 ];
 
 export const DEBT_KEY = 'debts';
-const CASH_LIKE = ['cash', 'metals', 'qardus', 'godwin', 'yielders', 'yielders_sale'];
+const CASH_LIKE = ['cash', 'qardus', 'godwin', 'yielders', 'yielders_sale'];
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
