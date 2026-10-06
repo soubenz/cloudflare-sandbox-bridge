@@ -1,15 +1,19 @@
 ---
-title: One slow request, no explanation
+title: The front door for every model call
 minutes: 2
 ---
-Tuesday afternoon, Priya in Support sent us a screenshot. A customer had waited so long for our assistant to reply that they'd typed "hello?" three times, each one louder than the last. Ten minutes later, Jonas in Finance replied on the same thread. He didn't care why it was slow. He wanted to know what that request cost, so he can split our bill by team. Two questions, and not one answer between us.
+Last Tuesday, a customer asked our support assistant a simple question. Then they waited. By the time the reply arrived, they'd typed "hello?" three times, and the third one was in capitals.
 
-That one request went through our gateway, out to a model, into the vector store and into a cache. Four services, four sets of logs. Tomasz spent an hour scrolling through them and came back with a coffee and a shrug: everyone says ok, nobody says slow.
+To find where that time went, you first need to know how our apps reach a model. They never call the provider, the company that runs the model, themselves. Every call goes through one front door that we run, called the AI gateway. Tomasz describes it as a hotel front desk: you ask the desk, and the desk knows who to call.
 
-And guessing won't do. If we blame the wrong part, someone spends a week speeding up the wrong thing. If we hand Finance a hunch, it ends up in a budget.
+We didn't always have one. Each team used to keep its own key for its provider, and one of those keys ended up in a chat screenshot that got eleven thumbs up. Then Support's provider went down in the middle of the night. Its name was written into their code, so moving to another provider meant Tomasz editing that code at three in the morning.
 
-Here's the good news. That request was traced from start to finish, so every step it took was written down on one timeline, with how long it ran and notes about what it did. It's already sitting in the tracing viewer, waiting. Nothing to send and nothing to fix. You see it as a waterfall: one bar per step, each step tucked under the one that called it.
+Now the keys live in the gateway and nowhere else. When a provider fails, the gateway sends the call to another one and no app has to change. It also writes down every call that goes through it, so Jonas in Finance can finally see which team spent what.
 
-So here's your part. Find the step that took the longest, not counting the request as a whole. Work out how many tokens the model calls used in total. And find exactly what the cache lookup sits under.
+Back to our customer. Their question went in through the gateway and touched three more parts. The model wrote the reply. The vector store found our help articles. The cache checked whether we'd answered something like it recently.
 
-Please don't tell me what it looks like. Read it off the trace, write the numbers down, and we'll give Priya and Jonas a proper answer.
+Each part keeps its own log. Tomasz read all four for an hour. Every line said the request went fine, and not one of them said how long the customer had been sitting there. Everyone says ok; nobody says slow.
+
+So the gateway also keeps a trace of each request. It's like a parcel tracking page: every stop on one page, with when it arrived and how long it stayed. In a trace, each stop is called a span.
+
+That customer's request has a trace waiting for you in Jaeger, our trace viewer. Find the slowest step, and add up the tokens, the bits of text the model charges for. Then find what the cache lookup sits under.

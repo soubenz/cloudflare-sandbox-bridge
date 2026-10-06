@@ -1,63 +1,80 @@
-title: One slow request, no explanation
+title: The front door for every model call
 panels:
   # Hook: a customer left waiting, in their own words.
   - scene: desk
     cast: [maren]
     bg: sand
-    caption: Tuesday afternoon.
-    voiceover: Tuesday afternoon, Priya in Support sent us a screenshot. A customer had waited so long for our assistant to reply that they'd started talking to themselves.
+    caption: Last Tuesday.
+    voiceover: Last Tuesday, a customer asked our support assistant a simple question. Then they waited. By the time the reply arrived, they'd typed hello three times, and the third one was in capitals.
     bubbles:
-      - { who: maren, text: "Oh no. Three hellos." }
+      - { who: maren, text: "Honestly, I'd have shouted too." }
     lines: ["customer: hello?", "customer: hello??", "customer: HELLO???", "assistant: typing..."]
+  # The idea: what an AI gateway is.
+  - scene: portrait
+    cast: [tomasz]
+    bg: ice
+    prop: key
+    sfx: ONE DOOR!
+    caption: The AI gateway.
+    voiceover: First, how our apps reach a model. They never call the provider, the company that runs the model, themselves. Every call goes through one front door that we run. We call it the AI gateway.
+    bubbles:
+      - { who: tomasz, text: "Like a hotel front desk. You ask the desk, and the desk knows who to call." }
+  # Why we need one: Larkfield's own history.
   - scene: message
     cast: [maren]
-    bg: lilac
-    prop: envelope
-    sfx: PING!
-    caption: From Jonas, Finance.
-    voiceover: Ten minutes later, Jonas in Finance replied on the same thread. He didn't care why it was slow. He wanted to know what it cost, per request, so he can split our bill by team.
+    bg: rose
+    prop: key
+    sfx: OOPS!
+    caption: Before the gateway.
+    voiceover: We didn't always have one. Each team used to keep its own key for its provider. One of those keys ended up in a chat screenshot, and the screenshot got eleven thumbs up.
     bubbles:
-      - { who: maren, text: "Two questions. Zero answers." }
-  # The trouble: four services, four stories, no culprit.
+      - { who: maren, text: "Eleven people liked it. Nobody read it." }
   - scene: desk
     cast: [tomasz]
-    bg: rose
-    voiceover: That one request went through our gateway, out to a model, into the vector store and into a cache. Four services, four sets of logs, and Tomasz spent an hour scrolling through them.
+    bg: navy
+    sfx: DOWN!
+    caption: Saturday, 3 a.m.
+    voiceover: Then Support's provider went down in the middle of the night. Its name was written into their code, so moving to another provider meant Tomasz editing that code at three in the morning.
     bubbles:
-      - { who: tomasz, text: "Everyone says ok. Nobody says slow." }
-    lines: ["gateway   ok", "worker    ok", "vector    ok", "cache     ok"]
-  - scene: portrait
-    cast: [maren]
-    bg: ice
-    prop: chart
-    voiceover: And guessing won't do. If we blame the wrong part, someone spends a week speeding up the wrong thing. If we hand Finance a hunch, it ends up in a budget.
-    bubbles:
-      - { who: maren, text: "We are not guessing on this one." }
-  # The turn: the request was traced, and the trace is waiting.
+      - { who: tomasz, text: "I've done good work at 3 a.m. That wasn't it." }
+    lines: ["support assistant: down", "switch provider? edit the code", "redeploy at 03:40"]
   - scene: duo
     cast: [tomasz, maren]
     bg: mint
-    voiceover: Here's the good news. That request was traced from start to finish, so every step it took was written down on one timeline, with how long it ran and notes about what it did.
+    voiceover: Now the keys live in the gateway and nowhere else. When a provider fails, the gateway sends the call to another one and no app has to change. It also writes down every call that goes through it.
     bubbles:
-      - { who: tomasz, text: "It's already in Jaeger. Six spans. Nothing to send, nothing to fix." }
-      - { who: maren, text: "Then let's read it." }
+      - { who: tomasz, text: "So Jonas can finally see which team spent what." }
+      - { who: maren, text: "He's sending far fewer shrug emojis." }
+  # Behind the door: the parts one question touches.
   - scene: screen
-    voiceover: You see it as a waterfall. One bar per step, each step tucked under the one that called it, every bar with its own clock and its own notes. Everything we need is in there.
+    caption: Behind the door.
+    voiceover: Back to our customer. Their question went in through the gateway and touched three more parts. The model wrote the reply. The vector store found our help articles. The cache checked for a recent answer.
     lines:
-      - "$ open jaeger, Find Traces"
-      - "200 1 trace, 4 services, 6 spans"
-      - "slowest, not counting the top: ?"
-      - "tokens used by model calls: ?"
-      - "cache.get sits directly under: ?"
-  # The task.
+      - "gateway       the front door"
+      - "model         writes the reply"
+      - "vector store  finds our help articles"
+      - "cache         remembers recent answers"
+  # The problem: every log says fine.
   - scene: desk
-    cast: [you]
-    bg: cobalt
-    voiceover: Here's your part. Find the step that took longest, not counting the whole request. Work out how many tokens the model calls used in total. And find what the cache lookup sits under.
+    cast: [tomasz]
+    bg: rose
+    voiceover: Each part keeps its own log. Tomasz read all four for an hour. Every line said the request went fine, and not one of them said how long the customer had been sitting there.
     bubbles:
-      - { who: you, text: "Slowest step, total tokens, one parent. Got it." }
+      - { who: tomasz, text: "Everyone says ok. Nobody says slow." }
+    lines: ["gateway   ok", "model     ok", "vector    ok", "cache     ok"]
+  # The tool: a trace, explained with parcel tracking.
+  - scene: screen
+    caption: A trace.
+    voiceover: So the gateway also keeps a trace of each request. It's like a parcel tracking page, every stop on one page with when it arrived and how long it stayed. In a trace, each stop is called a span.
+    lines:
+      - "parcel 4471"
+      - "collected          08:02"
+      - "sorting hub        09:40 to 11:15"
+      - "out for delivery   13:20"
+      - "delivered          14:03"
+  # The lab: one panel.
   - scene: you
-    bg: navy
+    bg: cobalt
     caption: Your turn.
-    voiceover: And please don't tell me what it looks like. Read it off the trace, write the numbers down, and we'll give Priya and Jonas a proper answer.
-    lines: ["open the jaeger tab", "Find Traces", "longest span: ?", "model tokens: ?", "parent of cache.get: ?", "ready."]
+    voiceover: That customer's request has a trace waiting for you in Jaeger, our trace viewer. Find the slowest step, and add up the tokens, the bits of text the model charges for. Then find what the cache lookup sits under.
+    lines: ["open the jaeger tab", "slowest step: ?", "model tokens: ?", "cache.get sits under: ?"]
