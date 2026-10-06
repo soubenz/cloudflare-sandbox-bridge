@@ -4,7 +4,7 @@ import type { SessionMeta } from '../../src/session/state';
 import type { Env } from '../../src/env';
 import { createFakeStorage } from '../fakes/fake-storage';
 import { FakeBackend } from '../fakes/fake-backend';
-import { parseManifest } from '../../src/labs/manifest';
+import { parseManifest, requireRunnable } from '../../src/labs/manifest';
 import { scheduleTimer } from '../../src/session/timers';
 import { handleAlarm, recover } from '../../src/session/lifecycle';
 
@@ -66,7 +66,7 @@ function metaIn(state: SessionMeta['state'], extra: Partial<SessionMeta> = {}): 
 }
 
 const manifest = () =>
-  parseManifest({
+  requireRunnable(parseManifest({
     slug: 'test-lab',
     version: '1.0.0',
     title: 'Test lab',
@@ -75,7 +75,7 @@ const manifest = () =>
     timeout_minutes: 120,
     services: [{ name: 'svc', argv: ['python3', '-m', 'http.server'], port: 8000 }],
     checks: [{ name: 'check-1', script: 'check.sh' }],
-  });
+  }));
 
 beforeEach(() => {
   pool.claim.mockReset();

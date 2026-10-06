@@ -4,7 +4,7 @@ import type { SessionMeta, SnapshotEntry } from '../../src/session/state';
 import type { Env } from '../../src/env';
 import { createFakeStorage } from '../fakes/fake-storage';
 import { ApiError } from '../../src/lib/errors';
-import { parseManifest } from '../../src/labs/manifest';
+import { parseManifest, requireRunnable } from '../../src/labs/manifest';
 import { scheduleTimer } from '../../src/session/timers';
 import { endSession, handleAlarm, requestResume } from '../../src/session/lifecycle';
 
@@ -58,7 +58,7 @@ function makeRuntime() {
 }
 
 function manifest() {
-  return parseManifest({
+  return requireRunnable(parseManifest({
     slug: 'test-lab',
     version: '1.0.0',
     title: 'Test lab',
@@ -67,7 +67,7 @@ function manifest() {
     timeout_minutes: 120,
     services: [{ name: 'svc', argv: ['python3', '-m', 'http.server'], port: 8000 }],
     checks: [{ name: 'check-1', script: 'check.sh' }],
-  });
+  }));
 }
 
 function metaIn(state: SessionMeta['state'], extra: Partial<SessionMeta> = {}): SessionMeta {

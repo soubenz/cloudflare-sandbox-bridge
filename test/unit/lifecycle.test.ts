@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { createFakeRuntime } from '../fakes/fake-runtime';
 import { createSession, handleAlarm } from '../../src/session/lifecycle';
-import { parseManifest } from '../../src/labs/manifest';
+import { parseManifest, requireRunnable } from '../../src/labs/manifest';
 import { verifySessionToken } from '../../src/auth';
 import { scheduleTimer } from '../../src/session/timers';
 import type { SessionMeta } from '../../src/session/state';
 
 function manifest(overrides: Record<string, unknown> = {}) {
-  return parseManifest({
+  return requireRunnable(parseManifest({
     slug: 'test-lab',
     version: '1.0.0',
     title: 'Test lab',
@@ -17,7 +17,7 @@ function manifest(overrides: Record<string, unknown> = {}) {
     services: [{ name: 'svc', argv: ['python3', '-m', 'http.server'], port: 8000 }],
     checks: [{ name: 'check-1', script: 'check.sh' }],
     ...overrides,
-  });
+  }));
 }
 
 describe('createSession', () => {

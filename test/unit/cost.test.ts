@@ -5,7 +5,7 @@ import type { Env } from '../../src/env';
 import { createFakeStorage } from '../fakes/fake-storage';
 import { tickMetrics } from '../../src/session/metrics';
 import { FakeBackend } from '../fakes/fake-backend';
-import { parseManifest } from '../../src/labs/manifest';
+import { parseManifest, requireRunnable } from '../../src/labs/manifest';
 
 // do/session.ts extends DurableObject from the `cloudflare:workers` virtual
 // module, which plain Node cannot resolve. Alias it to a bare class so
@@ -123,7 +123,7 @@ describe('cost accounting (B-11)', () => {
     const now = Date.now();
     await rt.putMeta(metaIn({ started_at: now - 30_000, sandbox_id: 'old' }));
     await rt.putManifest(
-      parseManifest({
+      requireRunnable(parseManifest({
         slug: 'test-lab',
         version: '1.0.0',
         title: 'Test lab',
@@ -132,7 +132,7 @@ describe('cost accounting (B-11)', () => {
         timeout_minutes: 120,
         services: [{ name: 'svc', argv: ['python3', '-m', 'http.server'], port: 8000 }],
         checks: [{ name: 'check-1', script: 'check.sh' }],
-      })
+      }))
     );
     await rt.putSnapshots([{ backup_id: 'bk', dir: '/workspace', ttl: 3600, created_at: now, reason: 'user' }]);
     await rt.putCost({ running_s: 600, usd: 0.5, llm_usd: 0, accounted_until: now - 30_000 });

@@ -292,6 +292,9 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     type StartBody = { lab?: string; user_id?: string; bypass_tier?: boolean };
     const body = await c.req.json<StartBody>().catch((): StartBody => ({}));
     if (!body.lab || !body.user_id) throw ApiError.badRequest('missing_fields', 'lab and user_id are required');
+    // Before any rejoin or cancel: a warm-up is refused outright, and must not
+    // cost the user a prepared session for another lab.
+    requireRunnable((await loadCurrentManifest(c.env, body.lab)).manifest);
 
     // A row whose DO has ended (or never existed) is not a session to rejoin:
     // close it and start fresh rather than mint a token for nothing.

@@ -3,7 +3,7 @@ import { SessionRuntime } from '../../src/session/state';
 import type { SessionMeta } from '../../src/session/state';
 import type { Env } from '../../src/env';
 import { createFakeStorage } from '../fakes/fake-storage';
-import { parseManifest } from '../../src/labs/manifest';
+import { parseManifest, requireRunnable } from '../../src/labs/manifest';
 import { scheduleTimer } from '../../src/session/timers';
 import { FakeBackend, FakeProcess } from '../fakes/fake-backend';
 import {
@@ -97,13 +97,13 @@ const meta = (): SessionMeta => ({
 });
 
 const manifestWith = (hints: Array<{ after_minutes: number; text: string }>) =>
-  parseManifest({
+  requireRunnable(parseManifest({
     slug: 'lab-a', version: '1.0.0', title: 'Lab A', type: 'build', family: 'agent', timeout_minutes: 90, idle_minutes: 15,
     objectives: ['do the thing'],
     services: [{ name: 'api', argv: ['python3', 'app.py'], port: 8000 }],
     checks: [{ name: 'c1', script: 'c1.sh' }, { name: 'c2', script: 'c2.sh' }],
     hints,
-  });
+  }));
 
 interface World {
   storage: ReturnType<typeof createFakeStorage>;

@@ -3,7 +3,7 @@ import { SessionRuntime, CHECKS_HISTORY_CAP } from '../../src/session/state';
 import type { SessionMeta } from '../../src/session/state';
 import type { Env } from '../../src/env';
 import { createFakeStorage } from '../fakes/fake-storage';
-import { parseManifest } from '../../src/labs/manifest';
+import { parseManifest, requireRunnable } from '../../src/labs/manifest';
 import { scheduleTimer } from '../../src/session/timers';
 import { FakeBackend, FakeProcess } from '../fakes/fake-backend';
 
@@ -45,7 +45,7 @@ const meta = (extra: Partial<SessionMeta> = {}): SessionMeta => ({
 });
 
 const manifest = () =>
-  parseManifest({
+  requireRunnable(parseManifest({
     slug: 'lab-a', version: '1.0.0', title: 'Lab A', type: 'build', family: 'agent', timeout_minutes: 90, idle_minutes: 15,
     objectives: ['do the thing'],
     services: [
@@ -55,7 +55,7 @@ const manifest = () =>
     checks: [{ name: 'c1', script: 'c1.sh', weight: 3 }, { name: 'c2', script: 'c2.sh' }],
     pressure: [{ id: 'p1', at_minutes: 10, argv: ['true'], title: 'T', message: 'M' }, { id: 'p2', at_minutes: 20, argv: ['true'], title: 'T', message: 'M' }],
     hints: [{ after_minutes: 5, text: 'first' }, { after_minutes: 15, text: 'second' }],
-  });
+  }));
 
 async function statusOf(rt: SessionRuntime) {
   const { Session } = await import('../../src/do/session');

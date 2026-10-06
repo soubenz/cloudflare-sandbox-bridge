@@ -117,7 +117,7 @@ export async function currentVersion(env: Env, slug: string): Promise<string> {
  * Checks the clips a publish uploaded against the bundle's narration index and returns them
  * by file name. Throws `400 invalid_audio` unless: every name is `<16 hex>.mp3`, no name repeats,
  * there are at most MAX_AUDIO_CLIPS, each is at most MAX_AUDIO_CLIP_BYTES, starts like an MP3 and is as
- * long as the index says, and the uploaded set is exactly the set the bundle's `audio.clips` names.
+ * long as the index says, and the uploaded set is exactly the set the opener's and the closing's `audio.clips` name.
  */
 export function checkAudioUpload(learn: LearnBundle | undefined, clips: readonly { name: string; bytes: ArrayBuffer }[]): void {
   const bad = (message: string): never => {

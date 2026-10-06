@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { parseManifest, renderTemplate, renderManifest, labManifestSchema } from '../../src/labs/manifest';
+import { parseManifest, renderTemplate, renderManifest, labManifestSchema, requireRunnable, isWarmUp } from '../../src/labs/manifest';
 import { topoOrder } from '../../src/session/services';
 
 function baseManifest(overrides: Record<string, unknown> = {}) {
@@ -40,7 +40,7 @@ describe('parseManifest', () => {
     }));
     expect(m.services[0]!.label).toBe('Live view');
     const { summarizeManifest } = await import('../../src/session/state');
-    expect(summarizeManifest(m).services[0]).toMatchObject({ name: 'view', label: 'Live view', about: 'Shows the calls.' });
+    expect(summarizeManifest(requireRunnable(m)).services[0]).toMatchObject({ name: 'view', label: 'Live view', about: 'Shows the calls.' });
     expect(() => parseManifest(baseManifest({ services: [{ name: 'a', argv: ['x'], label: 'x'.repeat(31) }] }))).toThrow();
   });
 
@@ -109,6 +109,69 @@ describe('labManifestSchema safeParse', () => {
   it('flags multiple errors at once', () => {
     const result = labManifestSchema.safeParse(baseManifest({ slug: '', checks: [] }));
     expect(result.success).toBe(false);
+  });
+});
+
+describe('type: warm-up', () => {
+  function warmUp(overrides: Record<string, unknown> = {}) {
+    return {
+      slug: 'first-steps',
+      version: '1.0.0',
+      title: 'First steps',
+      type: 'warm-up',
+      tier: 'free',
+      difficulty: 'intro',
+      estimated_minutes: 10,
+      ...overrides,
+    };
+  }
+
+  it('is accepted without family, timeout_minutes, services or checks', () => {
+    const m = parseManifest(warmUp());
+    expect(isWarmUp(m)).toBe(true);
+    expect(m.family).toBeUndefined();
+    expect(m.timeout_minutes).toBeUndefined();
+    expect(m.services).toEqual([]);
+    expect(m.checks).toEqual([]);
+  });
+
+  it('is rejected with a service, a check, pressure or hints', () => {
+    expect(() => parseManifest(warmUp({ services: [{ name: 'svc', argv: ['x'] }] }))).toThrow(/services: a warm-up has no container/);
+    expect(() => parseManifest(warmUp({ checks: [{ name: 'c', script: 'c.sh' }] }))).toThrow(/checks/);
+    expect(() => parseManifest(warmUp({ pressure: [{ id: 'p', at_minutes: 1, argv: ['x'], title: 'T', message: 'M' }] }))).toThrow(/pressure/);
+    expect(() => parseManifest(warmUp({ hints: [{ after_minutes: 1, text: 'h' }] }))).toThrow(/hints/);
+  });
+
+  it('is rejected on the pro tier (including by default) or above intro', () => {
+    expect(() => parseManifest(warmUp({ tier: 'pro' }))).toThrow(/tier: a warm-up must be tier: free/);
+    expect(() => parseManifest(warmUp({ tier: undefined }))).toThrow(/tier/);
+    expect(() => parseManifest(warmUp({ difficulty: 'core' }))).toThrow(/difficulty/);
+  });
+
+  it('is rejected without estimated_minutes', () => {
+    expect(() => parseManifest(warmUp({ estimated_minutes: undefined }))).toThrow(/estimated_minutes/);
+  });
+
+  it('cannot start a session: requireRunnable is 400 not_startable', () => {
+    expect(() => requireRunnable(parseManifest(warmUp()))).toThrow(expect.objectContaining({ status: 400, code: 'not_startable' }));
+  });
+});
+
+describe('a runnable lab still needs what a container needs', () => {
+  it('rejects a build lab with no services or no checks, as the old min(1) did', () => {
+    expect(() => parseManifest(baseManifest({ services: [] }))).toThrow(/services: Array must contain at least 1 element/);
+    expect(() => parseManifest(baseManifest({ services: undefined }))).toThrow(/services/);
+    expect(() => parseManifest(baseManifest({ checks: [] }))).toThrow(/checks: Array must contain at least 1 element/);
+  });
+
+  it('rejects a build lab without family or timeout_minutes', () => {
+    expect(() => parseManifest(baseManifest({ family: undefined }))).toThrow(/family: Required/);
+    expect(() => parseManifest(baseManifest({ timeout_minutes: undefined }))).toThrow(/timeout_minutes: Required/);
+  });
+
+  it('passes requireRunnable unchanged', () => {
+    const m = parseManifest(baseManifest());
+    expect(requireRunnable(m)).toBe(m);
   });
 });
 
