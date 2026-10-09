@@ -39,7 +39,7 @@ export interface FixtureBundle {
   questions: unknown[];
   answers_file: string;
   fields: Array<{ key: string; prompt: string; kind: string; choices?: string[]; help?: string }>;
-  /** A warm-up's closing story (its comic is required) and its games (played after the lessons). */
+  /** A warm-up's closing story (its comic is required), read after the lessons, and its games, played after the closing. */
   closing?: { story: { title: string; minutes: number; body: string }; comic: FixtureComic; audio?: FixtureAudio };
   games?: FixtureGame[];
 }

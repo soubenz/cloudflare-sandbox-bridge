@@ -425,43 +425,46 @@ describe('shouldPrefetch', () => {
   });
 });
 
-describe('a warm-up: the lab\'s flow, then its games and its closing story', () => {
+describe('a warm-up: the lab\'s flow, then its closing story, then its games', () => {
   const games = [{ id: 'sort-calls', title: 'Who pays?' }, { id: 'flag-logs', title: 'Spot the leak' }, { id: 'cost', title: 'What a day costs' }];
   const warm = (over: Partial<WarmLearn> = {}): WarmLearn => ({ ...lab([3, 3, 3, 3, 3]), games, closing: { story: { title: 'Friday at Larkfield' } }, ...over });
 
-  it('plans story, rounds and lessons as any lab, then one step per game in order, then the closing', () => {
+  it('plans story, rounds and lessons as any lab, then the closing, then one step per game in order', () => {
     const learn = warm();
     const steps = f.planWarmUpFlow(learn, NONE);
     const own = f.planLearningFlow(learn, NONE);
     expect(steps.slice(0, own.length)).toEqual(own);
-    expect(steps.slice(own.length)).toEqual([{ kind: 'game', game: 'sort-calls' }, { kind: 'game', game: 'flag-logs' }, { kind: 'game', game: 'cost' }, { kind: 'story', closing: true }]);
-    expect(steps.map((s) => s.kind)).toEqual(['story', 'round', 'lessons', 'round', 'lessons', 'round', 'game', 'game', 'game', 'story']);
-    // No closing: the games are the end. No games either: the lab's own flow.
-    expect(f.planWarmUpFlow(warm({ closing: undefined }), NONE).at(-1)).toEqual({ kind: 'game', game: 'cost' });
+    expect(steps.slice(own.length)).toEqual([{ kind: 'story', closing: true }, { kind: 'game', game: 'sort-calls' }, { kind: 'game', game: 'flag-logs' }, { kind: 'game', game: 'cost' }]);
+    expect(steps.map((s) => s.kind)).toEqual(['story', 'round', 'lessons', 'round', 'lessons', 'round', 'story', 'game', 'game', 'game']);
+    // No closing: the games follow the lessons. No games: the closing is the end. Neither: the lab's own flow.
+    expect(f.planWarmUpFlow(warm({ closing: undefined }), NONE).slice(own.length)).toEqual(games.map((g) => ({ kind: 'game', game: g.id })));
+    expect(f.planWarmUpFlow(warm({ games: [] }), NONE).at(-1)).toEqual({ kind: 'story', closing: true });
     expect(f.planWarmUpFlow(warm({ closing: undefined, games: [] }), NONE)).toEqual(own);
-    // Nothing but the games and the closing.
-    expect(f.planWarmUpFlow({ concepts: [], questions: [], games, closing: { story: { title: 'x' } } }, NONE).map((s) => s.kind)).toEqual(['game', 'game', 'game', 'story']);
+    // Nothing but the closing and the games.
+    expect(f.planWarmUpFlow({ concepts: [], questions: [], games, closing: { story: { title: 'x' } } }, NONE).map((s) => s.kind)).toEqual(['story', 'game', 'game', 'game']);
   });
 
-  it('names the game and closing steps, and their addresses: /games, /games?step=N, /closing', () => {
+  it('names the closing and game steps, and their addresses: /closing, /games, /games?step=N', () => {
     const learn = warm();
     const steps = f.planWarmUpFlow(learn, NONE);
+    const closing = steps.findIndex((s) => s.kind === 'story' && 'closing' in s);
     const first = steps.findIndex((s) => s.kind === 'game');
-    const closing = steps.length - 1;
+    expect(first).toBe(closing + 1);
+    expect(first).toBe(steps.length - games.length);
     expect(f.stepLabel(steps[first]!, learn)).toBe('Who pays?');
     expect(f.stepLabel(steps[closing]!, learn)).toBe('Friday at Larkfield');
     expect(f.stepLabel(steps[0]!, learn)).toBe('The story');
     expect(f.stepLabel({ kind: 'story', closing: true }, { ...learn, closing: { comic: { title: 'The comic' } } })).toBe('The comic');
-    expect(steps.slice(first).map((s) => f.stepKindWord(s))).toEqual(['games', 'games', 'games', 'closing']);
+    expect(steps.slice(closing).map((s) => f.stepKindWord(s))).toEqual(['closing', 'games', 'games', 'games']);
     expect(f.stepKindWord(steps[0]!)).toBe('story');
-    expect(f.stepIndexFor(steps, 'games')).toBe(first);
     expect(f.stepIndexFor(steps, 'closing')).toBe(closing);
+    expect(f.stepIndexFor(steps, 'games')).toBe(first);
     expect(f.stepIndexFor(steps, 'story')).toBe(0);
     expect(f.stepIndexFor(steps, 'games', first + 2)).toBe(first + 1);
-    // The first game and the closing need no number; a later game does. Each number leads back to its own step.
-    expect(steps.slice(first).map((_, i) => f.stepNumberFor(steps, first + i))).toEqual([null, first + 2, first + 3, null]);
+    // The closing and the first game need no number; a later game does. Each number leads back to its own step.
+    expect(steps.slice(closing).map((_, i) => f.stepNumberFor(steps, closing + i))).toEqual([null, null, first + 2, first + 3]);
     steps.forEach((s, i) => expect(f.stepIndexFor(steps, f.stepKindWord(s), f.stepNumberFor(steps, i) ?? undefined)).toBe(i));
-    // A warm-up with no games: /games falls to the closing, and /closing with no closing to the games.
+    // A warm-up with no games: /games falls to the closing, and /closing with no closing to the first game.
     const noGames = f.planWarmUpFlow(warm({ games: [] }), NONE);
     expect(f.stepIndexFor(noGames, 'games')).toBe(noGames.length - 1);
     const noClosing = f.planWarmUpFlow(warm({ closing: undefined }), NONE);
@@ -479,7 +482,7 @@ describe('a warm-up: the lab\'s flow, then its games and its closing story', () 
     const restored = f.restoreSteps(fewer, saved)!;
     expect(restored).toEqual(steps.filter((s) => !(s.kind === 'game' && s.game === 'flag-logs')));
     expect(restored.filter((s) => s.kind === 'game').map((s) => (s as { game: string }).game)).toEqual(['sort-calls', 'cost']);
-    expect(f.restoreSteps({ ...learn, closing: undefined }, saved)!.at(-1)).toEqual({ kind: 'game', game: 'cost' });
+    expect(f.restoreSteps({ ...learn, closing: undefined }, saved)).toEqual(steps.filter((s) => !(s.kind === 'story' && 'closing' in s)));
     // Only lost games: nothing to restore, a fresh plan is made.
     expect(f.restoreSteps({ concepts: [], questions: [], games: [] }, [{ kind: 'game', game: 'gone' }])).toBeNull();
     // A question that is gone still refuses the whole plan, as for any lab.

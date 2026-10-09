@@ -2064,9 +2064,9 @@ function hasLearnScreen(lab, entry) {
 }
 
 /**
- * Open on a warm-up: a lab with no container, only its learn bundle (story, questions, lessons, games, the
- * closing story). Nothing runs, so there is no desktop check, no running session to rejoin, and it is shown
- * every time it is opened (Open again included): the flow ends with "Finish the warm-up" (finishWarmUp).
+ * Open on a warm-up: a lab with no container, only its learn bundle (story, questions, lessons, the closing
+ * story, then the games). Nothing runs, so there is no desktop check, no running session to rejoin, and it is
+ * shown every time it is opened (Open again included): the last game's "Finish the warm-up" ends it (finishWarmUp).
  */
 async function openWarmUp(lab, card) {
   const entry = await loadLearnFor(lab, card);

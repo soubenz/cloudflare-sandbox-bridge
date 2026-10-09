@@ -15,8 +15,8 @@
  *                                      the steps before the lab starts: N is the step's place in the
  *                                      flow (story, round 1, lessons, round 2 ...); without it, the first
  *                                      step of that kind
- *   /labs/<slug>/games[?step=N]        a warm-up's games (without N, the first) and its closing story,
- *   /labs/<slug>/closing               after its lessons
+ *   /labs/<slug>/closing               a warm-up's closing story, after its lessons, then
+ *   /labs/<slug>/games[?step=N]        its games (without N, the first)
  *   /labs/<slug>/session               (old form) starts the lab, or rejoins it when it is running; the
  *                                      address becomes the new form once the session's id is known
  *   /labs/<slug>/session/brief|questions|hints|checks|solution
@@ -45,8 +45,8 @@ const MODULE_NUMBER = /^[1-9][0-9]{0,2}$/;
 /** A user id or a session id as an address carries one: opaque, so letters, numerals, `_` and `-` only. */
 export const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
-/** The steps before a lab starts, in the order the flow shows them; a warm-up goes on to its games and its closing story. */
-export const LAB_STEPS = ['story', 'questions', 'lessons', 'games', 'closing'];
+/** The steps before a lab starts, in the order the flow shows them; a warm-up goes on to its closing story and its games. */
+export const LAB_STEPS = ['story', 'questions', 'lessons', 'closing', 'games'];
 /** The guide's tabs, as they are spelled in a URL. */
 export const GUIDE_TAB_NAMES = ['brief', 'questions', 'hints', 'checks', 'solution'];
 /** The workspace window's tabs without a name of their own (a service's is `service/<name>`). */

@@ -9,14 +9,16 @@ import { GAMES, warmUpBundleOf } from './comic-fixture';
 /**
  * A warm-up: a lab with no container, only its learn bundle.
  *
- *   Open  ->  story  ->  questions  ->  lessons  ->  one game a step  ->  the closing story  ->  Finish the warm-up
+ *   Open  ->  story  ->  questions  ->  lessons  ->  the closing story  ->  one game a step  ->  Finish the warm-up
+ *
+ * The closing comes before the games: it explains what they test.
  *
  * What is pinned here:
  *   - its card says Open (not Start) and carries the "Start here" chip;
  *   - Open runs the whole flow, whatever the screen size and whether it was seen before: there is no
  *     "Skip all", nothing is prepared and no session is started;
- *   - a game's Continue comes on once it is solved, the addresses are /games (?step=N for a later one) and
- *     /closing, and a refresh keeps the games already solved;
+ *   - a game's Continue (the last game's "Finish the warm-up") comes on once it is solved, the addresses are
+ *     /closing and /games (?step=N for a later game), and a refresh keeps the games already solved;
  *   - "Finish the warm-up" POSTs /api/warmups/<slug>/complete once, with every game and its tries, then lands on
  *     the lab's page, which says Done, with "Warm-up done. Next: <title>"; a failed POST keeps the learner on the
  *     last step to try again.
@@ -200,7 +202,7 @@ async function solve(page: Page, game: (typeof GAMES)[number]) {
   await expect(host(page).locator('.game-status')).toContainText('Solved');
 }
 
-/** From the card's Open to the first game, through the story, the question and the lessons. */
+/** From the card's Open to the first game, through the story, the question, the lessons and the closing story. */
 async function toTheGames(page: Page) {
   await card(page).locator('.lab-start').click();
   await expect(heading(page)).toHaveText(BUNDLE.story!.title);
@@ -220,6 +222,14 @@ async function toTheGames(page: Page) {
   await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/lessons$`));
   await expect(page.locator('#btnNextStep')).toHaveText('Continue');
   await page.locator('#btnNextStep').click();
+
+  // The closing story, after the lessons and before the games: Continue, and its Back goes to the lessons.
+  await expect(heading(page)).toHaveText(BUNDLE.closing!.story.title);
+  await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/closing$`));
+  await expect(page.locator('#btnBackLessons')).toBeVisible();
+  await expect(page.locator('#btnSkipAll')).toHaveCount(0);
+  await expect(page.locator('#btnStoryNext')).toHaveText('Continue');
+  await page.locator('#btnStoryNext').click();
 }
 
 // ---------------------------------------------------------------------- tests
@@ -238,29 +248,28 @@ test.describe('a warm-up', () => {
     await expect(card(page).locator('.chip-type')).toHaveText('Warm-up');
   });
 
-  test('runs story, questions, lessons, every game and the closing story, and Finish records it once and lands on Done', async ({ page }) => {
+  test('runs story, questions, lessons, the closing story and every game, and Finish records it once and lands on Done', async ({ page }) => {
     const s = await stub(page);
     await open(page);
     await toTheGames(page);
 
-    // One game a step: /games for the first, ?step=N for the others (story 1, round 2, lessons 3, games 4 to 7).
+    // One game a step: /games for the first, ?step=N for the others (story 1, round 2, lessons 3, closing 4, games 5 to 8).
+    // The first game's Back goes to the closing story; the last game's button finishes the warm-up.
     for (const [k, game] of GAMES.entries()) {
+      const last = k === GAMES.length - 1;
       await expect(heading(page)).toHaveText(`Game ${k + 1} of ${GAMES.length}`);
-      await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/games${k === 0 ? '' : `\\?step=${4 + k}`}$`));
+      await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/games${k === 0 ? '' : `\\?step=${5 + k}`}$`));
+      if (k === 0) await expect(page.locator('#btnBackClosing')).toHaveText('← Back to the closing story');
+      else await expect(page.locator('#btnBackGame')).toBeVisible();
       await expect(gameNext(page)).toBeDisabled();
-      await expect(gameNext(page)).toHaveText('Continue');
+      await expect(gameNext(page)).toHaveText(last ? 'Finish the warm-up' : 'Continue');
+      await expect(page.locator('#btnSkipAll')).toHaveCount(0);
       await solve(page, game);
       await expect(gameNext(page)).toBeEnabled();
-      await gameNext(page).click();
+      if (!last) await gameNext(page).click();
     }
-
-    // The closing story, last: its button finishes the warm-up.
-    await expect(heading(page)).toHaveText(BUNDLE.closing!.story.title);
-    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/closing$`));
-    const finish = page.locator('#btnStoryNext');
-    await expect(finish).toHaveText('Finish the warm-up');
-    await expect(page.locator('#btnSkipAll')).toHaveCount(0);
-    await finish.click();
+    expect(s.completes).toHaveLength(0);
+    await gameNext(page).click();
 
     // The lab's page, which now says Done, and the next lab named.
     await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
@@ -296,11 +305,12 @@ test.describe('a warm-up', () => {
       await solve(page, game);
       await gameNext(page).click();
     }
-    const finish = page.locator('#btnStoryNext');
-    await finish.click();
+    // The last game's button was the Finish: the POST failed, and the learner is still on the last game.
+    const finish = gameNext(page);
     await expect(page.locator('#toast')).toHaveAttribute('data-tone', 'bad');
     await expect(page.locator('#toastText')).toContainText('Could not finish the warm-up');
-    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/closing$`));
+    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/games\\?step=${4 + GAMES.length}$`));
+    await expect(heading(page)).toHaveText(`Game ${GAMES.length} of ${GAMES.length}`);
     await expect(finish).toBeEnabled();
     await expect(finish).toHaveText('Finish the warm-up');
     expect(s.completes).toHaveLength(1);
