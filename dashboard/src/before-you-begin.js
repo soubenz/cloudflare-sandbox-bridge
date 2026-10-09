@@ -25,8 +25,9 @@
 
 import { answersBody, readingTime, recordDiagnostic, isDiagnostic } from './learn-model.js';
 import { buildLessons, planSummary } from './learn-lessons.js';
-import { createFlowStore, planLearningFlow, questionHeading, restoreSteps, shouldPrefetch, stepIndexFor, stepKindWord, stepLabel, stepNumberFor } from './learn-flow.js';
+import { createFlowStore, planLearningFlow, planWarmUpFlow, questionHeading, restoreSteps, shouldPrefetch, stepIndexFor, stepKindWord, stepLabel, stepNumberFor } from './learn-flow.js';
 import { actionBar, button, focusHeading, make, questionScreen, screenHead, show, storyContent } from './learn-ui.js';
+import { mountGame } from './games.js';
 import { uiIcon } from './icons.js';
 
 /**
@@ -53,20 +54,43 @@ import { uiIcon } from './icons.js';
  *                  the same, only slower. Nothing about it is shown.
  *   cancelPrepare  ({beacon}) => void, drops the warm lab when the visit ends without Start (Back to labs, a
  *                  route change, the page closing with `beacon: true`). Not called once Start was pressed.
+ *   warmUp   true for a lab of type warm-up, which has nothing to start: the flow (planWarmUpFlow) goes on past
+ *            the lessons to the games, one a step, and the closing story; the last step's button is "Finish the
+ *            warm-up"; there is no "Skip all", nothing is prepared, and the mastery record's `labs[slug].intro` is
+ *            never written. A game's Continue comes on once it is solved, and what was solved ({ id, tries }) is
+ *            kept with the visit, so a refresh keeps it.
+ *   onFinish (games, { started_at }) => Promise, the warm-up's last button: `games` is [{ id, solved: true, tries }]
+ *            in the flow's order, `started_at` when the warm-up was opened (ms). Resolves true when it is recorded;
+ *            false, or a throw, leaves the learner on the last step to try again.
  * Returns { steps, goto(kind, n), destroy }: goto shows a step the way `initial` and `step` do (the browser's Back and Forward).
  */
-export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBack, initial, step: initialStep, onStep, resume = false, flowStore, prepare, cancelPrepare }) {
+export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBack, initial, step: initialStep, onStep, resume = false, flowStore, prepare: prepareLab, cancelPrepare, warmUp = false, onFinish }) {
   const learn = entry.learn;
   const flow = flowStore ?? createFlowStore({ slug: lab.slug, version: entry.version });
   const questionById = new Map(learn.questions.map((q) => [q.id, q]));
+  const gameById = new Map((learn.games || []).map((g) => [g.id, g]));
+  // A warm-up has no container to warm.
+  const prepare = warmUp ? undefined : prepareLab;
 
   // The plan is fixed now so the dots do not change length part-way: a refresh picks up the saved one.
   const saved = resume ? flow.load() : null;
   const restored = saved ? restoreSteps(learn, saved.steps) : null;
-  const steps = restored ?? planLearningFlow(learn, store.get());
+  const steps = restored ?? (warmUp ? planWarmUpFlow : planLearningFlow)(learn, store.get());
   const answers = new Map(restored ? Object.entries(saved.answers).filter(([id]) => questionById.has(id)) : []);
-  const persist = () => flow.save(steps, Object.fromEntries(answers));
+  // The games solved so far (a warm-up's), { id, tries } by game id, and when the warm-up was opened.
+  const solvedGames = new Map(
+    restored && warmUp
+      ? Object.entries(saved.games ?? {})
+          .filter(([id, r]) => gameById.has(id) && r && Number.isInteger(r.tries) && r.tries >= 1)
+          .map(([id, r]) => [id, { id, tries: r.tries }])
+      : []
+  );
+  const startedAt = warmUp ? ((restored && saved.started_at) || Date.now()) : 0;
+  const persist = () => flow.save(steps, Object.fromEntries(answers), warmUp ? { games: Object.fromEntries(solvedGames), started_at: startedAt } : undefined);
   persist();
+  /** The words on the last step's button. */
+  const lastLabel = warmUp ? 'Finish the warm-up' : 'Start the lab';
+  const gameSteps = steps.filter((s) => s.kind === 'game');
 
   const kinds = steps.map((s) => s.kind);
   const dots = (i) => ({ current: i + 1, kinds });
@@ -74,6 +98,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
   let index = 0;
   let lessons = null;
   let prose = null;
+  let game = null;
   let starting = false;
   let gone = false;
   // The warm lab: asked for once per visit, and kept only until Start is pressed (the API then hands it over).
@@ -114,7 +139,9 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     lessons = null;
     prose?.destroy();
     prose = null;
-    host.classList.remove('learn-wrap-comic', 'learn-wrap-lessons', 'learn-wrap-round');
+    game?.destroy();
+    game = null;
+    host.classList.remove('learn-wrap-comic', 'learn-wrap-lessons', 'learn-wrap-round', 'learn-wrap-game');
   };
 
   async function start({ remember = true } = {}) {
@@ -151,7 +178,47 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     }
   }
 
-  const skipAll = () => button('Skip all, just start the lab', { kind: 'quiet', onClick: () => start({ remember: false }), id: 'btnSkipAll' });
+  /**
+   * The warm-up's last button: every game must have been solved (a link can land past one, which is then
+   * shown instead), and `onFinish` records it. Until it has, the step stays as it is, its buttons back on.
+   */
+  async function finish() {
+    if (starting || gone) return;
+    const unsolved = steps.findIndex((s) => s.kind === 'game' && !solvedGames.has(s.game));
+    if (unsolved >= 0) return enterStep(unsolved, 'forward');
+    starting = true;
+    // Only the buttons that are on now come back on: a solved game keeps its own off.
+    const buttons = [...host.querySelectorAll('button')].filter((b) => !b.disabled);
+    buttons.forEach((b) => (b.disabled = true));
+    const primary = host.querySelector('[data-start="primary"]');
+    const original = primary ? [...primary.childNodes].map((n) => n.cloneNode(true)) : [];
+    if (primary) {
+      primary.textContent = 'Finishing…';
+      primary.setAttribute('aria-busy', 'true');
+    }
+    let done = false;
+    try {
+      const games = gameSteps.map((s) => solvedGames.get(s.game)).map((r) => ({ id: r.id, solved: true, tries: r.tries }));
+      done = (await onFinish?.(games, { started_at: startedAt })) === true;
+    } catch {
+      done = false;
+    } finally {
+      starting = false;
+      if (!done && !gone && host.isConnected) {
+        buttons.forEach((b) => (b.disabled = false));
+        if (primary) {
+          primary.replaceChildren(...original);
+          primary.removeAttribute('aria-busy');
+        }
+      }
+    }
+  }
+
+  /** What the last step's button does: start the lab, or finish the warm-up. */
+  const primaryAction = () => (warmUp ? finish() : start());
+
+  // A warm-up has nothing to start, so nothing to skip to.
+  const skipAll = () => (warmUp ? null : button('Skip all, just start the lab', { kind: 'quiet', onClick: () => start({ remember: false }), id: 'btnSkipAll' }));
   const backToLabs = () =>
     button('← Back to labs', {
       kind: 'quiet',
@@ -163,7 +230,9 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       },
       id: 'btnBeforeBack',
     });
-  const eyebrow = () => `Before you begin · ${lab.title || lab.slug}`;
+  const eyebrow = () => `${warmUp ? 'Warm-up' : 'Before you begin'} · ${lab.title || lab.slug}`;
+  /** The buttons of an action bar, leaving out the ones a step does not have (null). */
+  const bar = (items, opts) => actionBar(items.filter(Boolean), opts);
 
   /** The button back to step `i - 1`, named for what is there; null on the first step. */
   const backStep = () => {
@@ -172,6 +241,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     const to = index - 1;
     if (prev.kind === 'story') return button('← Back to the story', { kind: 'quiet', onClick: () => enterStep(to, 'back'), id: 'btnBackStory' });
     if (prev.kind === 'round') return button('← Back to the questions', { kind: 'quiet', onClick: () => enterStep(to, 'back'), id: 'btnBackQuestions' });
+    if (prev.kind === 'game') return button('← Back to the game', { kind: 'quiet', onClick: () => enterStep(to, 'back'), id: 'btnBackGame' });
     return button('← Back to the lessons', { kind: 'quiet', onClick: () => enterStep(to, 'back'), id: 'btnBackLessons' });
   };
 
@@ -186,17 +256,20 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
 
   function story(i) {
     cleanup();
-    const s = learn.story ?? { title: learn.comic.title, minutes: 0 };
+    // The closing story of a warm-up has the opener's shape: its own story, comic and narration.
+    const closing = steps[i].closing === true;
+    const telling = closing ? learn.closing : learn;
+    const s = telling.story ?? { title: telling.comic.title, minutes: 0 };
     const more = i + 1 < steps.length;
     // The motion comic when the lab has one, with the text story folded under it; the text alone otherwise.
-    prose = storyContent(learn, { headingLevel: 2 });
+    prose = storyContent(telling, { headingLevel: 2 });
     const body = prose.node;
     host.classList.toggle('learn-wrap-comic', prose.hasComic);
     // Whether the comic has ended, was skipped or never played, Continue is how the learner moves on:
     // the story is not taken away from them (nor from a learner who asked for reduced motion, for whom it starts finished).
-    const next = button(more ? 'Continue' : 'Start the lab', {
+    const next = button(more ? 'Continue' : lastLabel, {
       kind: 'accent',
-      onClick: more ? () => enterStep(i + 1, 'forward') : start,
+      onClick: more ? () => enterStep(i + 1, 'forward') : primaryAction,
       id: 'btnStoryNext',
     });
     next.classList.add('btn-lg');
@@ -204,9 +277,9 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     if (!more) next.dataset.start = 'primary';
     show(
       host,
-      screenHead({ eyebrow: eyebrow(), title: s.title, meta: readingTime(s.minutes), badge: 'Case file', steps: dots(i) }),
+      screenHead({ eyebrow: eyebrow(), title: s.title, meta: readingTime(s.minutes), badge: closing ? 'Case closed' : 'Case file', steps: dots(i) }),
       body,
-      actionBar([next, skipAll(), backToLabs()])
+      bar([next, skipAll(), ...(closing ? [backStep()] : []), backToLabs()])
     );
     arrived(i);
     focusHeading(host);
@@ -251,20 +324,20 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       index: qi,
       total,
       title: questionHeading(step, qi),
-      lastLabel: !after ? 'Start the lab' : after.kind === 'lessons' ? 'See the lessons' : 'Next questions',
+      lastLabel: !after ? lastLabel : after.kind === 'lessons' ? 'See the lessons' : after.kind === 'round' ? 'Next questions' : 'Continue',
       steps: dots(i),
       answered: answers.get(q.id),
       onAnswer: (result) => answered(step, result),
       onNext: () => {
         if (!lastQuestion) return round(i, qi + 1, false);
         if (after) return enterStep(i + 1, 'forward');
-        return start();
+        return primaryAction();
       },
     });
     if (lastQuestion && !after) screen.next.dataset.start = 'primary';
     const back = qi > 0 ? button('← Previous question', { kind: 'quiet', onClick: () => round(i, qi - 1, false), id: 'btnPrevQuestion' }) : backStep();
     const lead = step.round === 1 && masteryRound === step ? 'A few quick questions set where the lessons start' : 'A few questions on what you just read';
-    show(host, make('p', 'learn-eyebrow learn-eyebrow-top', `${eyebrow()} · ${lead}`), screen.root, actionBar([skipAll(), ...(back ? [back] : []), backToLabs()], { label: 'Screen options' }));
+    show(host, make('p', 'learn-eyebrow learn-eyebrow-top', `${eyebrow()} · ${lead}`), screen.root, bar([skipAll(), back, backToLabs()], { label: 'Screen options' }));
     if (entering) arrived(i);
     focusHeading(host);
   }
@@ -300,8 +373,8 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     });
 
     const go = after
-      ? button('Continue to the questions', { kind: 'accent', onClick: () => enterStep(i + 1, 'forward'), id: 'btnNextStep' })
-      : button('Start the lab', { kind: 'accent', onClick: start, id: 'btnStartLab' });
+      ? button(after.kind === 'round' ? 'Continue to the questions' : 'Continue', { kind: 'accent', onClick: () => enterStep(i + 1, 'forward'), id: 'btnNextStep' })
+      : button(lastLabel, { kind: 'accent', onClick: primaryAction, id: 'btnStartLab' });
     if (!after) go.dataset.start = 'primary';
     go.classList.add('learn-start', 'btn-lg');
     go.append(uiIcon('arrow', 16));
@@ -319,7 +392,56 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       }),
       summary,
       list,
-      actionBar([go, ...(back ? [back] : []), skipAll(), backToLabs(), tally], { sticky: true, label: after ? 'Next' : 'Start' })
+      bar([go, back, skipAll(), backToLabs(), tally], { sticky: true, label: after ? 'Next' : warmUp ? 'Finish' : 'Start' })
+    );
+    arrived(i);
+    focusHeading(host);
+  }
+
+  // --- a game (a warm-up's) ----------------------------------------------------
+
+  /** One game, on its own step: Continue (or Finish the warm-up) comes on once it is solved. */
+  function gameStep(i) {
+    cleanup();
+    host.classList.add('learn-wrap-game');
+    const step = steps[i];
+    const g = gameById.get(step.game);
+    const after = steps[i + 1];
+    const k = gameSteps.indexOf(step) + 1;
+    const n = gameSteps.length;
+
+    const go = after
+      ? button('Continue', { kind: 'accent', onClick: () => enterStep(i + 1, 'forward'), id: 'btnGameNext' })
+      : button(lastLabel, { kind: 'accent', onClick: primaryAction, id: 'btnGameNext' });
+    if (!after) go.dataset.start = 'primary';
+    go.classList.add('btn-lg');
+    go.append(uiIcon('arrow', 16));
+    const before = solvedGames.get(g.id);
+    go.disabled = !before;
+    const note = make('p', 'learn-meta game-solved-note', before ? `You solved this one in ${before.tries} ${before.tries === 1 ? 'try' : 'tries'}. Play it again, or continue.` : 'Solve it to continue.');
+    note.setAttribute('aria-live', 'polite');
+
+    const holder = make('div', 'learn-game');
+    game = mountGame(holder, g, {
+      onResult: (r) => {
+        if (gone) return;
+        // The first solve is the one that counts; playing it again changes nothing.
+        if (!solvedGames.has(r.id)) {
+          solvedGames.set(r.id, { id: r.id, tries: r.tries });
+          persist();
+        }
+        go.disabled = false;
+        note.textContent = '';
+        go.focus();
+      },
+    });
+
+    show(
+      host,
+      screenHead({ eyebrow: eyebrow(), title: n > 1 ? `Game ${k} of ${n}` : 'A quick game', meta: 'Try as many times as you like.', steps: dots(i) }),
+      holder,
+      note,
+      bar([go, backStep(), backToLabs()], { label: after ? 'Next' : 'Finish' })
     );
     arrived(i);
     focusHeading(host);
@@ -334,6 +456,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     const step = steps[index];
     if (step.kind === 'story') return story(index);
     if (step.kind === 'round') return round(index, how === 'back' ? 'last' : 'open');
+    if (step.kind === 'game') return gameStep(index);
     return lessonsStep(index);
   }
 

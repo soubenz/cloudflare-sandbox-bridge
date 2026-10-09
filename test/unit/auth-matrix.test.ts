@@ -51,6 +51,7 @@ const SERVICE_KEY_ONLY: Array<[string, string]> = [
   ['get', '/users/:uid/checks'],
   ['get', '/users/:uid/profile'],
   ['get', '/users/:uid/awards'],
+  ['post', '/users/:uid/warmups/:slug/complete'],
   ['put', '/users/:uid/path-inputs'],
   ['post', '/users/:uid/path'],
   ['get', '/users/:uid/path'],
@@ -185,6 +186,17 @@ describe('route auth matrix', () => {
     // Registered before any `/sessions/:id/...` pattern could take them.
     expect(router.indexOf("app.post('/sessions/prepare'")).toBeLessThan(router.indexOf("app.get('/sessions/:id'"));
     expect(router.indexOf("app.post('/sessions/prepare/cancel'")).toBeLessThan(router.indexOf("app.get('/sessions/:id'"));
+  });
+
+  it('the warm-up completion route takes the service key only, before it reads or writes anything', () => {
+    // It files a lab as done for a user, so only the console Worker (which knows the user) may call it;
+    // a session token, which a learner holds, must never reach it.
+    const body = handlerFor('post', '/users/:uid/warmups/:slug/complete');
+    expect(body).toContain('requireServiceAuth(');
+    expect(body).not.toContain('requireBrowserAuth(');
+    expect(body).toContain('parseUserId(');
+    expect(body.indexOf('requireServiceAuth(')).toBeLessThan(body.indexOf('c.req.text('));
+    expect(body.indexOf('requireServiceAuth(')).toBeLessThan(body.indexOf('completeWarmUp('));
   });
 
   it('has no unauthenticated session-start route', () => {

@@ -143,6 +143,15 @@ async function sameOrigin(path, init = {}) {
 
 const BUSY_RETRY_MS = 30_000;
 
+/** POST /api/warmups/:slug/complete; the parsed JSON answer. Also on `api` as `api.completeWarmUp`. */
+export function completeWarmUp(slug, body) {
+  return sameOrigin(`/api/warmups/${encodeURIComponent(slug)}/complete`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 export const api = {
   /** The catalogue, each lab carrying `progress` for the signed-in subject (or null). */
   labs: () => sameOrigin('/api/labs'),
@@ -192,6 +201,11 @@ export const api = {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     }),
+  /**
+   * Marks a warm-up done once every game is solved: `body` is `{games: [{id, solved, tries}], started_at?}`.
+   * Resolves `{done: true, already}`; a game left unsolved is a 400 `warm_up_incomplete` (`err.code`).
+   */
+  completeWarmUp: (slug, body) => completeWarmUp(slug, body),
 
   /**
    * Starting a session goes through this console's own Worker, which holds

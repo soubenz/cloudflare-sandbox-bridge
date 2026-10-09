@@ -396,6 +396,39 @@ function cleanPathInputs(raw) {
   return { body };
 }
 
+/** A game id as learn/games.yaml spells them. */
+const GAME_ID = /^[a-z][a-z0-9-]{0,39}$/;
+/** Most games one warm-up may report (a learn bundle carries at most six). */
+const MAX_WARM_UP_GAMES = 12;
+const MAX_WARM_UP_TRIES = 10_000;
+/** The largest warm-up completion body read, in bytes. Six games are well under 1 KB. */
+const MAX_WARM_UP_BYTES = 4 * 1024;
+
+/**
+ * Checks a POST /api/warmups/:slug/complete body and rebuilds it: { games: [{ id, solved, tries }], started_at? }.
+ * Returns the clean body or null. Nothing else is copied across: the learner is the cookie's subject, never
+ * something the body names.
+ */
+function cleanWarmUpBody(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (Object.keys(raw).some((k) => k !== 'games' && k !== 'started_at')) return null;
+  if (!Array.isArray(raw.games) || raw.games.length > MAX_WARM_UP_GAMES) return null;
+  const body = { games: [] };
+  for (const g of raw.games) {
+    if (!g || typeof g !== 'object' || Array.isArray(g)) return null;
+    if (Object.keys(g).some((k) => k !== 'id' && k !== 'solved' && k !== 'tries')) return null;
+    if (typeof g.id !== 'string' || !GAME_ID.test(g.id)) return null;
+    if (typeof g.solved !== 'boolean') return null;
+    if (!Number.isInteger(g.tries) || g.tries < 0 || g.tries > MAX_WARM_UP_TRIES) return null;
+    body.games.push({ id: g.id, solved: g.solved, tries: g.tries });
+  }
+  if (raw.started_at !== undefined) {
+    if (!Number.isInteger(raw.started_at) || raw.started_at <= 0) return null;
+    body.started_at = raw.started_at;
+  }
+  return body;
+}
+
 /**
  * Asks the API for something about the signed-in learner and hands its answer on as it came (status and
  * body), so the console can say what went wrong in its own plain words (api.js plainError reads the status).
@@ -747,6 +780,33 @@ async function route(request, env) {
       if (!body) return json({ error }, 400);
       return relayForLearner(env, learnerPath(subject, 'path-inputs'), {
         method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+
+    // A finished warm-up: the games the browser played, filed for the cookie's subject as a completed lab.
+    const warmUpMatch = url.pathname.match(/^\/api\/warmups\/([^/]+)\/complete$/);
+    if (warmUpMatch && request.method === 'POST') {
+      let slug = '';
+      try {
+        slug = decodeURIComponent(warmUpMatch[1]);
+      } catch {
+        /* a malformed escape is not a slug */
+      }
+      if (!SLUG.test(slug)) return json({ error: 'not a lab slug' }, 400);
+      const text = await readCapped(request, MAX_WARM_UP_BYTES);
+      if (text === null) return json({ error: 'warm-up body is too large' }, 413);
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        return json({ error: 'warm-up body must be JSON' }, 400);
+      }
+      const body = cleanWarmUpBody(parsed);
+      if (!body) return json({ error: 'warm-up body is not valid' }, 400);
+      return relayForLearner(env, learnerPath(subject, `warmups/${encodeURIComponent(slug)}/complete`), {
+        method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });

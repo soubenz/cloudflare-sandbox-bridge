@@ -115,7 +115,7 @@ export function buildSolutionTgz(solutionDir: string): { tgz: Buffer; files: str
  */
 export function buildLearnUpload(
   dir: string
-): { json: string; lessons: number; questions: number; fields: number; audio: { name: string; bytes: Buffer }[] } | undefined {
+): { json: string; lessons: number; questions: number; fields: number; games: number; story: boolean; audio: { name: string; bytes: Buffer }[] } | undefined {
   const result = compileLearnDir(dir);
   if (result === null) return undefined;
   if (result.problems.length > 0) {
@@ -127,7 +127,16 @@ export function buildLearnUpload(
   const b = result.bundle!;
   // The narration's clips, opener and closing, go up beside the bundle (compileLearnDir already checked each is on disk).
   const audio = Object.keys(learnAudioClips(b)).map((key) => ({ name: `${key}.mp3`, bytes: readFileSync(join(dir, 'learn', 'audio', `${key}.mp3`)) }));
-  return { json: JSON.stringify(b), lessons: b.concepts.length, questions: b.questions.length, fields: b.fields.length, audio };
+  return { json: JSON.stringify(b), lessons: b.concepts.length, questions: b.questions.length, fields: b.fields.length, games: b.games.length, story: !!b.story, audio };
+}
+
+/** The `learn` part and one `audio` part per narration clip, with the log lines `labs publish` prints about them. */
+function appendLearnParts(form: FormData, learn: NonNullable<ReturnType<typeof buildLearnUpload>>): void {
+  form.set('learn', new Blob([learn.json], { type: 'application/json' }), 'learn.json');
+  console.error(`learn/: ${learn.lessons} lesson${learn.lessons === 1 ? '' : 's'}, ${learn.questions} question${learn.questions === 1 ? '' : 's'}, ${learn.fields} field${learn.fields === 1 ? '' : 's'} compiled`);
+  // Narration clips: one `audio` part each, named <key>.mp3; the Worker checks them against the bundle's audio index.
+  for (const clip of learn.audio) form.append('audio', new Blob([clip.bytes], { type: 'audio/mpeg' }), clip.name);
+  if (learn.audio.length > 0) console.error(`learn/audio/: ${learn.audio.length} narration clip${learn.audio.length === 1 ? '' : 's'} (${Math.round(learn.audio.reduce((n, c) => n + c.bytes.length, 0) / 1024)} KB)`);
 }
 
 function buildTgz(sourceDir: string, subdirs: string[]): Buffer {
@@ -190,7 +199,7 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
   labs
     .command('narrate <dir...>')
     .description(
-      "Give each lab's motion comic its storyteller voice: synthesise the panel voiceovers that have no clip yet into learn/audio/ and write learn/audio.json (needs CLOUDFLARE_API_TOKEN; the files are committed, publishing never calls the model)"
+      "Give each lab's motion comic its storyteller voice: narrate the opener (learn/comic.yaml) and, when present, the closing comic (learn/closing.yaml): synthesise the panel voiceovers that have no clip yet into learn/audio/ and write learn/audio.json (and learn/closing-audio.json for the closing) (needs CLOUDFLARE_API_TOKEN; the files are committed, publishing never calls the model)"
     )
     .option('--dry-run', 'list what would be synthesised and how many characters it is, change nothing, call nothing')
     .action(async (dirs: string[], opts: { dryRun?: boolean }) => {
@@ -226,6 +235,18 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
     .action(async (dir: string, opts: { force?: boolean; skipLint?: boolean }) => {
       const manifestPath = join(dir, 'manifest.yaml');
       if (!existsSync(manifestPath)) throw new Error(`No manifest.yaml in ${dir}`);
+      const manifestJson = parseYaml(readFileSync(manifestPath, 'utf8'));
+      // A warm-up has no container: it ships a manifest and a learn bundle and nothing else.
+      const warmUp = (manifestJson as { type?: unknown } | null)?.type === 'warm-up';
+
+      // A warm-up with no learn/ (or one with nothing to play) is refused before
+      // linting or packing anything, with a message that names the fix.
+      if (warmUp) {
+        if (!existsSync(join(dir, 'learn'))) {
+          throw new Error(`refusing to publish ${dir}: a warm-up needs a learn/ folder (add learn/games.yaml, or learn/story.md with learn/closing.md and learn/closing.yaml)`);
+        }
+      }
+
       if (opts.skipLint) {
         console.warn(`WARNING: --skip-lint: not linting ${dir}`);
       } else {
@@ -235,11 +256,25 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
           throw new Error(`refusing to publish ${dir}: ${errors} lint error${errors === 1 ? '' : 's'} (fix them, or pass --skip-lint)`);
         }
       }
-      const manifestJson = parseYaml(readFileSync(manifestPath, 'utf8'));
 
       // Compile learn/ before packing anything: a lab whose learning content
       // does not check out is refused with every problem listed.
       const learn = buildLearnUpload(dir);
+      if (warmUp && (!learn || (learn.games === 0 && !learn.story))) {
+        throw new Error(`refusing to publish ${dir}: a warm-up's learn/ has no games and no story, so there is nothing to play (add learn/games.yaml, or learn/story.md)`);
+      }
+
+      if (warmUp) {
+        // No workspace, private or solution part: the Worker stores none for a warm-up.
+        const form = new FormData();
+        form.set('manifest', new Blob([JSON.stringify(manifestJson)], { type: 'application/json' }), 'manifest.json');
+        appendLearnParts(form, learn!);
+        if (opts.force) form.set('force', 'true');
+        const result: { slug: string; version: string; warnings?: string[] } = await getClient().publishLab(form);
+        console.log(result);
+        for (const w of result.warnings ?? []) console.warn(`WARNING: ${w}`);
+        return;
+      }
 
       // workspace.tgz gets everything a learner should see, laid out exactly as
       // it should land at /workspace in the container: the *contents* of the
@@ -272,13 +307,7 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
 
         // learn/ is compiled to one JSON document and stored at learn.json;
         // the Worker re-validates it. No learn/ folder, nothing sent.
-        if (learn) {
-          form.set('learn', new Blob([learn.json], { type: 'application/json' }), 'learn.json');
-          console.error(`learn/: ${learn.lessons} lesson${learn.lessons === 1 ? '' : 's'}, ${learn.questions} question${learn.questions === 1 ? '' : 's'}, ${learn.fields} field${learn.fields === 1 ? '' : 's'} compiled`);
-          // Narration clips: one `audio` part each, named <key>.mp3; the Worker checks them against the bundle's audio index.
-          for (const clip of learn.audio) form.append('audio', new Blob([clip.bytes], { type: 'audio/mpeg' }), clip.name);
-          if (learn.audio.length > 0) console.error(`learn/audio/: ${learn.audio.length} narration clip${learn.audio.length === 1 ? '' : 's'} (${Math.round(learn.audio.reduce((n, c) => n + c.bytes.length, 0) / 1024)} KB)`);
-        }
+        if (learn) appendLearnParts(form, learn);
 
         if (opts.force) form.set('force', 'true');
 
@@ -305,6 +334,25 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
       };
       const slug = manifest.slug;
       if (!slug) throw new Error(`${manifestPath} has no slug`);
+
+      // A warm-up has no container, so there is no session to start: the only
+      // thing to verify is that its learn/ folder compiles (`labs learn-check`).
+      if (manifest.type === 'warm-up') {
+        const result = compileLearnDir(dir);
+        if (result === null) {
+          console.error(`${dir}: a warm-up needs a learn/ folder`);
+          process.exitCode = 1;
+          return;
+        }
+        if (result.problems.length > 0) {
+          console.error(`${dir}: ${result.problems.length} problem${result.problems.length === 1 ? '' : 's'}`);
+          for (const p of result.problems) console.error(`  - ${p}`);
+          process.exitCode = 1;
+          return;
+        }
+        console.log('warm-up: no container to test');
+        return;
+      }
 
       // This command applies the author's local solution/ (including
       // `_degenerate/`'s exclusion), not the published one, which is why it

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ApiError } from '../lib/errors';
 import { SERVICE_USERS, defaultServiceUser } from './service-user';
 
-const slugPattern = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
+export const slugPattern = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 const versionPattern = /^[0-9]+\.[0-9]+\.[0-9]+$/;
 
 /**

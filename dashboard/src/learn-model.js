@@ -421,10 +421,116 @@ function cleanField(f) {
     const choices = (Array.isArray(f.choices) ? f.choices : []).filter(isStr);
     if (choices.length < 2) return null;
     out.choices = choices;
+  } else {
+    // The suggested answers of a text or number field, shown as buttons beside "Something else" (questions-form.js).
+    const options = (Array.isArray(f.options) ? f.options : []).filter(isStr);
+    if (options.length >= 2) out.options = options;
   }
   if (isStr(f.placeholder)) out.placeholder = f.placeholder;
   if (isStr(f.help)) out.help = f.help;
   return out;
+}
+
+// --- the games of a warm-up (games.js plays them; src/labs/learn.ts GameSchema is the contract) ---
+
+const LOCAL_ID = /^[a-z][a-z0-9-]{0,39}$/;
+const isLocalId = (v) => typeof v === 'string' && LOCAL_ID.test(v);
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const GAME_OPS = new Set(['*', '+', '-', '/']);
+/** The entries of `list` that `clean` keeps, with no id twice. */
+function cleanList(list, clean) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of Array.isArray(list) ? list : []) {
+    const item = clean(raw);
+    if (!item || seen.has(item.id)) continue;
+    seen.add(item.id);
+    out.push(item);
+  }
+  return out;
+}
+
+function cleanSort(g) {
+  const buckets = cleanList(g.buckets, (b) => (b && isLocalId(b.id) && isStr(b.label) ? { id: b.id, label: b.label } : null));
+  const ids = new Set(buckets.map((b) => b.id));
+  const cards = cleanList(g.cards, (c) => (c && isLocalId(c.id) && isStr(c.text) && ids.has(c.bucket) ? { id: c.id, text: c.text, bucket: c.bucket } : null));
+  if (buckets.length < 2 || cards.length < 2) return null;
+  return { buckets, cards };
+}
+
+function cleanFlag(g) {
+  const items = cleanList(g.items, (i) =>
+    i && isLocalId(i.id) && isStr(i.text) && typeof i.flag === 'boolean' ? { id: i.id, text: i.text, flag: i.flag, ...(isStr(i.why) ? { why: i.why } : {}) } : null
+  );
+  // Something to flag and something to leave alone, or there is no game.
+  if (!items.some((i) => i.flag) || items.every((i) => i.flag)) return null;
+  return { items };
+}
+
+function cleanSliders(g) {
+  const inputs = cleanList(g.inputs, (i) => {
+    if (!i || !isLocalId(i.id) || !isStr(i.label) || ![i.min, i.max, i.step, i.default].every(isNum)) return null;
+    if (!(i.min < i.max) || !(i.step > 0) || i.default < i.min || i.default > i.max) return null;
+    return { id: i.id, label: i.label, min: i.min, max: i.max, step: i.step, default: i.default, ...(isStr(i.unit) ? { unit: i.unit } : {}) };
+  });
+  const ids = new Set(inputs.map((i) => i.id));
+  const rawFormula = Array.isArray(g.formula) ? g.formula : [];
+  const formula = rawFormula.filter((f) => f && ids.has(f.input) && GAME_OPS.has(f.op)).map((f) => ({ input: f.input, op: f.op }));
+  const r = g.readout;
+  const a = g.ask;
+  // A formula with a term dropped would compute something else: the whole game goes instead.
+  if (inputs.length < 1 || formula.length < 1 || formula.length !== rawFormula.length) return null;
+  if (!r || typeof r !== 'object' || !isStr(r.label) || !Number.isInteger(r.decimals) || r.decimals < 0 || r.decimals > 6) return null;
+  if (!a || typeof a !== 'object' || !isStr(a.prompt) || !ids.has(a.answer)) return null;
+  return {
+    inputs,
+    formula,
+    readout: { label: r.label, unit: isStr(r.unit) ? r.unit : '', decimals: r.decimals },
+    ask: { prompt: a.prompt, answer: a.answer },
+  };
+}
+
+function cleanOutline(g) {
+  const steps = cleanList(g.steps, (s) =>
+    s && isLocalId(s.id) && isStr(s.text) && (s.parent === null || isLocalId(s.parent)) && Number.isInteger(s.order) ? { id: s.id, text: s.text, parent: s.parent, order: s.order } : null
+  );
+  if (steps.length < 2 || steps.length !== (Array.isArray(g.steps) ? g.steps.length : 0)) return null;
+  // One root, and every step reachable from it (no missing parent, no cycle): otherwise it cannot be solved.
+  if (steps.filter((s) => s.parent === null).length !== 1) return null;
+  const reached = new Set();
+  const walk = (parent) => {
+    for (const s of steps) {
+      if (s.parent === parent && !reached.has(s.id)) {
+        reached.add(s.id);
+        walk(s.id);
+      }
+    }
+  };
+  walk(null);
+  return reached.size === steps.length ? { steps } : null;
+}
+
+const GAME_KINDS = { sort: cleanSort, flag: cleanFlag, sliders: cleanSliders, 'order-and-nest': cleanOutline };
+
+/** One game of a warm-up as games.js needs it, or null when anything it needs is missing or does not fit. */
+export function cleanGame(g) {
+  if (!g || typeof g !== 'object' || !Object.hasOwn(GAME_KINDS, g.kind)) return null;
+  if (!isLocalId(g.id) || !isStr(g.title) || !isStr(g.prompt) || !isStr(g.explanation)) return null;
+  const own = GAME_KINDS[g.kind](g);
+  return own ? { kind: g.kind, id: g.id, title: g.title, prompt: g.prompt, explanation: g.explanation, ...own } : null;
+}
+
+/**
+ * The story of an opener or a closing: `{ story?, comic?, audio? }`. The motion comic is passed through
+ * whole (the player, comic.js, checks it panel by panel and falls back to the text story); its narration
+ * gets the lab's slug (the API sends it beside the bundle) so the player can build the clip URLs.
+ */
+function cleanTelling(raw, slug) {
+  const story = raw.story && isStr(raw.story.title) && isStr(raw.story.body) ? { title: raw.story.title, minutes: minutesOf(raw.story.minutes), body: raw.story.body } : null;
+  const comic = raw.comic && typeof raw.comic === 'object' && isStr(raw.comic.title) && Array.isArray(raw.comic.pages) ? raw.comic : null;
+  const audio =
+    comic && isStr(slug) && raw.audio && typeof raw.audio === 'object' && raw.audio.clips && typeof raw.audio.clips === 'object' && Array.isArray(raw.audio.lines) ? { ...raw.audio, slug } : null;
+  return { ...(story ? { story } : {}), ...(comic ? { comic } : {}), ...(audio ? { audio } : {}) };
 }
 
 /**
@@ -436,31 +542,27 @@ function cleanField(f) {
 export function normalizeLearn(entry) {
   const learn = entry && typeof entry === 'object' ? entry.learn : null;
   if (!learn || typeof learn !== 'object') return null;
-  const story =
-    learn.story && isStr(learn.story.title) && isStr(learn.story.body)
-      ? { title: learn.story.title, minutes: minutesOf(learn.story.minutes), body: learn.story.body }
-      : null;
+  const opener = cleanTelling(learn, entry.slug);
   const concepts = (Array.isArray(learn.concepts) ? learn.concepts : [])
     .filter((c) => c && CONCEPT_ID.test(String(c.id)) && isStr(c.title) && isStr(c.body))
     .map((c) => ({ id: c.id, title: c.title, minutes: minutesOf(c.minutes), recap: typeof c.recap === 'string' ? c.recap : '', body: c.body }));
   const have = new Set(concepts.map((c) => c.id));
   const questions = (Array.isArray(learn.questions) ? learn.questions : []).map(cleanQuestion).filter((q) => q && have.has(q.concept));
   const fields = (Array.isArray(learn.fields) ? learn.fields : []).map(cleanField).filter(Boolean);
-  // The motion comic is passed through whole: the player (comic.js) checks it panel by panel and falls back to the text story.
-  const comic = learn.comic && typeof learn.comic === 'object' && isStr(learn.comic.title) && Array.isArray(learn.comic.pages) ? learn.comic : null;
-  // The comic's narration, with the lab's slug (the API sends it beside the bundle) so the player can build the clip URLs; the player checks it line by line.
-  const audio = comic && isStr(entry.slug) && learn.audio && typeof learn.audio === 'object' && learn.audio.clips && typeof learn.audio.clips === 'object' && Array.isArray(learn.audio.lines) ? { ...learn.audio, slug: entry.slug } : null;
+  // The closing (a warm-up's last story, after its games) has the opener's shape; one with neither a story nor a comic is none.
+  const closing = learn.closing && typeof learn.closing === 'object' ? cleanTelling(learn.closing, entry.slug) : null;
+  const games = cleanList(learn.games, cleanGame);
   return {
     version: typeof entry.version === 'string' ? entry.version : '',
     learn: {
       version: 1,
-      ...(story ? { story } : {}),
-      ...(comic ? { comic } : {}),
-      ...(audio ? { audio } : {}),
+      ...opener,
       concepts,
       questions,
       answers_file: isStr(learn.answers_file) ? learn.answers_file : 'answers.json',
       fields,
+      ...(closing && (closing.story || closing.comic) ? { closing } : {}),
+      games,
     },
   };
 }

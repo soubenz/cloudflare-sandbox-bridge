@@ -675,3 +675,73 @@ describe('plan tier on start and prepare', () => {
     expect(sent()).toEqual({ lab: 'x-lab', user_id: 'ada@example.com' });
   });
 });
+
+describe('POST /api/warmups/:slug/complete', () => {
+  const solved = { games: [{ id: 'sort-calls', solved: true, tries: 1 }, { id: 'flag-logs', solved: true, tries: 3 }], started_at: 1_700_000_000_000 };
+  const send = (c: string | null, body: unknown, slug = 'first-steps') =>
+    call(`/api/warmups/${slug}/complete`, { method: 'POST', cookie: c, headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+
+  it("relays the cleaned body to the API for the cookie's subject, and hands the answer back as it came", async () => {
+    replies.push((u) => (u.endsWith('/warmups/first-steps/complete') ? { status: 201, body: { done: true, already: false, run_id: 'r1' } } : undefined));
+    const res = await send(cookie, solved);
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({ done: true, already: false, run_id: 'r1' });
+    expect(calls).toHaveLength(1);
+    const sent = calls[0]!;
+    expect(sent.url).toBe('https://api.internal/users/console/warmups/first-steps/complete');
+    expect(sent.method).toBe('POST');
+    expect(sent.headers.get('authorization')).toBe('Bearer svc-key');
+    expect(JSON.parse(sent.body)).toEqual(solved);
+  });
+
+  it('passes an API refusal through (status and body)', async () => {
+    replies.push(() => ({ status: 400, body: { error: { code: 'warm_up_incomplete', message: 'no', details: { missing: ['flag-logs'] } } } }));
+    const res = await send(cookie, { games: [] });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error.code).toBe('warm_up_incomplete');
+  });
+
+  it('needs the cookie', async () => {
+    const res = await send(null, solved);
+    expect(res.status).toBe(401);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a body that is not a clean warm-up completion, and forwards nothing', async () => {
+    const bad: unknown[] = [
+      '{nope',
+      [],
+      { games: 'all' },
+      { games: [], user_id: 'someone-else' },
+      { games: [{ id: 'sort-calls', solved: true, tries: 1, extra: 1 }] },
+      { games: [{ id: 'Bad Id', solved: true, tries: 1 }] },
+      { games: [{ id: 'x'.repeat(41), solved: true, tries: 1 }] },
+      { games: [{ id: 'sort-calls', solved: 'yes', tries: 1 }] },
+      { games: [{ id: 'sort-calls', solved: true, tries: -1 }] },
+      { games: [{ id: 'sort-calls', solved: true, tries: 1.5 }] },
+      { games: [{ id: 'sort-calls', solved: true, tries: 10_001 }] },
+      { games: Array.from({ length: 13 }, (_, i) => ({ id: `g${i}`, solved: true, tries: 1 })) },
+      { games: [], started_at: 'yesterday' },
+      { games: [], started_at: -5 },
+    ];
+    for (const body of bad) {
+      const res = await send(cookie, body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses an oversized body and a slug that is not one', async () => {
+    const big = await send(cookie, { games: [], pad: 'x'.repeat(8 * 1024) });
+    expect(big.status).toBe(413);
+    const slug = await send(cookie, solved, 'Not%20A%20Slug');
+    expect(slug.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('only answers POST', async () => {
+    const res = await call('/api/warmups/first-steps/complete', { cookie });
+    expect(res.status).toBe(404);
+    expect(calls).toHaveLength(0);
+  });
+});

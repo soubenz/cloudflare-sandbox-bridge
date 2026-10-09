@@ -93,6 +93,7 @@ minutes are usable now.
 | GET | `/users/:uid/checks?lab=&limit=&before=` | service | a user's runs across sessions, newest first → `{ runs: [...] }` (same shape as the session route, plus `session_id` and `lab_slug`). `lab` filters to one lab; `before` is an epoch-ms cursor (pass the last `started_at` you saw); `limit` default 20, max 100 |
 | GET | `/users/:uid/profile?compact=&starting=` | service | the learner's skill scores, XP, streak and awards → see [Profile, XP and awards](#profile-xp-and-awards). `compact=1` returns only what the Home widget needs; `starting=gateway:ok,mcp:new` is the browser's copy of the onboarding quiz result, used only when no quiz result is stored with the learner's path inputs. `400 bad_user_id`; an unknown user is a `200` with an empty profile |
 | GET | `/users/:uid/awards` | service | `{ user_id, earned, locked }`, the same two lists as `profile.awards` |
+| POST | `/users/:uid/warmups/:slug/complete` | service | mark a [warm-up](#routes) done once the learner has solved its games. Body `{ games: [{ id, solved, tries }], started_at? }` (at most 16 KiB; `started_at` is epoch ms, default now) → `201 { done: true, already: false, run_id }`, or `200 { done: true, already: true }` when the user already finished it (nothing is written). Every game of the current learn bundle must appear with `solved: true` (a warm-up with no games needs none). The completion is one `check_runs` row with `passed_all = 1` and one passing result per game (`finished` when there are none), filed under the synthetic session id `warmup:<uid>:<slug>`, so progress, the path, skills, XP and awards read it like any completed lab; awards are recomputed and the path refreshed after it, best effort. `400 bad_user_id`, `404 lab_not_found`, `400 not_a_warm_up`, `400 warm_up_incomplete` (`details.missing`), `400 invalid_warm_up_body`, `413 payload_too_large` |
 | GET | `/users/:uid/sessions?active=1` | service | D1-backed history/active check; capped at 50 rows without `active=1` |
 | PUT | `/users/:uid/path-inputs` | service | store the learner's quiz levels, goal and hours, then recompute their [learning path](#personal-learning-path). Body `{ areas, goal_text?, goal_kind?, hours_per_week }` → the path. `400 invalid_path_inputs` on a bad body |
 | POST | `/users/:uid/path` | service | recompute the path from the stored inputs (a cache hit when nothing changed); `?force=1` skips the cache → the path. `404 no_inputs` |
@@ -149,6 +150,12 @@ like any lab, without `family` or `timeout_minutes`. `POST /sessions`,
 `POST /sessions/start` and `POST /sessions/prepare` refuse it with
 `400 not_startable` before anything else happens: no pool is asked, no slot
 is reserved, and the user's live or pre-warmed session is left alone.
+
+A warm-up is finished with `POST /users/:uid/warmups/:slug/complete` (the
+console Worker's `POST /api/warmups/:slug/complete` relays it for the signed-in
+learner) once every game of its learn bundle is solved. It is recorded as a
+passed check run under a synthetic session id, so everything that reads "done"
+from `check_runs` treats it like any completed lab.
 
 ### Service cookie
 
@@ -211,6 +218,9 @@ the RPC boundary.
 | 400 | `missing_fields` | `POST /sessions` or `POST /sessions/start` without `lab` or `user_id` |
 | 400 | `bad_publish_payload` | `POST /labs/publish` missing any of the three files (a warm-up needs only `manifest`, plus a `learn` part) |
 | 400 | `not_startable` | `POST /sessions`, `POST /sessions/start` or `POST /sessions/prepare` for a `type: warm-up` lab, which has no container |
+| 400 | `not_a_warm_up` | `POST /users/{uid}/warmups/{slug}/complete` for a lab that is not `type: warm-up` |
+| 400 | `warm_up_incomplete` | `POST /users/{uid}/warmups/{slug}/complete` without every game of the lab's learn bundle reported `solved: true`; `details.missing` lists the game ids |
+| 400 | `invalid_warm_up_body` | `POST /users/{uid}/warmups/{slug}/complete` with a body that is not JSON or not `{ games: [{ id, solved, tries }], started_at? }` |
 | 400 | `unknown_event_type` | `POST /sessions/{id}/events` with a type other than `cost`/`llm.call`/`alert` |
 | 400 | `no_port` | service proxy for a service with no `port` |
 | 400 | `not_a_websocket` | `/terminal` without an `Upgrade: websocket` header |
@@ -228,7 +238,7 @@ the RPC boundary.
 | 500 | `solution_unreadable` | `GET /sessions/{id}/solution` when the stored archive is corrupt or holds an unsafe path (a publish defect, not the learner's) |
 | 404 | `unknown_service` | restart, cookie route or proxy for a service not in the lab |
 | 400 | `bad_feedback` | `POST /sessions/{id}/feedback` with a `rating` that is not an integer 1-5, a `text` that is not a string or is over 2000 characters, or a body that is not an object |
-| 400 | `bad_user_id` | `GET /users/{uid}/profile` or `/awards` with an id that is empty, over 128 characters, or holds a control character |
+| 400 | `bad_user_id` | `GET /users/{uid}/profile`, `/awards` or `POST /users/{uid}/warmups/{slug}/complete` with an id that is empty, over 128 characters, or holds a control character |
 | 400 | `unknown_check` | `POST /sessions/{id}/checks` with an `only` that is empty, not an array of strings, or names a check the lab does not have; the message lists the valid names (`details: { unknown?, valid }` when the error is raised in the Worker; over the DO boundary the message carries them) |
 | 400 | `bad_cursor` | `GET /users/{uid}/checks` with a `before` that is not a number |
 | 400 | `invalid_path_inputs` | `PUT /users/{uid}/path-inputs` with a body that fails validation; `details.issues` lists `{ path, message }` |
@@ -244,7 +254,7 @@ the RPC boundary.
 | 409 | `version_exists` | `POST /labs/publish` for a `<slug>/<version>` that is already published, without `force` |
 | 409 | `file_exists` | SDK `FileExistsError` |
 | 429 | `checks_too_frequent` | `POST /sessions/{id}/checks` less than 2 seconds after the previous run started; `details.retry_after_ms` is the wait left (also in the message as `retry_after_ms=N`) |
-| 413 | `payload_too_large` | `PUT .../files/...` over 2 MiB, or the SDK's own file-size limit |
+| 413 | `payload_too_large` | `PUT .../files/...` over 2 MiB, a warm-up completion body over 16 KiB, or the SDK's own file-size limit |
 | 502 | `service_down` | service proxy while that service is `unhealthy` |
 | 503 | `at_capacity` | `POST /sessions`, `POST /sessions/start`, `POST /sessions/prepare`, `POST /sessions/{id}/resume`: the family's pool is at `max_instances` or backing off; `details.retry_after_s`, and the `Retry-After` header carries the same number |
 | 503 | `container_unavailable` | SDK `ContainerUnavailableError`; `details.retry_after_ms` when the SDK supplies it |

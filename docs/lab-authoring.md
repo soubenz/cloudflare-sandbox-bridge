@@ -153,6 +153,22 @@ lab. It is published and listed like any lab, but it never starts a session:
 Everything else (`summary`, `objectives`, `path`, `module`, `order`,
 `prerequisites`, `archived`) works as for any lab.
 
+The CLI treats a warm-up as its own shape:
+
+- `labs publish <dir>` sends only the `manifest` and `learn` parts (plus the
+  narration `audio` clips): no `workspace`, `private` or `solution` part, and none
+  of those directories is required. It refuses early, with a message naming the
+  fix, when `learn/` is absent or has neither games nor a story, and still
+  refuses a `learn/` that does not compile.
+- `labs test <dir>` starts no session. It compiles `learn/` (the same check as
+  `labs learn-check`), prints `warm-up: no container to test` and exits 0, or
+  lists the problems and exits 1.
+- `labs lint` requires `learn/games.yaml` or `learn/closing.yaml`, flags a
+  `checks/`, `workspace/` or `solution/` directory that has files in it (rule
+  `warm-up`), and skips the brief word-count and port rules.
+- `labs narrate` narrates the opener comic and, when there is one, the closing
+  comic (`learn/closing.yaml`, written to `learn/closing-audio.json`).
+
 ### Templated strings
 
 `{{session.id}}`, `{{session.base_url}}`, `{{service.prefix}}` and

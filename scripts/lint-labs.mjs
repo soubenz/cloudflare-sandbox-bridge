@@ -10,7 +10,7 @@
 // with Finding = { rule, file, line, message }. This only READS the lab.
 //
 // Rules: leak, python-no-B, port-kill, port, service-user, hints-duplicate, brief-length,
-// pressure-undisclosed, harness-stale-lock, lesson-leaks-answer. See "Lint" in docs/lab-authoring.md.
+// pressure-undisclosed, harness-stale-lock, lesson-leaks-answer, warm-up. See "Lint" in docs/lab-authoring.md.
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -244,6 +244,7 @@ function isBarePortKey(key) {
 
 function rulePort(m, add) {
   const data = m.data;
+  if (isWarmUp(m)) return; // no services, no ports
   const hasExempt = Object.prototype.hasOwnProperty.call(data, 'x-ports-exempt');
   if (hasExempt) {
     const reason = data['x-ports-exempt-reason'];
@@ -451,7 +452,32 @@ function ruleHintsDuplicate(dir, m, add) {
   });
 }
 
+const isWarmUp = (m) => m.data.type === 'warm-up';
+
+/** True when `dir` is a directory holding at least one file (at any depth). */
+function hasContent(dir) {
+  return walkFiles(dir).length > 0;
+}
+
+/**
+ * A `type: warm-up` lab has no container: it is a learn/ folder with something
+ * to play (games.yaml, or a closing comic) and nothing else. checks/,
+ * workspace/ and solution/ with content mean the author is mixing it up with a
+ * runnable lab; the publish route would ignore them.
+ */
+function ruleWarmUp(dir, m, add) {
+  if (!existsSync(join(dir, 'learn', 'games.yaml')) && !existsSync(join(dir, 'learn', 'closing.yaml'))) {
+    add('error', 'warm-up', m.file, manifestLine(m, ['type']), 'a warm-up needs learn/games.yaml or learn/closing.yaml: with neither there is nothing to play');
+  }
+  for (const name of ['checks', 'workspace', 'solution']) {
+    if (hasContent(join(dir, name))) {
+      add('error', 'warm-up', join(dir, name), 1, `a warm-up has no container, so no ${name}/ directory; remove it (the Worker ignores it)`);
+    }
+  }
+}
+
 function ruleBrief(dir, m, add) {
+  if (isWarmUp(m)) return; // no brief.md to count, no pressure to disclose
   const file = join(dir, 'brief.md');
   const raw = existsSync(file) ? readText(file) : null;
 
@@ -564,6 +590,7 @@ export function lintLab(dir) {
     ruleServiceUser(m, readFileSync(m.file, 'utf8'), add);
     ruleHintsDuplicate(dir, m, add);
     ruleBrief(dir, m, add);
+    if (isWarmUp(m)) ruleWarmUp(dir, m, add);
   }
 
   const byPos = (a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line);

@@ -184,15 +184,30 @@ export function planLearningFlow(learn, mastery) {
   return steps;
 }
 
+/**
+ * The flow of a warm-up: the lab's flow (above), then one step per game in the bundle's order
+ *   { kind: 'game', game: id }
+ * and, when the bundle has a closing, its story last
+ *   { kind: 'story', closing: true }
+ */
+export function planWarmUpFlow(learn, mastery) {
+  const steps = planLearningFlow(learn, mastery);
+  for (const g of learn?.games || []) if (g && typeof g.id === 'string') steps.push({ kind: 'game', game: g.id });
+  if (learn?.closing) steps.push({ kind: 'story', closing: true });
+  return steps;
+}
+
 // ---------------------------------------------------------------------------
 // Reading the steps
 // ---------------------------------------------------------------------------
 
-/** What the step is called to a screen reader: "Questions, round 2 of 3", "Lessons, part 1 of 2". */
+/** What the step is called to a screen reader: "Questions, round 2 of 3", "Lessons, part 1 of 2", a game's title. */
 export function stepLabel(step, learn) {
   if (!step) return '';
+  if (step.kind === 'story' && step.closing) return learn?.closing?.story?.title ?? learn?.closing?.comic?.title ?? 'The closing story';
   if (step.kind === 'story') return learn?.story?.title ?? learn?.comic?.title ?? 'The story';
   if (step.kind === 'round') return step.rounds > 1 ? `Questions, round ${step.round} of ${step.rounds}` : 'Questions';
+  if (step.kind === 'game') return (learn?.games || []).find((g) => g.id === step.game)?.title ?? 'A game';
   return step.parts > 1 ? `Lessons, part ${step.part} of ${step.parts}` : 'Lessons';
 }
 
@@ -204,25 +219,26 @@ export function questionHeading(step, index) {
 
 /**
  * The index of the step an address names, or 0 (the first step) when it names none. `kind` is the
- * path's word ('story', 'questions' or 'lessons') and `n` the 1-based `?step=` number, if any.
- * A number in range wins whatever the word says; one out of range is the first step; without a
- * number the word names the first step of its kind, and a kind this lab does not have falls to the
- * first step of the closest one it does.
+ * path's word ('story', 'questions', 'lessons', and for a warm-up 'games' and 'closing') and `n` the
+ * 1-based `?step=` number, if any. A number in range wins whatever the word says; one out of range is
+ * the first step; without a number the word names the first step of its kind ('games' the first game,
+ * 'closing' the closing story), and a kind this lab does not have falls to the first step of the
+ * closest one it does.
  */
 export function stepIndexFor(steps, kind, n) {
   if (!steps.length) return 0;
   if (n !== undefined && n !== null) return Number.isInteger(n) && n >= 1 && n <= steps.length ? n - 1 : 0;
-  const find = (k) => steps.findIndex((s) => s.kind === k);
-  const word = kind === 'questions' ? 'round' : kind;
-  for (const k of [word, ...(word === 'round' ? ['lessons'] : word === 'lessons' ? ['round'] : [])]) {
+  const find = (k) => steps.findIndex((s) => stepKindWord(s) === k);
+  const near = { questions: ['lessons'], lessons: ['questions'], games: ['closing'], closing: ['games'] };
+  for (const k of [kind, ...(near[kind] ?? [])]) {
     const i = find(k);
     if (i >= 0) return i;
   }
   return 0;
 }
 
-/** The path word of a step, as the address spells it. */
-export const stepKindWord = (step) => (step.kind === 'round' ? 'questions' : step.kind);
+/** The path word of a step, as the address spells it: a round is 'questions', a game 'games', the closing story 'closing'. */
+export const stepKindWord = (step) => (step.kind === 'round' ? 'questions' : step.kind === 'game' ? 'games' : step.kind === 'story' && step.closing ? 'closing' : step.kind);
 
 /**
  * The address's step number for a step: its 1-based position, or null when the path word alone
@@ -231,7 +247,8 @@ export const stepKindWord = (step) => (step.kind === 'round' ? 'questions' : ste
 export function stepNumberFor(steps, index) {
   const step = steps[index];
   if (!step) return null;
-  return steps.findIndex((s) => s.kind === step.kind) === index ? null : index + 1;
+  const word = stepKindWord(step);
+  return steps.findIndex((s) => stepKindWord(s) === word) === index ? null : index + 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -262,16 +279,22 @@ export function shouldPrefetch(steps, index) {
 
 /**
  * Steps saved by an earlier page of the same visit, checked against the bundle: every question and
- * concept they name must still exist. Anything else is null (a fresh plan is made instead).
+ * concept they name must still exist. Anything else is null (a fresh plan is made instead). A warm-up's
+ * game the bundle no longer has, or a closing it no longer has, is dropped and the rest kept.
  */
 export function restoreSteps(learn, saved) {
   if (!Array.isArray(saved) || saved.length === 0) return null;
   const questions = new Set((learn?.questions || []).map((q) => q.id));
   const concepts = new Set((learn?.concepts || []).map((c) => c.id));
+  const games = new Set((learn?.games || []).map((g) => g.id));
   const out = [];
   for (const s of saved) {
     if (!s || typeof s !== 'object') return null;
-    if (s.kind === 'story') {
+    if (s.kind === 'story' && s.closing === true) {
+      if (learn?.closing) out.push({ kind: 'story', closing: true });
+    } else if (s.kind === 'game') {
+      if (typeof s.game === 'string' && games.has(s.game)) out.push({ kind: 'game', game: s.game });
+    } else if (s.kind === 'story') {
       out.push({ kind: 'story' });
     } else if (s.kind === 'round') {
       if (!Array.isArray(s.questions) || s.questions.length === 0 || !s.questions.every((id) => questions.has(id))) return null;
@@ -283,7 +306,7 @@ export function restoreSteps(learn, saved) {
       return null;
     }
   }
-  return out;
+  return out.length ? out : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -297,7 +320,11 @@ export function restoreSteps(learn, saved) {
  * Kept in sessionStorage (this tab only; storage that is blocked or throws means a refresh plans
  * again, nothing worse). `version` is the bundle's: another version is another plan.
  *
- *   { v: 1, version, steps, answers: { [question id]: { question_id, concept, correct, selected } } }
+ *   { v: 1, version, steps, answers: { [question id]: { question_id, concept, correct, selected } },
+ *     games?: { [game id]: { id, tries } }, started_at?: ms }
+ *
+ * `games` (the warm-up games solved so far) and `started_at` (when the warm-up was opened) are a
+ * warm-up's only: a refresh keeps the games solved and the time it began.
  */
 export function createFlowStore({ slug, version = '', storage } = {}) {
   const key = `opalix.flow.${slug}`;
@@ -314,14 +341,20 @@ export function createFlowStore({ slug, version = '', storage } = {}) {
         const raw = backend()?.getItem(key);
         const rec = raw ? JSON.parse(raw) : null;
         if (!rec || rec.v !== 1 || rec.version !== version || !Array.isArray(rec.steps)) return null;
-        return { steps: rec.steps, answers: rec.answers && typeof rec.answers === 'object' && !Array.isArray(rec.answers) ? rec.answers : {} };
+        const record = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+        return {
+          steps: rec.steps,
+          answers: record(rec.answers),
+          games: record(rec.games),
+          ...(Number.isFinite(rec.started_at) && rec.started_at > 0 ? { started_at: rec.started_at } : {}),
+        };
       } catch {
         return null;
       }
     },
-    save(steps, answers) {
+    save(steps, answers, { games, started_at } = {}) {
       try {
-        backend()?.setItem(key, JSON.stringify({ v: 1, version, steps, answers }));
+        backend()?.setItem(key, JSON.stringify({ v: 1, version, steps, answers, ...(games ? { games } : {}), ...(started_at ? { started_at } : {}) }));
       } catch {
         /* blocked or full: the visit just cannot be resumed */
       }

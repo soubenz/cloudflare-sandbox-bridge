@@ -405,3 +405,62 @@ describe('service-user', () => {
     for (const d of dirs) expect(findings(join(labsRoot, d)).errors).toEqual([]);
   });
 });
+
+describe('warm-up labs', () => {
+  const WARM_UP_MANIFEST = `slug: first-steps
+version: 1.0.0
+title: "First steps"
+type: warm-up
+tier: free
+difficulty: intro
+estimated_minutes: 10
+`;
+  const warmUp = (files: Record<string, string> = {}) =>
+    // No brief.md and no services: a warm-up has neither.
+    lab({ 'manifest.yaml': WARM_UP_MANIFEST, 'brief.md': '', 'learn/games.yaml': 'games: []\n', ...files });
+
+  it('passes a good warm-up, with no brief to count and no ports to check', () => {
+    const r = lintLab(warmUp());
+    expect(r.errors).toEqual([]);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('accepts learn/closing.yaml instead of games.yaml', () => {
+    const dir = warmUp();
+    rmSync(join(dir, 'learn', 'games.yaml'));
+    writeFileSync(join(dir, 'learn', 'closing.yaml'), 'title: x\npanels: []\n');
+    expect(lintLab(dir).errors).toEqual([]);
+  });
+
+  it('skips the brief word-count rule', () => {
+    const long = Array.from({ length: 800 }, () => 'word').join(' ');
+    expect(lintLab(warmUp({ 'brief.md': long })).errors).toEqual([]);
+  });
+
+  it('flags a warm-up with neither games.yaml nor closing.yaml', () => {
+    const dir = warmUp();
+    rmSync(join(dir, 'learn', 'games.yaml'));
+    const r = lintLab(dir);
+    expect(r.errors.map((e) => e.rule)).toEqual(['warm-up']);
+    expect(r.errors[0]!.message).toMatch(/games\.yaml or learn\/closing\.yaml/);
+  });
+
+  it('flags a checks/ directory with content', () => {
+    const r = lintLab(warmUp({ 'checks/works.sh': '#!/bin/sh\nexit 0\n' }));
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toMatchObject({ rule: 'warm-up' });
+    expect(r.errors[0]!.message).toMatch(/no checks\/ directory/);
+  });
+
+  it('flags workspace/ and solution/ with content, but not empty ones', () => {
+    const dir = warmUp({ 'workspace/notes.txt': 'x', 'solution/answer.txt': 'y' });
+    mkdirSync(join(dir, 'checks'));
+    const r = lintLab(dir);
+    expect(r.errors.map((e) => e.message).join('\n')).toMatch(/no solution\/ directory[\s\S]*no workspace\/ directory/);
+    expect(r.errors).toHaveLength(2);
+  });
+
+  it('does not apply the warm-up rule to other lab types', () => {
+    expect(lintLab(lab()).errors.filter((e) => e.rule === 'warm-up')).toEqual([]);
+  });
+});

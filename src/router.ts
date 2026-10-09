@@ -8,6 +8,7 @@ import { loadOnboarding } from './labs/onboarding';
 import { MAX_AUDIO_CLIPS, MAX_AUDIO_CLIP_BYTES } from './labs/learn';
 import { parseByteRange } from './lib/range';
 import { isWarmUp, parseManifest, requireRunnable } from './labs/manifest';
+import { completeWarmUp, parseWarmUpBody, parseWarmUpSlug, MAX_WARM_UP_BODY_BYTES } from './labs/warmup';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
 import { workspacePath } from './lib/paths';
@@ -638,6 +639,24 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     const before = q.before === undefined || q.before === '' ? undefined : Number(q.before);
     if (before !== undefined && !Number.isFinite(before)) throw ApiError.badRequest('bad_cursor', '`before` must be an epoch-ms number');
     return c.json(await userChecks(c.env, c.req.param('uid'), { lab: q.lab || undefined, limit: clampLimit(q.limit), before }));
+  });
+
+  // A warm-up has no checks: the console reports its games solved and this files the completion as a
+  // passed check run, so progress, the path, skills, XP and awards read it like any finished lab.
+  app.post('/users/:uid/warmups/:slug/complete', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const uid = parseUserId(c.req.param('uid'));
+    const slug = parseWarmUpSlug(c.req.param('slug'));
+    const text = await c.req.text();
+    if (new TextEncoder().encode(text).length > MAX_WARM_UP_BODY_BYTES) throw ApiError.payloadTooLarge(`warm-up body exceeds ${MAX_WARM_UP_BODY_BYTES} bytes`);
+    let raw: unknown;
+    try {
+      raw = text === '' ? {} : JSON.parse(text);
+    } catch {
+      throw ApiError.badRequest('invalid_warm_up_body', 'body must be JSON');
+    }
+    const result = await completeWarmUp(c.env, uid, slug, parseWarmUpBody(raw));
+    return c.json(result, result.already ? 200 : 201);
   });
 
   // --- Profile: skill scores, XP and awards (service auth; the app backend proxies these to learners) ---
