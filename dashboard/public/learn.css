@@ -465,6 +465,10 @@ pre.has-copy code { padding-right: 84px; }
 /* ---------- the pre-lab flow: alternating rounds of questions and lessons ---------- */
 /* A round is a centred column, narrower than the card of the story. */
 .learn-wrap.learn-wrap-round { max-width: 760px; }
+/* A warm-up's game: a column a little wider than a round, for the sort and outline rows. */
+.learn-wrap.learn-wrap-game { max-width: 860px; }
+.learn-wrap-game .learn-game { margin-top: var(--s4, 16px); min-width: 0; }
+.learn-wrap-game .game-solved-note:empty { display: none; }
 
 /*
  * The quiet progress dots: one per step. A round of questions is a circle, a chunk of lessons a
@@ -478,6 +482,7 @@ pre.has-copy code { padding-right: 84px; }
   background: var(--border-strong); box-sizing: border-box;
 }
 .steps-dots i[data-kind="lessons"] { border-radius: 3px; }
+.steps-dots i[data-kind="game"] { border-radius: 2px; transform: rotate(45deg) scale(0.85); }
 .steps-dots i[data-kind="story"] { width: 14px; border-radius: 999px; }
 .steps-dots i.done { background: var(--accent); }
 .steps-dots i.now { background: var(--surface); border: 2.5px solid var(--accent); width: 14px; height: 14px; }

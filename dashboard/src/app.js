@@ -472,11 +472,12 @@ async function openLabStepRoute(route, stale) {
     return;
   }
   if (!clearScreens()) return restoreSessionUrl();
-  showTransient('Opening the lab…');
-  const entry = lab.has_learn ? await fetchLearn(lab.slug) : null;
+  const warmUp = lab.type === 'warm-up';
+  showTransient(warmUp ? 'Opening the warm-up…' : 'Opening the lab…');
+  // A warm-up is nothing but its learn bundle (/labs/<slug>/games?step=N, /labs/<slug>/closing are its own steps).
+  const entry = lab.has_learn || warmUp ? await fetchLearn(lab.slug) : null;
   if (stale()) return;
-  const hasScreen = entry && (entry.learn.story || entry.learn.concepts.length > 0);
-  if (!hasScreen) return landOnLabPage(lab.slug);
+  if (!hasLearnScreen(lab, entry)) return landOnLabPage(lab.slug);
   openLearnFlow(lab, entry, route.step, { fromRoute: true, n: route.n });
 }
 
@@ -2013,6 +2014,7 @@ function isPlanLockedButton(button) {
 }
 
 async function beginLab(lab, card) {
+  if (lab.type === 'warm-up') return openWarmUp(lab, card);
   if (beginning) return;
   // Start, Open again and Rejoin all come through here: on a phone they show the desktop notice.
   if (guardDesktop(lab.slug)) return;
@@ -2020,6 +2022,18 @@ async function beginLab(lab, card) {
   const resuming = runningSlug !== null || !$('resumeCard').hidden;
   // A lab whose story and questions the learner has been through once is not shown them again.
   if (!lab.has_learn || resuming || introSeen(mastery.get(), lab.slug)) return startSession(lab.slug, card);
+  const entry = await loadLearnFor(lab, card);
+  if (entry === undefined) return;
+  if (!hasLearnScreen(lab, entry)) return startSession(lab.slug, card);
+  openLearnFlow(lab, entry);
+}
+
+/**
+ * A lab's bundle fetched from its card (or page), the buttons off and its own saying Loading… meanwhile: the
+ * bundle, null when it has none, or undefined when another card is already loading.
+ */
+async function loadLearnFor(lab, card) {
+  if (beginning) return undefined;
   beginning = true;
   const buttons = document.querySelectorAll('.lab button, .lab-detail button, .resume button');
   buttons.forEach((b) => (b.disabled = true));
@@ -2029,9 +2043,8 @@ async function beginLab(lab, card) {
     button.textContent = 'Loading…';
     button.setAttribute('aria-busy', 'true');
   }
-  let entry = null;
   try {
-    entry = await fetchLearn(lab.slug);
+    return await fetchLearn(lab.slug);
   } finally {
     buttons.forEach((b) => (b.disabled = isPlanLockedButton(b)));
     if (button) {
@@ -2040,9 +2053,53 @@ async function beginLab(lab, card) {
     }
     beginning = false;
   }
-  const hasScreen = entry && (entry.learn.story || entry.learn.concepts.length > 0);
-  if (!hasScreen) return startSession(lab.slug, card);
+}
+
+/** Whether a lab's bundle has a step to show: a story or lessons, and for a warm-up a comic, a game or a closing too. */
+function hasLearnScreen(lab, entry) {
+  if (!entry) return false;
+  const { learn } = entry;
+  if (learn.story || learn.concepts.length > 0) return true;
+  return lab.type === 'warm-up' && Boolean(learn.comic || learn.games.length > 0 || learn.closing);
+}
+
+/**
+ * Open on a warm-up: a lab with no container, only its learn bundle (story, questions, lessons, games, the
+ * closing story). Nothing runs, so there is no desktop check, no running session to rejoin, and it is shown
+ * every time it is opened (Open again included): the flow ends with "Finish the warm-up" (finishWarmUp).
+ */
+async function openWarmUp(lab, card) {
+  const entry = await loadLearnFor(lab, card);
+  if (entry === undefined) return;
+  if (!hasLearnScreen(lab, entry)) {
+    toast('Could not open the warm-up. Try again in a moment.', 'bad');
+    return;
+  }
   openLearnFlow(lab, entry);
+}
+
+/**
+ * The warm-up's last button: records it (POST /api/warmups/<slug>/complete), reads the catalogue's progress and
+ * the profile again, and takes the learner to the lab's page (which now says Done) with the next lab named. A
+ * failed POST says why and resolves false: the flow stays on its last step, and the button tries again.
+ */
+async function finishWarmUp(lab, { started_at, games }) {
+  try {
+    await api.completeWarmUp(lab.slug, { ...(started_at ? { started_at } : {}), games });
+  } catch (err) {
+    toast(`Could not finish the warm-up. ${plainError(err)}`, 'bad');
+    return false;
+  }
+  // The card says Done once the catalogue is read again; the profile names the next lab.
+  progress.invalidate();
+  const area = skillForPlacement(lab.path, lab.module)?.id ?? null;
+  await Promise.all([loadLabs(), progress.finishedLab(area).catch(() => null)]);
+  const next = currentNextLab();
+  const nextTitle = next && next.slug !== lab.slug ? next.title || labsBySlug.get(next.slug)?.title || next.slug : null;
+  // The flow is over: Back from the lab's page does not walk into it again.
+  router.navigate('lab', { slug: lab.slug }, { replace: true });
+  toast(nextTitle ? `Warm-up done. Next: ${nextTitle}` : 'Warm-up done.', 'good', 8000);
+  return true;
 }
 
 /**
@@ -2067,6 +2124,9 @@ function openLearnFlow(lab, entry, initial, { fromRoute = false, n } = {}) {
       step: n,
       resume: fromRoute,
       onStep: (step, number) => onLabStep(lab.slug, step, number),
+      // A warm-up has nothing to start: its last button records it (and nothing is prepared for it).
+      warmUp: lab.type === 'warm-up',
+      onFinish: (games, { started_at }) => finishWarmUp(lab, { started_at, games }),
       // The screen may have shrunk since Start was pressed: ask again before a container is claimed.
       onStart: () => (guardDesktop(lab.slug) ? undefined : startSession(lab.slug)),
       // The container is warmed while the last steps are read, so Start is instant; a phone cannot run a lab, so it warms nothing.

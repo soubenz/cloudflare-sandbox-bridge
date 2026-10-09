@@ -20,6 +20,9 @@
  * the moment it is answered. Going Back never asks a question again: answers are kept (in the
  * flow's own record, `createFlowStore`, so that a refresh comes back to the same step as well).
  *
+ * A warm-up (`warmUp`, a lab with nothing to start) runs the same steps and then its games, one a
+ * step, and its closing story, and ends with "Finish the warm-up" (`onFinish`) instead of a start.
+ *
  * Builds into `host`, focusing each step's heading and saying the step in a polite live region.
  */
 

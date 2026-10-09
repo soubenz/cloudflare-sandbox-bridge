@@ -22,6 +22,7 @@ the filters) is `dashboard/src/launcher-model.js`.
 | `/paths/mine` | **Your path**: the learner's own ordered labs with each step's state in words (Done, Next up, Not started, Locked), the reason for it, its area, its time and Start / Resume / "This lab is included with the Pro plan." with an Unlock link. "Recompute" (`POST /api/path?force=1`) and "Change my goal" (the same two questions, then `PUT /api/path-inputs`). `mine` is reserved among the paths' slugs. With no goal yet the page asks the two questions. |
 | `/labs/<slug>` | **A lab's own page**: title, chips, summary, objectives, prerequisites (and whether each is passed), and Start / Resume / Locked. Archived labs have one too (they are only left out of the lists). |
 | `/labs/<slug>/story` `/questions` `/lessons` | The steps before the lab starts: the story, then rounds of questions (`/questions`) alternating with chunks of lessons (`/lessons`). Without `?step=` each is the first step of its kind. A kind the lab does not have falls to the closest one it does. A lab with nothing to read has no steps: these addresses become `/labs/<slug>`. |
+| `/labs/<slug>/games` `/games?step=N` `/closing` | A warm-up's steps after its lessons: one game a step (`/games` is the first, a later one has `?step=N` like a later round), then its closing story (`/closing`). Open on a warm-up's card goes through the same flow every time (no desktop check, nothing to start), and its last button, "Finish the warm-up", records it (`POST /api/warmups/<slug>/complete`) and replaces the address with `/labs/<slug>`, which then says Done, with "Warm-up done. Next: <title>" as a notice. A lab that is not a warm-up has neither word: they open its first step. |
 | `/labs/<slug>/questions?step=N` `/lessons?step=N` | The N-th step of the whole flow (1-based, as in "Step N of M"; the story is step 1 when there is one): a later round or lesson chunk. A number in range wins over the path word; one that is not a plain number from 1 to 999, or is past the last step, opens the first step. The address is corrected to the step actually shown. The first step of a kind has no `?step=` (so the simple labs keep `/story`, `/questions`, `/lessons`). `step` is the flow's own parameter: it is never carried to another screen, and other query parameters are kept. |
 | `/u/<user>/labs/<slug>/session/<session>` | **A session**: the lab's workspace, as the learner whose id is `<user>` has it, for the session `<session>`. |
 | `/u/<user>/labs/<slug>/session/<session>/brief` `questions` `hints` `checks` `solution` | The guide's tabs. |
@@ -132,6 +133,8 @@ cases (`test/unit/console-return-path.test.ts`, `test/unit/console-worker.test.t
 | a lab's page, the story | `<Lab title> · Opalix labs` |
 | questions (every round) | `Quick questions · <Lab title> · Opalix labs` |
 | lessons (every chunk) | `Lessons · <Lab title> · Opalix labs` |
+| a warm-up's games (every one) | `Games · <Lab title> · Opalix labs` |
+| a warm-up's closing story | `The closing story · <Lab title> · Opalix labs` |
 | session | `Session · <Lab title> · Opalix labs` |
 | session not active | `Session not active · Opalix labs` |
 | not found | `Not found · Opalix labs` |
