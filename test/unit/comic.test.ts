@@ -314,4 +314,14 @@ describe('the Playwright fixtures (test/e2e/comic-fixture.ts)', () => {
       expect(() => parseLearnBundle(bundleOf(fx, narrationOf(fx)))).not.toThrow();
     }
   });
+
+  it('the warm-up bundle (closing comic and one game of each kind) is valid too', async () => {
+    const { CLOSING, GAMES, warmUpBundleOf } = await import('../e2e/comic-fixture');
+    const { parseLearnBundle } = await import('../../src/labs/learn');
+    expect(checkComic(ComicSchema.parse(CLOSING))).toEqual([]);
+    const bundle = parseLearnBundle(warmUpBundleOf());
+    expect(bundle.games.map((g) => g.kind)).toEqual(['sort', 'flag', 'sliders', 'order-and-nest']);
+    expect(bundle.games).toHaveLength(GAMES.length);
+    expect(bundle.closing?.comic.title).toBe(CLOSING.title);
+  });
 });

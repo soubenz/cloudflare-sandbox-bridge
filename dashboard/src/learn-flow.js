@@ -185,15 +185,15 @@ export function planLearningFlow(learn, mastery) {
 }
 
 /**
- * The flow of a warm-up: the lab's flow (above), then one step per game in the bundle's order
- *   { kind: 'game', game: id }
- * and, when the bundle has a closing, its story last
+ * The flow of a warm-up: the lab's flow (above), then, when the bundle has a closing, its story
  *   { kind: 'story', closing: true }
+ * and last one step per game in the bundle's order (the games test what the closing explains)
+ *   { kind: 'game', game: id }
  */
 export function planWarmUpFlow(learn, mastery) {
   const steps = planLearningFlow(learn, mastery);
-  for (const g of learn?.games || []) if (g && typeof g.id === 'string') steps.push({ kind: 'game', game: g.id });
   if (learn?.closing) steps.push({ kind: 'story', closing: true });
+  for (const g of learn?.games || []) if (g && typeof g.id === 'string') steps.push({ kind: 'game', game: g.id });
   return steps;
 }
 

@@ -655,6 +655,9 @@ describe('normalizing what the API sent', () => {
       expect(out.learn.concepts, dir).toHaveLength(bundle.concepts.length);
       expect(out.learn.questions, dir).toHaveLength(bundle.questions.length);
       expect(out.learn.fields, dir).toHaveLength(bundle.fields.length);
+      // The suggested answers of a field are kept, as questions-form.js shows them.
+      expect((out.learn.fields as Array<{ options?: string[] }>).map((f) => f.options), dir).toEqual(bundle.fields.map((f) => (f as { options?: string[] }).options));
+      expect((out.learn as unknown as { games: unknown[] }).games, dir).toHaveLength(bundle.games.length);
       expect(out.learn.story?.title, dir).toBe(bundle.story?.title);
       expect(out.learn.answers_file).toBe(bundle.answers_file);
     }
@@ -705,6 +708,100 @@ describe('normalizing what the API sent', () => {
     expect((m.normalizeLearn({ version: '1.0.0', learn: bundle })! as { learn: { audio?: unknown } }).learn.audio).toBeUndefined();
     expect((m.normalizeLearn({ slug: 'x-lab', version: '1.0.0', learn: { ...bundle, comic: undefined } })! as { learn: { audio?: unknown } }).learn.audio).toBeUndefined();
     expect((m.normalizeLearn({ slug: 'x-lab', version: '1.0.0', learn: { ...bundle, audio: { clips: 'x', lines: [] } } })! as { learn: { audio?: unknown } }).learn.audio).toBeUndefined();
+  });
+
+  it('keeps the suggested answers of a text or number field, and only of those', () => {
+    const out = m.normalizeLearn({
+      version: '1.0.0',
+      learn: {
+        fields: [
+          { key: 'provider', prompt: 'Which provider?', kind: 'text', options: ['provider-a', 'provider-b'] },
+          { key: 'calls', prompt: 'How many calls?', kind: 'number', options: ['10', '20', 30, ''] },
+          { key: 'one', prompt: 'One option is none', kind: 'text', options: ['only'] },
+          { key: 'pick', prompt: 'Pick', kind: 'choice', choices: ['a', 'b'], options: ['x', 'y'] },
+        ],
+      },
+    })!;
+    const fields = out.learn.fields as Array<{ key: string; options?: string[] }>;
+    expect(fields.map((f) => [f.key, f.options])).toEqual([
+      ['provider', ['provider-a', 'provider-b']],
+      ['calls', ['10', '20']],
+      ['one', undefined],
+      ['pick', undefined],
+    ]);
+  });
+
+  describe('a warm-up\'s games and closing', () => {
+    const GAMES = {
+      sort: {
+        kind: 'sort', id: 'sort-calls', title: 'Who pays?', prompt: 'Put each call where its cost lands.', explanation: 'The team that owns the key.',
+        buckets: [{ id: 'team', label: 'The team' }, { id: 'platform', label: 'The platform' }],
+        cards: [{ id: 'c1', text: 'A team call', bucket: 'team' }, { id: 'c2', text: 'A health check', bucket: 'platform' }, { id: 'c3', text: 'A retry', bucket: 'team' }],
+      },
+      flag: {
+        kind: 'flag', id: 'flag-logs', title: 'Spot the leak', prompt: 'Flag the lines that leak a secret.', explanation: 'Keys never belong in logs.',
+        items: [{ id: 'a', text: 'key=sk-123', flag: true, why: 'A raw key.' }, { id: 'b', text: 'status=200', flag: false }, { id: 'c', text: 'model=fast', flag: false }],
+      },
+      sliders: {
+        kind: 'sliders', id: 'cost', title: 'What a day costs', prompt: 'Move the sliders.', explanation: 'Calls times price.',
+        inputs: [{ id: 'calls', label: 'Calls a day', min: 0, max: 1000, step: 10, default: 100 }, { id: 'price', label: 'Price per call', min: 0, max: 1, step: 0.01, default: 0.1, unit: 'USD' }],
+        formula: [{ input: 'calls', op: '*' }, { input: 'price', op: '*' }],
+        readout: { label: 'Daily cost', unit: 'USD', decimals: 2 },
+        ask: { prompt: 'Which input moves the bill most?', answer: 'calls' },
+      },
+      nest: {
+        kind: 'order-and-nest', id: 'request-path', title: 'Follow one request', prompt: 'Order and nest the steps.', explanation: 'The gateway wraps the call.',
+        steps: [{ id: 'gw', text: 'Gateway receives the call', parent: null, order: 0 }, { id: 'alias', text: 'Alias resolves', parent: 'gw', order: 0 }, { id: 'provider', text: 'Provider answers', parent: 'gw', order: 1 }],
+      },
+    };
+    const closing = {
+      story: { title: 'Friday at Larkfield', minutes: 2, body: 'By Friday we knew.' },
+      comic: { title: 'What we found', pages: [{ panels: [] }] },
+      audio: { model: 'm', clips: { '0123456789abcdef': { voice: 'v', text: 't', seconds: 1, bytes: 10 } }, lines: [{ panel: 0, kind: 'voiceover', clip: '0123456789abcdef' }] },
+    };
+    type Out = { learn: Learn & { games: Array<Record<string, unknown>>; closing?: { story?: { title: string; minutes: number; body: string }; comic?: { title: string }; audio?: { slug: string } } } };
+    const norm = (learn: Record<string, unknown>, slug?: string) => m.normalizeLearn({ version: '1.0.0', ...(slug ? { slug } : {}), learn: { concepts: [], questions: [], ...learn } }) as unknown as Out;
+
+    it('passes every game of every kind and the closing through, as the server schema has them', () => {
+      const out = norm({ games: Object.values(GAMES), closing }, 'warm-up-lab');
+      expect(out.learn.games).toEqual(Object.values(GAMES));
+      expect(out.learn.closing!.story).toEqual(closing.story);
+      expect(out.learn.closing!.comic).toEqual(closing.comic);
+      // The closing's narration gets the lab's slug, like the opener's: its clips share the lab's folder.
+      expect(out.learn.closing!.audio!.slug).toBe('warm-up-lab');
+      expect(norm({ closing }).learn.closing!.audio).toBeUndefined();
+      // A bundle without either has no closing and no games.
+      const plain = norm({});
+      expect(plain.learn.closing).toBeUndefined();
+      expect(plain.learn.games).toEqual([]);
+    });
+
+    it('drops a malformed game (and a malformed closing) instead of trusting it', () => {
+      const bad = [
+        { ...GAMES.sort, kind: 'drag' },
+        { ...GAMES.sort, id: 'Bad Id' },
+        { ...GAMES.flag, explanation: undefined },
+        { ...GAMES.flag, id: 'no-flag', items: GAMES.flag.items.map((i) => ({ ...i, flag: false })) },
+        { ...GAMES.sort, id: 'one-bucket', buckets: [GAMES.sort.buckets[0]] },
+        { ...GAMES.sliders, id: 'bad-answer', ask: { prompt: 'Which?', answer: 'nope' } },
+        { ...GAMES.sliders, id: 'bad-range', inputs: [{ ...GAMES.sliders.inputs[0], min: 5, max: 1 }, GAMES.sliders.inputs[1]] },
+        { ...GAMES.sliders, id: 'bad-formula', formula: [{ input: 'calls', op: '*' }, { input: 'gone', op: '*' }] },
+        { ...GAMES.nest, id: 'two-roots', steps: GAMES.nest.steps.map((st) => ({ ...st, parent: null })) },
+        { ...GAMES.nest, id: 'cycle', steps: [GAMES.nest.steps[0], { ...GAMES.nest.steps[1], parent: 'provider' }, { ...GAMES.nest.steps[2], parent: 'alias' }] },
+        { ...GAMES.nest, id: 'orphan', steps: [GAMES.nest.steps[0], { ...GAMES.nest.steps[1], parent: 'nowhere' }, GAMES.nest.steps[2]] },
+        'not a game',
+        null,
+      ];
+      const out = norm({ games: [GAMES.sort, ...bad, { ...GAMES.sort, title: 'The same id again' }, GAMES.nest], closing: { story: { title: 'No body' } } });
+      expect(out.learn.games.map((g) => g.id)).toEqual(['sort-calls', 'request-path']);
+      expect(out.learn.games[0]).toEqual(GAMES.sort);
+      // A card whose bucket is not one of the game's is left out, the rest of the game kept.
+      const fewer = norm({ games: [{ ...GAMES.sort, cards: [...GAMES.sort.cards, { id: 'c4', text: 'Lost', bucket: 'nowhere' }] }] });
+      expect((fewer.learn.games[0]!.cards as unknown[]).length).toBe(3);
+      expect(out.learn.closing).toBeUndefined();
+      // A closing with only its comic is still a closing.
+      expect(norm({ closing: { comic: closing.comic } }).learn.closing).toEqual({ comic: closing.comic });
+    });
   });
 
   it('a bundle with only fields is still a bundle', () => {

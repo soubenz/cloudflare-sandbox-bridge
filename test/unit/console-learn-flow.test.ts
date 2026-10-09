@@ -11,6 +11,9 @@ type Step =
   | { kind: 'story' }
   | { kind: 'round'; round: number; rounds: number; questions: string[] }
   | { kind: 'lessons'; part: number; parts: number; concepts: string[]; plan: Array<{ concept: string; state: string }> };
+/** A warm-up's bundle: a lab's, plus its games (only the ids matter here) and its closing story. */
+type WarmLearn = Learn & { games?: Array<{ id: string; title?: string }>; closing?: { story?: { title: string }; comic?: { title: string } } };
+type WarmStep = Step | { kind: 'game'; game: string } | { kind: 'story'; closing: true };
 type Mastery = { v?: number; onboarding?: { status: string | null; at: number; levels: Record<string, string> }; concepts?: Record<string, { known: boolean }>; overrides?: Record<string, string> };
 const f = (await import('../../dashboard/src/learn-flow.js' as string)) as {
   ROUND_SIZE: number;
@@ -18,17 +21,18 @@ const f = (await import('../../dashboard/src/learn-flow.js' as string)) as {
   roundCaps: (total: number) => number[];
   chunkSizes: (n: number, chunks: number) => number[];
   planLearningFlow: (learn: Learn, mastery?: Mastery) => Step[];
-  stepLabel: (step: Step, learn?: Learn) => string;
+  planWarmUpFlow: (learn: WarmLearn, mastery?: Mastery) => WarmStep[];
+  stepLabel: (step: WarmStep, learn?: WarmLearn) => string;
   questionHeading: (step: Step, index: number) => string;
-  stepIndexFor: (steps: Step[], kind?: string, n?: number | null) => number;
-  stepKindWord: (step: Step) => string;
-  stepNumberFor: (steps: Step[], index: number) => number | null;
-  restoreSteps: (learn: Learn, saved: unknown) => Step[] | null;
+  stepIndexFor: (steps: WarmStep[], kind?: string, n?: number | null) => number;
+  stepKindWord: (step: WarmStep) => string;
+  stepNumberFor: (steps: WarmStep[], index: number) => number | null;
+  restoreSteps: (learn: WarmLearn, saved: unknown) => WarmStep[] | null;
   prefetchStepIndex: (steps: unknown) => number;
   shouldPrefetch: (steps: unknown, index: number) => boolean;
   createFlowStore: (o: { slug: string; version?: string; storage?: unknown }) => {
-    load: () => { steps: Step[]; answers: Record<string, unknown> } | null;
-    save: (steps: Step[], answers: Record<string, unknown>) => void;
+    load: () => { steps: WarmStep[]; answers: Record<string, unknown>; games: Record<string, unknown>; started_at?: number } | null;
+    save: (steps: WarmStep[], answers: Record<string, unknown>, extra?: { games?: Record<string, unknown>; started_at?: number }) => void;
     clear: () => void;
   };
 };
@@ -418,5 +422,82 @@ describe('shouldPrefetch', () => {
   it('ignores an index that is not a step number', () => {
     expect(f.shouldPrefetch(steps, Number.NaN)).toBe(false);
     expect(f.shouldPrefetch(steps, undefined as unknown as number)).toBe(false);
+  });
+});
+
+describe('a warm-up: the lab\'s flow, then its games and its closing story', () => {
+  const games = [{ id: 'sort-calls', title: 'Who pays?' }, { id: 'flag-logs', title: 'Spot the leak' }, { id: 'cost', title: 'What a day costs' }];
+  const warm = (over: Partial<WarmLearn> = {}): WarmLearn => ({ ...lab([3, 3, 3, 3, 3]), games, closing: { story: { title: 'Friday at Larkfield' } }, ...over });
+
+  it('plans story, rounds and lessons as any lab, then one step per game in order, then the closing', () => {
+    const learn = warm();
+    const steps = f.planWarmUpFlow(learn, NONE);
+    const own = f.planLearningFlow(learn, NONE);
+    expect(steps.slice(0, own.length)).toEqual(own);
+    expect(steps.slice(own.length)).toEqual([{ kind: 'game', game: 'sort-calls' }, { kind: 'game', game: 'flag-logs' }, { kind: 'game', game: 'cost' }, { kind: 'story', closing: true }]);
+    expect(steps.map((s) => s.kind)).toEqual(['story', 'round', 'lessons', 'round', 'lessons', 'round', 'game', 'game', 'game', 'story']);
+    // No closing: the games are the end. No games either: the lab's own flow.
+    expect(f.planWarmUpFlow(warm({ closing: undefined }), NONE).at(-1)).toEqual({ kind: 'game', game: 'cost' });
+    expect(f.planWarmUpFlow(warm({ closing: undefined, games: [] }), NONE)).toEqual(own);
+    // Nothing but the games and the closing.
+    expect(f.planWarmUpFlow({ concepts: [], questions: [], games, closing: { story: { title: 'x' } } }, NONE).map((s) => s.kind)).toEqual(['game', 'game', 'game', 'story']);
+  });
+
+  it('names the game and closing steps, and their addresses: /games, /games?step=N, /closing', () => {
+    const learn = warm();
+    const steps = f.planWarmUpFlow(learn, NONE);
+    const first = steps.findIndex((s) => s.kind === 'game');
+    const closing = steps.length - 1;
+    expect(f.stepLabel(steps[first]!, learn)).toBe('Who pays?');
+    expect(f.stepLabel(steps[closing]!, learn)).toBe('Friday at Larkfield');
+    expect(f.stepLabel(steps[0]!, learn)).toBe('The story');
+    expect(f.stepLabel({ kind: 'story', closing: true }, { ...learn, closing: { comic: { title: 'The comic' } } })).toBe('The comic');
+    expect(steps.slice(first).map((s) => f.stepKindWord(s))).toEqual(['games', 'games', 'games', 'closing']);
+    expect(f.stepKindWord(steps[0]!)).toBe('story');
+    expect(f.stepIndexFor(steps, 'games')).toBe(first);
+    expect(f.stepIndexFor(steps, 'closing')).toBe(closing);
+    expect(f.stepIndexFor(steps, 'story')).toBe(0);
+    expect(f.stepIndexFor(steps, 'games', first + 2)).toBe(first + 1);
+    // The first game and the closing need no number; a later game does. Each number leads back to its own step.
+    expect(steps.slice(first).map((_, i) => f.stepNumberFor(steps, first + i))).toEqual([null, first + 2, first + 3, null]);
+    steps.forEach((s, i) => expect(f.stepIndexFor(steps, f.stepKindWord(s), f.stepNumberFor(steps, i) ?? undefined)).toBe(i));
+    // A warm-up with no games: /games falls to the closing, and /closing with no closing to the games.
+    const noGames = f.planWarmUpFlow(warm({ games: [] }), NONE);
+    expect(f.stepIndexFor(noGames, 'games')).toBe(noGames.length - 1);
+    const noClosing = f.planWarmUpFlow(warm({ closing: undefined }), NONE);
+    expect(f.stepIndexFor(noClosing, 'closing')).toBe(noClosing.findIndex((s) => s.kind === 'game'));
+    // A lab that is not a warm-up has neither: the first step.
+    expect(f.stepIndexFor(f.planLearningFlow(learn, NONE), 'games')).toBe(0);
+  });
+
+  it('restores a saved warm-up plan, dropping a game the bundle no longer has (and a closing it lost)', () => {
+    const learn = warm();
+    const steps = f.planWarmUpFlow(learn, NONE);
+    const saved = JSON.parse(JSON.stringify(steps));
+    expect(f.restoreSteps(learn, saved)).toEqual(steps);
+    const fewer = { ...learn, games: games.filter((g) => g.id !== 'flag-logs') };
+    const restored = f.restoreSteps(fewer, saved)!;
+    expect(restored).toEqual(steps.filter((s) => !(s.kind === 'game' && s.game === 'flag-logs')));
+    expect(restored.filter((s) => s.kind === 'game').map((s) => (s as { game: string }).game)).toEqual(['sort-calls', 'cost']);
+    expect(f.restoreSteps({ ...learn, closing: undefined }, saved)!.at(-1)).toEqual({ kind: 'game', game: 'cost' });
+    // Only lost games: nothing to restore, a fresh plan is made.
+    expect(f.restoreSteps({ concepts: [], questions: [], games: [] }, [{ kind: 'game', game: 'gone' }])).toBeNull();
+    // A question that is gone still refuses the whole plan, as for any lab.
+    expect(f.restoreSteps(learn, [...saved, { kind: 'round', round: 9, rounds: 9, questions: ['gone'] }])).toBeNull();
+  });
+
+  it('keeps the games solved and when the warm-up began with the visit', () => {
+    const map = new Map<string, string>();
+    const storage = { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => void map.set(k, v), removeItem: (k: string) => void map.delete(k) };
+    const store = f.createFlowStore({ slug: 'warm-up', version: '1.0.0', storage });
+    const steps = f.planWarmUpFlow(warm(), NONE);
+    store.save(steps, {}, { games: { 'sort-calls': { id: 'sort-calls', tries: 2 } }, started_at: 1_700_000_000_000 });
+    const got = store.load()!;
+    expect(got.games).toEqual({ 'sort-calls': { id: 'sort-calls', tries: 2 } });
+    expect(got.started_at).toBe(1_700_000_000_000);
+    // A lab's visit has neither.
+    store.save(steps, {});
+    expect(store.load()!.games).toEqual({});
+    expect(store.load()!.started_at).toBeUndefined();
   });
 });

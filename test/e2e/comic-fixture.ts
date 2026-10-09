@@ -39,7 +39,12 @@ export interface FixtureBundle {
   questions: unknown[];
   answers_file: string;
   fields: Array<{ key: string; prompt: string; kind: string; choices?: string[]; help?: string }>;
+  /** A warm-up's closing story (its comic is required) and its games (played after the lessons). */
+  closing?: { story: { title: string; minutes: number; body: string }; comic: FixtureComic; audio?: FixtureAudio };
+  games?: FixtureGame[];
 }
+/** One warm-up game as learn/games.yaml compiles it (src/labs/learn.ts GameSchema): the fields of its kind. */
+export type FixtureGame = { kind: 'sort' | 'flag' | 'sliders' | 'order-and-nest'; id: string; title: string; prompt: string; explanation: string } & Record<string, unknown>;
 
 export const panelOf = (p: Record<string, unknown>): FixturePanel => ({ cast: [], prop: 'none', bubbles: [], ...p }) as unknown as FixturePanel;
 
@@ -169,5 +174,97 @@ export function bundleOf(comic?: FixtureComic, audio?: FixtureAudio): FixtureBun
     ],
     answers_file: 'answers.json',
     fields: [{ key: 'support_deployment', prompt: 'Which deployment answered support?', kind: 'choice', choices: ['a', 'b'] }],
+  };
+}
+
+/** The closing comic of the warm-up fixture: four panels (the fewest a comic may have), every one voiced. */
+export const CLOSING: FixtureComic = {
+  title: 'What we found',
+  pages: [
+    {
+      panels: [
+        panelOf({ scene: 'desk', cast: ['maren'], bg: 'ice', voiceover: 'By Friday we knew which provider had answered.', bubbles: [{ who: 'maren', text: 'So that was it.' }] }),
+        panelOf({ scene: 'portrait', cast: ['tomasz'], bg: 'sand', voiceover: 'The alias had moved and nobody had noticed.' }),
+        panelOf({ scene: 'screen', voiceover: 'Here is the line that told us.', lines: ['alias: fast = provider-b'] }),
+        panelOf({ scene: 'you', bg: 'navy', voiceover: 'Now you know where to look.', lines: ['$ go'] }),
+      ],
+    },
+  ],
+};
+
+/** One small game of each kind, valid to the schema; the warm-up spec plays them in this order. */
+export const GAMES: FixtureGame[] = [
+  {
+    kind: 'sort',
+    id: 'sort-calls',
+    title: 'Who pays?',
+    prompt: 'Put each call where its cost lands.',
+    explanation: 'The gateway bills the team that owns the key.',
+    buckets: [
+      { id: 'team', label: 'The team' },
+      { id: 'platform', label: 'The platform' },
+    ],
+    cards: [
+      { id: 'c1', text: 'A call with the team key', bucket: 'team' },
+      { id: 'c2', text: 'A health check', bucket: 'platform' },
+      { id: 'c3', text: 'A retry of a team call', bucket: 'team' },
+    ],
+  },
+  {
+    kind: 'flag',
+    id: 'flag-logs',
+    title: 'Spot the leak',
+    prompt: 'Flag the log lines that leak a secret.',
+    explanation: 'Keys never belong in logs.',
+    items: [
+      { id: 'a', text: 'key=sk-123', flag: true, why: 'A raw key.' },
+      { id: 'b', text: 'status=200', flag: false },
+      { id: 'c', text: 'model=fast', flag: false },
+    ],
+  },
+  {
+    kind: 'sliders',
+    id: 'cost',
+    title: 'What a day costs',
+    prompt: 'Move the sliders and watch the bill.',
+    explanation: 'Calls times price is the bill.',
+    inputs: [
+      { id: 'calls', label: 'Calls a day', min: 0, max: 1000, step: 10, default: 100 },
+      { id: 'price', label: 'Price per call', min: 0, max: 1, step: 0.01, default: 0.1, unit: 'USD' },
+    ],
+    formula: [
+      { input: 'calls', op: '*' },
+      { input: 'price', op: '*' },
+    ],
+    readout: { label: 'Daily cost', unit: 'USD', decimals: 2 },
+    ask: { prompt: 'Which input moves the bill most?', answer: 'calls' },
+  },
+  {
+    kind: 'order-and-nest',
+    id: 'request-path',
+    title: 'Follow one request',
+    prompt: 'Order the steps and nest them.',
+    explanation: 'The gateway wraps the provider call.',
+    steps: [
+      { id: 'gw', text: 'Gateway receives the call', parent: null, order: 0 },
+      { id: 'alias', text: 'Alias resolves', parent: 'gw', order: 0 },
+      { id: 'provider', text: 'Provider answers', parent: 'gw', order: 1 },
+    ],
+  },
+];
+
+/**
+ * A warm-up's bundle (the 26-warm-up spec): the small bundle above, with no fields (a lab with games has
+ * none), its closing story and comic, and one game of each kind.
+ */
+export function warmUpBundleOf(comic?: FixtureComic): FixtureBundle {
+  return {
+    ...bundleOf(comic),
+    fields: [],
+    closing: {
+      story: { title: 'Friday on the platform team', minutes: 1, body: 'By Friday you knew which provider had answered, and why.' },
+      comic: CLOSING,
+    },
+    games: GAMES,
   };
 }

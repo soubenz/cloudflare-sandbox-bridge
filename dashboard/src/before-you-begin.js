@@ -20,8 +20,8 @@
  * the moment it is answered. Going Back never asks a question again: answers are kept (in the
  * flow's own record, `createFlowStore`, so that a refresh comes back to the same step as well).
  *
- * A warm-up (`warmUp`, a lab with nothing to start) runs the same steps and then its games, one a
- * step, and its closing story, and ends with "Finish the warm-up" (`onFinish`) instead of a start.
+ * A warm-up (`warmUp`, a lab with nothing to start) runs the same steps and then its closing story
+ * and its games, one a step, and ends with "Finish the warm-up" (`onFinish`) instead of a start.
  *
  * Builds into `host`, focusing each step's heading and saying the step in a polite live region.
  */
@@ -58,7 +58,7 @@ import { uiIcon } from './icons.js';
  *   cancelPrepare  ({beacon}) => void, drops the warm lab when the visit ends without Start (Back to labs, a
  *                  route change, the page closing with `beacon: true`). Not called once Start was pressed.
  *   warmUp   true for a lab of type warm-up, which has nothing to start: the flow (planWarmUpFlow) goes on past
- *            the lessons to the games, one a step, and the closing story; the last step's button is "Finish the
+ *            the lessons to the closing story and then the games, one a step; the last step's button is "Finish the
  *            warm-up"; there is no "Skip all", nothing is prepared, and the mastery record's `labs[slug].intro` is
  *            never written. A game's Continue comes on once it is solved, and what was solved ({ id, tries }) is
  *            kept with the visit, so a refresh keeps it.
@@ -242,6 +242,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     const prev = steps[index - 1];
     if (!prev) return null;
     const to = index - 1;
+    if (prev.kind === 'story' && prev.closing) return button('← Back to the closing story', { kind: 'quiet', onClick: () => enterStep(to, 'back'), id: 'btnBackClosing' });
     if (prev.kind === 'story') return button('← Back to the story', { kind: 'quiet', onClick: () => enterStep(to, 'back'), id: 'btnBackStory' });
     if (prev.kind === 'round') return button('← Back to the questions', { kind: 'quiet', onClick: () => enterStep(to, 'back'), id: 'btnBackQuestions' });
     if (prev.kind === 'game') return button('← Back to the game', { kind: 'quiet', onClick: () => enterStep(to, 'back'), id: 'btnBackGame' });

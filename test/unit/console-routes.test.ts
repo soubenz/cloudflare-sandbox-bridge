@@ -226,6 +226,27 @@ describe('parseRoute: the step of the flow', () => {
   });
 });
 
+describe('a warm-up\'s steps: /games and /closing', () => {
+  it('reads and builds /games (with ?step=N for a later game) and /closing, beside the lab\'s own steps', () => {
+    expect(without(parse('/labs/warm-up/games'))).toEqual({ name: 'lab-step', slug: 'warm-up', step: 'games' });
+    expect(without(parse('/labs/warm-up/games', '?step=7'))).toEqual({ name: 'lab-step', slug: 'warm-up', step: 'games', n: 7 });
+    expect(without(parse('/labs/warm-up/closing'))).toEqual({ name: 'lab-step', slug: 'warm-up', step: 'closing' });
+    expect(without(parse('/labs/warm-up/closing/'))).toEqual({ name: 'lab-step', slug: 'warm-up', step: 'closing' });
+    expect(r.buildRoute('lab-step', { slug: 'warm-up', step: 'games' })).toBe('/labs/warm-up/games');
+    expect(r.buildRoute('lab-step', { slug: 'warm-up', step: 'games', n: 7 })).toBe('/labs/warm-up/games?step=7');
+    expect(r.buildRoute('lab-step', { slug: 'warm-up', step: 'closing', search: '?step=3' })).toBe('/labs/warm-up/closing');
+    // Still nothing deeper, and the words are steps, not session tabs.
+    expect(parse('/labs/warm-up/games/1').name).toBe('not-found');
+    expect(parse('/labs/warm-up/game').name).toBe('not-found');
+    expect(without(parse('/labs/warm-up/session/games'))).toEqual({ name: 'session', slug: 'warm-up', invalidTab: true });
+  });
+
+  it('titles them', () => {
+    expect(r.routeTitle({ name: 'lab-step', slug: 'warm-up', step: 'games' }, 'Warm up')).toBe('Games · Warm up · Opalix labs');
+    expect(r.routeTitle({ name: 'lab-step', slug: 'warm-up', step: 'closing' }, 'Warm up')).toBe('The closing story · Warm up · Opalix labs');
+  });
+});
+
 describe('buildRoute', () => {
   it('builds each route', () => {
     expect(r.buildRoute('launcher')).toBe('/');
