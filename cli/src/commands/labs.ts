@@ -9,7 +9,7 @@ import { OpalixClient } from '../client';
 import { fileURLToPath } from 'node:url';
 import { compileLearnDir } from '../learn-compile';
 import { learnAudioClips } from '../../../src/labs/learn';
-import { accountIdFrom, narrateLab } from '../narrate';
+import { accountIdFrom, importNarration, narrateLab } from '../narrate';
 
 /**
  * The lint rules live in scripts/lint-labs.mjs (plain Node, also runnable as
@@ -199,26 +199,35 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
   labs
     .command('narrate <dir...>')
     .description(
-      "Give each lab's motion comic its storyteller voice: narrate the opener (learn/comic.yaml) and, when present, the closing comic (learn/closing.yaml): synthesise the panel voiceovers that have no clip yet into learn/audio/ and write learn/audio.json (and learn/closing-audio.json for the closing) (needs CLOUDFLARE_API_TOKEN; the files are committed, publishing never calls the model)"
+      "Give each lab's motion comic its storyteller voice: narrate the opener (learn/comic.yaml) and, when present, the closing comic (learn/closing.yaml): synthesise the panel voiceovers that have no clip yet into learn/audio/ and write learn/audio.json (and learn/closing-audio.json for the closing) (needs CLOUDFLARE_API_TOKEN; the files are committed, publishing never calls the model). With --from-dir, file clips made by another text-to-speech instead (no token, no network)"
     )
     .option('--dry-run', 'list what would be synthesised and how many characters it is, change nothing, call nothing')
-    .action(async (dirs: string[], opts: { dryRun?: boolean }) => {
+    .option('--from-dir <clipsDir>', 'import clips made elsewhere: NN.mp3 in voiceover order (closing/NN.mp3 for the closing), or a manifest.json matching each file to its words; one lab only')
+    .option('--model <id>', 'with --from-dir: the model that made the clips, stored as given (e.g. elevenlabs/eleven_v4)')
+    .option('--voice <id>', 'with --from-dir: the voice that made the clips, stored as given (e.g. an ElevenLabs voice id)')
+    .action(async (dirs: string[], opts: { dryRun?: boolean; fromDir?: string; model?: string; voice?: string }) => {
+      if (!opts.fromDir && (opts.model !== undefined || opts.voice !== undefined)) throw new Error('--model and --voice go with --from-dir; Workers AI narration uses the model and voice set in src/labs/comic-kit.ts');
+      if (opts.fromDir && dirs.length !== 1) throw new Error('--from-dir imports into one lab at a time');
       const wrangler = fileURLToPath(new URL('../../../wrangler.jsonc', import.meta.url));
       const accountId = accountIdFrom(process.env, wrangler);
       let characters = 0;
       let made = 0;
       for (const dir of dirs) {
-        console.log(`${dir}${opts.dryRun ? ' (dry run)' : ''}`);
-        const r = await narrateLab(dir, {
-          dryRun: opts.dryRun,
-          token: process.env.CLOUDFLARE_API_TOKEN,
-          ...(accountId ? { accountId } : {}),
-          log: (line) => console.log(line),
-        });
+        console.log(`${dir}${opts.fromDir ? ` (from ${opts.fromDir})` : ''}${opts.dryRun ? ' (dry run)' : ''}`);
+        const log = (line: string) => console.log(line);
+        const r = opts.fromDir
+          ? importNarration(dir, { fromDir: opts.fromDir, model: opts.model, voice: opts.voice, dryRun: opts.dryRun, log })
+          : await narrateLab(dir, {
+              dryRun: opts.dryRun,
+              token: process.env.CLOUDFLARE_API_TOKEN,
+              ...(accountId ? { accountId } : {}),
+              log,
+            });
         characters += r.characters;
         made += r.made;
+        const verb = opts.fromDir ? (opts.dryRun ? 'to copy' : 'copied') : opts.dryRun ? 'to make' : 'made';
         console.log(
-          `  ${r.lines} voiceover${r.lines === 1 ? '' : 's'}, ${r.clips} clip${r.clips === 1 ? '' : 's'}: ${r.made} ${opts.dryRun ? 'to make' : 'made'} (${r.characters} characters), ${r.reused} reused, ${r.removed} ${opts.dryRun ? 'to remove' : 'removed'}` +
+          `  ${r.lines} voiceover${r.lines === 1 ? '' : 's'}, ${r.clips} clip${r.clips === 1 ? '' : 's'}: ${r.made} ${verb}${opts.fromDir ? '' : ` (${r.characters} characters)`}, ${r.reused} reused, ${r.removed} ${opts.dryRun ? 'to remove' : 'removed'}` +
             (opts.dryRun ? '' : `; ${r.seconds.toFixed(1)} s of audio, ${Math.round(r.bytes / 1024)} KB`)
         );
       }

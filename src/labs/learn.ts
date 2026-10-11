@@ -3,7 +3,7 @@ import registry from '../../packages/catalogue/concepts.json';
 import { QUIZ_SKILLS } from '../skills';
 import { KNOWN_DIAGRAMS, diagramRefs } from './diagram';
 import { ComicSchema, checkComic, type Comic } from './comic';
-import { VOICEOVER_MAX, legacyNarrationLines, narrationLines, usesVoiceover } from './comic-kit';
+import { NARRATOR_VOICE, TTS_MODEL, VOICEOVER_MAX, legacyNarrationLines, narrationLines, usesVoiceover } from './comic-kit';
 
 /**
  * The learning layer of a lab: a short story, one lesson per concept, quiz
@@ -294,6 +294,11 @@ export const MAX_AUDIO_CLIPS = 80;
 export const MAX_AUDIO_CLIP_BYTES = 400 * 1024;
 /** A clip's file name is its key plus this; the key is sixteen hex digits (comic-kit.ts clipKey). */
 export const CLIP_KEY = /^[0-9a-f]{16}$/;
+/**
+ * A clip's voice: whatever id the text-to-speech that made it uses (a Workers AI speaker such as `thalia`,
+ * or another service's voice id when the clips were imported with `labs narrate --from-dir`). One token, no spaces.
+ */
+export const VOICE_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$/;
 
 /**
  * The narration of the comic (learn/audio.json, written by `labs narrate`): which clip reads which
@@ -312,7 +317,7 @@ export const AudioSchema = z
       .record(
         z.string().regex(CLIP_KEY),
         z.object({
-          voice: z.string().regex(/^[a-z][a-z0-9-]{1,30}$/),
+          voice: z.string().regex(VOICE_ID, 'a voice id: letters, digits and . _ : / - only'),
           text: plain(VOICEOVER_MAX),
           seconds: z.number().min(0.05).max(70),
           bytes: z.number().int().min(1).max(MAX_AUDIO_CLIP_BYTES),
@@ -384,8 +389,11 @@ export function checkNarration(comic: Comic, audio: LearnAudio, label: { audio: 
   const have = audio.lines;
   const clipOf = (clip: string) => audio.clips[clip];
   if (usesVoiceover(comic)) {
-    // The voiceover contract: one clip per panel voiceover, all in the one narrator voice.
+    // The voiceover contract: one clip per panel voiceover, all in the one narrator voice. Made by Workers AI
+    // that is NARRATOR_VOICE; imported from another model (`labs narrate --from-dir`) it is the voice those
+    // clips were made in, the same for every line.
     const want = narrationLines(comic);
+    const narrator = audio.model === TTS_MODEL ? NARRATOR_VOICE : (clipOf(have[0]?.clip ?? '')?.voice ?? NARRATOR_VOICE);
     if (have.some((l) => l.kind !== 'voiceover')) {
       stale('it is in the old caption-and-bubble format, and the comic is now told by a voiceover');
     } else if (want.length !== have.length) {
@@ -399,7 +407,7 @@ export function checkNarration(comic: Comic, audio: LearnAudio, label: { audio: 
           stale(`voiceover ${i + 1} is not where the comic has it`);
           break;
         }
-        if (!clip || clip.text !== w.text || clip.voice !== w.voice) {
+        if (!clip || clip.text !== w.text || clip.voice !== narrator) {
           stale(`panel ${w.panel + 1}: the voiceover or the narrator\x27s voice changed`);
           break;
         }

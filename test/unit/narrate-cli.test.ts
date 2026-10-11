@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { accountIdFrom, narrateLab, planNarration, sha256Hex } from '../../cli/src/narrate';
+import { accountIdFrom, importNarration, narrateLab, planNarration, sha256Hex } from '../../cli/src/narrate';
 import { buildLearnUpload } from '../../cli/src/commands/labs';
 import { compileLearnDir, readComic } from '../../cli/src/learn-compile';
 import { AudioSchema } from '../../src/labs/learn';
@@ -452,6 +452,225 @@ describe('labs narrate and the closing comic', () => {
       expect(up.audio.map((c) => c.name.slice(0, -4)).sort()).toEqual(want);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---- importing clips made elsewhere (`labs narrate --from-dir`) ----------------------------------
+
+const EL_MODEL = 'elevenlabs/eleven_v4';
+const EL_VOICE = 'QIhD5ivPGEoYZQDocuHI';
+const VOICEOVERS = ['On Tuesday finance asked us a question nobody could answer.', 'Find out what it really does.', 'We made a small copy for you to look at.', 'Your turn.'];
+const CLOSING_VOICEOVERS = ['By Friday we knew which provider had answered.', 'The alias had moved and nobody had noticed.', 'Here is the line that told us.', 'Now you know where to look.'];
+
+/** A tiny synthetic MP3: `n` MPEG-1 layer III frames (128 kbps, 44.1 kHz, 417 bytes each), so each file's size says which it is. */
+function frames(n: number): Buffer {
+  const bytes = Buffer.alloc(417 * n);
+  for (let i = 0; i < n; i++) bytes.set([0xff, 0xfb, 0x90, 0x00], i * 417);
+  return bytes;
+}
+
+/** A folder of clips: `files` maps a path inside it to its bytes. */
+function clipsDir(files: Record<string, Buffer | string>): string {
+  const dir = mkdtempSync(join(tmpdir(), 'opalix-clips-'));
+  for (const [rel, bytes] of Object.entries(files)) {
+    mkdirSync(join(dir, rel, '..'), { recursive: true });
+    writeFileSync(join(dir, rel), bytes);
+  }
+  return dir;
+}
+
+/** NN.mp3 for each voiceover, the n-th made of `first + n` frames. */
+const numbered = (count: number, first = 3, prefix = '') =>
+  Object.fromEntries(Array.from({ length: count }, (_, i) => [`${prefix}${String(i + 1).padStart(2, '0')}.mp3`, frames(first + i)]));
+
+const keyOf = (text: string) => clipKey(EL_MODEL, EL_VOICE, text, sha256Hex);
+const readAudio = (dir: string, name = 'audio.json') => AudioSchema.parse(JSON.parse(readFileSync(join(dir, 'learn', name), 'utf8')));
+const imp = (dir: string, from: string, extra: Partial<Parameters<typeof importNarration>[1]> = {}) => importNarration(dir, { fromDir: from, model: EL_MODEL, voice: EL_VOICE, ...extra });
+
+describe('labs narrate --from-dir (clips made by another text-to-speech)', () => {
+  it('files NN.mp3 in voiceover order under keys of the given model and voice, and learn-check and publish accept it', () => {
+    const dir = lab();
+    const from = clipsDir(numbered(4));
+    try {
+      const r = imp(dir, from);
+      expect(r).toMatchObject({ lines: 4, clips: 4, made: 4, reused: 0, removed: 0, requests: 0, wroteIndex: true });
+      const audio = readAudio(dir);
+      expect(audio.model).toBe(EL_MODEL);
+      expect(audio.lines.map((l) => l.clip)).toEqual(VOICEOVERS.map(keyOf));
+      VOICEOVERS.forEach((text, i) => {
+        const clip = audio.clips[keyOf(text)]!;
+        expect(clip).toMatchObject({ voice: EL_VOICE, text, bytes: 417 * (3 + i) });
+        expect(clip.seconds).toBeCloseTo(((3 + i) * 1152) / 44100, 2);
+        expect(Buffer.compare(readFileSync(join(dir, 'learn', 'audio', `${keyOf(text)}.mp3`)), frames(3 + i))).toBe(0);
+      });
+      // learn-check takes the model and voice as given; publish uploads the clips like any others.
+      expect(compileLearnDir(dir)!.problems).toEqual([]);
+      expect(buildLearnUpload(dir)!.audio.map((c) => c.name).sort()).toEqual(VOICEOVERS.map((t) => `${keyOf(t)}.mp3`).sort());
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(from, { recursive: true, force: true });
+    }
+  });
+
+  it('with a manifest.json matches each file to its panel by its words, not by order, and takes the model and voice from it', () => {
+    const dir = lab();
+    const from = clipsDir({
+      'turn.mp3': frames(9),
+      'tuesday.mp3': frames(3),
+      'copy.mp3': frames(7),
+      'find.mp3': frames(5),
+      'manifest.json': JSON.stringify({
+        model: EL_MODEL,
+        voice: EL_VOICE,
+        clips: [
+          { file: 'turn.mp3', text: VOICEOVERS[3] },
+          { file: 'copy.mp3', text: VOICEOVERS[2] },
+          { file: 'tuesday.mp3', text: VOICEOVERS[0] },
+          { file: 'find.mp3', text: VOICEOVERS[1] },
+        ],
+      }),
+    });
+    try {
+      const r = importNarration(dir, { fromDir: from });
+      expect(r).toMatchObject({ lines: 4, made: 4 });
+      const audio = readAudio(dir);
+      expect(audio.lines.map((l) => audio.clips[l.clip]!.bytes)).toEqual([3, 5, 7, 9].map((n) => 417 * n));
+      expect(compileLearnDir(dir)!.problems).toEqual([]);
+      // A flag that disagrees with the manifest is refused rather than silently preferred.
+      expect(() => importNarration(dir, { fromDir: from, voice: 'thalia' })).toThrow(/--voice thalia disagrees with manifest\.json/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(from, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a folder with more or fewer clips than voiceovers, naming both numbers, and writes nothing', () => {
+    const dir = lab();
+    const few = clipsDir(numbered(3));
+    const many = clipsDir(numbered(5));
+    try {
+      expect(() => imp(dir, few)).toThrow(/has 3 clips but comic\.yaml has 4 voiceovers/);
+      expect(() => imp(dir, many)).toThrow(/has 5 clips but comic\.yaml has 4 voiceovers/);
+      expect(() => importNarration(dir, { fromDir: few, voice: EL_VOICE })).toThrow(/--model is needed/);
+      expect(clipFiles(dir)).toEqual([]);
+      expect(existsSync(join(dir, 'learn', 'audio.json'))).toBe(false);
+    } finally {
+      for (const d of [dir, few, many]) rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a manifest clip whose words are not in the comic (a stale clip), and one that leaves a voiceover without a clip', () => {
+    const dir = lab();
+    const entries = VOICEOVERS.map((text, i) => ({ file: `${i + 1}.mp3`, text }));
+    const stale = clipsDir({ '1.mp3': frames(3), '2.mp3': frames(4), '3.mp3': frames(5), '4.mp3': frames(6), 'manifest.json': JSON.stringify({ model: EL_MODEL, voice: EL_VOICE, clips: entries.map((e, i) => (i === 1 ? { ...e, text: 'Find out what it did last week.' } : e)) }) });
+    const short = clipsDir({ '1.mp3': frames(3), '2.mp3': frames(4), '3.mp3': frames(5), 'manifest.json': JSON.stringify({ model: EL_MODEL, voice: EL_VOICE, clips: entries.slice(0, 3) }) });
+    try {
+      expect(() => importNarration(dir, { fromDir: stale })).toThrow(/not a voiceover of comic\.yaml:\n {2}- 2\.mp3: "Find out what it did last week\."/);
+      expect(() => importNarration(dir, { fromDir: short })).toThrow(/has 3 clips but comic\.yaml has 4 distinct voiceovers; no clip for:\n {2}- "Your turn\."/);
+      expect(clipFiles(dir)).toEqual([]);
+      expect(existsSync(join(dir, 'learn', 'audio.json'))).toBe(false);
+    } finally {
+      for (const d of [dir, stale, short]) rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a file that is not an MP3 or is over the size limit, before writing anything', () => {
+    const dir = lab();
+    const notMp3 = clipsDir({ ...numbered(4), '02.mp3': 'ID3? no, just text' });
+    const big = clipsDir({ ...numbered(4), '03.mp3': frames(1000) });
+    try {
+      expect(() => imp(dir, notMp3)).toThrow(/02\.mp3 is not an MP3/);
+      expect(() => imp(dir, big)).toThrow(/03\.mp3 is 417000 bytes, over the 409600 limit/);
+      expect(clipFiles(dir)).toEqual([]);
+    } finally {
+      for (const d of [dir, notMp3, big]) rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('imports the opener and the closing (closing/NN.mp3) into one learn/audio, and needs both when the lab has a closing', () => {
+    const dir = labWithClosing();
+    const openerOnly = clipsDir(numbered(4));
+    const both = clipsDir({ ...numbered(4), ...numbered(4, 11, 'closing/') });
+    try {
+      expect(() => imp(dir, openerOnly)).toThrow(/has a closing comic \(learn\/closing\.yaml\): its clips are needed too/);
+      const r = imp(dir, both);
+      expect(r).toMatchObject({ lines: 8, clips: 8, made: 8, reused: 0, removed: 0, wroteIndex: true });
+      expect(clipFiles(dir)).toHaveLength(8);
+      const closing = readAudio(dir, 'closing-audio.json');
+      expect(closing.model).toBe(EL_MODEL);
+      expect(closing.lines.map((l) => l.clip)).toEqual(CLOSING_VOICEOVERS.map(keyOf));
+      expect(closing.lines.map((l) => closing.clips[l.clip]!.bytes)).toEqual([11, 12, 13, 14].map((n) => 417 * n));
+      expect(compileLearnDir(dir)!.problems).toEqual([]);
+      // Closing clips for a lab with no closing are refused too.
+      const plain = lab();
+      try {
+        expect(() => imp(plain, both)).toThrow(/clips for a closing \(closing\/\), but .* has no learn\/closing\.yaml/);
+      } finally {
+        rmSync(plain, { recursive: true, force: true });
+      }
+    } finally {
+      for (const d of [dir, openerOnly, both]) rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('a second run reuses every clip, overwrites none and rewrites nothing; --dry-run lists file → panel → key and touches nothing', () => {
+    const dir = lab();
+    const from = clipsDir(numbered(4));
+    try {
+      const lines: string[] = [];
+      const dry = imp(dir, from, { dryRun: true, log: (l) => lines.push(l) });
+      expect(dry).toMatchObject({ made: 4, wroteIndex: false });
+      expect(lines).toHaveLength(4);
+      expect(lines[1]).toBe(`  02.mp3 → comic.yaml panel 2 → ${keyOf(VOICEOVERS[1]!)}.mp3 (would copy)  ${VOICEOVERS[1]}`);
+      expect(existsSync(join(dir, 'learn', 'audio'))).toBe(false);
+      expect(existsSync(join(dir, 'learn', 'audio.json'))).toBe(false);
+
+      imp(dir, from);
+      const before = readFileSync(join(dir, 'learn', 'audio.json'), 'utf8');
+      // A different take under the same name: the key (same model, voice and words) is already there, so it is kept.
+      writeFileSync(join(from, '01.mp3'), frames(20));
+      const r = imp(dir, from);
+      expect(r).toMatchObject({ made: 0, reused: 4, removed: 0, wroteIndex: false });
+      expect(readFileSync(join(dir, 'learn', 'audio.json'), 'utf8')).toBe(before);
+      expect(readFileSync(join(dir, 'learn', 'audio', `${keyOf(VOICEOVERS[0]!)}.mp3`)).length).toBe(417 * 3);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(from, { recursive: true, force: true });
+    }
+  });
+
+  it('learn-check calls an imported narration stale after a voiceover edit; importing again replaces just that clip', () => {
+    const dir = lab();
+    const from = clipsDir(numbered(4));
+    try {
+      imp(dir, from);
+      writeFileSync(join(dir, 'learn', 'comic.yaml'), COMIC('Find out why it does that.'));
+      expect(compileLearnDir(dir)!.problems.join('\n')).toMatch(/learn\/audio\.json is out of date with comic\.yaml.*labs narrate/);
+      writeFileSync(join(from, '02.mp3'), frames(8));
+      const r = imp(dir, from);
+      expect(r).toMatchObject({ made: 1, reused: 3, removed: 1, wroteIndex: true });
+      expect(readAudio(dir).clips[keyOf('Find out why it does that.')]!.bytes).toBe(417 * 8);
+      expect(clipFiles(dir)).toHaveLength(4);
+      expect(compileLearnDir(dir)!.problems).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(from, { recursive: true, force: true });
+    }
+  });
+
+  it('learn-check still wants one voice: an imported narration with a clip in another voice is stale', () => {
+    const dir = lab();
+    const from = clipsDir(numbered(4));
+    try {
+      imp(dir, from);
+      const audio = JSON.parse(readFileSync(join(dir, 'learn', 'audio.json'), 'utf8'));
+      audio.clips[keyOf(VOICEOVERS[2]!)].voice = 'SomeOtherVoice123';
+      writeFileSync(join(dir, 'learn', 'audio.json'), JSON.stringify(audio));
+      expect(compileLearnDir(dir)!.problems.join('\n')).toMatch(/panel 3: the voiceover or the narrator's voice changed/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(from, { recursive: true, force: true });
     }
   });
 });
