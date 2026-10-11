@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { accountIdFrom, importNarration, narrateLab, planNarration, sha256Hex } from '../../cli/src/narrate';
+import { accountIdFrom, importNarration, importedIndexes, narrateLab, planNarration, sha256Hex } from '../../cli/src/narrate';
 import { buildLearnUpload } from '../../cli/src/commands/labs';
 import { compileLearnDir, readComic } from '../../cli/src/learn-compile';
 import { AudioSchema } from '../../src/labs/learn';
@@ -659,6 +659,43 @@ describe('labs narrate --from-dir (clips made by another text-to-speech)', () =>
     }
   });
 
+  it('a live run refuses an imported narration (dry run too) unless --replace, which makes every clip anew and removes the imported ones', async () => {
+    const dir = labWithClosing();
+    const from = clipsDir({ ...numbered(4), ...numbered(4, 11, 'closing/') });
+    try {
+      imp(dir, from);
+      const s = stub();
+      const refusal = /imported from elevenlabs\/eleven_v4 \(learn\/audio\.json and learn\/closing-audio\.json\); import again with --from-dir, or delete .* to re-narrate with Workers AI \(or pass --replace/;
+      await expect(narrateLab(dir, opts(s))).rejects.toThrow(refusal);
+      await expect(narrateLab(dir, { dryRun: true })).rejects.toThrow(refusal);
+      expect(s.calls).toHaveLength(0);
+      expect(clipFiles(dir)).toHaveLength(8);
+
+      const r = await narrateLab(dir, opts(s, { replace: true }));
+      expect(r).toMatchObject({ made: 8, reused: 0, removed: 8, wroteIndex: true });
+      expect(readAudio(dir).model).toBe(TTS_MODEL);
+      expect(importedIndexes(dir)).toEqual([]);
+      expect(compileLearnDir(dir)!.problems).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(from, { recursive: true, force: true });
+    }
+  });
+
+  it('deleting the imported index lets a live run narrate the lab again', async () => {
+    const dir = lab();
+    const from = clipsDir(numbered(4));
+    try {
+      imp(dir, from);
+      rmSync(join(dir, 'learn', 'audio.json'));
+      const r = await narrateLab(dir, opts(stub()));
+      expect(r).toMatchObject({ made: 4, removed: 4 });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(from, { recursive: true, force: true });
+    }
+  });
+
   it('learn-check still wants one voice: an imported narration with a clip in another voice is stale', () => {
     const dir = lab();
     const from = clipsDir(numbered(4));
@@ -689,8 +726,10 @@ describe('the account id', () => {
 // The labs move from the old contract (caption and bubble narration, several voices) to the voiceover
 // contract one rewrite at a time, so each lab is held to the contract it is written to: a comic with at least
 // one `voiceover` must have the one-voice narration (a dry run has nothing to make or remove); a comic without
-// keeps its old narration, which learn-check still accepts. Either way the bundle compiles with no problem
-// and every clip file is a real MP3 of the length audio.json says.
+// keeps its old narration, which learn-check still accepts. Narration imported from another model (`labs narrate
+// --from-dir`) has nothing to make either: its keys are those of its own model and voice, and learn/audio/ holds
+// exactly them. Either way the bundle compiles with no problem and every clip file is a real MP3 of the length
+// audio.json says.
 describe('the narration committed with the labs', () => {
   const slugs = readdirSync(join(ROOT, 'labs')).filter((s) => existsSync(join(ROOT, 'labs', s, 'learn', 'comic.yaml')));
   it('covers the six explore labs that have a comic', () => {
@@ -702,7 +741,21 @@ describe('the narration committed with the labs', () => {
       expect(existsSync(join(dir, 'learn', 'audio.json'))).toBe(true);
       const compiled = compileLearnDir(dir)!;
       expect(compiled.problems).toEqual([]);
-      if (usesVoiceover(compiled.bundle!.comic!)) {
+      const imported = importedIndexes(dir).length > 0;
+      if (imported) {
+        // The keys a re-import of the same clips would give: every line's, opener and closing, all on disk, nothing else there.
+        const keys = new Set<string>();
+        const indexes: [string, 'comic.yaml' | 'closing.yaml'][] = [['audio.json', 'comic.yaml']];
+        if (existsSync(join(dir, 'learn', 'closing-audio.json'))) indexes.push(['closing-audio.json', 'closing.yaml']);
+        for (const [name, comicFile] of indexes) {
+          const audio = AudioSchema.parse(JSON.parse(readFileSync(join(dir, 'learn', name), 'utf8')));
+          const voice = Object.values(audio.clips)[0]!.voice;
+          const plan = planNarration(readComic(dir, comicFile).comic!, audio.model, voice);
+          expect(audio.lines.map((l) => l.clip), `${name} keys are those of ${audio.model} / ${voice}`).toEqual(plan.lines.map((l) => l.key));
+          for (const l of plan.lines) keys.add(`${l.key}.mp3`);
+        }
+        expect(clipFiles(dir), 'learn/audio/ holds exactly the imported clips').toEqual([...keys].sort());
+      } else if (usesVoiceover(compiled.bundle!.comic!)) {
         const lines: string[] = [];
         const r = await narrateLab(dir, { dryRun: true, log: (l) => lines.push(l) });
         expect(lines, 'a dry run has nothing to make or remove').toEqual([]);

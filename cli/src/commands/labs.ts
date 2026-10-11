@@ -205,8 +205,10 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
     .option('--from-dir <clipsDir>', 'import clips made elsewhere: NN.mp3 in voiceover order (closing/NN.mp3 for the closing), or a manifest.json matching each file to its words; one lab only')
     .option('--model <id>', 'with --from-dir: the model that made the clips, stored as given (e.g. elevenlabs/eleven_v4)')
     .option('--voice <id>', 'with --from-dir: the voice that made the clips, stored as given (e.g. an ElevenLabs voice id)')
-    .action(async (dirs: string[], opts: { dryRun?: boolean; fromDir?: string; model?: string; voice?: string }) => {
+    .option('--replace', 'narrate with Workers AI a lab whose narration was imported (--from-dir): every clip is made anew and the imported ones removed')
+    .action(async (dirs: string[], opts: { dryRun?: boolean; fromDir?: string; model?: string; voice?: string; replace?: boolean }) => {
       if (!opts.fromDir && (opts.model !== undefined || opts.voice !== undefined)) throw new Error('--model and --voice go with --from-dir; Workers AI narration uses the model and voice set in src/labs/comic-kit.ts');
+      if (opts.fromDir && opts.replace) throw new Error('--replace is for Workers AI narration; --from-dir already replaces what the clips folder changes');
       if (opts.fromDir && dirs.length !== 1) throw new Error('--from-dir imports into one lab at a time');
       const wrangler = fileURLToPath(new URL('../../../wrangler.jsonc', import.meta.url));
       const accountId = accountIdFrom(process.env, wrangler);
@@ -219,6 +221,7 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
           ? importNarration(dir, { fromDir: opts.fromDir, model: opts.model, voice: opts.voice, dryRun: opts.dryRun, log })
           : await narrateLab(dir, {
               dryRun: opts.dryRun,
+              replace: opts.replace,
               token: process.env.CLOUDFLARE_API_TOKEN,
               ...(accountId ? { accountId } : {}),
               log,

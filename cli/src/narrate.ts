@@ -71,6 +71,8 @@ export function accountIdFrom(env: Record<string, string | undefined>, wranglerP
 
 export interface NarrateOptions {
   dryRun?: boolean;
+  /** Narrate with Workers AI even when the lab's narration was imported from another model (its clips are then made anew and the imported ones removed). */
+  replace?: boolean;
   /** Workers AI API token; the command reads CLOUDFLARE_API_TOKEN. Never printed. */
   token?: string;
   accountId?: string;
@@ -240,6 +242,22 @@ function finishLab(labDir: string, lab: LabPlan, audioDir: string, orphans: read
   }
 }
 
+/** The lab's narration indexes whose model is not Workers AI's: what `labs narrate --from-dir` imported. An unreadable index is not one. */
+export function importedIndexes(labDir: string): { name: string; model: string }[] {
+  const out: { name: string; model: string }[] = [];
+  for (const name of ['audio.json', 'closing-audio.json']) {
+    const path = join(labDir, 'learn', name);
+    if (!existsSync(path)) continue;
+    try {
+      const model = (JSON.parse(readFileSync(path, 'utf8')) as { model?: unknown } | null)?.model;
+      if (typeof model === 'string' && model !== TTS_MODEL) out.push({ name, model });
+    } catch {
+      // Not JSON: the live run rewrites it.
+    }
+  }
+  return out;
+}
+
 /**
  * Narrates one lab directory: the opener (learn/comic.yaml into learn/audio.json) and, when the lab has
  * one, the closing (learn/closing.yaml into learn/closing-audio.json). Both share learn/audio/, so the
@@ -249,6 +267,16 @@ function finishLab(labDir: string, lab: LabPlan, audioDir: string, orphans: read
 export async function narrateLab(labDir: string, opts: NarrateOptions = {}): Promise<NarrateResult> {
   const log = opts.log ?? (() => {});
   const lab = planLab(labDir);
+  // Narration imported from another model (`--from-dir`) is not ours to remake: every clip would be new and the imported ones deleted.
+  if (!opts.replace) {
+    const imported = importedIndexes(labDir);
+    if (imported.length > 0) {
+      const files = imported.map((i) => `learn/${i.name}`).join(' and ');
+      throw new Error(
+        `${labDir}: this lab's narration was imported from ${imported[0]!.model} (${files}); import again with --from-dir, or delete ${files} to re-narrate with Workers AI (or pass --replace to make every clip anew and remove the imported ones)`
+      );
+    }
+  }
   const { clips } = lab;
   const { audioDir, missing, orphans } = audioOnDisk(labDir, clips);
   const characters = missing.reduce((n, c) => n + c.text.length, 0);
