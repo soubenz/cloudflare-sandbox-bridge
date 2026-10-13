@@ -6,6 +6,27 @@
       "src": "/media/clips/night-office-still.png",
       "alt": "A dark office at night: a moon in the window, and one monitor glowing on an empty desk.",
       "seconds": 6
+    },
+    {
+      "id": "phone-alert-night",
+      "kind": "image",
+      "src": "/media/clips/phone-alert-night.webp",
+      "alt": "Night. Tomasz sits up in bed, tired, holding a phone that glows with a red alert.",
+      "seconds": 6
+    },
+    {
+      "id": "asleep-night",
+      "kind": "image",
+      "src": "/media/clips/asleep-night.webp",
+      "alt": "The same bedroom at night. Tomasz is asleep and smiling; the phone on the bedside table stays dark.",
+      "seconds": 6
+    },
+    {
+      "id": "maren-worried-laptop",
+      "kind": "image",
+      "src": "/media/clips/maren-worried-laptop.webp",
+      "alt": "Maren at her desk in the office, leaning toward her laptop with a worried face.",
+      "seconds": 6
     }
   ]
 }

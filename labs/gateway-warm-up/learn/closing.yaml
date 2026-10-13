@@ -1,9 +1,8 @@
 title: One door
 panels:
-  - scene: desk
-    cast: [{ who: tomasz, mood: pleased }]
-    bg: night
-    shot: close
+  - scene: clip
+    clip: asleep-night
+    cast: [tomasz]
     caption: { text: "03:12", cue: "three twelve" }
     voiceover: Saturday, three in the morning. At three twelve the same provider goes down again, and the phone stays dark.
     lines:

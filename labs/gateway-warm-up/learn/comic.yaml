@@ -5,9 +5,9 @@ panels:
       - { text: "Six things went wrong.", cue: "Six things" }
       - { text: "Four will happen to you.", cue: "Four will" }
     voiceover: Six things went wrong here. Four will happen to you.
-  - scene: desk
-    cast: [{ who: tomasz, mood: tired, pose: phone }]
-    bg: night
+  - scene: clip
+    clip: phone-alert-night
+    cast: [tomasz]
     shot: close
     caption: { text: "Saturday, 03:12", cue: "Saturday" }
     sfx: { text: "BZZT!", cue: "stops answering", sound: phone }
@@ -34,16 +34,18 @@ panels:
       - { cue: "its own provider" }
       - { cue: "A key is" }
     voiceover: Every app at Larkfield has its own provider and its own key. A key is the secret that proves who is paying. Whoever holds it can make calls, and the bill goes to its owner.
-  - scene: message
-    cast: [{ who: maren, mood: worried }]
-    bg: rose
-    prop: key
+  - scene: clip
+    clip: maren-worried-laptop
+    cast: [maren]
     shot: close
     caption: { text: "Tuesday, 10:05", cue: "Tuesday" }
     sfx: { text: "PING!", cue: "screenshot", sound: ping }
     voiceover: Tuesday, ten oh five. Someone shares a screenshot in the team chat to show off a good answer. In the corner of the picture is a provider key.
     bubbles:
       - { who: maren, text: "Everybody liked the screenshot. Nobody noticed the key.", cue: "provider key" }
+    lines:
+      - { text: "team chat: 11 likes", cue: "show off" }
+      - { text: "in the corner: key 4f9a-81c2-7d3e", cue: "In the corner" }
   - scene: screen
     caption: { text: "Friday evening to Monday morning", cue: "Friday evening" }
     voiceover: Friday evening, a research script gets an error and sends the same call again. It keeps sending it until Monday morning, and by then it has spent the whole month's budget.
