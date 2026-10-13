@@ -608,6 +608,147 @@
         { "caption": "So each service the request touches records that it was there, and in which region. Kept together, those records are the audit trail.", "active": ["gw", "eu", "trail"], "packets": [{ "edge": "gw-trail", "label": "gateway span", "tone": "ok" }, { "edge": "eu-trail", "label": "provider span", "tone": "ok" }] },
         { "caption": "Rules and config files state what should happen. The trail shows what did, which is what an auditor can sign.", "active": ["trail"], "packets": [], "notes": [{ "node": "trail", "text": "proof for this request", "tone": "ok" }] }
       ]
+    },
+    {
+      "id": "obs-three-signals",
+      "title": "Three ways to see inside",
+      "summary": "A service sits in the middle. It sends out three kinds of signal: metrics, which are numbers over time; logs, which are one line per event; and traces, which follow one request across every part.",
+      "nodes": [
+        { "id": "svc", "label": "Your service", "kind": "service", "x": 50, "y": 48 },
+        { "id": "metrics", "label": "Metrics", "kind": "store", "x": 9, "y": 48 },
+        { "id": "logs", "label": "Logs", "kind": "log", "x": 91, "y": 48 },
+        { "id": "traces", "label": "Traces", "kind": "log", "x": 50, "y": 88 }
+      ],
+      "edges": [
+        { "id": "svc-metrics", "from": "svc", "to": "metrics" },
+        { "id": "svc-logs", "from": "svc", "to": "logs" },
+        { "id": "svc-traces", "from": "svc", "to": "traces" }
+      ],
+      "steps": [
+        { "caption": "Metrics are numbers over time: requests per minute, errors, how long replies take.", "active": ["svc", "metrics"], "packets": [{ "edge": "svc-metrics", "label": "142 per minute", "tone": "default" }], "notes": [{ "node": "metrics", "text": "reply time: 1.2 s", "tone": "default" }] },
+        { "caption": "Logs are one line per event, and each part describes it in its own words.", "active": ["svc", "logs"], "packets": [{ "edge": "svc-logs", "label": "one line each", "tone": "default" }], "notes": [{ "node": "logs", "text": "each part words it its own way", "tone": "default" }] },
+        { "caption": "A trace follows one request across every part, from the first stop to the last.", "active": ["svc", "traces"], "packets": [{ "edge": "svc-traces", "label": "request 7f3a", "tone": "default" }], "notes": [{ "node": "traces", "text": "one request, every part", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "obs-trace-parcel",
+      "title": "A trace is a tracking page",
+      "summary": "One request travels through the gateway, the model, the vector store and the cache. Like a parcel with a tracking page, each stop is written down with how long it took. Each stop is a span.",
+      "nodes": [
+        { "id": "gw", "label": "Gateway", "kind": "gateway", "x": 10, "y": 42 },
+        { "id": "model", "label": "Model", "kind": "model", "x": 37, "y": 42 },
+        { "id": "vs", "label": "Vector store", "kind": "store", "x": 64, "y": 42 },
+        { "id": "cache", "label": "Cache", "kind": "store", "x": 90, "y": 42 }
+      ],
+      "edges": [
+        { "id": "gw-model", "from": "gw", "to": "model" },
+        { "id": "model-vs", "from": "model", "to": "vs" },
+        { "id": "vs-cache", "from": "vs", "to": "cache" }
+      ],
+      "steps": [
+        { "caption": "Like a parcel, a request gets a tracking page. Stop one: the gateway.", "active": ["gw"], "packets": [], "notes": [{ "node": "gw", "text": "stop 1: 40 ms", "tone": "ok" }] },
+        { "caption": "Stop two: the model, which writes the answer. The page notes how long it took.", "active": ["gw", "model"], "packets": [{ "edge": "gw-model", "tone": "default" }], "notes": [{ "node": "model", "text": "stop 2: 1.9 s", "tone": "warn" }] },
+        { "caption": "Stop three: the vector store, which finds help articles.", "active": ["model", "vs"], "packets": [{ "edge": "model-vs", "tone": "default" }], "notes": [{ "node": "vs", "text": "stop 3: 120 ms", "tone": "ok" }] },
+        { "caption": "Stop four: the cache, which checks for a recent answer.", "active": ["vs", "cache"], "packets": [{ "edge": "vs-cache", "tone": "default" }], "notes": [{ "node": "cache", "text": "stop 4: 8 ms", "tone": "ok" }] },
+        { "caption": "The page lists every stop with its time. Each stop is a span.", "active": ["gw", "model", "vs", "cache"], "packets": [], "notes": [{ "node": "gw", "text": "span 40 ms", "tone": "default" }, { "node": "model", "text": "span 1.9 s", "tone": "warn" }, { "node": "vs", "text": "span 120 ms", "tone": "default" }, { "node": "cache", "text": "span 8 ms", "tone": "default" }] }
+      ]
+    },
+    {
+      "id": "obs-four-logs-say-ok",
+      "title": "Every log says ok",
+      "summary": "A customer asks a question and four services do the work: gateway, model, vector store and cache. Each one writes a green ok line to its log. None of those lines says how long the customer waited.",
+      "nodes": [
+        { "id": "cust", "label": "Customer", "sub": "still waiting", "kind": "person", "x": 10, "y": 82 },
+        { "id": "gw", "label": "Gateway", "kind": "gateway", "x": 10, "y": 28 },
+        { "id": "model", "label": "Model", "kind": "model", "x": 37, "y": 28 },
+        { "id": "vs", "label": "Vector store", "kind": "store", "x": 64, "y": 28 },
+        { "id": "cache", "label": "Cache", "kind": "store", "x": 90, "y": 28 }
+      ],
+      "edges": [
+        { "id": "cust-gw", "from": "cust", "to": "gw" },
+        { "id": "gw-model", "from": "gw", "to": "model" },
+        { "id": "model-vs", "from": "model", "to": "vs" },
+        { "id": "vs-cache", "from": "vs", "to": "cache" }
+      ],
+      "steps": [
+        { "caption": "A customer asks a question. Four services each do a part of the work.", "active": ["cust", "gw"], "packets": [{ "edge": "cust-gw", "label": "question", "tone": "default" }] },
+        { "caption": "The gateway does its part and writes a log line: ok.", "active": ["gw"], "packets": [], "notes": [{ "node": "gw", "text": "status: ok", "tone": "ok" }] },
+        { "caption": "The model writes its answer and logs its own line: ok.", "active": ["model"], "packets": [], "notes": [{ "node": "model", "text": "status: ok", "tone": "ok" }] },
+        { "caption": "The vector store and the cache each log ok as well.", "active": ["vs", "cache"], "packets": [], "notes": [{ "node": "vs", "text": "status: ok", "tone": "ok" }, { "node": "cache", "text": "status: ok", "tone": "ok" }] },
+        { "caption": "Four green lines. None says how long the customer waited.", "active": ["gw", "model", "vs", "cache"], "packets": [], "notes": [{ "node": "gw", "text": "ok", "tone": "ok" }, { "node": "model", "text": "ok", "tone": "ok" }, { "node": "vs", "text": "ok", "tone": "ok" }, { "node": "cache", "text": "ok", "tone": "ok" }] }
+      ]
+    },
+    {
+      "id": "obs-ai-request-parts",
+      "title": "One reply, four parts",
+      "summary": "A customer question reaches the gateway, which hands work to three parts: the model writes the answer, the vector store finds help articles and the cache remembers recent answers. The slow part can hide in any of them.",
+      "nodes": [
+        { "id": "cust", "label": "Customer", "kind": "person", "x": 8, "y": 50 },
+        { "id": "gw", "label": "Gateway", "kind": "gateway", "x": 44, "y": 50 },
+        { "id": "model", "label": "Model", "sub": "writes the answer", "kind": "model", "x": 88, "y": 16 },
+        { "id": "vs", "label": "Vector store", "sub": "finds help articles", "kind": "store", "x": 88, "y": 50 },
+        { "id": "cache", "label": "Cache", "sub": "remembers answers", "kind": "store", "x": 88, "y": 84 }
+      ],
+      "edges": [
+        { "id": "cust-gw", "from": "cust", "to": "gw" },
+        { "id": "gw-model", "from": "gw", "to": "model" },
+        { "id": "gw-vs", "from": "gw", "to": "vs" },
+        { "id": "gw-cache", "from": "gw", "to": "cache" }
+      ],
+      "steps": [
+        { "caption": "A customer asks a question. It reaches the gateway first.", "active": ["cust", "gw"], "packets": [{ "edge": "cust-gw", "label": "question", "tone": "default" }] },
+        { "caption": "The gateway hands work to three parts at once.", "active": ["gw", "model", "vs", "cache"], "packets": [{ "edge": "gw-model", "tone": "default" }, { "edge": "gw-vs", "tone": "default" }, { "edge": "gw-cache", "tone": "default" }] },
+        { "caption": "The model writes the answer.", "active": ["model"], "packets": [], "notes": [{ "node": "model", "text": "writes the reply", "tone": "default" }] },
+        { "caption": "The vector store finds help articles that fit the question.", "active": ["vs"], "packets": [], "notes": [{ "node": "vs", "text": "finds articles", "tone": "default" }] },
+        { "caption": "The cache remembers recent answers, so repeat questions can be quick.", "active": ["cache"], "packets": [], "notes": [{ "node": "cache", "text": "recalls answers", "tone": "default" }] },
+        { "caption": "One reply was slow. The slow part can hide in any of them.", "active": ["gw", "model", "vs", "cache"], "packets": [], "notes": [{ "node": "gw", "text": "slow here?", "tone": "warn" }, { "node": "model", "text": "or here?", "tone": "warn" }, { "node": "vs", "text": "or here?", "tone": "warn" }, { "node": "cache", "text": "or here?", "tone": "warn" }] }
+      ]
+    },
+    {
+      "id": "obs-token-bill",
+      "title": "Billed by the token",
+      "summary": "An app sends a prompt to a model and is charged for the tokens going in and the tokens coming out. A cost readout adds them up. A longer prompt means a bigger bill on every call.",
+      "nodes": [
+        { "id": "app", "label": "Your app", "kind": "client", "x": 8, "y": 50 },
+        { "id": "model", "label": "Model", "kind": "model", "x": 52, "y": 50 },
+        { "id": "bill", "label": "Cost readout", "sub": "price x tokens", "kind": "log", "x": 92, "y": 50 }
+      ],
+      "edges": [
+        { "id": "app-model", "from": "app", "to": "model" },
+        { "id": "model-bill", "from": "model", "to": "bill" }
+      ],
+      "steps": [
+        { "caption": "The app sends a prompt. Its words are counted in tokens: 1,200 going in.", "active": ["app", "model"], "packets": [{ "edge": "app-model", "label": "1,200 tokens in", "tone": "default" }] },
+        { "caption": "The model writes a reply. Those are completion tokens: 300 coming out.", "active": ["model", "app"], "packets": [{ "edge": "app-model", "reverse": true, "label": "300 tokens out", "tone": "ok" }] },
+        { "caption": "The bill adds both, each at its own price. This call cost under a cent.", "active": ["model", "bill"], "packets": [{ "edge": "model-bill", "label": "1,500 tokens", "tone": "default" }], "notes": [{ "node": "bill", "text": "$0.008 per call", "tone": "ok" }] },
+        { "caption": "Now the app sends a longer prompt: 4,800 tokens in, the same short reply.", "active": ["app", "model"], "packets": [{ "edge": "app-model", "label": "4,800 tokens in", "tone": "warn" }] },
+        { "caption": "A longer prompt means a bigger bill, and it grows on every call.", "active": ["model", "bill"], "packets": [{ "edge": "model-bill", "label": "5,100 tokens", "tone": "warn" }], "notes": [{ "node": "bill", "text": "$0.019 per call", "tone": "warn" }] }
+      ]
+    },
+    {
+      "id": "gateway-no-door",
+      "title": "Every app holds a key",
+      "summary": "Without a gateway, three apps each call their own provider directly, and each arrow carries a provider key. One key can leak, and one provider can go dark, leaving its app with no other way out.",
+      "nodes": [
+        { "id": "a", "label": "Support app", "kind": "client", "x": 10, "y": 16 },
+        { "id": "b", "label": "Search app", "kind": "client", "x": 10, "y": 50 },
+        { "id": "c", "label": "Billing app", "kind": "client", "x": 10, "y": 84 },
+        { "id": "pa", "label": "Provider A", "kind": "model", "x": 90, "y": 16 },
+        { "id": "pb", "label": "Provider B", "kind": "model", "x": 90, "y": 50 },
+        { "id": "pc", "label": "Provider C", "kind": "model", "x": 90, "y": 84 }
+      ],
+      "edges": [
+        { "id": "a-pa", "from": "a", "to": "pa", "label": "key A" },
+        { "id": "b-pb", "from": "b", "to": "pb", "label": "key B" },
+        { "id": "c-pc", "from": "c", "to": "pc", "label": "key C" }
+      ],
+      "steps": [
+        { "caption": "With no gateway, every app calls its own provider directly.", "active": ["a", "b", "c", "pa", "pb", "pc"], "packets": [{ "edge": "a-pa", "label": "chat call", "tone": "default" }, { "edge": "b-pb", "label": "chat call", "tone": "default" }, { "edge": "c-pc", "label": "chat call", "tone": "default" }] },
+        { "caption": "Each arrow carries a provider key, so three apps mean three keys to guard.", "active": ["a", "b", "c"], "packets": [], "notes": [{ "node": "a", "text": "holds key A", "tone": "default" }, { "node": "b", "text": "holds key B", "tone": "default" }, { "node": "c", "text": "holds key C", "tone": "default" }] },
+        { "caption": "One key leaks. Anyone who finds it can spend on that account.", "active": ["b", "pb"], "packets": [{ "edge": "b-pb", "label": "stolen call", "tone": "bad" }], "notes": [{ "node": "b", "text": "key B leaked", "tone": "bad" }] },
+        { "caption": "A provider goes dark. That arrow breaks, and its app has no other way out.", "active": ["c", "pc"], "packets": [{ "edge": "c-pc", "reverse": true, "label": "no answer", "tone": "bad" }], "notes": [{ "node": "pc", "text": "down", "tone": "bad" }] },
+        { "caption": "Each fix means changing every app. One shared door would mean one place to fix.", "active": ["a", "b", "c"], "packets": [] }
+      ]
     }
   ]
 }
