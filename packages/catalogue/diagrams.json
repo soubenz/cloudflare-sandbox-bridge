@@ -749,6 +749,32 @@
         { "caption": "A provider goes dark. That arrow breaks, and its app has no other way out.", "active": ["c", "pc"], "packets": [{ "edge": "c-pc", "reverse": true, "label": "no answer", "tone": "bad" }], "notes": [{ "node": "pc", "text": "down", "tone": "bad" }] },
         { "caption": "Each fix means changing every app. One shared door would mean one place to fix.", "active": ["a", "b", "c"], "packets": [] }
       ]
+    },
+    {
+      "id": "gateway-one-night",
+      "title": "One call, one night",
+      "summary": "The support app asks the gateway for the alias support. The gateway reads its table, tries OpenAI, finds it down, sends the call to Anthropic with the key only it holds, passes the answer back to the app and writes one line in its log.",
+      "nodes": [
+        { "id": "app", "label": "Support app", "kind": "client", "x": 6, "y": 50 },
+        { "id": "gw", "label": "Gateway", "sub": "support: OpenAI, then Anthropic", "kind": "gateway", "x": 46, "y": 50 },
+        { "id": "openai", "label": "OpenAI", "kind": "model", "x": 90, "y": 18 },
+        { "id": "anthropic", "label": "Anthropic", "kind": "model", "x": 90, "y": 64 },
+        { "id": "log", "label": "Log", "kind": "log", "x": 62, "y": 90 }
+      ],
+      "edges": [
+        { "id": "app-gw", "from": "app", "to": "gw" },
+        { "id": "gw-openai", "from": "gw", "to": "openai" },
+        { "id": "gw-anthropic", "from": "gw", "to": "anthropic" },
+        { "id": "gw-log", "from": "gw", "to": "log" }
+      ],
+      "steps": [
+        { "caption": "The support app sends its question with the alias support, not a model name and not a provider key.", "active": ["app"], "packets": [{ "edge": "app-gw", "label": "support", "tone": "default" }] },
+        { "caption": "The gateway looks support up in its table: OpenAI first, then Anthropic.", "active": ["gw"], "packets": [], "notes": [{ "node": "gw", "text": "OpenAI, then Anthropic", "tone": "ok" }] },
+        { "caption": "It tries OpenAI first. OpenAI is down and does not answer.", "active": ["gw", "openai"], "packets": [{ "edge": "gw-openai", "reverse": true, "label": "no answer", "tone": "bad" }], "notes": [{ "node": "openai", "text": "down", "tone": "bad" }] },
+        { "caption": "The gateway sends the same call to Anthropic, with the Anthropic key that only it holds.", "active": ["gw", "anthropic"], "packets": [{ "edge": "gw-anthropic", "label": "call + key", "tone": "warn" }] },
+        { "caption": "Anthropic answers, and the answer goes back to the support app. The customer never notices.", "active": ["anthropic", "gw", "app"], "packets": [{ "edge": "gw-anthropic", "reverse": true, "label": "answer", "tone": "ok" }, { "edge": "app-gw", "reverse": true, "label": "answer", "tone": "ok" }] },
+        { "caption": "The gateway writes one line in its log: the team, the alias, the provider and the tokens used.", "active": ["gw", "log"], "packets": [{ "edge": "gw-log", "label": "one line", "tone": "default" }], "notes": [{ "node": "log", "text": "support, anthropic, 1,850 tokens", "tone": "ok" }] }
+      ]
     }
   ]
 }

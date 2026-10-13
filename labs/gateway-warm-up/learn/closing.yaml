@@ -19,22 +19,25 @@ panels:
     bubbles:
       - { who: ollie, text: "So I can't paste a key I never had. Got it.", cue: "apps never do" }
   - scene: diagram
-    diagram: gateway-alias-routing
+    diagram: gateway-one-night
     steps:
       - { cue: "asks for support" }
       - { cue: "looks it up" }
     voiceover: Follow the support assistant's call through that night. It asks for support, not for a model. That name is an alias, Larkfield's own name for a job. The gateway looks it up in its table.
-  - scene: screen
+  - scene: diagram
+    diagram: gateway-one-night
+    from: 3
+    steps:
+      - { cue: "OpenAI is down" }
+      - { cue: "sends the call to Anthropic" }
+      - { cue: "customer gets an answer" }
     voiceover: The table says OpenAI first, then Anthropic. OpenAI is down, so the gateway quietly sends the call to Anthropic, with the key only it holds. The customer gets an answer.
-    lines:
-      - { text: "support: OpenAI, then Anthropic", cue: "OpenAI first" }
-      - { text: "OpenAI: no answer", cue: "is down" }
-      - { text: "Anthropic: answered", cue: "sends the call to Anthropic" }
-  - scene: screen
+  - scene: diagram
+    diagram: gateway-one-night
+    from: 6
+    steps:
+      - { cue: "one line in its log" }
     voiceover: "Anthropic answers, and the gateway writes one line in its log: the team, the alias and the tokens used, one thousand eight hundred and fifty. A token is a small piece of text that providers bill by."
-    lines:
-      - { text: "log: support, support, anthropic, 1,850", cue: "one line in its log" }
-      - { text: "token = a piece of text, billed by count", cue: "A token is" }
   - scene: desk
     cast: [{ who: graham, mood: pleased }]
     bg: mint
