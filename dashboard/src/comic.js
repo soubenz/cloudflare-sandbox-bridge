@@ -73,7 +73,7 @@
  */
 
 import { CAST } from '../../src/labs/comic-kit.ts';
-import { applyDiagramStep, captionIsDisplay, releaseDiagram, sceneArt } from './comic-art.js';
+import { applyDiagramStep, captionIsDisplay, isClockCaption, releaseDiagram, sceneArt } from './comic-art.js';
 import { audioReduce, audioWanted, clipUrl, initialAudio } from './comic-audio.js';
 import { playSting, stingsDue, unlockStings } from './comic-sfx.js';
 import {
@@ -186,7 +186,7 @@ function buildPanel(panel, tp, placement) {
       fig.append(d);
       parts.cap = d;
     } else {
-      const cap = el('figcaption', 'cm-cap', panel.caption);
+      const cap = el('figcaption', isClockCaption(panel.caption) ? 'cm-cap cm-caption--clock' : 'cm-cap', panel.caption);
       fig.append(cap);
       parts.cap = cap;
     }

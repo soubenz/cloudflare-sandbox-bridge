@@ -162,8 +162,9 @@ export function oldShapeNarrationOf(comic: FixtureComic): FixtureAudio {
   for (const pg of comic.pages) {
     for (const p of pg.panels) {
       if (p.caption) {
-        const key = clipKey(TTS_MODEL, 'atlas', p.caption, sha);
-        clips[key] = { voice: 'atlas', text: p.caption, seconds: 2, bytes: 1000 };
+        const caption = typeof p.caption === 'string' ? p.caption : p.caption.text;
+        const key = clipKey(TTS_MODEL, 'atlas', caption, sha);
+        clips[key] = { voice: 'atlas', text: caption, seconds: 2, bytes: 1000 };
         lines.push({ panel, kind: 'caption', clip: key });
       }
       p.bubbles.forEach((b, bubble) => {

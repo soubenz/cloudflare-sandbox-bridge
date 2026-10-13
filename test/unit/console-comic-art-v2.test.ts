@@ -261,7 +261,7 @@ class FakeEl {
     c.parent = null;
     return c;
   }
-  get firstChild() {
+  get firstChild(): FakeEl | null {
     return this.children[0] ?? null;
   }
   set textContent(v: string) {

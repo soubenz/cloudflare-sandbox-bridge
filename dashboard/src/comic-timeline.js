@@ -271,7 +271,7 @@ export function cleanComic(raw) {
     .slice(0, 6)
     .map((pg) => {
       if (!pg || typeof pg !== 'object') return null;
-      const panels = (Array.isArray(pg.panels) ? pg.panels : []).map(cleanPanel).filter(Boolean).slice(0, 9);
+      const panels = (Array.isArray(pg.panels) ? pg.panels : []).map(cleanPanel).filter(Boolean).slice(0, 12);
       if (panels.length === 0) return null;
       const title = str(pg.title, 60);
       return title ? { title, panels } : { panels };

@@ -93,10 +93,13 @@ export const PanelSchema = z.object({
   steps: z.array(z.object({ cue: cue.optional() }).strict()).min(1).max(8).optional(),
 });
 
+/** Most panels on one page (rows of three columns; a 12-panel comic is one page, or two with a title card). */
+export const MAX_PAGE_PANELS = 12;
+
 export const PageSchema = z.object({
   /** Optional page heading, e.g. a chapter line shown when the camera turns the page. */
   title: plain(60).optional(),
-  panels: z.array(PanelSchema).min(1).max(9),
+  panels: z.array(PanelSchema).min(1).max(MAX_PAGE_PANELS),
 });
 
 /**
@@ -107,7 +110,7 @@ export const ComicSchema = z
   .object({
     title: plain(80),
     pages: z.array(PageSchema).min(1).max(6).optional(),
-    panels: z.array(PanelSchema).min(1).max(9).optional(),
+    panels: z.array(PanelSchema).min(1).max(MAX_PAGE_PANELS).optional(),
   })
   .superRefine((c, ctx) => {
     if (c.pages && c.panels) ctx.addIssue({ code: 'custom', message: 'write either pages or panels, not both' });
@@ -148,16 +151,22 @@ export function checkCues(p: ComicPanel): string[] {
   return out;
 }
 
-/** Most panels a comic written to the voiceover contract may have in all. */
-export const MAX_VOICED_PANELS = 9;
+/**
+ * Most panels in all of a comic written to the current contract: one with a voiceover, or one that uses a
+ * card (a `black` card or a `diagram` panel). Narration stays limited to MAX_AUDIO_CLIPS clips (learn.ts).
+ */
+export const MAX_VOICED_PANELS = 12;
+
+/** Whether a comic uses a card: a black card or a diagram panel (both are part of the current contract). */
+export const usesCards = (comic: Comic): boolean => comic.pages.some((pg) => pg.panels.some((p) => p.scene === 'black' || p.scene === 'diagram'));
 
 /**
  * Cross-checks a schema-valid comic: cast counts, speakers present, length.
  *
  * A comic with at least one `voiceover` is written to the storyteller contract and is held to it: only
- * maren, tomasz and you may be drawn or speak (Priya, Jonas and Anneke are mentioned, never drawn), and it
- * has at most 9 panels. A comic with no voiceover keeps the older rules, so the labs that have not been
- * rewritten yet keep working.
+ * maren, tomasz and you may be drawn or speak (Priya, Jonas and Anneke are mentioned, never drawn). It, and a
+ * comic that uses a black card or a diagram panel, has at most MAX_VOICED_PANELS (12) panels in all. A comic
+ * with neither keeps the older rules, so the labs that have not been rewritten yet keep working.
  */
 export function checkComic(comic: Comic): string[] {
   const problems: string[] = [];
@@ -201,7 +210,9 @@ export function checkComic(comic: Comic): string[] {
   const total = allPanels(comic).length;
   if (total < 4) problems.push(`a comic needs at least 4 panels in all (has ${total})`);
   if (total > 36) problems.push(`a comic can have at most 36 panels (has ${total})`);
-  if (voiced && total > MAX_VOICED_PANELS) problems.push(`a comic told by a storyteller has at most ${MAX_VOICED_PANELS} panels in all (has ${total}); cut it to the story's turning points`);
+  if ((voiced || usesCards(comic)) && total > MAX_VOICED_PANELS) {
+    problems.push(`a comic told by a storyteller or with black or diagram cards has at most ${MAX_VOICED_PANELS} panels in all (has ${total}); cut it to the story's turning points`);
+  }
   const words = (pg: ComicPage) => pg.panels.reduce((n, p) => n + p.bubbles.reduce((m, b) => m + b.text.split(/\s+/).length, 0), 0);
   comic.pages.forEach((pg, i) => {
     if (words(pg) > 130) problems.push(`page ${i + 1} has ${words(pg)} spoken words; keep a page under 130 so it reads in about a minute`);

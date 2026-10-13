@@ -54,6 +54,7 @@
   --cm-fg-night: #ffffff;
   --cm-black: #07080e;
   --cm-fg-black: #f3efe4;
+  --cm-fg-black-muted: #b9b3a4;
   --cm-black-rule: #3e4462;
 }
 
@@ -170,6 +171,31 @@
 }
 .cm-scene-desk .cm-cap, .cm-scene-screen .cm-cap { max-width: 56%; }
 .cm-cap.on { opacity: 1; transform: none; }
+/*
+ * A black card's words (comic.js sets the box on the art's ruled band): a small mono title, then the captions
+ * one under another, each sliding up into place as the clock reaches it, a thin rule between them. Sizes follow
+ * the panel's text scale (--ts, --tt), so they stay readable when the comic is drawn small on a phone.
+ */
+.cm-stack {
+  position: absolute; left: 8.6%; top: 27.5%; width: 82.8%; height: 45%;
+  display: flex; flex-direction: column; justify-content: center;
+  color: var(--cm-fg-black); text-align: left; overflow-wrap: anywhere;
+}
+.cm-stack-title {
+  margin: 0 0 0.7em; color: var(--cm-fg-black-muted);
+  font: 600 calc(12px * var(--tt, 1))/1.2 var(--mono); font-variant-caps: all-small-caps; letter-spacing: 0.16em;
+  opacity: 0; transition: opacity 0.5s ease;
+}
+.cm-stack-line {
+  margin: 0; padding: 0.4em 0;
+  font: 700 calc(18px * var(--ts, 1))/1.3 var(--display); letter-spacing: -0.005em;
+  opacity: 0; transform: translateY(0.6em); transition: opacity 0.45s ease, transform 0.55s cubic-bezier(0.2, 1, 0.3, 1);
+}
+.cm-stack-line + .cm-stack-line { border-top: 1px solid var(--cm-black-rule); }
+/* Four or five captions: a size smaller, so the stack keeps to its band. */
+.cm-stack:has(> .cm-stack-line:nth-of-type(4)) .cm-stack-line { font-size: calc(15px * var(--ts, 1)); padding: 0.3em 0; }
+.cm-stack-title.on, .cm-stack-line.on { opacity: 1; transform: none; }
+
 /* A caption that is a time of day ("23:47"): set like a clock, the digits all one width. */
 .cm-caption--clock {
   font-family: var(--mono); font-size: calc(17px * var(--tt, 1)); font-variant-numeric: tabular-nums;

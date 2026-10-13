@@ -594,7 +594,9 @@ const V = T as unknown as {
 };
 const fixture = await import('../e2e/comic-fixture');
 const withSlug = (a: ReturnType<typeof fixture.narrationOf>) => ({ ...a, slug: 'fixture' });
-const v2Panels = (tl: V2Timeline) => tl.pages.flatMap((p) => p.panels);
+const v2Panels = (tl: V2Timeline) => tl.pages.flatMap((p) => p.panels) as V2Panel[];
+/** The six panels of the V2 fixture. */
+const six = (tl: V2Timeline) => v2Panels(tl) as [V2Panel, V2Panel, V2Panel, V2Panel, V2Panel, V2Panel];
 /** The fields every panel had before v2, so the golden file (made by the code before v2) is compared on what it knows. */
 const V1_PANEL_KEYS = ['index', 'number', 'page', 'scene', 'start', 'end', 'dur', 'words', 'rect', 'popAt', 'captionAt', 'sfxAt', 'bubbles', 'lines', 'focusAt'];
 const v1Of = (tl: V2Timeline) => ({
@@ -632,7 +634,7 @@ describe('v2: cues time a voiced panel to its storyteller', () => {
   const audio = withSlug(fixture.narrationOf(fixture.V2));
   const tl = V.buildTimeline(clean, { audio });
   const silent = V.buildTimeline(clean);
-  const [desk, msg, , dgm, card] = v2Panels(tl);
+  const [desk, msg, , dgm, card] = six(tl);
   const clipOf = (n: number) => tl.audio.find((c) => c.panel === n)!;
   const vo = (i: number) => (fixture.V2.pages[0]!.panels[i]!.voiceover as string).toLowerCase().replace(/\s+/g, ' ').trim();
   /** Where the storyteller says `phrase`: the same fraction of the clip as of the voiceover. */
@@ -746,7 +748,7 @@ describe('v2: cues time a voiced panel to its storyteller', () => {
 
 describe('v2: shots', () => {
   const tl = V.buildTimeline(V.cleanComic(fixture.V2)!);
-  const [desk, , wide, next] = v2Panels(tl);
+  const [desk, , wide, next] = six(tl);
   const vp = { w: 1000, h: 562.5 };
   const pad = T.REEL.shotPad;
 

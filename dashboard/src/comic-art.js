@@ -514,6 +514,12 @@ export function sceneArt(panel) {
 /** Whether a scene shows its caption as the big display words (the closing panel), not a small box. */
 export const captionIsDisplay = (scene) => scene === 'you';
 
+/**
+ * Whether a caption tells the time ("23:47", "Saturday 03:12"): it is then set like a clock
+ * (`.cm-caption--clock`, mono with figures of one width). Any caption with an H:MM or HH:MM in it.
+ */
+export const isClockCaption = (text) => typeof text === 'string' && /\b\d{1,2}:\d{2}\b/.test(text);
+
 // ---------------------------------------------------------------------------
 // The diagram card's picture
 // ---------------------------------------------------------------------------
