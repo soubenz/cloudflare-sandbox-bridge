@@ -776,6 +776,21 @@ describe('normalizing what the API sent', () => {
       expect(plain.learn.games).toEqual([]);
     });
 
+    it('passes the optional play fields through, and leaves out the ones that do not fit', () => {
+      const sort = { ...GAMES.sort, host: 'maren', timer: 12, cards: GAMES.sort.cards.map((c) => ({ ...c, why: 'Because.' })) };
+      const flag = { ...GAMES.flag, timer: 0, choices: { flag: 'Keeps answering', leave: 'Goes dark' }, board: [{ name: 'OpenAI', status: 'down' }, { name: 'Anthropic', status: 'up' }] };
+      const sliders = { ...GAMES.sliders, target: { value: 50, tolerance: 1 } };
+      expect(norm({ games: [sort, flag, sliders] }).learn.games).toEqual([sort, flag, sliders]);
+      const odd = norm({
+        games: [
+          { ...GAMES.sort, host: 'Not A Host', timer: 900 },
+          { ...GAMES.flag, choices: { flag: 'Yes' }, board: [{ name: 'OpenAI', status: 'slow' }, 'x'] },
+          { ...GAMES.sliders, target: { value: 'many' } },
+        ],
+      }).learn.games;
+      expect(odd).toEqual([GAMES.sort, GAMES.flag, GAMES.sliders]);
+    });
+
     it('drops a malformed game (and a malformed closing) instead of trusting it', () => {
       const bad = [
         { ...GAMES.sort, kind: 'drag' },

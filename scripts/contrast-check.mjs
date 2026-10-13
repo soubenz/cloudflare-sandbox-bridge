@@ -324,6 +324,20 @@ const consolePairs = [
   ["ink-2", "surface-2", 4.5, "Read as text, and the transcript under the comic"],
   ["win-ok", "navy-deep", 3.0, "a healthy service's dot"],
   ["win-warn", "navy-deep", 3.0, "a restarting service's dot"],
+  // The warm-up games (games.css): ink on the flat fills of the buckets, the nested tiles and the badges ...
+  ["ink", "accent-teal-soft", 4.5, "a game's first bucket, a tile nested once"],
+  ["ink", "accent-amber-soft", 4.5, "a game's second bucket, an Again or New best badge"],
+  ["ink", "accent-violet-soft", 4.5, "a game's third bucket, a tile nested twice"],
+  ["ink", "accent-rose-soft", 4.5, "a game's fourth bucket"],
+  ["ink", "accent-green-soft", 4.5, "a Solved badge, the right slider"],
+  ["accent-amber-ink", "surface", 4.5, "a game's combo once it is hot"],
+  ["good", "surface-2", 4.5, "a right mark in a game's recap, its explanation's heading"],
+  ["bad", "surface-2", 4.5, "a missed mark in a game's recap"],
+  // ... and the shapes that must be seen: hearts, stars and combo pips, the clock and the progress fill.
+  ["accent-rose", "surface", 3.0, "a heart left"],
+  ["accent-amber", "surface", 3.0, "a star earned, a combo pip"],
+  ["accent", "surface-3", 3.0, "a game's progress, clock and closeness meter against their track"],
+  ["bad", "surface-3", 3.0, "a game's clock in its last three seconds"],
 ];
 
 // [foreground, the colour it is mixed into, the tint, the share of the tint, minimum, what it is]: text on a
@@ -455,7 +469,7 @@ for (const [theme, tokens] of Object.entries(consoleThemes)) {
       .replace(/^:root\s*\{[^}]*\}/m, "")
       .replace(/:root\[data-theme="dark"\]\s*\{[^}]*\}/, "")
       .replace(/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root:not\(\[data-theme\]\)\s*\{[^}]*\}\s*\}/, "");
-  for (const file of ["styles.css", "learn.css", "session.css", "comic.css", "profile.css", "admin-mode.css"]) {
+  for (const file of ["styles.css", "learn.css", "session.css", "comic.css", "profile.css", "admin-mode.css", "games.css"]) {
     const body = stripped(readFileSync(join(root, "dashboard/public", file), "utf8"));
     const strays = [];
     for (const m of body.matchAll(/\{([^{}]*)\}/g)) {

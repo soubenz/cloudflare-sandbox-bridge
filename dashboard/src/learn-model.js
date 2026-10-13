@@ -453,9 +453,16 @@ function cleanList(list, clean) {
 function cleanSort(g) {
   const buckets = cleanList(g.buckets, (b) => (b && isLocalId(b.id) && isStr(b.label) ? { id: b.id, label: b.label } : null));
   const ids = new Set(buckets.map((b) => b.id));
-  const cards = cleanList(g.cards, (c) => (c && isLocalId(c.id) && isStr(c.text) && ids.has(c.bucket) ? { id: c.id, text: c.text, bucket: c.bucket } : null));
+  const cards = cleanList(g.cards, (c) =>
+    c && isLocalId(c.id) && isStr(c.text) && ids.has(c.bucket) ? { id: c.id, text: c.text, bucket: c.bucket, ...(isStr(c.why) ? { why: c.why } : {}) } : null
+  );
   if (buckets.length < 2 || cards.length < 2) return null;
-  return { buckets, cards };
+  return { buckets, cards, ...cleanTimer(g) };
+}
+
+/** A sort's or flag's optional `timer`: whole seconds 0 to 60 (0 is no clock); anything else is left out (the default). */
+function cleanTimer(g) {
+  return Number.isInteger(g.timer) && g.timer >= 0 && g.timer <= 60 ? { timer: g.timer } : {};
 }
 
 function cleanFlag(g) {
@@ -464,7 +471,10 @@ function cleanFlag(g) {
   );
   // Something to flag and something to leave alone, or there is no game.
   if (!items.some((i) => i.flag) || items.every((i) => i.flag)) return null;
-  return { items };
+  const c = g.choices;
+  const choices = c && typeof c === 'object' && isStr(c.flag) && isStr(c.leave) ? { choices: { flag: c.flag, leave: c.leave } } : {};
+  const rows = (Array.isArray(g.board) ? g.board : []).filter((b) => b && isStr(b.name) && (b.status === 'up' || b.status === 'down')).slice(0, 4);
+  return { items, ...cleanTimer(g), ...choices, ...(rows.length ? { board: rows.map((b) => ({ name: b.name, status: b.status })) } : {}) };
 }
 
 function cleanSliders(g) {
@@ -487,6 +497,9 @@ function cleanSliders(g) {
     formula,
     readout: { label: r.label, unit: isStr(r.unit) ? r.unit : '', decimals: r.decimals },
     ask: { prompt: a.prompt, answer: a.answer },
+    ...(g.target && typeof g.target === 'object' && isNum(g.target.value)
+      ? { target: { value: g.target.value, ...(isNum(g.target.tolerance) && g.target.tolerance >= 0 ? { tolerance: g.target.tolerance } : {}) } }
+      : {}),
   };
 }
 
@@ -517,7 +530,9 @@ export function cleanGame(g) {
   if (!g || typeof g !== 'object' || !Object.hasOwn(GAME_KINDS, g.kind)) return null;
   if (!isLocalId(g.id) || !isStr(g.title) || !isStr(g.prompt) || !isStr(g.explanation)) return null;
   const own = GAME_KINDS[g.kind](g);
-  return own ? { kind: g.kind, id: g.id, title: g.title, prompt: g.prompt, explanation: g.explanation, ...own } : null;
+  // `host` (optional) is one of the speaking cast; games.js falls back to its default for anything else.
+  const host = typeof g.host === 'string' && /^[a-z]{2,20}$/.test(g.host) ? { host: g.host } : {};
+  return own ? { kind: g.kind, id: g.id, title: g.title, prompt: g.prompt, explanation: g.explanation, ...host, ...own } : null;
 }
 
 /**

@@ -174,14 +174,23 @@ const GameBase = {
   prompt: plain(300),
   /** Shown once the game is solved. */
   explanation: plain(420),
+  /** Optional: who of the speaking cast hosts the game and reacts to each answer (default tomasz). */
+  host: z
+    .string()
+    .refine((id) => SPEAKING_CAST_IDS.includes(id), { message: `host must be one of ${SPEAKING_CAST_IDS.join(', ')}` })
+    .optional(),
 };
+/** Optional, sort and flag only: seconds each card stays on the clock (default 8 for sort, 10 for flag; 0 turns the clock off). */
+const GameTimer = z.number().int().min(0).max(60).optional();
 
 /** Drag each card into the bucket it belongs to. */
 const SortGameShape = z.object({
   kind: z.literal('sort'),
   ...GameBase,
   buckets: z.array(z.object({ id: localId, label: plain(60) })).min(2).max(4),
-  cards: z.array(z.object({ id: localId, text: plain(160), bucket: localId })).min(3).max(10),
+  /** `why` (optional) is what the host says when the card is put in the wrong bucket, and the recap shows. */
+  cards: z.array(z.object({ id: localId, text: plain(160), bucket: localId, why: plain(300).optional() })).min(3).max(10),
+  timer: GameTimer,
 });
 
 /** Mark the items that are a problem; `why` is shown beside an item once the game is solved. */
@@ -189,6 +198,11 @@ const FlagGameShape = z.object({
   kind: z.literal('flag'),
   ...GameBase,
   items: z.array(z.object({ id: localId, text: plain(160), flag: z.boolean(), why: plain(300).optional() })).min(3).max(10),
+  timer: GameTimer,
+  /** Optional: the words of the two sides a card goes to (default "Flag it" on the right, "Leave it" on the left). */
+  choices: z.object({ flag: plain(40), leave: plain(40) }).optional(),
+  /** Optional: a small live status board shown above the cards (a provider up or down). */
+  board: z.array(z.object({ name: plain(40), status: z.enum(['up', 'down']) })).min(1).max(4).optional(),
 });
 
 /**
@@ -215,6 +229,8 @@ const SlidersGameShape = z.object({
   formula: z.array(z.object({ input: localId, op: z.enum(['*', '+', '-', '/']) })).min(1).max(8),
   readout: z.object({ label: plain(80), unit: plain(20), decimals: z.number().int().min(0).max(6) }),
   ask: z.object({ prompt: plain(300), answer: localId }),
+  /** Optional: a readout to dial in before answering; points for how close it gets (within `tolerance` is full marks). */
+  target: z.object({ value: z.number().finite(), tolerance: z.number().finite().min(0).optional() }).optional(),
 });
 
 /** Put the steps in order and nest each under its parent: one root, every parent a step of the game, no cycles. */

@@ -3,8 +3,10 @@ import { describe, it, expect } from 'vitest';
 /**
  * The warm-up games (dashboard/src/games.js): the graders, the formula
  * evaluator and the deterministic shuffle, imported directly. This repo has
- * no jsdom (the vitest pool is plain Node), so the mounted DOM is not
- * exercised here; everything that decides right or wrong is a pure function.
+ * no jsdom (the vitest pool is plain Node): the mounted game is played on a
+ * fake DOM in console-game-play.test.ts, and its rules are tested in
+ * console-game-engine.test.ts; everything that decides right or wrong is a
+ * pure function.
  */
 type Game = Record<string, unknown>;
 type Rows = Array<{ id: string; depth: number }>;

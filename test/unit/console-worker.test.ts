@@ -694,6 +694,17 @@ describe('POST /api/warmups/:slug/complete', () => {
     expect(JSON.parse(sent.body)).toEqual(solved);
   });
 
+  it('passes a skipped game on as skipped, and only `skipped: true`', async () => {
+    replies.push(() => ({ status: 201, body: { done: true, already: false, run_id: 'r2' } }));
+    const body = { games: [{ id: 'sort-calls', solved: false, skipped: true, tries: 0 }, { id: 'flag-logs', solved: true, tries: 1, skipped: false }] };
+    const res = await send(cookie, body);
+    expect(res.status).toBe(201);
+    expect(JSON.parse(calls[0]!.body)).toEqual({ games: [{ id: 'sort-calls', solved: false, skipped: true, tries: 0 }, { id: 'flag-logs', solved: true, tries: 1 }] });
+    const bad = await send(cookie, { games: [{ id: 'sort-calls', solved: false, skipped: 'yes', tries: 0 }] });
+    expect(bad.status).toBe(400);
+    expect(calls).toHaveLength(1);
+  });
+
   it('passes an API refusal through (status and body)', async () => {
     replies.push(() => ({ status: 400, body: { error: { code: 'warm_up_incomplete', message: 'no', details: { missing: ['flag-logs'] } } } }));
     const res = await send(cookie, { games: [] });

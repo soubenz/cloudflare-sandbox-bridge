@@ -17,8 +17,14 @@ import { GAMES, warmUpBundleOf } from './comic-fixture';
  *   - its card says Open (not Start) and carries the "Start here" chip;
  *   - Open runs the whole flow, whatever the screen size and whether it was seen before: there is no
  *     "Skip all", nothing is prepared and no session is started;
- *   - a game's Continue (the last game's "Finish the warm-up") comes on once it is solved, the addresses are
- *     /closing and /games (?step=N for a later game), and a refresh keeps the games already solved;
+ *   - each game is played through its game UI (Start, the cards with the keys or a tap, the pipeline with Space
+ *     and the arrows, the sliders' answer) in test mode (`window.__opalixGameTest`: no count-in, no clock, no
+ *     delays), and ends on its end screen;
+ *   - a game's Continue (the last game's "Finish the warm-up") comes on once it is solved or skipped, the
+ *     addresses are /closing and /games (?step=N for a later game), and a refresh keeps the games already solved;
+ *   - the games only go forward: no game step has a Back to the closing story or to an earlier game;
+ *   - "Skip this game" moves on, and the first game's "Skip all games" finishes the warm-up at once, the
+ *     skipped games sent as { id, solved: false, skipped: true, tries: 0 };
  *   - "Finish the warm-up" POSTs /api/warmups/<slug>/complete once, with every game and its tries, then lands on
  *     the lab's page, which says Done, with "Warm-up done. Next: <title>"; a failed POST keeps the learner on the
  *     last step to try again.
@@ -153,6 +159,8 @@ const test = base.extend<object, { staticServer: string }>({
 
 async function open(page: Page, url = MODULE_PAGE) {
   await page.addInitScript(() => {
+    // The games' test mode: no count-in, no clock, no delays, no sound.
+    (window as unknown as { __opalixGameTest: boolean }).__opalixGameTest = true;
     localStorage.setItem('opalixOnboarded', '1');
     if (!sessionStorage.getItem('seeded')) {
       localStorage.setItem('opalixLearn', JSON.stringify({ v: 1, onboarding: { status: 'skipped', at: 1, levels: {} } }));
@@ -168,38 +176,61 @@ const host = (page: Page) => page.locator('#learnHost');
 const heading = (page: Page) => host(page).locator('.learn-head [data-learn-heading]').first();
 const card = (page: Page) => page.locator(`.lab[data-slug="${WARM}"]`);
 const gameNext = (page: Page) => page.locator('#btnGameNext');
-const check = (page: Page) => host(page).locator('.game button', { hasText: /^Check$/ });
+const game = (page: Page, id: string) => host(page).locator(`.game[data-game="${id}"]`);
 
-/** Plays the game on screen to the right answer, first time. */
-async function solve(page: Page, game: (typeof GAMES)[number]) {
-  const g = game as any;
-  await expect(host(page).locator(`.game[data-game="${g.id}"]`)).toBeVisible();
-  if (g.kind === 'sort') {
-    for (const c of g.cards) {
-      const label = g.buckets.find((b: any) => b.id === c.bucket).label;
-      await host(page).locator(`.game-card[data-card="${c.id}"] .game-bucket`, { hasText: label }).click();
+/** Plays the game on screen to the right answer, first time, through its game UI, and waits for its end screen. */
+async function solve(page: Page, fixture: (typeof GAMES)[number]) {
+  const g = fixture as any;
+  const root = game(page, g.id);
+  await expect(root).toBeVisible();
+  await expect(root).toHaveAttribute('data-phase', 'intro');
+  await root.locator('.game-start').click();
+  await expect(root).toHaveAttribute('data-phase', 'play');
+  if (g.kind === 'sort' || g.kind === 'flag') {
+    const deck: Array<{ id: string; answer: string }> =
+      g.kind === 'sort' ? g.cards.map((c: any) => ({ id: c.id, answer: c.bucket })) : g.items.map((i: any) => ({ id: i.id, answer: i.flag ? 'flag' : 'leave' }));
+    const left = g.kind === 'sort' ? g.buckets[0].id : 'leave';
+    for (let n = 0; n < deck.length; n++) {
+      const card = root.locator('.game-cardx');
+      const id = await card.getAttribute('data-card');
+      const answer = deck.find((c) => c.id === id)!.answer;
+      // A sort is played with the keys (the card has the focus), a flag by tapping the sides.
+      if (g.kind === 'sort') {
+        await expect(card).toBeFocused();
+        await page.keyboard.press(answer === left ? 'ArrowLeft' : 'ArrowRight');
+      } else await root.locator(`.game-bucket[data-bucket="${answer}"]`).click();
     }
-    await check(page).click();
-  } else if (g.kind === 'flag') {
-    for (const i of g.items.filter((x: any) => x.flag)) await host(page).locator(`.game .quiz-option[data-option="${i.id}"] input`).check();
-    await check(page).click();
   } else if (g.kind === 'sliders') {
-    await host(page).locator(`.game .quiz-option[data-option="${g.ask.answer}"] input`).check();
-    await check(page).click();
+    await root.locator(`.game-ask-option[data-option="${g.ask.answer}"]`).click();
   } else {
-    // The rows start shuffled: move each into place with Up, then indent the children.
-    const target = ['gw', 'alias', 'provider'];
-    for (let i = 0; i < target.length; i++) {
+    // The steps start shuffled: from the keyboard, pick each up with Space, move it with the arrows, drop it.
+    const target = [
+      ['gw', 0],
+      ['alias', 1],
+      ['provider', 1],
+    ] as const;
+    const rows = () => root.locator('.game-tile').evaluateAll((els) => els.map((e) => [(e as HTMLElement).dataset.id, Number((e as HTMLElement).dataset.depth)]));
+    for (const [i, [id, depth]] of target.entries()) {
+      await root.locator(`.game-tile[data-id="${id}"]`).focus();
+      await page.keyboard.press('Space');
       for (let guard = 0; guard < target.length; guard++) {
-        const order = await host(page).locator('.game-outline .game-row').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id));
-        if (order.indexOf(target[i]) <= i) break;
-        await host(page).locator(`.game-row[data-id="${target[i]}"] [data-action="up"]`).click();
+        const at = (await rows()).findIndex((r) => r[0] === id);
+        if (at === i) break;
+        await page.keyboard.press(at > i ? 'ArrowUp' : 'ArrowDown');
       }
+      for (let guard = 0; guard < 3; guard++) {
+        const now = (await rows()).find((r) => r[0] === id)![1] as number;
+        if (now === depth) break;
+        await page.keyboard.press(now < depth ? 'ArrowRight' : 'ArrowLeft');
+      }
+      await page.keyboard.press('Space');
     }
-    for (const id of ['alias', 'provider']) await host(page).locator(`.game-row[data-id="${id}"] [data-action="indent"]`).click();
-    await check(page).click();
+    expect(await rows()).toEqual(target.map(([id, d]) => [id, d]));
+    await root.locator('.game-send').click();
   }
-  await expect(host(page).locator('.game-status')).toContainText('Solved');
+  await expect(root).toHaveAttribute('data-phase', 'end');
+  await expect(root.locator('.game-end-title')).toBeVisible();
+  await expect(root.locator('.game-stars')).toHaveAttribute('aria-label', '3 of 3 stars');
 }
 
 /** From the card's Open to the first game, through the story, the question, the lessons and the closing story. */
@@ -254,19 +285,26 @@ test.describe('a warm-up', () => {
     await toTheGames(page);
 
     // One game a step: /games for the first, ?step=N for the others (story 1, round 2, lessons 3, closing 4, games 5 to 8).
-    // The first game's Back goes to the closing story; the last game's button finishes the warm-up.
+    // No game goes back; the last game's button finishes the warm-up.
     for (const [k, game] of GAMES.entries()) {
       const last = k === GAMES.length - 1;
       await expect(heading(page)).toHaveText(`Game ${k + 1} of ${GAMES.length}`);
       await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/games${k === 0 ? '' : `\\?step=${5 + k}`}$`));
-      if (k === 0) await expect(page.locator('#btnBackClosing')).toHaveText('← Back to the closing story');
-      else await expect(page.locator('#btnBackGame')).toBeVisible();
+      // The games only go forward: no Back to the closing story, nor to an earlier game; Back to labs stays.
+      await expect(page.locator('#btnBackClosing')).toHaveCount(0);
+      await expect(page.locator('#btnBackGame')).toHaveCount(0);
+      await expect(page.locator('#btnBeforeBack')).toBeVisible();
+      // Skip this game is on every game, Skip all games on the first only.
+      await expect(page.locator('#btnSkipGame')).toBeVisible();
+      await expect(page.locator('#btnSkipAllGames')).toHaveCount(k === 0 ? 1 : 0);
       await expect(gameNext(page)).toBeDisabled();
       await expect(gameNext(page)).toHaveText(last ? 'Finish the warm-up' : 'Continue');
       await expect(page.locator('#btnSkipAll')).toHaveCount(0);
       await solve(page, game);
       await expect(gameNext(page)).toBeEnabled();
-      if (!last) await gameNext(page).click();
+      // The end screen's own Continue is the step's: the second game is left with it.
+      if (k === 1) await host(page).locator('.game-continue').click();
+      else if (!last) await gameNext(page).click();
     }
     expect(s.completes).toHaveLength(0);
     await gameNext(page).click();
@@ -323,7 +361,7 @@ test.describe('a warm-up', () => {
   });
 
   test('a refresh on a later game keeps the games already solved', async ({ page }) => {
-    await stub(page);
+    const s = await stub(page);
     await open(page);
     await toTheGames(page);
     await solve(page, GAMES[0]!);
@@ -334,10 +372,54 @@ test.describe('a warm-up', () => {
     await page.waitForSelector('body[data-booted="1"]');
     await expect(heading(page)).toHaveText(`Game 2 of ${GAMES.length}`);
     await expect(gameNext(page)).toBeDisabled();
-    await page.locator('#btnBackGame').click();
+    await expect(page.locator('#btnBackGame')).toHaveCount(0);
+    // The first game is still solved: finishing the rest sends it with its one try.
+    for (const g of GAMES.slice(1)) {
+      await solve(page, g);
+      await gameNext(page).click();
+    }
+    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
+    expect(s.completes[0]!.games).toEqual(GAMES.map((g) => ({ id: g.id, solved: true, tries: 1 })));
+  });
+
+  test('Skip all games, on the first game, finishes the warm-up at once with every game skipped', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await toTheGames(page);
     await expect(heading(page)).toHaveText(`Game 1 of ${GAMES.length}`);
-    await expect(gameNext(page)).toBeEnabled();
-    await expect(host(page).locator('.game-solved-note')).toContainText('You solved this one in 1 try');
+    // Skipping needs no Start and asks nothing.
+    await page.locator('#btnSkipAllGames').click();
+    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
+    await expect(page.locator(`.lab-detail[data-slug="${WARM}"] .chip-done`)).toContainText('Done');
+    expect(s.completes).toHaveLength(1);
+    expect(s.completes[0]!.games).toEqual(GAMES.map((g) => ({ id: g.id, solved: false, skipped: true, tries: 0 })));
+    expect(s.errors).toEqual([]);
+  });
+
+  test('Skip this game moves on (during play too); a skipped game is sent as skipped beside the solved ones', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await toTheGames(page);
+    await solve(page, GAMES[0]!);
+    await gameNext(page).click();
+    // Game 2: started, then skipped part-way.
+    await game(page, GAMES[1]!.id).locator('.game-start').click();
+    await expect(game(page, GAMES[1]!.id)).toHaveAttribute('data-phase', 'play');
+    await page.locator('#btnSkipGame').focus();
+    await page.keyboard.press('Enter');
+    await expect(heading(page)).toHaveText(`Game 3 of ${GAMES.length}`);
+    await expect(page.locator('#btnSkipAllGames')).toHaveCount(0);
+    await solve(page, GAMES[2]!);
+    await gameNext(page).click();
+    // The last game skipped: that finishes the warm-up.
+    await page.locator('#btnSkipGame').click();
+    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
+    expect(s.completes[0]!.games).toEqual([
+      { id: GAMES[0]!.id, solved: true, tries: 1 },
+      { id: GAMES[1]!.id, solved: false, skipped: true, tries: 0 },
+      { id: GAMES[2]!.id, solved: true, tries: 1 },
+      { id: GAMES[3]!.id, solved: false, skipped: true, tries: 0 },
+    ]);
   });
 
   test('opens on a phone-sized screen too: there is nothing to run', async ({ page }) => {

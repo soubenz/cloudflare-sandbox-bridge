@@ -11,7 +11,7 @@ import { ApiError } from '../lib/errors';
 /**
  * Finishing a warm-up. A warm-up has no container, so no checks ever run for
  * it; the console plays its games in the browser and reports here when they
- * are all solved. The completion is written as an ordinary `check_runs` row
+ * are all solved or skipped. The completion is written as an ordinary `check_runs` row
  * that passed everything (one result per game), under a synthetic session id,
  * so every reader of "done" (progress, the path's next lab, skills, XP,
  * awards, module completion) sees it exactly like a finished lab and needs no
@@ -29,6 +29,8 @@ const WarmUpGameSchema = z.object({
   id: z.string().min(1).max(40),
   solved: z.boolean(),
   tries: z.number().int().min(0).max(10_000),
+  /** The learner skipped the game: it counts as played for finishing, and adds nothing (weight 0) to the score. */
+  skipped: z.boolean().optional(),
 });
 
 export const WarmUpBodySchema = z.object({
@@ -65,6 +67,10 @@ export const warmUpSessionId = (uid: string, slug: string) => `warmup:${uid}:${s
  * the missing game ids) unless every game of the current learn bundle is
  * reported solved. Idempotent: a learner who already finished it gets
  * `already: true` and nothing is written.
+ *
+ * A game reported `skipped` (and not solved) lets the warm-up finish too: its result passes with weight 0 and
+ * the message "skipped", so the row is still a completion (the path moves on) while a skipped game adds
+ * nothing to the warm-up's score. XP is per lab, not per game: finishing the warm-up earns its completion XP.
  */
 export async function completeWarmUp(env: Env, uid: string, slug: string, body: WarmUpBody, now = Date.now()): Promise<WarmUpResult> {
   const { version, manifest } = await loadCurrentManifest(env, slug);
@@ -73,10 +79,10 @@ export async function completeWarmUp(env: Env, uid: string, slug: string, body: 
   // A warm-up is published with a learn part; one without is treated as having no games.
   const found = await loadCurrentLearn(env, slug);
   const gameIds = (found?.learn.games ?? []).map((g) => g.id);
-  const reported = new Map(body.games.filter((g) => g.solved).map((g) => [g.id, g] as const));
+  const reported = new Map(body.games.filter((g) => g.solved || g.skipped === true).map((g) => [g.id, g] as const));
   const missing = gameIds.filter((id) => !reported.has(id));
   if (missing.length > 0) {
-    throw ApiError.badRequest('warm_up_incomplete', `Not every game of "${slug}" is solved: ${missing.join(', ')}`, { missing });
+    throw ApiError.badRequest('warm_up_incomplete', `Not every game of "${slug}" is solved or skipped: ${missing.join(', ')}`, { missing });
   }
 
   const prior = await env.DB.prepare(`SELECT 1 AS done FROM check_runs WHERE user_id = ? AND lab_slug = ? AND passed_all = 1 LIMIT 1`)
@@ -88,8 +94,9 @@ export async function completeWarmUp(env: Env, uid: string, slug: string, body: 
   const results =
     gameIds.length > 0
       ? gameIds.map((id) => {
-          const tries = reported.get(id)!.tries;
-          return result(id, `solved in ${tries} ${tries === 1 ? 'try' : 'tries'}`);
+          const game = reported.get(id)!;
+          if (!game.solved) return { ...result(id, 'skipped'), weight: 0 };
+          return result(id, `solved in ${game.tries} ${game.tries === 1 ? 'try' : 'tries'}`);
         })
       : [result(WARM_UP_FINISHED, 'warm-up finished')];
   const run: ChecksRun = {

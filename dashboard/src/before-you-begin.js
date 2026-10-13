@@ -60,11 +60,15 @@ import { uiIcon } from './icons.js';
  *   warmUp   true for a lab of type warm-up, which has nothing to start: the flow (planWarmUpFlow) goes on past
  *            the lessons to the closing story and then the games, one a step; the last step's button is "Finish the
  *            warm-up"; there is no "Skip all", nothing is prepared, and the mastery record's `labs[slug].intro` is
- *            never written. A game's Continue comes on once it is solved, and what was solved ({ id, tries }) is
- *            kept with the visit, so a refresh keeps it.
+ *            never written. A game's Continue comes on once it is solved or skipped, and what was solved
+ *            ({ id, tries }) or skipped ({ id, tries: 0, skipped: true }) is kept with the visit, so a refresh keeps
+ *            it. The games only go forward: no step of them goes back to the closing story or to an earlier game.
+ *            "Skip this game" moves on (the last game's finishes the warm-up), and the first game's "Skip all
+ *            games" skips every game not yet solved and finishes.
  *   onFinish (games, { started_at }) => Promise, the warm-up's last button: `games` is [{ id, solved: true, tries }]
- *            in the flow's order, `started_at` when the warm-up was opened (ms). Resolves true when it is recorded;
- *            false, or a throw, leaves the learner on the last step to try again.
+ *            in the flow's order, a skipped one { id, solved: false, skipped: true, tries: 0 }, `started_at` when
+ *            the warm-up was opened (ms). Resolves true when it is recorded; false, or a throw, leaves the learner
+ *            on the last step to try again.
  * Returns { steps, goto(kind, n), destroy }: goto shows a step the way `initial` and `step` do (the browser's Back and Forward).
  */
 export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBack, initial, step: initialStep, onStep, resume = false, flowStore, prepare: prepareLab, cancelPrepare, warmUp = false, onFinish }) {
@@ -80,12 +84,13 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
   const restored = saved ? restoreSteps(learn, saved.steps) : null;
   const steps = restored ?? (warmUp ? planWarmUpFlow : planLearningFlow)(learn, store.get());
   const answers = new Map(restored ? Object.entries(saved.answers).filter(([id]) => questionById.has(id)) : []);
-  // The games solved so far (a warm-up's), { id, tries } by game id, and when the warm-up was opened.
+  // The games solved (or skipped) so far (a warm-up's), { id, tries } or { id, tries: 0, skipped: true } by game id,
+  // and when the warm-up was opened.
   const solvedGames = new Map(
     restored && warmUp
       ? Object.entries(saved.games ?? {})
-          .filter(([id, r]) => gameById.has(id) && r && Number.isInteger(r.tries) && r.tries >= 1)
-          .map(([id, r]) => [id, { id, tries: r.tries }])
+          .filter(([id, r]) => gameById.has(id) && r && ((Number.isInteger(r.tries) && r.tries >= 1) || r.skipped === true))
+          .map(([id, r]) => [id, Number.isInteger(r.tries) && r.tries >= 1 ? { id, tries: r.tries } : { id, tries: 0, skipped: true }])
       : []
   );
   const startedAt = warmUp ? ((restored && saved.started_at) || Date.now()) : 0;
@@ -201,7 +206,9 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     }
     let done = false;
     try {
-      const games = gameSteps.map((s) => solvedGames.get(s.game)).map((r) => ({ id: r.id, solved: true, tries: r.tries }));
+      const games = gameSteps
+        .map((s) => solvedGames.get(s.game))
+        .map((r) => (r.skipped ? { id: r.id, solved: false, skipped: true, tries: 0 } : { id: r.id, solved: true, tries: r.tries }));
       done = (await onFinish?.(games, { started_at: startedAt })) === true;
     } catch {
       done = false;
@@ -404,7 +411,10 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
 
   // --- a game (a warm-up's) ----------------------------------------------------
 
-  /** One game, on its own step: Continue (or Finish the warm-up) comes on once it is solved. */
+  /**
+   * One game, on its own step: Continue (or Finish the warm-up) comes on once it is solved or skipped. The games
+   * only go forward: there is no Back to the closing story or to an earlier game, only Back to labs.
+   */
   function gameStep(i) {
     cleanup();
     host.classList.add('learn-wrap-game');
@@ -413,6 +423,12 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     const after = steps[i + 1];
     const k = gameSteps.indexOf(step) + 1;
     const n = gameSteps.length;
+    /** On past the games: the next step, or (the games being the last steps) Finish the warm-up. */
+    const onward = (from) => (steps[from + 1] ? enterStep(from + 1, 'forward') : primaryAction());
+    const skip = (ids) => {
+      for (const id of ids) if (!solvedGames.has(id)) solvedGames.set(id, { id, tries: 0, skipped: true });
+      persist();
+    };
 
     const go = after
       ? button('Continue', { kind: 'accent', onClick: () => enterStep(i + 1, 'forward'), id: 'btnGameNext' })
@@ -422,30 +438,53 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     go.append(uiIcon('arrow', 16));
     const before = solvedGames.get(g.id);
     go.disabled = !before;
-    const note = make('p', 'learn-meta game-solved-note', before ? `You solved this one in ${before.tries} ${before.tries === 1 ? 'try' : 'tries'}. Play it again, or continue.` : 'Solve it to continue.');
+    const noteText = !before
+      ? 'Solve it or skip it to continue.'
+      : before.skipped
+        ? 'Skipped. Play it now, or continue.'
+        : `You solved this one in ${before.tries} ${before.tries === 1 ? 'try' : 'tries'}. Play it again, or continue.`;
+    const note = make('p', 'learn-meta game-solved-note', noteText);
     note.setAttribute('aria-live', 'polite');
 
     const holder = make('div', 'learn-game');
     game = mountGame(holder, g, {
+      previous: before ? (before.skipped ? 'skipped' : 'solved') : null,
       onResult: (r) => {
         if (gone) return;
-        // The first solve is the one that counts; playing it again changes nothing.
-        if (!solvedGames.has(r.id)) {
+        // The first solve is the one that counts (it replaces a skip); playing it again changes nothing.
+        if (!solvedGames.has(r.id) || solvedGames.get(r.id).skipped) {
           solvedGames.set(r.id, { id: r.id, tries: r.tries });
           persist();
         }
         go.disabled = false;
         note.textContent = '';
-        go.focus();
       },
+      // The end screen's Continue is this step's button.
+      onContinue: () => {
+        if (!go.disabled) go.click();
+      },
+      onSkip: () => {
+        if (gone) return;
+        skip([g.id]);
+        onward(i);
+      },
+      // The first game also offers to skip them all: on to whatever comes after the last game.
+      onSkipAll:
+        k === 1 && n > 1
+          ? () => {
+              if (gone) return;
+              skip(gameSteps.map((s) => s.game));
+              onward(steps.indexOf(gameSteps[n - 1]));
+            }
+          : undefined,
     });
 
     show(
       host,
-      screenHead({ eyebrow: eyebrow(), title: n > 1 ? `Game ${k} of ${n}` : 'A quick game', meta: 'Try as many times as you like.', steps: dots(i) }),
+      screenHead({ eyebrow: eyebrow(), title: n > 1 ? `Game ${k} of ${n}` : 'A quick game', meta: 'Play as often as you like, or skip it.', steps: dots(i) }),
       holder,
       note,
-      bar([go, backStep(), backToLabs()], { label: after ? 'Next' : 'Finish' })
+      bar([go, backToLabs()], { label: after ? 'Next' : 'Finish' })
     );
     arrived(i);
     focusHeading(host);

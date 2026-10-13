@@ -280,6 +280,24 @@ describe('closing and games', () => {
     expect(messages(game({ ...GAMES.sliders, inputs: [{ ...GAMES.sliders.inputs[0], default: 5000 }, GAMES.sliders.inputs[1]] }))).toMatch(/between min and max/);
   });
 
+  it('takes the optional play fields: host, timer, a card\'s why, choices, board and target', () => {
+    const sort = { ...GAMES.sort, host: 'maren', timer: 12, cards: GAMES.sort.cards.map((c) => ({ ...c, why: 'Because.' })) };
+    const flag = { ...GAMES.flag, timer: 0, choices: { flag: 'Keeps answering', leave: 'Goes dark' }, board: [{ name: 'OpenAI', status: 'down' }, { name: 'Anthropic', status: 'up' }] };
+    const sliders = { ...GAMES.sliders, host: 'jess', target: { value: 50, tolerance: 1 } };
+    for (const g of [sort, flag, sliders]) expect(game(g).success, g.kind).toBe(true);
+    const r = LearnBundleSchema.parse(raw({ games: [sort, flag, sliders] }));
+    expect(r.games[0]).toMatchObject({ host: 'maren', timer: 12 });
+    expect(r.games[1]).toMatchObject({ timer: 0, choices: { flag: 'Keeps answering', leave: 'Goes dark' } });
+    expect(r.games[2]).toMatchObject({ target: { value: 50, tolerance: 1 } });
+    expect(messages(game({ ...GAMES.sort, host: 'jonas' }))).toMatch(/host must be one of/);
+    expect(messages(game({ ...GAMES.sort, host: 'you' }))).toMatch(/host must be one of/);
+    expect(game({ ...GAMES.sort, timer: 61 }).success).toBe(false);
+    expect(game({ ...GAMES.sort, timer: 2.5 }).success).toBe(false);
+    expect(game({ ...GAMES.flag, board: [{ name: 'OpenAI', status: 'slow' }] }).success).toBe(false);
+    expect(game({ ...GAMES.flag, board: [] }).success).toBe(false);
+    expect(game({ ...GAMES.flag, choices: { flag: 'Yes' } }).success).toBe(false);
+  });
+
   it('rejects an order-and-nest game with a cycle, two roots, or a missing parent', () => {
     const steps = [...GAMES.nest.steps, { id: 'x', text: 'X', parent: 'y', order: 0 }, { id: 'y', text: 'Y', parent: 'x', order: 0 }];
     expect(messages(game({ ...GAMES.nest, steps }))).toMatch(/cycle/);

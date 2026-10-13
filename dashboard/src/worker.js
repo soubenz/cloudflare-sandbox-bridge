@@ -405,7 +405,8 @@ const MAX_WARM_UP_TRIES = 10_000;
 const MAX_WARM_UP_BYTES = 4 * 1024;
 
 /**
- * Checks a POST /api/warmups/:slug/complete body and rebuilds it: { games: [{ id, solved, tries }], started_at? }.
+ * Checks a POST /api/warmups/:slug/complete body and rebuilds it: { games: [{ id, solved, tries, skipped? }], started_at? }.
+ * `skipped` is passed on only when it is true (a game the learner skipped).
  * Returns the clean body or null. Nothing else is copied across: the learner is the cookie's subject, never
  * something the body names.
  */
@@ -416,11 +417,12 @@ function cleanWarmUpBody(raw) {
   const body = { games: [] };
   for (const g of raw.games) {
     if (!g || typeof g !== 'object' || Array.isArray(g)) return null;
-    if (Object.keys(g).some((k) => k !== 'id' && k !== 'solved' && k !== 'tries')) return null;
+    if (Object.keys(g).some((k) => k !== 'id' && k !== 'solved' && k !== 'tries' && k !== 'skipped')) return null;
     if (typeof g.id !== 'string' || !GAME_ID.test(g.id)) return null;
     if (typeof g.solved !== 'boolean') return null;
     if (!Number.isInteger(g.tries) || g.tries < 0 || g.tries > MAX_WARM_UP_TRIES) return null;
-    body.games.push({ id: g.id, solved: g.solved, tries: g.tries });
+    if (g.skipped !== undefined && typeof g.skipped !== 'boolean') return null;
+    body.games.push({ id: g.id, solved: g.solved, tries: g.tries, ...(g.skipped === true ? { skipped: true } : {}) });
   }
   if (raw.started_at !== undefined) {
     if (!Number.isInteger(raw.started_at) || raw.started_at <= 0) return null;

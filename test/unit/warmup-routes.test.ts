@@ -136,6 +136,31 @@ describe('POST /users/:uid/warmups/:slug/complete', () => {
     expect((await j(none)).error.details).toEqual({ missing: ['sort-calls', 'flag-logs'] });
   });
 
+  it('a skipped game counts for finishing: its result passes with weight 0 and adds nothing to the score', async () => {
+    const { env, sqlite } = makeEnv();
+    const res = await complete(env, { games: [{ id: 'sort-calls', solved: true, tries: 2 }, { id: 'flag-logs', solved: false, skipped: true, tries: 0 }] });
+    expect(res.status).toBe(201);
+    const row = rows(sqlite)[0]!;
+    expect(row).toMatchObject({ passed: 2, total: 2, score: 1, passed_all: 1 });
+    const results = JSON.parse(row.results_json) as Array<{ name: string; pass: boolean; weight: number; message: string }>;
+    expect(results.map((r) => [r.name, r.pass, r.weight, r.message])).toEqual([
+      ['sort-calls', true, 1, 'solved in 2 tries'],
+      ['flag-logs', true, 0, 'skipped'],
+    ]);
+  });
+
+  it('every game skipped still finishes the warm-up, with a score of 0', async () => {
+    const { env, sqlite } = makeEnv();
+    const skipped = { games: GAMES.map((g) => ({ id: g.id, solved: false, skipped: true, tries: 0 })) };
+    expect((await complete(env, skipped)).status).toBe(201);
+    expect(rows(sqlite)[0]).toMatchObject({ passed_all: 1, score: 0 });
+    // A game neither solved nor skipped is still missing.
+    const { env: env2 } = makeEnv();
+    const half = await complete(env2, { games: [{ id: 'sort-calls', solved: false, skipped: false, tries: 1 }, { id: 'flag-logs', solved: false, skipped: true, tries: 0 }] });
+    expect(half.status).toBe(400);
+    expect((await j(half)).error.details).toEqual({ missing: ['sort-calls'] });
+  });
+
   it('needs no entries for a warm-up with no games, and files one `finished` result', async () => {
     const { env, sqlite } = makeEnv({ games: [] });
     const res = await complete(env, {});
