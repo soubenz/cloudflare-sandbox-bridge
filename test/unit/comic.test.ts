@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ComicSchema, checkComic, allPanels } from '../../src/labs/comic';
-import { CAST, SCENES, PAGE, PAGE_W, layoutComic, panelSeconds, comicTranscript, comicPagesTranscript } from '../../src/labs/comic-kit';
+import { CAST, SCENES, PAGE, PAGE_W, castId, layoutComic, panelSeconds, comicTranscript, comicPagesTranscript } from '../../src/labs/comic-kit';
 import { compileLearnDir } from '../../cli/src/learn-compile';
 
 const panel = (over: Record<string, unknown> = {}): Record<string, any> => ({ scene: 'portrait', cast: ['maren'], bubbles: [{ who: 'maren', text: 'Hello there.' }], ...over });
@@ -308,11 +308,22 @@ describe('the Playwright fixtures (test/e2e/comic-fixture.ts)', () => {
     for (const [name, fx] of [['single', SINGLE], ['multi', MULTI]] as const) {
       const c = ComicSchema.parse(fx);
       expect(checkComic(c), name).toEqual([]);
-      expect(allPanels(c).every(({ panel }) => panel.cast.every((id) => ['maren', 'tomasz', 'you'].includes(id))), name).toBe(true);
+      expect(allPanels(c).every(({ panel }) => panel.cast.every((id) => ['maren', 'tomasz', 'you'].includes(castId(id)))), name).toBe(true);
       expect(allPanels(c).length, name).toBeLessThanOrEqual(9);
       // the whole learn bundle, with its narration, as `labs publish` and the Worker would check it
       expect(() => parseLearnBundle(bundleOf(fx, narrationOf(fx)))).not.toThrow();
     }
+  });
+
+  it('the motion comic v2 fixture (one panel of each new feature) is valid, with a narration that cross-checks', async () => {
+    const { V2, bundleOf, narrationOf } = await import('../e2e/comic-fixture');
+    const { parseLearnBundle } = await import('../../src/labs/learn');
+    const c = ComicSchema.parse(V2);
+    expect(checkComic(c)).toEqual([]);
+    expect(() => parseLearnBundle(bundleOf(V2, narrationOf(V2)))).not.toThrow();
+    const scenes = allPanels(c).map(({ panel }) => panel.scene);
+    expect(scenes).toContain('black');
+    expect(scenes).toContain('diagram');
   });
 
   it('the warm-up bundle (closing comic and one game of each kind) is valid too', async () => {
@@ -323,5 +334,95 @@ describe('the Playwright fixtures (test/e2e/comic-fixture.ts)', () => {
     expect(bundle.games.map((g) => g.kind)).toEqual(['sort', 'flag', 'sliders', 'order-and-nest']);
     expect(bundle.games).toHaveLength(GAMES.length);
     expect(bundle.closing?.comic.title).toBe(CLOSING.title);
+  });
+});
+
+// ---- motion comic v2: cues, shots, black cards, stings, moods and poses, the diagram scene ----------
+
+describe('motion comic v2 in the schema and the checks', () => {
+  const withPanel = (i: number, over: Record<string, unknown>) => ComicSchema.parse({ ...VOICED, panels: VOICED.panels.map((p, k) => (k === i ? { ...p, ...over } : p)) });
+
+  it('accepts plain strings as ever, and the object forms with a cue', () => {
+    const c = withPanel(0, {
+      caption: { text: 'Tuesday.', cue: 'on tuesday' },
+      bubbles: [{ who: 'maren', text: 'Which provider answered?', cue: 'could not answer' }],
+      lines: [{ text: '$ $ $', cue: 'Finance' }, '?'],
+      sfx: { text: 'PING!', cue: 'asked us', sound: 'ping' },
+      shot: 'close',
+    });
+    expect(checkComic(c)).toEqual([]);
+    expect(c.pages[0]!.panels[0]!.caption).toEqual({ text: 'Tuesday.', cue: 'on tuesday' });
+    expect(ComicSchema.parse(VOICED).pages[0]!.panels[0]!.caption).toBe('Tuesday.');
+  });
+
+  it('accepts a cast entry with a mood and a pose, a night background and both shots, and refuses unknown ones', () => {
+    const c = withPanel(3, { cast: [{ who: 'you', mood: 'worried', pose: 'shrug' }], bg: 'night', shot: 'wide' });
+    expect(checkComic(c)).toEqual([]);
+    expect(c.pages[0]!.panels[3]!.cast).toEqual([{ who: 'you', mood: 'worried', pose: 'shrug' }]);
+    expect(() => withPanel(3, { cast: [{ who: 'you', mood: 'angry' }] })).toThrow();
+    expect(() => withPanel(3, { cast: [{ who: 'you', pose: 'dance' }] })).toThrow();
+    expect(() => withPanel(3, { cast: [{ who: 'nobody' }] })).toThrow();
+    expect(() => withPanel(3, { shot: 'medium' })).toThrow();
+    expect(() => withPanel(1, { sfx: { text: 'PING!', sound: 'kazoo' } })).toThrow();
+    expect(() => withPanel(0, { caption: { text: 'x', cue: 'y', sound: 'ping' } })).toThrow(); // a caption makes no sound
+  });
+
+  it('counts, matches and checks cast entries by person whichever way they are written', () => {
+    const twice = withPanel(2, { cast: ['maren', { who: 'maren', mood: 'pleased' }] });
+    expect(checkComic(twice).join()).toMatch(/the same person appears twice/);
+    const retired = withPanel(3, { cast: [{ who: 'priya', mood: 'tired' }], bubbles: [] });
+    expect(checkComic(retired).join()).toMatch(/priya is retired/);
+    const speaker = withPanel(3, { cast: [{ who: 'you', mood: 'pleased' }], bubbles: [{ who: 'you', text: 'On it.' }] });
+    expect(checkComic(speaker)).toEqual([]);
+  });
+
+  it('fails a cue that is not a phrase of the voiceover, naming the panel and the element (case and spacing do not matter)', () => {
+    expect(checkComic(withPanel(0, { caption: { text: 'Tuesday.', cue: 'ON   Tuesday\tFINANCE' } }))).toEqual([]);
+    const bad = withPanel(0, {
+      caption: { text: 'Tuesday.', cue: 'on monday' },
+      bubbles: [{ who: 'maren', text: 'Hi.', cue: 'nope' }],
+      lines: ['$ $ $', { text: '?', cue: 'zebra' }],
+      sfx: { text: 'PING!', cue: 'kaboom' },
+    });
+    const problems = checkComic(bad);
+    expect(problems).toContain('comic panel 1 (desk): the caption has the cue "on monday", which is not in the voiceover');
+    expect(problems).toContain('comic panel 1 (desk): bubble 1 has the cue "nope", which is not in the voiceover');
+    expect(problems).toContain('comic panel 1 (desk): screen line 2 has the cue "zebra", which is not in the voiceover');
+    expect(problems).toContain('comic panel 1 (desk): the sfx has the cue "kaboom", which is not in the voiceover');
+    const unvoiced = ComicSchema.parse({ ...GOOD, panels: GOOD.panels.map((p, i) => (i === 3 ? { ...p, caption: { text: 'A copy.', cue: 'copy' } } : p)) });
+    expect(checkComic(unvoiced).join()).toMatch(/comic panel 4 \(screen\): the caption has the cue "copy", but the panel has no voiceover/);
+  });
+
+  it('a black card is wide, draws nobody, and needs captions; captions and a title are only for it', () => {
+    expect(SCENES.black).toEqual({ span: 2, minCast: 0, maxCast: 0 });
+    const card = { scene: 'black', title: 'Is this normal?', captions: [{ text: 'It failed.', cue: 'failed' }, 'Nobody saw.'], voiceover: 'It failed and nobody saw.', lines: undefined };
+    expect(checkComic(withPanel(4, card))).toEqual([]);
+    expect(checkComic(withPanel(4, { ...card, captions: undefined })).join()).toMatch(/a black card needs captions/);
+    expect(checkComic(withPanel(4, { ...card, cast: ['maren'] })).join()).toMatch(/\(black\): needs 0 cast member/);
+    expect(checkComic(withPanel(4, { ...card, captions: ['x', { text: 'y', cue: 'succeeded' }] })).join()).toMatch(/caption 2 has the cue "succeeded"/);
+    expect(checkComic(withPanel(3, { title: 'Hi', captions: ['x'] })).join()).toMatch(/captions and title are only for a black card/);
+    expect(comicTranscript(withPanel(4, card).pages[0]!.panels)[4]).toBe('Panel 5. Is this normal? It failed. Nobody saw. It failed and nobody saw.');
+  });
+
+  it('a diagram scene is wide, draws up to one person, and needs a diagram; its step cues are checked', () => {
+    expect(SCENES.diagram).toEqual({ span: 2, minCast: 0, maxCast: 1 });
+    const dgm = { scene: 'diagram', cast: [], diagram: 'gateway-what-it-does', steps: [{ cue: 'front door' }, {}], voiceover: 'One front door for every call.' };
+    expect(checkComic(withPanel(4, dgm))).toEqual([]);
+    expect(checkComic(withPanel(4, { ...dgm, cast: ['maren'] }))).toEqual([]);
+    expect(checkComic(withPanel(4, { ...dgm, cast: ['maren', 'tomasz'] })).join()).toMatch(/needs 0 to 1 cast member/);
+    expect(checkComic(withPanel(4, { ...dgm, diagram: undefined })).join()).toMatch(/a diagram scene needs a diagram/);
+    expect(checkComic(withPanel(4, { ...dgm, steps: [{ cue: 'back door' }] })).join()).toMatch(/step 1 has the cue "back door", which is not in the voiceover/);
+    expect(checkComic(withPanel(3, { diagram: 'gateway-what-it-does' })).join()).toMatch(/diagram and steps are only for a diagram scene/);
+    expect(() => withPanel(4, { ...dgm, steps: [] })).toThrow();
+  });
+
+  it('reads a diagram panel in the transcript as its title and the captions of the steps it shows', () => {
+    const lookup = (id: string) => (id === 'd' ? { title: 'The door', steps: [{ caption: 'One.' }, { caption: 'Two.' }, { caption: 'Three.' }] } : undefined);
+    const panels = [
+      { scene: 'diagram', bubbles: [], diagram: 'd', steps: [{}, {}], voiceover: 'Look.' },
+      { scene: 'diagram', bubbles: [], diagram: 'd' },
+      { scene: 'diagram', bubbles: [], diagram: 'unknown' },
+    ];
+    expect(comicTranscript(panels, lookup)).toEqual(['Panel 1. Look. Diagram: The door. One. Two.', 'Panel 2. Diagram: The door. One. Two. Three.', 'Panel 3. ']);
   });
 });

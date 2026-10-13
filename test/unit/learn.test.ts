@@ -211,6 +211,30 @@ describe('closing and games', () => {
     expect(checkLearnBundle(LearnBundleSchema.parse(raw({ closing: short })), known).join()).toMatch(/closing: a comic needs at least 4 panels/);
   });
 
+  it('fails a diagram panel whose diagram is not in the library, or that lists more steps than it has, in the opener and the closing', () => {
+    const withDiagram = (diagram: string, steps?: unknown[]) => {
+      const c = parseYaml(CLOSING_YAML);
+      c.panels[2] = { scene: 'diagram', diagram, ...(steps ? { steps } : {}), voiceover: 'Here is the line that told us.' };
+      return c;
+    };
+    const ok = LearnBundleSchema.parse(raw({ comic: withDiagram('gateway-what-it-does', [{ cue: 'the line' }, {}]), closing: { ...closing, comic: withDiagram('gateway-alias-routing') } }));
+    expect(checkLearnBundle(ok, known)).toEqual([]);
+    const unknown = LearnBundleSchema.parse(raw({ comic: withDiagram('no-such-diagram'), closing: { ...closing, comic: withDiagram('nor-this-one') } }));
+    const problems = checkLearnBundle(unknown, known);
+    expect(problems).toContain('comic panel 3 (diagram): diagram "no-such-diagram" is not in packages/catalogue/diagrams.json');
+    expect(problems).toContain('closing: comic panel 3 (diagram): diagram "nor-this-one" is not in packages/catalogue/diagrams.json');
+    // the set of known diagrams can be passed in, as for lesson bodies
+    expect(checkLearnBundle(unknown, known, new Set(['no-such-diagram', 'nor-this-one']))).toEqual([]);
+    const tooMany = LearnBundleSchema.parse(raw({ comic: withDiagram('gateway-alias-routing', [{}, {}, {}, {}, {}]) }));
+    expect(checkLearnBundle(tooMany, known).join()).toMatch(/comic panel 3 \(diagram\): lists 5 steps, but diagram "gateway-alias-routing" has 4/);
+  });
+
+  it('fails a cue that is not in the voiceover (checkComic, run by learn-check)', () => {
+    const c = parseYaml(CLOSING_YAML);
+    c.panels[0].bubbles[0].cue = 'on monday';
+    expect(checkLearnBundle(LearnBundleSchema.parse(raw({ comic: c })), known).join()).toMatch(/comic panel 1 \(desk\): bubble 1 has the cue "on monday", which is not in the voiceover/);
+  });
+
   it('rejects an unknown kind', () => {
     expect(game({ ...GAMES.sort, kind: 'match' }).success).toBe(false);
   });

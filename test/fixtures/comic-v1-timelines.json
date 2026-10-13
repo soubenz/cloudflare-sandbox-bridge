@@ -1,0 +1,3258 @@
+{
+ "SINGLE": {
+  "clean": {
+   "title": "Which provider answered?",
+   "pages": [
+    {
+     "title": "Tuesday morning",
+     "panels": [
+      {
+       "scene": "desk",
+       "cast": [
+        "maren"
+       ],
+       "bg": "ice",
+       "prop": "none",
+       "bubbles": [
+        {
+         "text": "Which provider answered, and what did it cost?",
+         "who": "maren"
+        }
+       ],
+       "caption": "Tuesday, a little after ten.",
+       "voiceover": "On Tuesday morning finance asked us which provider had answered a call, and nobody on the team could say.",
+       "lines": [
+        "invoice: one line",
+        "provider: ?"
+       ]
+      },
+      {
+       "scene": "message",
+       "cast": [
+        "tomasz"
+       ],
+       "bg": "sand",
+       "prop": "envelope",
+       "bubbles": [
+        {
+         "text": "The gateway should know.",
+         "who": "tomasz"
+        }
+       ],
+       "voiceover": "Jonas sent over the invoice, and Priya wrote that support had no idea either.",
+       "sfx": "PING!"
+      },
+      {
+       "scene": "portrait",
+       "cast": [
+        "you"
+       ],
+       "bg": "mint",
+       "prop": "none",
+       "bubbles": [
+        {
+         "text": "I will start with the log.",
+         "who": "you"
+        }
+       ],
+       "voiceover": "You were two days into the job, so Tomasz and I asked you to find out."
+      },
+      {
+       "scene": "screen",
+       "cast": [],
+       "prop": "none",
+       "bubbles": [],
+       "caption": "A small copy of the system.",
+       "lines": [
+        "$ gateway --log",
+        "200 ok support-a",
+        "4xx key expired"
+       ]
+      }
+     ]
+    },
+    {
+     "title": "Your turn",
+     "panels": [
+      {
+       "scene": "duo",
+       "cast": [
+        "maren",
+        "tomasz"
+       ],
+       "bg": "lilac",
+       "prop": "none",
+       "bubbles": [
+        {
+         "text": "Send it a few calls.",
+         "who": "maren"
+        },
+        {
+         "text": "Then read what it kept.",
+         "who": "tomasz"
+        }
+       ],
+       "voiceover": "Tomasz built the gateway, and I told you where he keeps the log."
+      },
+      {
+       "scene": "you",
+       "cast": [],
+       "bg": "navy",
+       "prop": "none",
+       "bubbles": [],
+       "caption": "Your turn.",
+       "voiceover": "So now it is your turn: open the log and tell us who answered.",
+       "lines": [
+        "$ cat /workspace/answers.json",
+        "ready."
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "transcript": [
+   "Page 1: Tuesday morning.",
+   "Panel 1. Tuesday, a little after ten. On Tuesday morning finance asked us which provider had answered a call, and nobody on the team could say. Maren: Which provider answered, and what did it cost? On screen: invoice: one line / provider: ?",
+   "Panel 2. Jonas sent over the invoice, and Priya wrote that support had no idea either. Tomasz: The gateway should know.",
+   "Panel 3. You were two days into the job, so Tomasz and I asked you to find out. You: I will start with the log.",
+   "Panel 4. A small copy of the system. On screen: $ gateway --log / 200 ok support-a / 4xx key expired",
+   "Page 2: Your turn.",
+   "Panel 5. Tomasz built the gateway, and I told you where he keeps the log. Maren: Send it a few calls. Tomasz: Then read what it kept.",
+   "Panel 6. Your turn. So now it is your turn: open the log and tell us who answered. On screen: $ cat /workspace/answers.json / ready."
+  ],
+  "silent": {
+   "total": 53.5,
+   "parts": {
+    "lead": 1.2,
+    "turns": 1.6,
+    "titles": 4.8,
+    "panels": 44.1,
+    "outro": 1.8
+   },
+   "reel": {
+    "w": 1143.99,
+    "h": 1302
+   },
+   "pages": [
+    {
+     "index": 0,
+     "title": "Tuesday morning",
+     "start": 0,
+     "end": 34.1,
+     "panelsStart": 3.5999999999999996,
+     "sheet": {
+      "x": 30,
+      "y": 30,
+      "w": 1083.99,
+      "h": 764
+     },
+     "banner": {
+      "x": 44,
+      "y": 44,
+      "w": 1055.99,
+      "h": 60
+     },
+     "body": {
+      "x": 44,
+      "y": 118,
+      "w": 1055.99,
+      "h": 662
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 1,
+       "page": 0,
+       "scene": "desk",
+       "start": 3.5999999999999996,
+       "end": 13.4,
+       "dur": 9.8,
+       "words": 18,
+       "rect": {
+        "x": 44,
+        "y": 118,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 3.8999999999999995,
+       "captionAt": 4.1,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 4.3999999999999995,
+         "end": 6.25,
+         "step": 0.2,
+         "wordTimes": [
+          4.6499999999999995,
+          4.85,
+          5.05,
+          5.25,
+          5.449999999999999,
+          5.6499999999999995,
+          5.85,
+          6.05
+         ]
+        }
+       ],
+       "lines": [
+        {
+         "start": 4.3999999999999995,
+         "end": 5.199999999999999
+        },
+        {
+         "start": 5.3999999999999995,
+         "end": 6.199999999999999
+        }
+       ],
+       "focusAt": 6.55
+      },
+      {
+       "index": 1,
+       "number": 2,
+       "page": 0,
+       "scene": "message",
+       "start": 13.4,
+       "end": 19,
+       "dur": 5.6000000000000005,
+       "words": 4,
+       "rect": {
+        "x": 762.66,
+        "y": 118,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 13.700000000000001,
+       "captionAt": null,
+       "sfxAt": 13.950000000000001,
+       "bubbles": [
+        {
+         "who": "tomasz",
+         "start": 14.200000000000001,
+         "end": 15.250000000000002,
+         "step": 0.2,
+         "wordTimes": [
+          14.450000000000001,
+          14.65,
+          14.850000000000001,
+          15.05
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 2,
+       "number": 3,
+       "page": 0,
+       "scene": "portrait",
+       "start": 19,
+       "end": 25.2,
+       "dur": 6.2,
+       "words": 6,
+       "rect": {
+        "x": 44,
+        "y": 460,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 19.3,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "you",
+         "start": 19.8,
+         "end": 21.25,
+         "step": 0.2,
+         "wordTimes": [
+          20.05,
+          20.25,
+          20.45,
+          20.650000000000002,
+          20.85,
+          21.05
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 3,
+       "number": 4,
+       "page": 0,
+       "scene": "screen",
+       "start": 25.2,
+       "end": 34.1,
+       "dur": 8.9,
+       "words": 15,
+       "rect": {
+        "x": 403.33,
+        "y": 460,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 25.5,
+       "captionAt": 25.7,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 26,
+         "end": 26.8
+        },
+        {
+         "start": 27,
+         "end": 27.8
+        },
+        {
+         "start": 28,
+         "end": 28.8
+        }
+       ],
+       "focusAt": 26.299999999999997
+      }
+     ]
+    },
+    {
+     "index": 1,
+     "title": "Your turn",
+     "start": 34.1,
+     "end": 51.7,
+     "panelsStart": 38.1,
+     "sheet": {
+      "x": 30,
+      "y": 850,
+      "w": 1083.99,
+      "h": 422
+     },
+     "banner": {
+      "x": 44,
+      "y": 864,
+      "w": 1055.99,
+      "h": 60
+     },
+     "body": {
+      "x": 44,
+      "y": 938,
+      "w": 1055.99,
+      "h": 320
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 5,
+       "page": 1,
+       "scene": "duo",
+       "start": 38.1,
+       "end": 45.5,
+       "dur": 7.4,
+       "words": 10,
+       "rect": {
+        "x": 44,
+        "y": 938,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 38.4,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 38.9,
+         "end": 40.15,
+         "step": 0.2,
+         "wordTimes": [
+          39.15,
+          39.35,
+          39.55,
+          39.75,
+          39.949999999999996
+         ]
+        },
+        {
+         "who": "tomasz",
+         "start": 40.4,
+         "end": 41.65,
+         "step": 0.2,
+         "wordTimes": [
+          40.65,
+          40.85,
+          41.05,
+          41.25,
+          41.449999999999996
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 1,
+       "number": 6,
+       "page": 1,
+       "scene": "you",
+       "start": 45.5,
+       "end": 51.7,
+       "dur": 6.2,
+       "words": 6,
+       "rect": {
+        "x": 403.33,
+        "y": 938,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 45.8,
+       "captionAt": 46,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 46.3,
+         "end": 47.099999999999994
+        },
+        {
+         "start": 47.3,
+         "end": 48.099999999999994
+        }
+       ],
+       "focusAt": 46.6
+      }
+     ]
+    }
+   ],
+   "shots": [
+    {
+     "t": 0,
+     "dur": 0,
+     "rect": {
+      "x": 16,
+      "y": 16,
+      "w": 1111.99,
+      "h": 116
+     },
+     "kind": "establish"
+    },
+    {
+     "t": 3.5999999999999996,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 90,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 6.55,
+     "dur": 0.7,
+     "rect": {
+      "x": 370,
+      "y": 246,
+      "w": 354,
+      "h": 134
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 13.4,
+     "dur": 0.9,
+     "rect": {
+      "x": 734.66,
+      "y": 90,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 19,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 432,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 25.2,
+     "dur": 0.9,
+     "rect": {
+      "x": 375.33,
+      "y": 432,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 26.299999999999997,
+     "dur": 0.7,
+     "rect": {
+      "x": 447.33,
+      "y": 482,
+      "w": 617,
+      "h": 242
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 34.1,
+     "dur": 1.6,
+     "rect": {
+      "x": 16,
+      "y": 836,
+      "w": 1111.99,
+      "h": 116
+     },
+     "kind": "turn"
+    },
+    {
+     "t": 38.1,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 910,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 45.5,
+     "dur": 0.9,
+     "rect": {
+      "x": 375.33,
+      "y": 910,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 46.6,
+     "dur": 0.7,
+     "rect": {
+      "x": 419.33,
+      "y": 1098,
+      "w": 440,
+      "h": 156
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 51.7,
+     "dur": 1.8,
+     "rect": {
+      "x": 0,
+      "y": 0,
+      "w": 1143.99,
+      "h": 1302
+     },
+     "kind": "outro"
+    }
+   ],
+   "outro": {
+    "start": 51.7,
+    "end": 53.5
+   },
+   "audio": []
+  },
+  "narrated": {
+   "total": 70.8,
+   "parts": {
+    "lead": 1.2,
+    "turns": 1.6,
+    "titles": 4.8,
+    "panels": 61.400000000000006,
+    "outro": 1.8
+   },
+   "reel": {
+    "w": 1143.99,
+    "h": 1302
+   },
+   "pages": [
+    {
+     "index": 0,
+     "title": "Tuesday morning",
+     "start": 0,
+     "end": 45.800000000000004,
+     "panelsStart": 3.5999999999999996,
+     "sheet": {
+      "x": 30,
+      "y": 30,
+      "w": 1083.99,
+      "h": 764
+     },
+     "banner": {
+      "x": 44,
+      "y": 44,
+      "w": 1055.99,
+      "h": 60
+     },
+     "body": {
+      "x": 44,
+      "y": 118,
+      "w": 1055.99,
+      "h": 662
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 1,
+       "page": 0,
+       "scene": "desk",
+       "start": 3.5999999999999996,
+       "end": 16.2,
+       "dur": 12.6,
+       "words": 18,
+       "rect": {
+        "x": 44,
+        "y": 118,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 3.8999999999999995,
+       "captionAt": 4.1,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 4.999999999999999,
+         "end": 6.85,
+         "step": 0.2,
+         "wordTimes": [
+          5.249999999999999,
+          5.449999999999999,
+          5.6499999999999995,
+          5.85,
+          6.049999999999999,
+          6.249999999999999,
+          6.449999999999999,
+          6.6499999999999995
+         ]
+        }
+       ],
+       "lines": [
+        {
+         "start": 4.3999999999999995,
+         "end": 5.199999999999999
+        },
+        {
+         "start": 5.3999999999999995,
+         "end": 6.199999999999999
+        }
+       ],
+       "focusAt": 7.1499999999999995
+      },
+      {
+       "index": 1,
+       "number": 2,
+       "page": 0,
+       "scene": "message",
+       "start": 16.2,
+       "end": 26.8,
+       "dur": 10.600000000000001,
+       "words": 4,
+       "rect": {
+        "x": 762.66,
+        "y": 118,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 16.5,
+       "captionAt": null,
+       "sfxAt": 16.75,
+       "bubbles": [
+        {
+         "who": "tomasz",
+         "start": 17.6,
+         "end": 18.650000000000002,
+         "step": 0.2,
+         "wordTimes": [
+          17.85,
+          18.05,
+          18.25,
+          18.450000000000003
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 2,
+       "number": 3,
+       "page": 0,
+       "scene": "portrait",
+       "start": 26.8,
+       "end": 36.900000000000006,
+       "dur": 10.100000000000005,
+       "words": 6,
+       "rect": {
+        "x": 44,
+        "y": 460,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 27.1,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "you",
+         "start": 28.200000000000003,
+         "end": 29.650000000000002,
+         "step": 0.2,
+         "wordTimes": [
+          28.450000000000003,
+          28.650000000000002,
+          28.85,
+          29.050000000000004,
+          29.250000000000004,
+          29.450000000000003
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 3,
+       "number": 4,
+       "page": 0,
+       "scene": "screen",
+       "start": 36.900000000000006,
+       "end": 45.800000000000004,
+       "dur": 8.9,
+       "words": 15,
+       "rect": {
+        "x": 403.33,
+        "y": 460,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 37.2,
+       "captionAt": 37.400000000000006,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 37.7,
+         "end": 38.5
+        },
+        {
+         "start": 38.7,
+         "end": 39.5
+        },
+        {
+         "start": 39.7,
+         "end": 40.5
+        }
+       ],
+       "focusAt": 38.00000000000001
+      }
+     ]
+    },
+    {
+     "index": 1,
+     "title": "Your turn",
+     "start": 45.800000000000004,
+     "end": 69,
+     "panelsStart": 49.800000000000004,
+     "sheet": {
+      "x": 30,
+      "y": 850,
+      "w": 1083.99,
+      "h": 422
+     },
+     "banner": {
+      "x": 44,
+      "y": 864,
+      "w": 1055.99,
+      "h": 60
+     },
+     "body": {
+      "x": 44,
+      "y": 938,
+      "w": 1055.99,
+      "h": 320
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 5,
+       "page": 1,
+       "scene": "duo",
+       "start": 49.800000000000004,
+       "end": 59.470000000000006,
+       "dur": 9.670000000000002,
+       "words": 10,
+       "rect": {
+        "x": 44,
+        "y": 938,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 50.1,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 51.2,
+         "end": 52.45,
+         "step": 0.2,
+         "wordTimes": [
+          51.45,
+          51.650000000000006,
+          51.85,
+          52.050000000000004,
+          52.25
+         ]
+        },
+        {
+         "who": "tomasz",
+         "start": 52.7,
+         "end": 53.95,
+         "step": 0.2,
+         "wordTimes": [
+          52.95,
+          53.150000000000006,
+          53.35,
+          53.550000000000004,
+          53.75
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 1,
+       "number": 6,
+       "page": 1,
+       "scene": "you",
+       "start": 59.470000000000006,
+       "end": 69,
+       "dur": 9.529999999999994,
+       "words": 6,
+       "rect": {
+        "x": 403.33,
+        "y": 938,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 59.77,
+       "captionAt": 59.970000000000006,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 60.27,
+         "end": 61.07
+        },
+        {
+         "start": 61.27,
+         "end": 62.07
+        }
+       ],
+       "focusAt": 60.57000000000001
+      }
+     ]
+    }
+   ],
+   "shots": [
+    {
+     "t": 0,
+     "dur": 0,
+     "rect": {
+      "x": 16,
+      "y": 16,
+      "w": 1111.99,
+      "h": 116
+     },
+     "kind": "establish"
+    },
+    {
+     "t": 3.5999999999999996,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 90,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 7.1499999999999995,
+     "dur": 0.7,
+     "rect": {
+      "x": 370,
+      "y": 246,
+      "w": 354,
+      "h": 134
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 16.2,
+     "dur": 0.9,
+     "rect": {
+      "x": 734.66,
+      "y": 90,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 26.8,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 432,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 36.900000000000006,
+     "dur": 0.9,
+     "rect": {
+      "x": 375.33,
+      "y": 432,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 38.00000000000001,
+     "dur": 0.7,
+     "rect": {
+      "x": 447.33,
+      "y": 482,
+      "w": 617,
+      "h": 242
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 45.800000000000004,
+     "dur": 1.6,
+     "rect": {
+      "x": 16,
+      "y": 836,
+      "w": 1111.99,
+      "h": 116
+     },
+     "kind": "turn"
+    },
+    {
+     "t": 49.800000000000004,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 910,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 59.470000000000006,
+     "dur": 0.9,
+     "rect": {
+      "x": 375.33,
+      "y": 910,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 60.57000000000001,
+     "dur": 0.7,
+     "rect": {
+      "x": 419.33,
+      "y": 1098,
+      "w": 440,
+      "h": 156
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 69,
+     "dur": 1.8,
+     "rect": {
+      "x": 0,
+      "y": 0,
+      "w": 1143.99,
+      "h": 1302
+     },
+     "kind": "outro"
+    }
+   ],
+   "outro": {
+    "start": 69,
+    "end": 70.8
+   },
+   "audio": [
+    {
+     "key": "910d3bfe39ff1df2",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 4.199999999999999,
+     "end": 14.2,
+     "seconds": 10,
+     "panel": 1
+    },
+    {
+     "key": "15f3fba2191488e7",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 16.8,
+     "end": 24.8,
+     "seconds": 8,
+     "panel": 2
+    },
+    {
+     "key": "beaf090f9fda28cb",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 27.400000000000002,
+     "end": 34.900000000000006,
+     "seconds": 7.5,
+     "panel": 3
+    },
+    {
+     "key": "b4485748d8d1200d",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 50.400000000000006,
+     "end": 57.470000000000006,
+     "seconds": 7.07,
+     "panel": 5
+    },
+    {
+     "key": "edffe35ebf228242",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 60.07000000000001,
+     "end": 67,
+     "seconds": 6.93,
+     "panel": 6
+    }
+   ]
+  }
+ },
+ "MULTI": {
+  "clean": {
+   "title": "One slow request, no explanation",
+   "pages": [
+    {
+     "title": "Tuesday afternoon",
+     "panels": [
+      {
+       "scene": "desk",
+       "cast": [
+        "tomasz"
+       ],
+       "bg": "sand",
+       "prop": "none",
+       "bubbles": [
+        {
+         "text": "This one took ages. Why did the assistant take so long to answer?",
+         "who": "tomasz"
+        }
+       ],
+       "voiceover": "Support wrote to us a little after two: one request had taken ages.",
+       "lines": [
+        "agent: waiting on a reply...",
+        "waiting...",
+        "still waiting..."
+       ]
+      },
+      {
+       "scene": "message",
+       "cast": [
+        "maren"
+       ],
+       "bg": "lilac",
+       "prop": "envelope",
+       "bubbles": [
+        {
+         "text": "And what did it cost? I need a number per request.",
+         "who": "maren"
+        }
+       ],
+       "voiceover": "Then finance asked what it had cost.",
+       "sfx": "PING!"
+      },
+      {
+       "scene": "portrait",
+       "cast": [
+        "maren"
+       ],
+       "bg": "ice",
+       "prop": "chart",
+       "bubbles": [
+        {
+         "text": "That request was traced end to end. One request, four services, six spans. Read it.",
+         "who": "maren"
+        }
+       ],
+       "voiceover": "I knew we had traced that request from end to end.",
+       "sfx": "HMM."
+      },
+      {
+       "scene": "duo",
+       "cast": [
+        "tomasz",
+        "you"
+       ],
+       "bg": "mint",
+       "prop": "none",
+       "bubbles": [
+        {
+         "text": "The trace is in the lab.",
+         "who": "tomasz"
+        },
+        {
+         "text": "I will start there.",
+         "who": "you"
+        }
+       ],
+       "voiceover": "Tomasz pointed you to the trace."
+      }
+     ]
+    },
+    {
+     "panels": [
+      {
+       "scene": "screen",
+       "cast": [],
+       "prop": "none",
+       "bubbles": [],
+       "caption": "A small copy of the stack, and a trace to read.",
+       "voiceover": "The lab holds a small copy of the stack.",
+       "lines": [
+        "$ open jaeger, click Find Traces",
+        "200 1 trace, 4 services, 6 spans",
+        "slowest span, not the top one: ?",
+        "4xx cache.get missed"
+       ]
+      },
+      {
+       "scene": "duo",
+       "cast": [
+        "maren",
+        "you"
+       ],
+       "bg": "rose",
+       "prop": "none",
+       "bubbles": [
+        {
+         "text": "Can customers see any of this?",
+         "who": "maren"
+        },
+        {
+         "text": "Only what we decide to show them.",
+         "who": "you"
+        }
+       ],
+       "voiceover": "Maybe the customer could see some of it, I wondered."
+      },
+      {
+       "scene": "portrait",
+       "cast": [
+        "tomasz"
+       ],
+       "bg": "navy",
+       "prop": "document",
+       "bubbles": [
+        {
+         "text": "Write down what you find, in numbers.",
+         "who": "tomasz"
+        }
+       ],
+       "voiceover": "Tomasz asked you to put it in numbers."
+      }
+     ]
+    },
+    {
+     "title": "Your turn",
+     "panels": [
+      {
+       "scene": "you",
+       "cast": [],
+       "bg": "navy",
+       "prop": "none",
+       "bubbles": [],
+       "caption": "Your turn.",
+       "voiceover": "And that was the whole brief.",
+       "lines": [
+        "$ cat /workspace/answers.json",
+        "ready."
+       ]
+      },
+      {
+       "scene": "message",
+       "cast": [
+        "maren"
+       ],
+       "bg": "sand",
+       "prop": "key",
+       "bubbles": [
+        {
+         "text": "The lab is open.",
+         "who": "maren"
+        }
+       ],
+       "voiceover": "The lab is open, so go and have a look.",
+       "sfx": "GO!"
+      }
+     ]
+    }
+   ]
+  },
+  "transcript": [
+   "Page 1: Tuesday afternoon.",
+   "Panel 1. Support wrote to us a little after two: one request had taken ages. Tomasz: This one took ages. Why did the assistant take so long to answer? On screen: agent: waiting on a reply... / waiting... / still waiting...",
+   "Panel 2. Then finance asked what it had cost. Maren: And what did it cost? I need a number per request.",
+   "Panel 3. I knew we had traced that request from end to end. Maren: That request was traced end to end. One request, four services, six spans. Read it.",
+   "Panel 4. Tomasz pointed you to the trace. Tomasz: The trace is in the lab. You: I will start there.",
+   "Page 2.",
+   "Panel 5. A small copy of the stack, and a trace to read. The lab holds a small copy of the stack. On screen: $ open jaeger, click Find Traces / 200 1 trace, 4 services, 6 spans / slowest span, not the top one: ? / 4xx cache.get missed",
+   "Panel 6. Maybe the customer could see some of it, I wondered. Maren: Can customers see any of this? You: Only what we decide to show them.",
+   "Panel 7. Tomasz asked you to put it in numbers. Tomasz: Write down what you find, in numbers.",
+   "Page 3: Your turn.",
+   "Panel 8. Your turn. And that was the whole brief. On screen: $ cat /workspace/answers.json / ready.",
+   "Panel 9. The lab is open, so go and have a look. Maren: The lab is open."
+  ],
+  "silent": {
+   "total": 86.89999999999999,
+   "parts": {
+    "lead": 1.2,
+    "turns": 3.2,
+    "titles": 4.8,
+    "panels": 75.89999999999999,
+    "outro": 1.8
+   },
+   "reel": {
+    "w": 1143.99,
+    "h": 2048
+   },
+   "pages": [
+    {
+     "index": 0,
+     "title": "Tuesday afternoon",
+     "start": 0,
+     "end": 38.3,
+     "panelsStart": 3.5999999999999996,
+     "sheet": {
+      "x": 30,
+      "y": 30,
+      "w": 1083.99,
+      "h": 764
+     },
+     "banner": {
+      "x": 44,
+      "y": 44,
+      "w": 1055.99,
+      "h": 60
+     },
+     "body": {
+      "x": 44,
+      "y": 118,
+      "w": 1055.99,
+      "h": 662
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 1,
+       "page": 0,
+       "scene": "desk",
+       "start": 3.5999999999999996,
+       "end": 14.299999999999999,
+       "dur": 10.7,
+       "words": 21,
+       "rect": {
+        "x": 44,
+        "y": 118,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 3.8999999999999995,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "tomasz",
+         "start": 4.3999999999999995,
+         "end": 7.25,
+         "step": 0.2,
+         "wordTimes": [
+          4.6499999999999995,
+          4.85,
+          5.05,
+          5.25,
+          5.449999999999999,
+          5.6499999999999995,
+          5.85,
+          6.05,
+          6.25,
+          6.449999999999999,
+          6.6499999999999995,
+          6.85,
+          7.05
+         ]
+        }
+       ],
+       "lines": [
+        {
+         "start": 4.3999999999999995,
+         "end": 5.199999999999999
+        },
+        {
+         "start": 5.3999999999999995,
+         "end": 6.199999999999999
+        },
+        {
+         "start": 6.3999999999999995,
+         "end": 7.199999999999999
+        }
+       ],
+       "focusAt": 7.55
+      },
+      {
+       "index": 1,
+       "number": 2,
+       "page": 0,
+       "scene": "message",
+       "start": 14.299999999999999,
+       "end": 22,
+       "dur": 7.7,
+       "words": 11,
+       "rect": {
+        "x": 762.66,
+        "y": 118,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 14.6,
+       "captionAt": null,
+       "sfxAt": 14.85,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 15.1,
+         "end": 17.55,
+         "step": 0.2,
+         "wordTimes": [
+          15.35,
+          15.549999999999999,
+          15.75,
+          15.95,
+          16.15,
+          16.35,
+          16.55,
+          16.75,
+          16.95,
+          17.15,
+          17.35
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 2,
+       "number": 3,
+       "page": 0,
+       "scene": "portrait",
+       "start": 22,
+       "end": 30.9,
+       "dur": 8.9,
+       "words": 15,
+       "rect": {
+        "x": 223.66500000000002,
+        "y": 460,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 22.3,
+       "captionAt": null,
+       "sfxAt": 22.55,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 22.8,
+         "end": 26.05,
+         "step": 0.2,
+         "wordTimes": [
+          23.05,
+          23.25,
+          23.45,
+          23.650000000000002,
+          23.85,
+          24.05,
+          24.25,
+          24.45,
+          24.650000000000002,
+          24.85,
+          25.05,
+          25.25,
+          25.450000000000003,
+          25.650000000000002,
+          25.85
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 3,
+       "number": 4,
+       "page": 0,
+       "scene": "duo",
+       "start": 30.9,
+       "end": 38.3,
+       "dur": 7.4,
+       "words": 10,
+       "rect": {
+        "x": 582.995,
+        "y": 460,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 31.2,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "tomasz",
+         "start": 31.7,
+         "end": 33.15,
+         "step": 0.2,
+         "wordTimes": [
+          31.95,
+          32.15,
+          32.35,
+          32.55,
+          32.75,
+          32.95
+         ]
+        },
+        {
+         "who": "you",
+         "start": 33.4,
+         "end": 34.449999999999996,
+         "step": 0.2,
+         "wordTimes": [
+          33.65,
+          33.85,
+          34.05,
+          34.25
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      }
+     ]
+    },
+    {
+     "index": 1,
+     "title": null,
+     "start": 38.3,
+     "end": 69.3,
+     "panelsStart": 39.9,
+     "sheet": {
+      "x": 30,
+      "y": 850,
+      "w": 1083.99,
+      "h": 690
+     },
+     "banner": null,
+     "body": {
+      "x": 44,
+      "y": 864,
+      "w": 1055.99,
+      "h": 662
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 5,
+       "page": 1,
+       "scene": "screen",
+       "start": 39.9,
+       "end": 54.5,
+       "dur": 14.6,
+       "words": 34,
+       "rect": {
+        "x": 44,
+        "y": 864,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 40.199999999999996,
+       "captionAt": 40.4,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 40.699999999999996,
+         "end": 41.49999999999999
+        },
+        {
+         "start": 41.699999999999996,
+         "end": 42.49999999999999
+        },
+        {
+         "start": 42.699999999999996,
+         "end": 43.49999999999999
+        },
+        {
+         "start": 43.699999999999996,
+         "end": 44.49999999999999
+        }
+       ],
+       "focusAt": 41
+      },
+      {
+       "index": 1,
+       "number": 6,
+       "page": 1,
+       "scene": "duo",
+       "start": 54.5,
+       "end": 62.8,
+       "dur": 8.3,
+       "words": 13,
+       "rect": {
+        "x": 762.66,
+        "y": 864,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 54.8,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 55.3,
+         "end": 56.75,
+         "step": 0.2,
+         "wordTimes": [
+          55.55,
+          55.75,
+          55.949999999999996,
+          56.15,
+          56.349999999999994,
+          56.55
+         ]
+        },
+        {
+         "who": "you",
+         "start": 57,
+         "end": 58.65,
+         "step": 0.2,
+         "wordTimes": [
+          57.25,
+          57.45,
+          57.65,
+          57.85,
+          58.05,
+          58.25,
+          58.45
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 2,
+       "number": 7,
+       "page": 1,
+       "scene": "portrait",
+       "start": 62.8,
+       "end": 69.3,
+       "dur": 6.5,
+       "words": 7,
+       "rect": {
+        "x": 403.33000000000004,
+        "y": 1206,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 63.099999999999994,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "tomasz",
+         "start": 63.599999999999994,
+         "end": 65.25,
+         "step": 0.2,
+         "wordTimes": [
+          63.849999999999994,
+          64.05,
+          64.25,
+          64.44999999999999,
+          64.64999999999999,
+          64.85,
+          65.05
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      }
+     ]
+    },
+    {
+     "index": 2,
+     "title": "Your turn",
+     "start": 69.3,
+     "end": 85.1,
+     "panelsStart": 73.3,
+     "sheet": {
+      "x": 30,
+      "y": 1596,
+      "w": 1083.99,
+      "h": 422
+     },
+     "banner": {
+      "x": 44,
+      "y": 1610,
+      "w": 1055.99,
+      "h": 60
+     },
+     "body": {
+      "x": 44,
+      "y": 1684,
+      "w": 1055.99,
+      "h": 320
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 8,
+       "page": 2,
+       "scene": "you",
+       "start": 73.3,
+       "end": 79.5,
+       "dur": 6.2,
+       "words": 6,
+       "rect": {
+        "x": 44,
+        "y": 1684,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 73.6,
+       "captionAt": 73.8,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 74.1,
+         "end": 74.89999999999999
+        },
+        {
+         "start": 75.1,
+         "end": 75.89999999999999
+        }
+       ],
+       "focusAt": 74.4
+      },
+      {
+       "index": 1,
+       "number": 9,
+       "page": 2,
+       "scene": "message",
+       "start": 79.5,
+       "end": 85.1,
+       "dur": 5.6000000000000005,
+       "words": 4,
+       "rect": {
+        "x": 762.66,
+        "y": 1684,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 79.8,
+       "captionAt": null,
+       "sfxAt": 80.05,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 80.3,
+         "end": 81.35,
+         "step": 0.2,
+         "wordTimes": [
+          80.55,
+          80.75,
+          80.95,
+          81.14999999999999
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      }
+     ]
+    }
+   ],
+   "shots": [
+    {
+     "t": 0,
+     "dur": 0,
+     "rect": {
+      "x": 16,
+      "y": 16,
+      "w": 1111.99,
+      "h": 116
+     },
+     "kind": "establish"
+    },
+    {
+     "t": 3.5999999999999996,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 90,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 7.55,
+     "dur": 0.7,
+     "rect": {
+      "x": 370,
+      "y": 246,
+      "w": 354,
+      "h": 134
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 14.299999999999999,
+     "dur": 0.9,
+     "rect": {
+      "x": 734.66,
+      "y": 90,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 22,
+     "dur": 0.9,
+     "rect": {
+      "x": 195.66500000000002,
+      "y": 432,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 30.9,
+     "dur": 0.9,
+     "rect": {
+      "x": 554.995,
+      "y": 432,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 38.3,
+     "dur": 1.6,
+     "rect": {
+      "x": 30,
+      "y": 850,
+      "w": 1083.99,
+      "h": 690
+     },
+     "kind": "turn"
+    },
+    {
+     "t": 39.9,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 836,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 41,
+     "dur": 0.7,
+     "rect": {
+      "x": 88,
+      "y": 886,
+      "w": 617,
+      "h": 242
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 54.5,
+     "dur": 0.9,
+     "rect": {
+      "x": 734.66,
+      "y": 836,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 62.8,
+     "dur": 0.9,
+     "rect": {
+      "x": 375.33000000000004,
+      "y": 1178,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 69.3,
+     "dur": 1.6,
+     "rect": {
+      "x": 16,
+      "y": 1582,
+      "w": 1111.99,
+      "h": 116
+     },
+     "kind": "turn"
+    },
+    {
+     "t": 73.3,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 1656,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 74.4,
+     "dur": 0.7,
+     "rect": {
+      "x": 60,
+      "y": 1844,
+      "w": 440,
+      "h": 156
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 79.5,
+     "dur": 0.9,
+     "rect": {
+      "x": 734.66,
+      "y": 1656,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 85.1,
+     "dur": 1.8,
+     "rect": {
+      "x": 0,
+      "y": 0,
+      "w": 1143.99,
+      "h": 2048
+     },
+     "kind": "outro"
+    }
+   ],
+   "outro": {
+    "start": 85.1,
+    "end": 86.89999999999999
+   },
+   "audio": []
+  },
+  "narrated": {
+   "total": 91.97999999999999,
+   "parts": {
+    "lead": 1.2,
+    "turns": 3.2,
+    "titles": 4.8,
+    "panels": 80.97999999999999,
+    "outro": 1.8
+   },
+   "reel": {
+    "w": 1143.99,
+    "h": 2048
+   },
+   "pages": [
+    {
+     "index": 0,
+     "title": "Tuesday afternoon",
+     "start": 0,
+     "end": 38.3,
+     "panelsStart": 3.5999999999999996,
+     "sheet": {
+      "x": 30,
+      "y": 30,
+      "w": 1083.99,
+      "h": 764
+     },
+     "banner": {
+      "x": 44,
+      "y": 44,
+      "w": 1055.99,
+      "h": 60
+     },
+     "body": {
+      "x": 44,
+      "y": 118,
+      "w": 1055.99,
+      "h": 662
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 1,
+       "page": 0,
+       "scene": "desk",
+       "start": 3.5999999999999996,
+       "end": 14.299999999999999,
+       "dur": 10.7,
+       "words": 21,
+       "rect": {
+        "x": 44,
+        "y": 118,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 3.8999999999999995,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "tomasz",
+         "start": 4.999999999999999,
+         "end": 7.85,
+         "step": 0.2,
+         "wordTimes": [
+          5.249999999999999,
+          5.449999999999999,
+          5.6499999999999995,
+          5.85,
+          6.049999999999999,
+          6.249999999999999,
+          6.449999999999999,
+          6.6499999999999995,
+          6.85,
+          7.049999999999999,
+          7.249999999999999,
+          7.449999999999999,
+          7.6499999999999995
+         ]
+        }
+       ],
+       "lines": [
+        {
+         "start": 4.3999999999999995,
+         "end": 5.199999999999999
+        },
+        {
+         "start": 5.3999999999999995,
+         "end": 6.199999999999999
+        },
+        {
+         "start": 6.3999999999999995,
+         "end": 7.199999999999999
+        }
+       ],
+       "focusAt": 8.15
+      },
+      {
+       "index": 1,
+       "number": 2,
+       "page": 0,
+       "scene": "message",
+       "start": 14.299999999999999,
+       "end": 22,
+       "dur": 7.7,
+       "words": 11,
+       "rect": {
+        "x": 762.66,
+        "y": 118,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 14.6,
+       "captionAt": null,
+       "sfxAt": 14.85,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 15.7,
+         "end": 18.15,
+         "step": 0.2,
+         "wordTimes": [
+          15.95,
+          16.15,
+          16.349999999999998,
+          16.55,
+          16.75,
+          16.95,
+          17.15,
+          17.349999999999998,
+          17.55,
+          17.75,
+          17.95
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 2,
+       "number": 3,
+       "page": 0,
+       "scene": "portrait",
+       "start": 22,
+       "end": 30.9,
+       "dur": 8.9,
+       "words": 15,
+       "rect": {
+        "x": 223.66500000000002,
+        "y": 460,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 22.3,
+       "captionAt": null,
+       "sfxAt": 22.55,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 23.400000000000002,
+         "end": 26.650000000000002,
+         "step": 0.2,
+         "wordTimes": [
+          23.650000000000002,
+          23.85,
+          24.05,
+          24.250000000000004,
+          24.450000000000003,
+          24.650000000000002,
+          24.85,
+          25.05,
+          25.250000000000004,
+          25.450000000000003,
+          25.650000000000002,
+          25.85,
+          26.050000000000004,
+          26.250000000000004,
+          26.450000000000003
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 3,
+       "number": 4,
+       "page": 0,
+       "scene": "duo",
+       "start": 30.9,
+       "end": 38.3,
+       "dur": 7.4,
+       "words": 10,
+       "rect": {
+        "x": 582.995,
+        "y": 460,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 31.2,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "tomasz",
+         "start": 32.3,
+         "end": 33.75,
+         "step": 0.2,
+         "wordTimes": [
+          32.55,
+          32.75,
+          32.949999999999996,
+          33.15,
+          33.349999999999994,
+          33.55
+         ]
+        },
+        {
+         "who": "you",
+         "start": 34,
+         "end": 35.05,
+         "step": 0.2,
+         "wordTimes": [
+          34.25,
+          34.45,
+          34.65,
+          34.85
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      }
+     ]
+    },
+    {
+     "index": 1,
+     "title": null,
+     "start": 38.3,
+     "end": 71.12,
+     "panelsStart": 39.9,
+     "sheet": {
+      "x": 30,
+      "y": 850,
+      "w": 1083.99,
+      "h": 690
+     },
+     "banner": null,
+     "body": {
+      "x": 44,
+      "y": 864,
+      "w": 1055.99,
+      "h": 662
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 5,
+       "page": 1,
+       "scene": "screen",
+       "start": 39.9,
+       "end": 54.5,
+       "dur": 14.6,
+       "words": 34,
+       "rect": {
+        "x": 44,
+        "y": 864,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 40.199999999999996,
+       "captionAt": 40.4,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 40.699999999999996,
+         "end": 41.49999999999999
+        },
+        {
+         "start": 41.699999999999996,
+         "end": 42.49999999999999
+        },
+        {
+         "start": 42.699999999999996,
+         "end": 43.49999999999999
+        },
+        {
+         "start": 43.699999999999996,
+         "end": 44.49999999999999
+        }
+       ],
+       "focusAt": 41
+      },
+      {
+       "index": 1,
+       "number": 6,
+       "page": 1,
+       "scene": "duo",
+       "start": 54.5,
+       "end": 63.31,
+       "dur": 8.810000000000002,
+       "words": 13,
+       "rect": {
+        "x": 762.66,
+        "y": 864,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 54.8,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 55.9,
+         "end": 57.35,
+         "step": 0.2,
+         "wordTimes": [
+          56.15,
+          56.35,
+          56.55,
+          56.75,
+          56.949999999999996,
+          57.15
+         ]
+        },
+        {
+         "who": "you",
+         "start": 57.6,
+         "end": 59.25,
+         "step": 0.2,
+         "wordTimes": [
+          57.85,
+          58.050000000000004,
+          58.25,
+          58.45,
+          58.65,
+          58.85,
+          59.050000000000004
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 2,
+       "number": 7,
+       "page": 1,
+       "scene": "portrait",
+       "start": 63.31,
+       "end": 71.12,
+       "dur": 7.810000000000002,
+       "words": 7,
+       "rect": {
+        "x": 403.33000000000004,
+        "y": 1206,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 63.61,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "tomasz",
+         "start": 64.71000000000001,
+         "end": 66.36000000000001,
+         "step": 0.2,
+         "wordTimes": [
+          64.96000000000001,
+          65.16000000000001,
+          65.36000000000001,
+          65.56,
+          65.76,
+          65.96000000000001,
+          66.16000000000001
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      }
+     ]
+    },
+    {
+     "index": 2,
+     "title": "Your turn",
+     "start": 71.12,
+     "end": 90.17999999999999,
+     "panelsStart": 75.12,
+     "sheet": {
+      "x": 30,
+      "y": 1596,
+      "w": 1083.99,
+      "h": 422
+     },
+     "banner": {
+      "x": 44,
+      "y": 1610,
+      "w": 1055.99,
+      "h": 60
+     },
+     "body": {
+      "x": 44,
+      "y": 1684,
+      "w": 1055.99,
+      "h": 320
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 8,
+       "page": 2,
+       "scene": "you",
+       "start": 75.12,
+       "end": 82.28999999999999,
+       "dur": 7.1699999999999875,
+       "words": 6,
+       "rect": {
+        "x": 44,
+        "y": 1684,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 75.42,
+       "captionAt": 75.62,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 75.92,
+         "end": 76.72
+        },
+        {
+         "start": 76.92,
+         "end": 77.72
+        }
+       ],
+       "focusAt": 76.22000000000001
+      },
+      {
+       "index": 1,
+       "number": 9,
+       "page": 2,
+       "scene": "message",
+       "start": 82.28999999999999,
+       "end": 90.17999999999999,
+       "dur": 7.890000000000001,
+       "words": 4,
+       "rect": {
+        "x": 762.66,
+        "y": 1684,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 82.58999999999999,
+       "captionAt": null,
+       "sfxAt": 82.83999999999999,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 83.68999999999998,
+         "end": 84.73999999999998,
+         "step": 0.2,
+         "wordTimes": [
+          83.93999999999998,
+          84.13999999999999,
+          84.33999999999999,
+          84.53999999999998
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      }
+     ]
+    }
+   ],
+   "shots": [
+    {
+     "t": 0,
+     "dur": 0,
+     "rect": {
+      "x": 16,
+      "y": 16,
+      "w": 1111.99,
+      "h": 116
+     },
+     "kind": "establish"
+    },
+    {
+     "t": 3.5999999999999996,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 90,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 8.15,
+     "dur": 0.7,
+     "rect": {
+      "x": 370,
+      "y": 246,
+      "w": 354,
+      "h": 134
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 14.299999999999999,
+     "dur": 0.9,
+     "rect": {
+      "x": 734.66,
+      "y": 90,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 22,
+     "dur": 0.9,
+     "rect": {
+      "x": 195.66500000000002,
+      "y": 432,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 30.9,
+     "dur": 0.9,
+     "rect": {
+      "x": 554.995,
+      "y": 432,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 38.3,
+     "dur": 1.6,
+     "rect": {
+      "x": 30,
+      "y": 850,
+      "w": 1083.99,
+      "h": 690
+     },
+     "kind": "turn"
+    },
+    {
+     "t": 39.9,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 836,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 41,
+     "dur": 0.7,
+     "rect": {
+      "x": 88,
+      "y": 886,
+      "w": 617,
+      "h": 242
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 54.5,
+     "dur": 0.9,
+     "rect": {
+      "x": 734.66,
+      "y": 836,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 63.31,
+     "dur": 0.9,
+     "rect": {
+      "x": 375.33000000000004,
+      "y": 1178,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 71.12,
+     "dur": 1.6,
+     "rect": {
+      "x": 16,
+      "y": 1582,
+      "w": 1111.99,
+      "h": 116
+     },
+     "kind": "turn"
+    },
+    {
+     "t": 75.12,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 1656,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 76.22000000000001,
+     "dur": 0.7,
+     "rect": {
+      "x": 60,
+      "y": 1844,
+      "w": 440,
+      "h": 156
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 82.28999999999999,
+     "dur": 0.9,
+     "rect": {
+      "x": 734.66,
+      "y": 1656,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 90.17999999999999,
+     "dur": 1.8,
+     "rect": {
+      "x": 0,
+      "y": 0,
+      "w": 1143.99,
+      "h": 2048
+     },
+     "kind": "outro"
+    }
+   ],
+   "outro": {
+    "start": 90.17999999999999,
+    "end": 91.97999999999999
+   },
+   "audio": [
+    {
+     "key": "071840a54ef7e9b0",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 4.199999999999999,
+     "end": 11.489999999999998,
+     "seconds": 7.29,
+     "panel": 1
+    },
+    {
+     "key": "a62f1523be1b0720",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 14.899999999999999,
+     "end": 19.97,
+     "seconds": 5.07,
+     "panel": 2
+    },
+    {
+     "key": "579df0aa4fa0f5db",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 22.6,
+     "end": 28.67,
+     "seconds": 6.07,
+     "panel": 3
+    },
+    {
+     "key": "b2c47884bd288cfb",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 31.5,
+     "end": 36.29,
+     "seconds": 4.79,
+     "panel": 4
+    },
+    {
+     "key": "99562d404af1f7bb",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 40.5,
+     "end": 45.86,
+     "seconds": 5.36,
+     "panel": 5
+    },
+    {
+     "key": "2f73673f407eb156",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 55.1,
+     "end": 61.31,
+     "seconds": 6.21,
+     "panel": 6
+    },
+    {
+     "key": "2853d8fb1ba90ff8",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 63.910000000000004,
+     "end": 69.12,
+     "seconds": 5.21,
+     "panel": 7
+    },
+    {
+     "key": "b9717e011d5c41a8",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 75.72,
+     "end": 80.28999999999999,
+     "seconds": 4.57,
+     "panel": 8
+    },
+    {
+     "key": "34ee72e89cdbb639",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 82.88999999999999,
+     "end": 88.17999999999999,
+     "seconds": 5.29,
+     "panel": 9
+    }
+   ]
+  }
+ },
+ "CLOSING": {
+  "clean": {
+   "title": "What we found",
+   "pages": [
+    {
+     "panels": [
+      {
+       "scene": "desk",
+       "cast": [
+        "maren"
+       ],
+       "bg": "ice",
+       "prop": "none",
+       "bubbles": [
+        {
+         "text": "So that was it.",
+         "who": "maren"
+        }
+       ],
+       "voiceover": "By Friday we knew which provider had answered."
+      },
+      {
+       "scene": "portrait",
+       "cast": [
+        "tomasz"
+       ],
+       "bg": "sand",
+       "prop": "none",
+       "bubbles": [],
+       "voiceover": "The alias had moved and nobody had noticed."
+      },
+      {
+       "scene": "screen",
+       "cast": [],
+       "prop": "none",
+       "bubbles": [],
+       "voiceover": "Here is the line that told us.",
+       "lines": [
+        "alias: fast = provider-b"
+       ]
+      },
+      {
+       "scene": "you",
+       "cast": [],
+       "bg": "navy",
+       "prop": "none",
+       "bubbles": [],
+       "voiceover": "Now you know where to look.",
+       "lines": [
+        "$ go"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  "transcript": [
+   "Panel 1. By Friday we knew which provider had answered. Maren: So that was it.",
+   "Panel 2. The alias had moved and nobody had noticed.",
+   "Panel 3. Here is the line that told us. On screen: alias: fast = provider-b",
+   "Panel 4. Now you know where to look. On screen: $ go"
+  ],
+  "silent": {
+   "total": 24.200000000000003,
+   "parts": {
+    "lead": 1.2,
+    "turns": 0,
+    "titles": 0,
+    "panels": 21.200000000000003,
+    "outro": 1.8
+   },
+   "reel": {
+    "w": 1143.99,
+    "h": 1092
+   },
+   "pages": [
+    {
+     "index": 0,
+     "title": null,
+     "start": 0,
+     "end": 22.400000000000002,
+     "panelsStart": 1.2,
+     "sheet": {
+      "x": 30,
+      "y": 30,
+      "w": 1083.99,
+      "h": 1032
+     },
+     "banner": null,
+     "body": {
+      "x": 44,
+      "y": 44,
+      "w": 1055.99,
+      "h": 1004
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 1,
+       "page": 0,
+       "scene": "desk",
+       "start": 1.2,
+       "end": 6.800000000000001,
+       "dur": 5.6000000000000005,
+       "words": 4,
+       "rect": {
+        "x": 44,
+        "y": 44,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 1.5,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 2,
+         "end": 3.05,
+         "step": 0.2,
+         "wordTimes": [
+          2.25,
+          2.45,
+          2.65,
+          2.85
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 1,
+       "number": 2,
+       "page": 0,
+       "scene": "portrait",
+       "start": 6.800000000000001,
+       "end": 11.8,
+       "dur": 5,
+       "words": 0,
+       "rect": {
+        "x": 762.66,
+        "y": 44,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 7.1000000000000005,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 2,
+       "number": 3,
+       "page": 0,
+       "scene": "screen",
+       "start": 11.8,
+       "end": 17.400000000000002,
+       "dur": 5.6000000000000005,
+       "words": 4,
+       "rect": {
+        "x": 223.66500000000002,
+        "y": 386,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 12.100000000000001,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 12.600000000000001,
+         "end": 13.400000000000002
+        }
+       ],
+       "focusAt": 12.9
+      },
+      {
+       "index": 3,
+       "number": 4,
+       "page": 0,
+       "scene": "you",
+       "start": 17.400000000000002,
+       "end": 22.400000000000002,
+       "dur": 5,
+       "words": 2,
+       "rect": {
+        "x": 223.66500000000002,
+        "y": 728,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 17.700000000000003,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 18.200000000000003,
+         "end": 19.000000000000004
+        }
+       ],
+       "focusAt": 18.5
+      }
+     ]
+    }
+   ],
+   "shots": [
+    {
+     "t": 0,
+     "dur": 0,
+     "rect": {
+      "x": 30,
+      "y": 30,
+      "w": 1083.99,
+      "h": 1032
+     },
+     "kind": "establish"
+    },
+    {
+     "t": 1.2,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 16,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 6.800000000000001,
+     "dur": 0.9,
+     "rect": {
+      "x": 734.66,
+      "y": 16,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 11.8,
+     "dur": 0.9,
+     "rect": {
+      "x": 195.66500000000002,
+      "y": 358,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 12.9,
+     "dur": 0.7,
+     "rect": {
+      "x": 267.665,
+      "y": 408,
+      "w": 617,
+      "h": 242
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 17.400000000000002,
+     "dur": 0.9,
+     "rect": {
+      "x": 195.66500000000002,
+      "y": 700,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 18.5,
+     "dur": 0.7,
+     "rect": {
+      "x": 239.66500000000002,
+      "y": 888,
+      "w": 440,
+      "h": 156
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 22.400000000000002,
+     "dur": 1.8,
+     "rect": {
+      "x": 0,
+      "y": 0,
+      "w": 1143.99,
+      "h": 1092
+     },
+     "kind": "outro"
+    }
+   ],
+   "outro": {
+    "start": 22.400000000000002,
+    "end": 24.200000000000003
+   },
+   "audio": []
+  },
+  "narrated": {
+   "total": 33.83,
+   "parts": {
+    "lead": 1.2,
+    "turns": 0,
+    "titles": 0,
+    "panels": 30.830000000000005,
+    "outro": 1.8
+   },
+   "reel": {
+    "w": 1143.99,
+    "h": 1092
+   },
+   "pages": [
+    {
+     "index": 0,
+     "title": null,
+     "start": 0,
+     "end": 32.03,
+     "panelsStart": 1.2,
+     "sheet": {
+      "x": 30,
+      "y": 30,
+      "w": 1083.99,
+      "h": 1032
+     },
+     "banner": null,
+     "body": {
+      "x": 44,
+      "y": 44,
+      "w": 1055.99,
+      "h": 1004
+     },
+     "panels": [
+      {
+       "index": 0,
+       "number": 1,
+       "page": 0,
+       "scene": "desk",
+       "start": 1.2,
+       "end": 9.59,
+       "dur": 8.39,
+       "words": 4,
+       "rect": {
+        "x": 44,
+        "y": 44,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 1.5,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [
+        {
+         "who": "maren",
+         "start": 2.5999999999999996,
+         "end": 3.6499999999999995,
+         "step": 0.2,
+         "wordTimes": [
+          2.8499999999999996,
+          3.05,
+          3.2499999999999996,
+          3.4499999999999997
+         ]
+        }
+       ],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 1,
+       "number": 2,
+       "page": 0,
+       "scene": "portrait",
+       "start": 9.59,
+       "end": 17.759999999999998,
+       "dur": 8.17,
+       "words": 0,
+       "rect": {
+        "x": 762.66,
+        "y": 44,
+        "w": 337.33,
+        "h": 320
+       },
+       "popAt": 9.89,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [],
+       "focusAt": null
+      },
+      {
+       "index": 2,
+       "number": 3,
+       "page": 0,
+       "scene": "screen",
+       "start": 17.759999999999998,
+       "end": 25,
+       "dur": 7.240000000000002,
+       "words": 4,
+       "rect": {
+        "x": 223.66500000000002,
+        "y": 386,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 18.06,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 18.56,
+         "end": 19.36
+        }
+       ],
+       "focusAt": 18.859999999999996
+      },
+      {
+       "index": 3,
+       "number": 4,
+       "page": 0,
+       "scene": "you",
+       "start": 25,
+       "end": 32.03,
+       "dur": 7.030000000000001,
+       "words": 2,
+       "rect": {
+        "x": 223.66500000000002,
+        "y": 728,
+        "w": 696.66,
+        "h": 320
+       },
+       "popAt": 25.3,
+       "captionAt": null,
+       "sfxAt": null,
+       "bubbles": [],
+       "lines": [
+        {
+         "start": 25.8,
+         "end": 26.6
+        }
+       ],
+       "focusAt": 26.099999999999998
+      }
+     ]
+    }
+   ],
+   "shots": [
+    {
+     "t": 0,
+     "dur": 0,
+     "rect": {
+      "x": 30,
+      "y": 30,
+      "w": 1083.99,
+      "h": 1032
+     },
+     "kind": "establish"
+    },
+    {
+     "t": 1.2,
+     "dur": 0.9,
+     "rect": {
+      "x": 16,
+      "y": 16,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 9.59,
+     "dur": 0.9,
+     "rect": {
+      "x": 734.66,
+      "y": 16,
+      "w": 393.33,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 17.759999999999998,
+     "dur": 0.9,
+     "rect": {
+      "x": 195.66500000000002,
+      "y": 358,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 18.859999999999996,
+     "dur": 0.7,
+     "rect": {
+      "x": 267.665,
+      "y": 408,
+      "w": 617,
+      "h": 242
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 25,
+     "dur": 0.9,
+     "rect": {
+      "x": 195.66500000000002,
+      "y": 700,
+      "w": 752.66,
+      "h": 376
+     },
+     "kind": "panel"
+    },
+    {
+     "t": 26.099999999999998,
+     "dur": 0.7,
+     "rect": {
+      "x": 239.66500000000002,
+      "y": 888,
+      "w": 440,
+      "h": 156
+     },
+     "kind": "screen",
+     "narrowOnly": true
+    },
+    {
+     "t": 32.03,
+     "dur": 1.8,
+     "rect": {
+      "x": 0,
+      "y": 0,
+      "w": 1143.99,
+      "h": 1092
+     },
+     "kind": "outro"
+    }
+   ],
+   "outro": {
+    "start": 32.03,
+    "end": 33.83
+   },
+   "audio": [
+    {
+     "key": "9b58845f2eab0d99",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 1.7999999999999998,
+     "end": 7.59,
+     "seconds": 5.79,
+     "panel": 1
+    },
+    {
+     "key": "5fa9db8cfadfc45c",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 10.19,
+     "end": 15.76,
+     "seconds": 5.57,
+     "panel": 2
+    },
+    {
+     "key": "977d3f77738914a1",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 18.36,
+     "end": 23,
+     "seconds": 4.64,
+     "panel": 3
+    },
+    {
+     "key": "640ef2abcf719ed9",
+     "kind": "voiceover",
+     "bubble": null,
+     "start": 25.6,
+     "end": 30.03,
+     "seconds": 4.43,
+     "panel": 4
+    }
+   ]
+  }
+ }
+}

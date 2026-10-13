@@ -10,16 +10,23 @@ import { NARRATOR_VOICE, TTS_MODEL, clipKey, narrationLines } from '../../src/la
  * are valid comics and a valid bundle.
  */
 
+/** A caption, sfx or screen line: plain text, or with a cue (a phrase of the voiceover it appears on). */
+export type FixtureCued = string | { text: string; cue?: string };
 export interface FixturePanel {
   scene: string;
-  cast: string[];
+  cast: Array<string | { who: string; mood?: string; pose?: string }>;
   bg?: string;
   prop: string;
-  caption?: string;
+  caption?: FixtureCued;
   voiceover?: string;
-  bubbles: Array<{ who?: string; text: string; pos?: string }>;
-  sfx?: string;
-  lines?: string[];
+  bubbles: Array<{ who?: string; text: string; pos?: string; cue?: string }>;
+  sfx?: string | { text: string; cue?: string; sound?: string };
+  lines?: FixtureCued[];
+  shot?: 'close' | 'wide';
+  title?: string;
+  captions?: FixtureCued[];
+  diagram?: string;
+  steps?: Array<{ cue?: string }>;
 }
 export interface FixtureComic {
   title: string;
@@ -96,6 +103,39 @@ export const MULTI: FixtureComic = {
       panels: [
         panelOf({ scene: 'you', bg: 'navy', caption: 'Your turn.', voiceover: 'And that was the whole brief.', lines: ['$ cat /workspace/answers.json', 'ready.'] }),
         panelOf({ scene: 'message', cast: ['maren'], bg: 'sand', prop: 'key', sfx: 'GO!', voiceover: 'The lab is open, so go and have a look.', bubbles: [{ who: 'maren', text: 'The lab is open.' }] }),
+      ],
+    },
+  ],
+};
+
+/**
+ * Motion comic v2 (one page, six panels, every one voiced): one panel with each new feature. Cues on a caption,
+ * a bubble, a screen line and an sfx with a sound (panel 1, also a cast mood and pose, the night background and
+ * `shot: close`); an sfx sting with no cue (panel 2, a worried mood); `shot: wide` (panel 3); a diagram scene
+ * with cued steps (panel 4, the first three steps of gateway-what-it-does); a black card with a title and
+ * captions, two cued (panel 5); and the call to action (panel 6).
+ */
+export const V2: FixtureComic = {
+  title: 'Who paid for the weekend?',
+  pages: [
+    {
+      panels: [
+        panelOf({
+          scene: 'desk',
+          cast: [{ who: 'maren', mood: 'tired', pose: 'phone' }],
+          bg: 'night',
+          shot: 'close',
+          caption: { text: 'Saturday, 03:12.', cue: 'three in the morning' },
+          voiceover: 'At three in the morning the phone rang, and the bill on the screen had tripled since Friday.',
+          bubbles: [{ who: 'maren', text: 'Not again.', cue: 'tripled' }],
+          lines: [{ text: 'spend: x3', cue: 'the bill' }, 'since: Friday'],
+          sfx: { text: 'BZZT!', cue: 'the phone rang', sound: 'phone' },
+        }),
+        panelOf({ scene: 'message', cast: [{ who: 'tomasz', mood: 'worried' }], bg: 'sand', prop: 'envelope', sfx: { text: 'PING!', sound: 'ping' }, voiceover: 'Then a note from finance arrived, asking which team had spent it.', bubbles: [{ who: 'tomasz', text: 'Finance again.' }] }),
+        panelOf({ scene: 'portrait', cast: ['you'], bg: 'mint', shot: 'wide', voiceover: 'Nobody could say, because every team called the providers in its own way.', bubbles: [{ who: 'you', text: 'Where would I even look?' }] }),
+        panelOf({ scene: 'diagram', diagram: 'gateway-what-it-does', steps: [{ cue: 'every team' }, { cue: 'checks the key' }, {}], voiceover: 'With one front door, every team sends its calls to a gateway, which checks the key and then calls the provider.' }),
+        panelOf({ scene: 'black', title: 'Is this normal?', captions: [{ text: 'The bill tripled.', cue: 'tripled' }, { text: 'Nobody was told.', cue: 'nobody' }, 'Nobody could say who.'], voiceover: 'The bill tripled, nobody was told, and nobody could say who spent it.' }),
+        panelOf({ scene: 'you', bg: 'navy', caption: 'Your turn.', voiceover: 'Now it is your turn to find out.', lines: ['$ go'] }),
       ],
     },
   ],

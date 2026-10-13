@@ -122,7 +122,7 @@ The story is a team's, and Maren tells it.
 ```yaml
 title: Which provider answered?
 panels:                         # one page; for several pages write `pages:` (below)
-  - scene: desk                 # desk, message, portrait, screen, duo or you
+  - scene: desk                 # desk, message, portrait, screen, duo, you, black or diagram
     cast: [tomasz]              # who is drawn: maren, tomasz or you (none for screen and you scenes)
     caption: Tuesday, a little after ten.
     voiceover: On Tuesday morning Jonas in Finance asked us a question that nobody on the team could answer.
@@ -144,7 +144,7 @@ Each panel has up to four things to say, and they differ:
 | `voiceover` | What the storyteller **says** over the panel. This is how the story is told. | **Spoken** by the one narrator voice (and part of "Read as text"). Not drawn on the panel. | Optional, plain single-line text, up to 240 characters |
 | `caption` | A short **label** on the picture: a time, a place, the call to action. | Fades in at the panel start. **Never spoken.** | Optional, up to 100 characters |
 | `bubbles` | A short quoted line of someone in the panel. | **Text only**, typed out word by word. **Never spoken.** At most two a panel. | `who` (maren, tomasz or you, in the panel's `cast`; optional), `text` up to 150 characters |
-| `lines` / `sfx` | What a screen shows, one line per entry; a sound-effect word slammed onto the panel. | Typed on the screen; slammed in with a shake. Never spoken. | up to 6 lines of 44 characters; `sfx` up to 14 |
+| `lines` / `sfx` | What a screen shows, one line per entry; a sound-effect word slammed onto the panel. | Typed on the screen; slammed in with a shake (and a [sting](#stings) with `sound`). Never spoken. | up to 6 lines of 44 characters; `sfx` up to 14 |
 
 More than one page:
 
@@ -165,6 +165,8 @@ pages:
 | `screen` | wide | none | `lines` (typed out one by one) |
 | `duo` | square | 2 | |
 | `you` | wide | none | `lines`; the last panel shows the call to action |
+| `black` | wide | none | `captions` (see [Black cards](#black-cards)) |
+| `diagram` | wide | 0 or 1 | `diagram` (see [The diagram scene](#the-diagram-scene)) |
 
 A `screen` or `you` scene draws nobody, so it needs no cast. A `message` scene still has one of the three in the room with the envelope: the person who wrote the note is spoken about in the voiceover (bubbles need a speaker who is in the cast).
 
@@ -190,6 +192,64 @@ A comic is **5 to 9 panels** and **one page**, unless the story really turns (a 
 - Narration is optional: a comic with no `voiceover` anywhere is valid and plays without sound.
 
 Lines on a screen are coloured by how they start: `$` is a command, `200` or `ok` is green, `4xx`, `5xx` or `error` is orange or red. Use `?` where the lab wants the learner to find the value.
+
+### Cues: timing a part to the voice
+
+A `caption`, an `sfx`, each bubble and each screen line can name a **cue**, a phrase of the panel's voiceover; on a narrated panel it then appears when the storyteller says it. Plain strings stay valid; the object forms carry the cue:
+
+```yaml
+  - scene: desk
+    cast: [maren]
+    voiceover: At three in the morning the phone rang, and the bill had tripled since Friday.
+    caption: { text: "Saturday, 03:12.", cue: "three in the morning" }
+    sfx: { text: BZZT!, cue: "the phone rang", sound: phone }
+    bubbles: [{ who: maren, text: "Not again.", cue: tripled }]
+    lines: [{ text: "spend: x3", cue: "the bill" }, "since: Friday"]
+```
+
+- A caption, sfx or screen line **starts on the first word** of its phrase: the clip's start plus the same fraction of the clip as the phrase's place in the voiceover. A bubble **pops just after the phrase** (its last word), so it reacts to what was said.
+- Times are clamped inside the clip. Bubbles keep their spacing and typing pace, screen lines never start before the line above is typed; when cues collide the order is kept and the later one is pushed (the panel stays up until it, and the hold, are done).
+- A part with no cue keeps the usual timing. Cues only matter on a narrated panel: without narration, or on a panel with no voiceover, the comic plays exactly as before.
+- `labs learn-check` fails a cue that is not in the voiceover (case and spacing do not matter), or a cue on a panel with no voiceover, naming the panel and the element: `comic panel 1 (desk): bubble 1 has the cue "on monday", which is not in the voiceover`.
+
+### Shots
+
+`shot: close` pushes the camera in on the panel (about 1.35 times closer) once it has arrived, over the usual move time: for a detail, a face, a number. `shot: wide` frames the panel's whole row of the page from its start: for a reveal. Without `shot` the camera frames the panel as ever. Shots are part of the comic's camera schedule (`comic-timeline.js`), so Replay, Skip and reduced motion treat them like any other move.
+
+### Black cards
+
+`scene: black` is a wide dark card with nobody drawn, for a cliffhanger or a montage's tally: its `captions` (up to five, 80 characters each, plain or `{ text, cue }`) appear one under the other, on their cues, or spread evenly over the voiceover when they have none (without narration, evenly over the panel's time). An optional `title` (60 characters) heads the card. The transcript reads the title and the captions in order. `labs learn-check` needs captions on a black card and refuses `captions` or `title` on any other scene.
+
+```yaml
+  - scene: black
+    title: Is this normal?
+    captions: [{ text: "The bill tripled.", cue: tripled }, { text: "Nobody was told.", cue: nobody }, "Nobody could say who."]
+    voiceover: The bill tripled, nobody was told, and nobody could say who spent it.
+```
+
+### Stings
+
+An `sfx` can make a short sound, a **sting**, with `sound:` one of `phone`, `ping`, `thud`, `register`, `whoosh`, `pop` or `tick`. The console synthesises it (no audio files; `dashboard/src/comic-sfx.js`), 80 to 400 ms long and about 14 dB under the storyteller, at the sfx's moment (its cue, or the usual sfx time). A comic with stings has the Sound toggle too. Stings never play while the sound is off, under reduced motion, while the comic is paused or finished, or before the learner has tapped the comic once (a browser allows sound only after a tap); Skip stops nothing, they are short. One sting per beat, never two, and the voice never describes a sound the viewer hears.
+
+### Moods, poses and the night
+
+A cast entry is an id (`maren`) or `{ who, mood, pose }`: `mood` is `tired`, `worried`, `pleased` or `surprised` (brows, eyes and mouth), `pose` is `phone`, `typing` or `shrug` (what the hands do). Both are optional; every check that counts or matches the cast reads the `who`. `bg: night` draws a dark sky (a moon, a lamp, the glow of a screen).
+
+```yaml
+    cast: [{ who: maren, mood: tired, pose: phone }]
+    bg: night
+```
+
+### The diagram scene
+
+`scene: diagram` (wide, nobody or one presenter in `cast`) shows a diagram of `packages/catalogue/diagrams.json` and steps through it, so a concept panel shows the concept, not a person: `diagram: <id>` and an optional `steps:` list, one entry per step to show (the first N steps of the diagram), each `{ cue }` or `{}`. Steps start on their cues, or spread evenly over the voiceover (without narration, over the panel's time); with no `steps` every step of the diagram is shown, evenly. The transcript reads the diagram's title and the captions of the steps it shows. `labs learn-check` fails an id that is not in the library, and more steps than the diagram has.
+
+```yaml
+  - scene: diagram
+    diagram: gateway-what-it-does
+    steps: [{ cue: every team }, { cue: checks the key }, {}]
+    voiceover: With one front door, every team sends its calls to a gateway, which checks the key and then calls the provider.
+```
 
 ### Moving an old comic over
 
@@ -229,7 +289,7 @@ git add labs/<slug>/learn/audio.json labs/<slug>/learn/audio
 - **Autoplay.** The comic tries to start sound by itself. If the browser refuses (it wants a tap first), a small non-modal **Tap to turn the sound on** button appears in the frame; tapping it, or Replay, or the toggle, starts the clip where the clock is. With `prefers-reduced-motion: reduce` no audio plays by itself (the comic starts finished); Replay plays it hard-cut, with its audio.
 - **Always text too.** Captions, bubbles and "Read as text" (which includes the voiceovers) are all still there, so nothing depends on hearing.
 
-Tests drive the voice without sound: with `?comicTest=1` the player never calls `play()`, and `window.__comicClock.audio` lists the scheduled clips (key, start, end), `audioLog()` what it decided to play and stop, and `?comicAudio=blocked` makes play() refuse as a browser does (`test/e2e/19-comic-audio.spec.ts`, which carries its own small comic and narration in `test/e2e/comic-fixture.ts`).
+Tests drive the voice without sound: with `?comicTest=1` the player never calls `play()`, and `window.__comicClock.audio` lists the scheduled clips (key, start, end), `audioLog()` what it decided to play and stop, and `?comicAudio=blocked` makes play() refuse as a browser does (`test/e2e/19-comic-audio.spec.ts`, which carries its own small comic and narration in `test/e2e/comic-fixture.ts`). Stings are not synthesised in a test either: `__comicClock.stings` lists them (`{ panel, sound, at }`) and `audioLog()` has a `{ type: 'sting', sound, at }` entry for each one the player would have played. `comic-fixture.ts` `V2` is a comic with one panel of each v2 feature.
 
 ## Closing comic (optional): `learn/closing.md` and `learn/closing.yaml`
 

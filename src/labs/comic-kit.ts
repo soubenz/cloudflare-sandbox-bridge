@@ -58,6 +58,8 @@ export const CAST_IDS = CAST.map((c) => c.id) as [string, ...string[]];
  *   screen    close-up of a terminal (lines are typed one by one)
  *   duo       two people side by side
  *   you       the learner at a laptop, then the call to action
+ *   black     a dark card: `captions` stacked one by one, an optional `title` (nobody drawn)
+ *   diagram   a diagram of packages/catalogue/diagrams.json stepped through (`diagram`, optional `steps`)
  */
 export const SCENES = {
   desk: { span: 2, minCast: 1, maxCast: 1 },
@@ -66,13 +68,50 @@ export const SCENES = {
   screen: { span: 2, minCast: 0, maxCast: 0 },
   duo: { span: 1, minCast: 2, maxCast: 2 },
   you: { span: 2, minCast: 0, maxCast: 0 },
+  black: { span: 2, minCast: 0, maxCast: 0 },
+  diagram: { span: 2, minCast: 0, maxCast: 1 },
 } as const;
 export type SceneId = keyof typeof SCENES;
 export const SCENE_IDS = Object.keys(SCENES) as [SceneId, ...SceneId[]];
 
-export const BACKGROUNDS = ['ice', 'sand', 'mint', 'navy', 'lilac', 'cobalt', 'rose'] as const;
+export const BACKGROUNDS = ['ice', 'sand', 'mint', 'navy', 'lilac', 'cobalt', 'rose', 'night'] as const;
 export const PROPS = ['none', 'envelope', 'laptop', 'chart', 'map', 'key', 'document'] as const;
 export const BUBBLE_POSITIONS = ['tl', 'tr', 'bl', 'br'] as const;
+/** How a drawn person looks (cast `{ who, mood }`) and what they are doing (`pose`); the art draws them (comic-art.js). */
+export const MOODS = ['tired', 'worried', 'pleased', 'surprised'] as const;
+export const POSES = ['phone', 'typing', 'shrug'] as const;
+/** The short sounds a `sfx` may make (`sfx: { text, sound }`), synthesised by the console (comic-sfx.js). */
+export const STING_SOUNDS = ['phone', 'ping', 'thud', 'register', 'whoosh', 'pop', 'tick'] as const;
+/** The panel's framing: `close` pushes in on the panel, `wide` shows its whole row. None is the usual framing. */
+export const SHOTS = ['close', 'wide'] as const;
+
+/** A cast entry: an id (`maren`) or the id with a mood and pose (`{ who: maren, mood: tired }`). */
+export type CastEntry = string | { who: string; mood?: string; pose?: string };
+/** The person's id of a cast entry, whichever way it is written. */
+export const castId = (c: CastEntry): string => (typeof c === 'string' ? c : c.who);
+
+/** A caption, sound effect or screen line: plain text, or `{ text, cue }` to time it to a phrase of the voiceover. */
+export type Cued = string | { text: string; cue?: string };
+/** The words of a cued element. */
+export const cuedText = (v: Cued): string => (typeof v === 'string' ? v : v.text);
+/** The cue phrase of a cued element, if it has one. */
+export const cuedCue = (v: Cued | undefined): string | undefined => (v && typeof v === 'object' && v.cue ? v.cue : undefined);
+
+/** How a cue is matched: case-insensitive, runs of white space as one space, trimmed. */
+export const normaliseCue = (s: string): string => s.toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * Where a cue phrase is in a voiceover, in characters of the normalised voiceover (normaliseCue):
+ * `{ start, end, length }` (end is just past the phrase), or null when the phrase is not in it.
+ * The timeline turns that into a time: the same fraction of the voiceover's clip.
+ */
+export function cueSpan(voiceover: string, cue: string): { start: number; end: number; length: number } | null {
+  const v = normaliseCue(voiceover);
+  const c = normaliseCue(cue);
+  if (!c || !v) return null;
+  const start = v.indexOf(c);
+  return start < 0 ? null : { start, end: start + c.length, length: v.length };
+}
 
 /** Page geometry shared by the renderer's camera. Three columns of this width. */
 export const PAGE = { columns: 3, colW: 337.33, gap: 22, rowH: 320 } as const;
@@ -143,26 +182,43 @@ export function panelSeconds(words: number): number {
 }
 
 export interface TranscriptPanel {
-  caption?: string;
+  caption?: Cued;
   /** What the storyteller says over the panel (also in the transcript: the story is told by it). */
   voiceover?: string;
   bubbles: { who?: string; text: string }[];
-  lines?: string[];
+  lines?: readonly Cued[];
+  /** A black card's heading and its stacked captions. */
+  title?: string;
+  captions?: readonly Cued[];
+  /** A diagram panel's diagram id, and the steps it shows (the first `steps.length` of the diagram; all when absent). */
+  diagram?: string;
+  steps?: readonly unknown[];
 }
+
+/** What the transcript needs of a diagram: its title and the caption of each step. */
+export interface TranscriptDiagram {
+  title: string;
+  steps: readonly { caption: string }[];
+}
+/** Looks a diagram up by id (packages/catalogue/diagrams.json); passed in so this file keeps no dependency. */
+export type DiagramLookup = (id: string) => TranscriptDiagram | undefined;
 
 export interface TranscriptPage {
   title?: string;
   panels: readonly TranscriptPanel[];
 }
 
-/** Plain text of a multi-page comic: panels are numbered across pages, pages get a heading line. */
-export function comicPagesTranscript(pages: readonly TranscriptPage[]): string[] {
-  if (pages.length === 1) return comicTranscript(pages[0]!.panels);
+/**
+ * Plain text of a multi-page comic: panels are numbered across pages, pages get a heading line.
+ * `diagramOf` finds a diagram panel's diagram, whose title and step captions are then read out too.
+ */
+export function comicPagesTranscript(pages: readonly TranscriptPage[], diagramOf?: DiagramLookup): string[] {
+  if (pages.length === 1) return comicTranscript(pages[0]!.panels, diagramOf);
   const out: string[] = [];
   let n = 0;
   pages.forEach((pg, pi) => {
     out.push(`Page ${pi + 1}${pg.title ? `: ${pg.title}` : ''}.`);
-    comicTranscript(pg.panels).forEach((line) => {
+    comicTranscript(pg.panels, diagramOf).forEach((line) => {
       n += 1;
       out.push(line.replace(/^Panel \d+\./, `Panel ${n}.`));
     });
@@ -170,16 +226,27 @@ export function comicPagesTranscript(pages: readonly TranscriptPage[]): string[]
   return out;
 }
 
-/** Plain text of one page, for screen readers and the 'read as text' view. */
-export function comicTranscript(panels: readonly TranscriptPanel[]): string[] {
+/**
+ * Plain text of one page, for screen readers and the 'read as text' view: per panel the caption, a black
+ * card's title and captions in order, the voiceover, a diagram's title and the captions of the steps it
+ * shows (when `diagramOf` finds it), the bubbles and the screen lines.
+ */
+export function comicTranscript(panels: readonly TranscriptPanel[], diagramOf?: DiagramLookup): string[] {
   const nameOf = new Map(CAST.map((c) => [c.id, c.name]));
   const out: string[] = [];
   panels.forEach((p, i) => {
     const parts: string[] = [];
-    if (p.caption) parts.push(p.caption);
+    if (p.caption) parts.push(cuedText(p.caption));
+    if (p.title) parts.push(p.title);
+    for (const c of p.captions ?? []) parts.push(cuedText(c));
     if (p.voiceover) parts.push(p.voiceover);
+    const d = p.diagram ? diagramOf?.(p.diagram) : undefined;
+    if (d) {
+      const shown = d.steps.slice(0, p.steps && p.steps.length > 0 ? p.steps.length : d.steps.length);
+      parts.push(`Diagram: ${d.title}.`, ...shown.map((s) => s.caption));
+    }
     for (const b of p.bubbles) parts.push(b.who ? `${nameOf.get(b.who) ?? b.who}: ${b.text}` : b.text);
-    if (p.lines && p.lines.length > 0) parts.push(`On screen: ${p.lines.join(' / ')}`);
+    if (p.lines && p.lines.length > 0) parts.push(`On screen: ${p.lines.map(cuedText).join(' / ')}`);
     out.push(`Panel ${i + 1}. ${parts.join(' ')}`);
   });
   return out;
@@ -242,7 +309,7 @@ export function legacyNarrationLines(comic: { pages: readonly { panels: readonly
   let panel = 0;
   for (const pg of comic.pages) {
     for (const p of pg.panels) {
-      if (p.caption) out.push({ panel, kind: 'caption', voice: LEGACY_NARRATOR_VOICE, text: p.caption });
+      if (p.caption) out.push({ panel, kind: 'caption', voice: LEGACY_NARRATOR_VOICE, text: cuedText(p.caption) });
       p.bubbles.forEach((b, bubble) => {
         const voice = b.who ? LEGACY_VOICES[b.who] : LEGACY_NARRATOR_VOICE;
         if (voice && b.text) out.push({ panel, kind: 'bubble', bubble, voice, text: b.text });

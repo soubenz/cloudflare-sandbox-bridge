@@ -573,7 +573,220 @@ describe('cleaning what the API sent', () => {
   });
 
   it('gives every scene a default background that the kit knows', () => {
-    expect(Object.keys(T.DEFAULT_BG).sort()).toEqual(['desk', 'duo', 'message', 'portrait', 'screen', 'you']);
-    for (const bg of Object.values(T.DEFAULT_BG)) expect(['ice', 'sand', 'mint', 'navy', 'lilac', 'cobalt', 'rose']).toContain(bg);
+    expect(Object.keys(T.DEFAULT_BG).sort()).toEqual(['black', 'desk', 'diagram', 'duo', 'message', 'portrait', 'screen', 'you']);
+    for (const bg of Object.values(T.DEFAULT_BG)) expect(['ice', 'sand', 'mint', 'navy', 'lilac', 'cobalt', 'rose', 'night']).toContain(bg);
+  });
+});
+
+// ---- motion comic v2 ------------------------------------------------------------------------------
+
+type V2Panel = TPanel & { shot: string | null; stack: number[]; stepTimes: number[] };
+type V2Timeline = Timeline & { pages: Array<TPage & { panels: V2Panel[] }>; stings: Array<{ panel: number; sound: string; at: number }>; audio: Array<{ panel: number; start: number; end: number; seconds: number }> };
+const V = T as unknown as {
+  CLOSE_ZOOM: number;
+  TIMING: typeof T.TIMING & { stackGap: number; stepGap: number; voice: number; bubbleLag: number };
+  buildTimeline: (c: unknown, o?: { audio?: unknown }) => V2Timeline;
+  cleanComic: (raw: unknown) => { title: string; pages: Array<{ panels: Array<Record<string, any>> }> } | null;
+  panelState: (p: V2Panel, t: number) => State & { stack: boolean[]; step: number };
+  diagramStep: (p: V2Panel, t: number) => number;
+  diagramFor: (id: string) => { id: string; title: string; steps: Array<{ caption: string }> } | undefined;
+  transcriptOf: (c: unknown) => string[];
+};
+const fixture = await import('../e2e/comic-fixture');
+const withSlug = (a: ReturnType<typeof fixture.narrationOf>) => ({ ...a, slug: 'fixture' });
+const v2Panels = (tl: V2Timeline) => tl.pages.flatMap((p) => p.panels);
+/** The fields every panel had before v2, so the golden file (made by the code before v2) is compared on what it knows. */
+const V1_PANEL_KEYS = ['index', 'number', 'page', 'scene', 'start', 'end', 'dur', 'words', 'rect', 'popAt', 'captionAt', 'sfxAt', 'bubbles', 'lines', 'focusAt'];
+const v1Of = (tl: V2Timeline) => ({
+  total: tl.total,
+  parts: tl.parts,
+  reel: tl.reel,
+  shots: tl.shots,
+  outro: tl.outro,
+  audio: tl.audio,
+  pages: tl.pages.map((pg) => ({ ...pg, panels: pg.panels.map((p) => Object.fromEntries(V1_PANEL_KEYS.map((k) => [k, (p as Record<string, unknown>)[k]]))) })),
+});
+
+describe('v2 changes nothing for the comics that use none of it (golden: test/fixtures/comic-v1-timelines.json)', () => {
+  const golden = JSON.parse(readFileSync('test/fixtures/comic-v1-timelines.json', 'utf8')) as Record<string, { clean: unknown; transcript: string[]; silent: unknown; narrated: unknown }>;
+  for (const name of ['SINGLE', 'MULTI', 'CLOSING'] as const) {
+    it(`${name}: the same cleaned comic, transcript and schedule, silent and narrated`, () => {
+      const fx = fixture[name];
+      const clean = V.cleanComic(fx)!;
+      const g = golden[name]!;
+      expect(JSON.parse(JSON.stringify(clean))).toEqual(g.clean);
+      expect(V.transcriptOf(clean)).toEqual(g.transcript);
+      const silent = V.buildTimeline(clean);
+      const narrated = V.buildTimeline(clean, { audio: withSlug(fixture.narrationOf(fx)) });
+      expect(JSON.parse(JSON.stringify(v1Of(silent)))).toEqual(g.silent);
+      expect(JSON.parse(JSON.stringify(v1Of(narrated)))).toEqual(g.narrated);
+      // and what v2 adds is empty
+      expect(silent.stings).toEqual([]);
+      for (const p of v2Panels(narrated)) expect([p.shot, p.stack, p.stepTimes]).toEqual([null, [], []]);
+    });
+  }
+});
+
+describe('v2: cues time a voiced panel to its storyteller', () => {
+  const clean = V.cleanComic(fixture.V2)!;
+  const audio = withSlug(fixture.narrationOf(fixture.V2));
+  const tl = V.buildTimeline(clean, { audio });
+  const silent = V.buildTimeline(clean);
+  const [desk, msg, , dgm, card] = v2Panels(tl);
+  const clipOf = (n: number) => tl.audio.find((c) => c.panel === n)!;
+  const vo = (i: number) => (fixture.V2.pages[0]!.panels[i]!.voiceover as string).toLowerCase().replace(/\s+/g, ' ').trim();
+  /** Where the storyteller says `phrase`: the same fraction of the clip as of the voiceover. */
+  const said = (i: number, phrase: string, end = false) => {
+    const c = clipOf(i + 1);
+    const at = vo(i).indexOf(phrase.toLowerCase());
+    return c.start + ((end ? at + phrase.length : at) / vo(i).length) * c.seconds;
+  };
+
+  it('keeps the cue beside its text when cleaning, and the text a plain string', () => {
+    const p = clean.pages[0]!.panels[0]!;
+    expect(p.caption).toBe('Saturday, 03:12.');
+    expect(p.captionCue).toBe('three in the morning');
+    expect(p.sfx).toBe('BZZT!');
+    expect(p.sfxCue).toBe('the phone rang');
+    expect(p.sound).toBe('phone');
+    expect(p.lines).toEqual(['spend: x3', 'since: Friday']);
+    expect(p.lineCues).toEqual(['the bill', null]);
+    expect(p.bubbles).toEqual([{ who: 'maren', text: 'Not again.', cue: 'tripled' }]);
+  });
+
+  it('starts a caption, an sfx and a screen line on the first word of their phrase', () => {
+    expect(desk.captionAt).toBeCloseTo(said(0, 'three in the morning'), 9);
+    expect(desk.sfxAt).toBeCloseTo(said(0, 'the phone rang'), 9);
+    expect(desk.lines[0]!.start).toBeCloseTo(said(0, 'the bill'), 9);
+    // the uncued line still follows the one above it, never before it is typed
+    expect(desk.lines[1]!.start).toBeGreaterThanOrEqual(desk.lines[0]!.end - 1e-9);
+  });
+
+  it('pops a cued bubble just after its phrase, so it reacts to the words', () => {
+    expect(desk.bubbles[0]!.start).toBeCloseTo(said(0, 'tripled', true), 9);
+    expect(desk.bubbles[0]!.start).toBeGreaterThan(said(0, 'tripled'));
+  });
+
+  it('keeps every cued moment inside the clip, and ignores cues without narration (the silent schedule is as before)', () => {
+    const c = clipOf(1);
+    for (const at of [desk.captionAt!, desk.sfxAt!, desk.lines[0]!.start, desk.bubbles[0]!.start]) {
+      expect(at).toBeGreaterThanOrEqual(c.start - 1e-9);
+      expect(at).toBeLessThanOrEqual(c.end + 1e-9);
+    }
+    const s = v2Panels(silent)[0]!;
+    expect(s.captionAt).toBeCloseTo(s.start + T.TIMING.caption, 9);
+    expect(s.sfxAt).toBeCloseTo(s.start + T.TIMING.sfx, 9);
+    expect(s.bubbles[0]!.start).toBeCloseTo(s.start + T.TIMING.content, 9);
+    expect(s.lines[0]!.start).toBeCloseTo(s.start + T.TIMING.content, 9);
+  });
+
+  it('keeps today\'s timing for a voiced part with no cue', () => {
+    expect(msg.sfxAt).toBeCloseTo(msg.start + T.TIMING.sfx, 9);
+    expect(msg.bubbles[0]!.start).toBeCloseTo(clipOf(2).start + V.TIMING.bubbleLag, 9);
+  });
+
+  it('keeps bubbles in order with their spacing when cues collide: a later one is pushed', () => {
+    const voiceover = 'Two things happened at once, and then a third.';
+    const comic = { title: 'T', pages: [{ panels: [{ scene: 'duo', cast: ['maren', 'tomasz'], prop: 'none', voiceover, bubbles: [{ who: 'maren', text: 'One two three four.', cue: 'a third' }, { who: 'tomasz', text: 'Five.', cue: 'two things' }] }] }] };
+    const one = V.buildTimeline(V.cleanComic(comic)!, { audio: withSlug(fixture.narrationOf(comic as never)) });
+    const [a, b] = v2Panels(one)[0]!.bubbles;
+    expect(b!.start).toBeCloseTo(a!.end + T.TIMING.bubbleGap, 9);
+    expect(v2Panels(one)[0]!.end).toBeGreaterThanOrEqual(b!.end + T.TIMING.hold - 1e-9);
+  });
+
+  it('stacks a black card\'s captions on their cues, and an uncued one evenly over the clip, in order', () => {
+    const c = clipOf(5);
+    expect(card.stack).toHaveLength(3);
+    expect(card.stack[0]).toBeCloseTo(said(4, 'tripled'), 9);
+    expect(card.stack[1]).toBeCloseTo(said(4, 'nobody'), 9);
+    expect(card.stack[2]).toBeCloseTo(c.start + (2 / 3) * c.seconds, 9);
+    for (let i = 1; i < card.stack.length; i++) expect(card.stack[i]!).toBeGreaterThanOrEqual(card.stack[i - 1]! + V.TIMING.stackGap - 1e-9);
+    const s = V.panelState(card, card.stack[1]! + 0.01);
+    expect(s.stack).toEqual([true, true, false]);
+    expect(V.panelState(card, tl.total).stack).toEqual([true, true, true]);
+    // silent: spread evenly over the panel's reading time
+    const quiet = v2Panels(silent)[4]!;
+    const len = quiet.dur - T.TIMING.content - T.TIMING.hold;
+    quiet.stack.forEach((t, k) => expect(t - quiet.start).toBeCloseTo(T.TIMING.content + (k * len) / 3, 9));
+  });
+
+  it('steps a diagram on its cues (all steps spread evenly when it lists none), -1 before the first', () => {
+    expect(dgm.stepTimes).toHaveLength(3);
+    expect(dgm.stepTimes[0]).toBeCloseTo(said(3, 'every team'), 9);
+    expect(dgm.stepTimes[1]).toBeCloseTo(said(3, 'checks the key'), 9);
+    // the third has no cue: evenly over the clip, unless that is too soon after the second (then pushed by the gap)
+    expect(dgm.stepTimes[2]).toBeCloseTo(Math.max(clipOf(4).start + (2 / 3) * clipOf(4).seconds, dgm.stepTimes[1]! + V.TIMING.stepGap), 9);
+    expect(V.diagramStep(dgm, dgm.start)).toBe(-1);
+    expect(V.diagramStep(dgm, dgm.stepTimes[1]! + 0.01)).toBe(1);
+    expect(V.panelState(dgm, tl.total).step).toBe(2);
+    expect(V.diagramStep(desk, tl.total)).toBe(-1); // not a diagram
+    const all = V.cleanComic({ title: 'T', pages: [{ panels: [{ scene: 'diagram', diagram: 'gateway-alias-routing', bubbles: [] }] }] })!;
+    expect(all.pages[0]!.panels[0]!.steps).toEqual([{}, {}, {}, {}]);
+    const p = v2Panels(V.buildTimeline(all))[0]!;
+    expect(p.stepTimes).toHaveLength(4);
+    expect(p.words).toBe(V.diagramFor('gateway-alias-routing')!.steps.reduce((n, st) => n + st.caption.split(/\s+/).length, 0));
+  });
+
+  it('drops a diagram panel the library does not have, and reads the diagram in the transcript', () => {
+    expect(V.cleanComic({ title: 'T', pages: [{ panels: [{ scene: 'diagram', diagram: 'no-such', bubbles: [] }] }] })).toBeNull();
+    const t = V.transcriptOf(clean);
+    const d = V.diagramFor('gateway-what-it-does')!;
+    expect(t[3]).toBe(`Panel 4. ${fixture.V2.pages[0]!.panels[3]!.voiceover} Diagram: ${d.title}. ${d.steps.slice(0, 3).map((s) => s.caption).join(' ')}`);
+    expect(t[4]).toBe('Panel 5. Is this normal? The bill tripled. Nobody was told. Nobody could say who. The bill tripled, nobody was told, and nobody could say who spent it.');
+  });
+
+  it('lists the stings at their sfx moments, cued or not', () => {
+    expect(tl.stings).toEqual([
+      { panel: 1, sound: 'phone', at: desk.sfxAt },
+      { panel: 2, sound: 'ping', at: msg.sfxAt },
+    ]);
+    expect(silent.stings.map((s) => s.sound)).toEqual(['phone', 'ping']);
+  });
+});
+
+describe('v2: shots', () => {
+  const tl = V.buildTimeline(V.cleanComic(fixture.V2)!);
+  const [desk, , wide, next] = v2Panels(tl);
+  const vp = { w: 1000, h: 562.5 };
+  const pad = T.REEL.shotPad;
+
+  it('close: once the camera has arrived it pushes in over TIMING.move to about 1.35 times the usual framing', () => {
+    const usual = T.cameraFor({ x: desk.rect.x - pad, y: desk.rect.y - pad, w: desk.rect.w + 2 * pad, h: desk.rect.h + 2 * pad }, vp);
+    expect(T.cameraAt(tl, desk.start + T.TIMING.move, vp).k).toBeCloseTo(usual.k, 6);
+    const pushed = T.cameraAt(tl, desk.start + 2 * T.TIMING.move + 0.01, vp);
+    expect(pushed.k / usual.k).toBeCloseTo(V.CLOSE_ZOOM, 6);
+    expect(pushed.cx).toBeCloseTo(usual.cx, 6);
+    expect(pushed.cy).toBeCloseTo(usual.cy, 6);
+    const mid = T.cameraAt(tl, desk.start + 1.5 * T.TIMING.move, vp).k;
+    expect(mid).toBeGreaterThan(usual.k);
+    expect(mid).toBeLessThan(pushed.k);
+    expect(tl.shots.filter((s) => s.kind === 'close')).toHaveLength(1);
+  });
+
+  it('wide: frames the whole row of the page from the panel\'s start', () => {
+    const page = tl.pages[0]!;
+    const cam = T.cameraAt(tl, wide.start + T.TIMING.move + 0.01, vp);
+    const row = { x: page.body.x - pad, y: wide.rect.y - pad, w: page.body.w + 2 * pad, h: wide.rect.h + 2 * pad };
+    expect(cam).toEqual(T.cameraFor(row, vp));
+    expect(cam.cx).toBeCloseTo(page.body.x + page.body.w / 2, 6);
+    const own = T.cameraFor({ x: wide.rect.x - pad, y: wide.rect.y - pad, w: wide.rect.w + 2 * pad, h: wide.rect.h + 2 * pad }, vp);
+    expect(cam.k).toBeLessThan(own.k);
+    // and the next panel is framed as usual
+    expect(T.cameraAt(tl, next.start + T.TIMING.move + 0.01, vp).cx).toBeCloseTo(next.rect.x + next.rect.w / 2, 6);
+  });
+
+  it('keeps the shots in time order, and a close panel\'s screen push-in waits for the close shot', () => {
+    for (let i = 1; i < tl.shots.length; i++) expect(tl.shots[i]!.t).toBeGreaterThanOrEqual(tl.shots[i - 1]!.t);
+    expect(desk.focusAt!).toBeGreaterThanOrEqual(desk.start + 2 * T.TIMING.move + 0.2 - 1e-9);
+  });
+});
+
+describe('v2: cast moods and poses, the night background', () => {
+  it('keeps a mood and pose for the art and an id alone as an id, dropping what is unknown and the same person twice', () => {
+    const c = V.cleanComic({ title: 'T', pages: [{ panels: [{ scene: 'duo', bg: 'night', bubbles: [], cast: [{ who: 'maren', mood: 'tired', pose: 'phone' }, { who: 'maren' }, { who: 'tomasz', mood: 'angry' }, 'you'] }] }] })!;
+    const p = c.pages[0]!.panels[0]!;
+    expect(p.bg).toBe('night');
+    expect(p.cast).toEqual([{ who: 'maren', mood: 'tired', pose: 'phone' }, 'tomasz']);
+    expect(V.cleanComic({ title: 'T', pages: [{ panels: [{ scene: 'portrait', bubbles: [], cast: [{ who: 'nobody', mood: 'tired' }] }] }] })).toBeNull();
   });
 });

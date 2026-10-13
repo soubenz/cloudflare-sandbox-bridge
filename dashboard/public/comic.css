@@ -50,6 +50,11 @@
   --cm-fg-lilac: #0a0f2c;
   --cm-fg-cobalt: #ffffff;
   --cm-fg-rose: #0a0f2c;
+  --cm-bg-night: #121942;
+  --cm-fg-night: #ffffff;
+  --cm-black: #07080e;
+  --cm-fg-black: #f3efe4;
+  --cm-black-rule: #3e4462;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -135,6 +140,12 @@
 .cm-bg-lilac { --cm-pbg: var(--cm-bg-lilac); --cm-pfg: var(--cm-fg-lilac); }
 .cm-bg-cobalt { --cm-pbg: var(--cm-bg-cobalt); --cm-pfg: var(--cm-fg-cobalt); }
 .cm-bg-rose { --cm-pbg: var(--cm-bg-rose); --cm-pfg: var(--cm-fg-rose); }
+/* Night: the same deep navy in both themes; its halftone is a faint light dot, not ink. */
+.cm-bg-night { --cm-pbg: var(--cm-bg-night); --cm-pfg: var(--cm-fg-night); }
+.cm-bg-night .cm-halftone { background-image: radial-gradient(color-mix(in srgb, var(--cm-fg-night) 6%, transparent) 1.6px, transparent 1.7px); }
+/* The black card is its own plate (comic-art.js draws it), whatever background the panel names. */
+.cm-scene-black { --cm-pbg: var(--cm-black); --cm-pfg: var(--cm-fg-black); }
+.cm-scene-black .cm-halftone { display: none; }
 .cm-enter-left { transform: translateX(-90px) rotate(-3deg); }
 .cm-enter-top { transform: translateY(-90px) rotate(2deg); }
 .cm-enter-right { transform: translateX(90px) rotate(3deg); }
@@ -159,6 +170,11 @@
 }
 .cm-scene-desk .cm-cap, .cm-scene-screen .cm-cap { max-width: 56%; }
 .cm-cap.on { opacity: 1; transform: none; }
+/* A caption that is a time of day ("23:47"): set like a clock, the digits all one width. */
+.cm-caption--clock {
+  font-family: var(--mono); font-size: calc(17px * var(--tt, 1)); font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em; text-transform: none;
+}
 
 /* The closing panel's big words. */
 .cm-display {
@@ -240,6 +256,31 @@
 .cm-trail { stroke-dasharray: 6 8; animation: cm-dash 0.6s linear infinite; }
 .cm-scan { animation: cm-scan 3.2s linear infinite; }
 .cm-pane.on .cm-fly { animation: cm-flyin 0.9s 0.1s cubic-bezier(0.2, 1, 0.3, 1) both; }
+/* Poses: a phone's screen breathing light, two hands pressing keys in turn. */
+.cm-glow { animation: cm-glow 2.4s ease-in-out infinite; }
+.cm-key { animation: cm-key 0.32s ease-in-out infinite alternate; }
+.cm-key-b { animation-delay: -0.16s; }
+/* The black card's film grain jumps a few units at a time, like a projector. */
+.cm-grain { animation: cm-grain 0.6s steps(1) infinite; }
+/* An element arriving (a bubble, a screen line, a prop): squash and stretch into place. It uses `scale`, so a transform the element already has is kept. */
+.cm-pop { animation: cm-pop 0.22s ease-out both; }
+.cm-art .cm-pop { transform-box: fill-box; transform-origin: center; }
+@keyframes cm-glow { 0%, 100% { opacity: 0.22; } 50% { opacity: 0.5; } }
+@keyframes cm-key { from { translate: 0 0; } to { translate: 0 2.5px; } }
+@keyframes cm-grain { 0% { translate: 0 0; } 25% { translate: -5px 3px; } 50% { translate: 4px -4px; } 75% { translate: -3px -5px; } }
+@keyframes cm-pop { 0% { scale: 0.6; } 60% { scale: 1.08; } 100% { scale: 1; } }
+
+/* ---------- the diagram card ---------- */
+/* The frame carries diagram.css's class, so the diagram's own tokens apply; the plate is the diagram's ground. */
+.cm-dgm { --cm-dgm-plate: var(--dg-surface-2); }
+.cm-dgm .diagram-svg { width: 100%; height: 100%; overflow: hidden; }
+.cm-dgm .diagram-nodes, .cm-dgm .diagram-edges { transition: opacity 0.4s ease; }
+/* Nothing yet: the boxes and lines ghosted, nothing lit, nothing on its way. */
+.cm-dgm-idle .diagram-packets, .cm-dgm-idle .diagram-notes { visibility: hidden; }
+.cm-dgm-idle .diagram-nodes, .cm-dgm-idle .diagram-edges { opacity: 0.38; }
+.cm-dgm-idle .diagram-node.is-lit .diagram-node-glow { stroke-opacity: 0; }
+.cm-dgm-idle .diagram-node.is-lit .diagram-node-box { stroke-width: 0.35; }
+.cm-dgm-idle .diagram-edge.is-lit .diagram-edge-line { stroke: var(--dg-border-strong); stroke-width: 0.4; }
 @keyframes cm-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @keyframes cm-lean { 0%, 100% { rotate: -1.6deg; } 50% { rotate: 1.8deg; } }
 @keyframes cm-blink { 0%, 91%, 100% { transform: scaleY(1); } 94% { transform: scaleY(0.08); } }

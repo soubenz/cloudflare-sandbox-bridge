@@ -24,13 +24,20 @@ import {
   BACKGROUNDS,
   BUBBLE_POSITIONS,
   CAST,
+  MOODS,
   PAGE_W,
+  POSES,
   PROPS,
   SCENES,
+  SHOTS,
+  STING_SOUNDS,
+  castId,
   comicPagesTranscript,
+  cueSpan,
   layoutComic,
   panelSeconds,
 } from '../../src/labs/comic-kit.ts';
+import library from '../../packages/catalogue/diagrams.json';
 
 // ---------------------------------------------------------------------------
 // The beats, in seconds
@@ -73,7 +80,13 @@ export const TIMING = {
   outro: 1.8,
   /** The shake that goes with a sound effect. */
   shake: 0.55,
+  /** Least time between two captions of a black card appearing, and between two steps of a diagram. */
+  stackGap: 0.4,
+  stepGap: 0.6,
 };
+
+/** How much closer than the usual framing a `shot: close` panel is framed. */
+export const CLOSE_ZOOM = 1.35;
 
 /** The reel's geometry, in the units of the page (comic-kit's PAGE). */
 export const REEL = { margin: 30, paper: 14, gap: 56, banner: 74, shotPad: 28 };
@@ -82,7 +95,21 @@ export const REEL = { margin: 30, paper: 14, gap: 56, banner: 74, shotPad: 28 };
 export const MAX_STEP = 0.25;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-const wordsIn = (s) => (typeof s === 'string' ? s.split(/\s+/).filter(Boolean).length : 0);
+/** Words of a text, or of a cued element `{ text, cue }`. */
+const wordsIn = (s) => {
+  const text = typeof s === 'string' ? s : s && typeof s === 'object' ? s.text : undefined;
+  return typeof text === 'string' ? text.split(/\s+/).filter(Boolean).length : 0;
+};
+
+const DIAGRAMS = new Map((Array.isArray(library?.diagrams) ? library.diagrams : []).map((d) => [d.id, d]));
+/** A diagram of the shared library (packages/catalogue/diagrams.json) by id, or undefined: what a diagram panel draws. */
+export const diagramFor = (id) => (typeof id === 'string' ? DIAGRAMS.get(id) : undefined);
+/** How many of its diagram's steps a diagram panel shows: one per entry of `steps`, all of them when it lists none. */
+function stepsShown(panel) {
+  const d = diagramFor(panel.diagram);
+  if (!d) return 0;
+  return Array.isArray(panel.steps) && panel.steps.length > 0 ? Math.min(panel.steps.length, d.steps.length) : d.steps.length;
+}
 
 /**
  * Where a scene's screen is, in the panel's own units: `lines` is the box the typed
@@ -99,14 +126,20 @@ export const SCREENS = {
 export const NARROW = 600;
 
 /** The default background of a scene that names none. */
-export const DEFAULT_BG = { desk: 'ice', message: 'sand', portrait: 'mint', screen: 'navy', duo: 'lilac', you: 'cobalt' };
+export const DEFAULT_BG = { desk: 'ice', message: 'sand', portrait: 'mint', screen: 'navy', duo: 'lilac', you: 'cobalt', black: 'night', diagram: 'ice' };
 
-/** Every word a panel shows: what is said, the caption and the screen lines. This is what the reader has to take in. */
+/**
+ * Every word a panel shows: what is said, the caption and the screen lines, a black card's title and
+ * captions, and the captions of the diagram steps a diagram panel shows. This is what the reader has to take in.
+ */
 export function panelWords(panel) {
   let n = 0;
   for (const b of panel.bubbles ?? []) n += wordsIn(b.text);
   n += wordsIn(panel.caption);
   for (const l of panel.lines ?? []) n += wordsIn(l);
+  n += wordsIn(panel.title);
+  for (const c of panel.captions ?? []) n += wordsIn(c);
+  if (panel.diagram) for (const st of diagramFor(panel.diagram)?.steps.slice(0, stepsShown(panel)) ?? []) n += wordsIn(st.caption);
   return n;
 }
 
@@ -116,11 +149,51 @@ export function panelWords(panel) {
 
 const str = (v, max) => (typeof v === 'string' && v.length > 0 && v.length <= max ? v : undefined);
 const castIds = new Set(CAST.map((c) => c.id));
+/** Longest a cue phrase may be: it is a part of a voiceover. */
+const CUE_MAX = 240;
 
+/** Plain text or `{ text, cue }` as `{ text, cue? }`, or null when there is no usable text. */
+function cuedOf(v, max) {
+  if (typeof v === 'string') {
+    const text = str(v, max);
+    return text ? { text } : null;
+  }
+  if (!v || typeof v !== 'object') return null;
+  const text = str(v.text, max);
+  if (!text) return null;
+  const cue = str(v.cue, CUE_MAX);
+  return cue ? { text, cue } : { text };
+}
+
+/** A cast entry as the art takes it: the id alone (as ever), or `{ who, mood?, pose? }` when it has a known mood or pose. */
+function castOf(c) {
+  if (typeof c === 'string') return castIds.has(c) ? c : null;
+  if (!c || typeof c !== 'object' || !castIds.has(c.who)) return null;
+  const out = { who: c.who };
+  if (MOODS.includes(c.mood)) out.mood = c.mood;
+  if (POSES.includes(c.pose)) out.pose = c.pose;
+  return out.mood || out.pose ? out : c.who;
+}
+
+/**
+ * One panel as the player can trust it. Text stays plain strings (`caption`, `sfx`, `lines`, `captions`, bubble
+ * `text`), exactly as before; a cue goes beside its text: `captionCue`, `sfxCue`, bubble `cue`, `lineCues` and
+ * `captionCues` (index for index, null where a line has none; only present when there is a cue). `sound` is the
+ * sfx's sting, `shot` the framing. A diagram panel's `diagram` must be in the library (else it cannot be drawn)
+ * and its `steps` are normalised to one `{ cue? }` per step shown.
+ */
 function cleanPanel(p) {
   if (!p || typeof p !== 'object' || !Object.hasOwn(SCENES, p.scene)) return null;
   const rule = SCENES[p.scene];
-  const cast = [...new Set((Array.isArray(p.cast) ? p.cast : []).filter((c) => castIds.has(c)))].slice(0, rule.maxCast || 0);
+  const seen = new Set();
+  const cast = (Array.isArray(p.cast) ? p.cast : [])
+    .map(castOf)
+    .filter((c) => {
+      if (!c || seen.has(castId(c))) return false;
+      seen.add(castId(c));
+      return true;
+    })
+    .slice(0, rule.maxCast || 0);
   const bubbles = (Array.isArray(p.bubbles) ? p.bubbles : [])
     .map((b) => {
       const text = b && typeof b === 'object' ? str(b.text, 150) : undefined;
@@ -128,11 +201,13 @@ function cleanPanel(p) {
       const out = { text };
       if (castIds.has(b.who)) out.who = b.who;
       if (BUBBLE_POSITIONS.includes(b.pos)) out.pos = b.pos;
+      const cue = str(b.cue, CUE_MAX);
+      if (cue) out.cue = cue;
       return out;
     })
     .filter(Boolean)
     .slice(0, 2);
-  const lines = (Array.isArray(p.lines) ? p.lines : []).map((l) => str(l, 44)).filter(Boolean).slice(0, 6);
+  const lines = (Array.isArray(p.lines) ? p.lines : []).map((l) => cuedOf(l, 44)).filter(Boolean).slice(0, 6);
   const out = {
     scene: p.scene,
     cast,
@@ -140,13 +215,43 @@ function cleanPanel(p) {
     prop: PROPS.includes(p.prop) ? p.prop : 'none',
     bubbles,
   };
-  const caption = str(p.caption, 100);
-  if (caption) out.caption = caption;
+  const caption = cuedOf(p.caption, 100);
+  if (caption) {
+    out.caption = caption.text;
+    if (caption.cue) out.captionCue = caption.cue;
+  }
   const voiceover = str(p.voiceover, 240);
   if (voiceover) out.voiceover = voiceover;
-  const sfx = str(p.sfx, 14);
-  if (sfx) out.sfx = sfx;
-  if (lines.length) out.lines = lines;
+  const sfx = cuedOf(p.sfx, 14);
+  if (sfx) {
+    out.sfx = sfx.text;
+    if (sfx.cue) out.sfxCue = sfx.cue;
+    if (STING_SOUNDS.includes(p.sfx.sound)) out.sound = p.sfx.sound;
+  }
+  if (lines.length) {
+    out.lines = lines.map((l) => l.text);
+    if (lines.some((l) => l.cue)) out.lineCues = lines.map((l) => l.cue ?? null);
+  }
+  if (SHOTS.includes(p.shot)) out.shot = p.shot;
+  if (p.scene === 'black') {
+    const title = str(p.title, 60);
+    if (title) out.title = title;
+    const captions = (Array.isArray(p.captions) ? p.captions : []).map((c) => cuedOf(c, 80)).filter(Boolean).slice(0, 5);
+    if (captions.length) {
+      out.captions = captions.map((c) => c.text);
+      if (captions.some((c) => c.cue)) out.captionCues = captions.map((c) => c.cue ?? null);
+    }
+  }
+  if (p.scene === 'diagram') {
+    // A diagram the console does not have cannot be drawn.
+    if (!diagramFor(p.diagram)) return null;
+    out.diagram = p.diagram;
+    const listed = Array.isArray(p.steps) ? p.steps : [];
+    out.steps = Array.from({ length: stepsShown({ diagram: p.diagram, steps: listed }) }, (_, k) => {
+      const cue = listed[k] && typeof listed[k] === 'object' ? str(listed[k].cue, CUE_MAX) : undefined;
+      return cue ? { cue } : {};
+    });
+  }
   // A scene that needs people it does not have cannot be drawn.
   if (cast.length < rule.minCast) return null;
   return out;
@@ -175,8 +280,8 @@ export function cleanComic(raw) {
   return pages.length ? { title: raw.title.slice(0, 80), pages } : null;
 }
 
-/** The transcript lines (the accessible equivalent of the stage), numbered across pages. */
-export const transcriptOf = (comic) => comicPagesTranscript(comic.pages);
+/** The transcript lines (the accessible equivalent of the stage), numbered across pages; a diagram panel reads its diagram's title and steps. */
+export const transcriptOf = (comic) => comicPagesTranscript(comic.pages, diagramFor);
 
 // ---------------------------------------------------------------------------
 // The schedule
@@ -184,6 +289,34 @@ export const transcriptOf = (comic) => comicPagesTranscript(comic.pages);
 
 /** A rectangle grown by `pad` on every side. */
 const grow = (r, pad) => ({ x: r.x - pad, y: r.y - pad, w: r.w + 2 * pad, h: r.h + 2 * pad });
+/** The middle of a rectangle `k` times smaller: what a camera `k` times closer frames. */
+const zoomIn = (r, k) => ({ x: r.x + (r.w - r.w / k) / 2, y: r.y + (r.h - r.h / k) / 2, w: r.w / k, h: r.h / k });
+
+/**
+ * When a voiced panel's storyteller says `cue`: the clip's start plus the same fraction of the clip as the
+ * phrase's place in the voiceover (its first character, or with `end` just after its last, for a bubble that
+ * reacts to the words), clamped inside the clip. Null when the phrase is not in the voiceover.
+ */
+function cueTime(voiceover, cue, clip, end = false) {
+  if (!voiceover || !cue) return null;
+  const span = cueSpan(voiceover, cue);
+  if (!span) return null;
+  return clamp(clip.start + ((end ? span.end : span.start) / span.length) * clip.seconds, clip.start, clip.end);
+}
+
+/**
+ * `n` moments spread evenly from `from` over `len` seconds, each moved to its cue's time when it has one
+ * (`timeOf(k)`, null for none), kept in order with at least `gap` between one and the next (a later one is pushed).
+ */
+function spread(n, from, len, gap, timeOf) {
+  const out = [];
+  for (let k = 0; k < n; k++) {
+    let at = timeOf(k) ?? from + (k * len) / n;
+    if (k > 0) at = Math.max(at, out[k - 1] + gap);
+    out.push(at);
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Narration: which clip reads which line
@@ -245,8 +378,9 @@ function resolveNarration(comic, rawAudio) {
  * TIMING.voice in. The panel's bubbles are text only: the first starts typing TIMING.bubbleLag after the
  * clip starts and the rest follow one after the other, at the reading pace (TIMING.word per word),
  * clamped so the last is finished by TIMING.bubbleTail after the clip ends; if there are more words than
- * fit they type faster (never slower than the reading pace). Returns `{ clip, need, bubbles }` (`need` is how
- * long the panel must last, from its start), times in seconds on the clock.
+ * fit they type faster (never slower than the reading pace). A bubble with a `cue` pops just after the
+ * voiceover has said its phrase instead (still after the bubble before it, and the gap). Returns
+ * `{ clip, need, bubbles }` (`need` is how long the panel must last, from its start), times in seconds on the clock.
  */
 function voicedPanel(panel, voiced, pStart) {
   const start = pStart + TIMING.voice;
@@ -257,13 +391,17 @@ function voicedPanel(panel, voiced, pStart) {
   const room = clip.end + TIMING.bubbleTail - first - bubbles.length * TIMING.bubblePop - Math.max(0, bubbles.length - 1) * TIMING.bubbleGap;
   const step = spoken > 0 ? clamp(room / spoken, 0.03, TIMING.word) : TIMING.word;
   let cursor = first;
+  let prevEnd = null;
   let late = 0;
   const timed = bubbles.map((b) => {
     const n = wordsIn(b.text);
-    const bStart = cursor;
+    // A cued bubble pops once its phrase has been said (never before the one before it is done and the gap has passed).
+    const want = b.cue ? cueTime(panel.voiceover, b.cue, clip, true) : null;
+    const bStart = want === null ? cursor : Math.max(want, prevEnd === null ? clip.start : cursor);
     const wordTimes = Array.from({ length: n }, (_, k) => bStart + TIMING.bubblePop + k * step);
     const bEnd = bStart + TIMING.bubblePop + n * step;
     cursor = bEnd + TIMING.bubbleGap;
+    prevEnd = bEnd;
     late = Math.max(late, bEnd);
     return { start: bStart, end: bEnd, step, wordTimes };
   });
@@ -291,14 +429,23 @@ function voicedPanel(panel, voiced, pStart) {
  *   shots     the camera's moves: { t, dur, rect, kind }, in time order
  *   outro     { start, end } the pull-back at the end
  *   audio     the voiceover clips in start order: { key, kind: 'voiceover', bubble: null, panel (number), start, end, seconds } (empty without narration); one per voiced panel, so never two at once
+ *   stings    the sound effects that make a sound, in time order: { panel (number), sound, at } (at is the sfx's sfxAt)
  *
  * and for each panel: start, end, dur, words, rect (its place on the reel),
  * popAt, captionAt, sfxAt, focusAt (when a narrow container's camera pushes in on its screen, or null),
- * bubbles [{ who, pos, start, end, step, wordTimes }] and lines [{ start, end }]. Every rectangle is in page units.
+ * bubbles [{ who, pos, start, end, step, wordTimes }], lines [{ start, end }], shot ('close', 'wide' or null),
+ * stack (when each caption of a black card appears) and stepTimes (when each shown step of a diagram starts).
+ * Every rectangle is in page units.
+ *
+ * Cues (a voiced panel's caption, sfx, bubbles, screen lines, black-card captions and diagram steps) move a
+ * part to the moment the storyteller says its phrase (cueTime); without narration they change nothing.
+ * Shots: `close` adds a push-in (kind 'close', CLOSE_ZOOM times closer) once the camera has arrived; `wide`
+ * frames the panel's whole row instead of the panel.
  */
 export function buildTimeline(comic, { audio } = {}) {
   const narration = resolveNarration(comic, audio);
   const clips = [];
+  const stings = [];
   const pages = [];
   const shots = [];
   const parts = { lead: 0, turns: 0, titles: 0, panels: 0, outro: TIMING.outro };
@@ -341,7 +488,9 @@ export function buildTimeline(comic, { audio } = {}) {
       // never less than TIMING.breath), and never less than reading everything it shows takes.
       const voiced = narration?.get(number - 1);
       const said = voiced ? voicedPanel(panel, voiced, pStart) : null;
-      const dur = said ? Math.max(panelSeconds(words), said.need) : panelSeconds(words);
+      let dur = said ? Math.max(panelSeconds(words), said.need) : panelSeconds(words);
+      // Cues time a voiced panel's parts to the storyteller's words; a panel nobody voices ignores them.
+      const cueAt = (cue) => (said && cue ? cueTime(panel.voiceover, cue, said.clip) : null);
 
       // Bubbles speak one after the other; the typing pace eases off if a long panel hits the cap.
       const spoken = bubbles.reduce((n, b) => n + wordsIn(b.text), 0);
@@ -360,26 +509,47 @@ export function buildTimeline(comic, { audio } = {}) {
           });
       if (said) clips.push({ ...said.clip, panel: number });
 
-      // Screen lines type one after the other, as quickly as the panel's time allows.
+      // Screen lines type one after the other, as quickly as the panel's time allows; a cued line starts on its
+      // phrase, and a line never starts before the one above it is typed (a later one is pushed).
       const lines = panel.lines ?? [];
       const lineStep = lines.length ? Math.min(TIMING.line, (dur - TIMING.content - TIMING.hold) / lines.length) : 0;
+      let lineFree = -Infinity;
       const timedLines = lines.map((_, k) => {
-        const s = pStart + TIMING.content + k * lineStep;
+        const s = Math.max(cueAt(panel.lineCues?.[k]) ?? pStart + TIMING.content + k * lineStep, lineFree);
+        lineFree = s + lineStep * 0.8;
         return { start: s, end: s + lineStep * 0.8 };
       });
 
-      shots.push({ t: pStart, dur: TIMING.move, rect: grow(rect, REEL.shotPad), kind: 'panel' });
+      // A black card's captions appear one by one, and a diagram's steps follow one another: on their cues, or
+      // spread evenly over the voiceover's clip (unvoiced: over the panel's reading time).
+      const spanFrom = said ? said.clip.start : pStart + TIMING.content;
+      const spanLen = said ? said.clip.seconds : dur - TIMING.content - TIMING.hold;
+      const stack = spread(panel.captions?.length ?? 0, spanFrom, spanLen, TIMING.stackGap, (k) => cueAt(panel.captionCues?.[k]));
+      const stepTimes = spread(panel.steps?.length ?? 0, spanFrom, spanLen, TIMING.stepGap, (k) => cueAt(panel.steps[k].cue));
+      // Something pushed past the clip by the ones before it keeps the panel up until it, and the hold, are done.
+      if (said) {
+        const late = Math.max(-Infinity, ...timedLines.map((l) => l.end), ...stack, ...stepTimes);
+        if (late > pStart + dur - TIMING.hold + 1e-9) dur = late - pStart + TIMING.hold;
+      }
+
+      // The camera: the panel, or with `shot: wide` its whole row; with `shot: close` it then pushes in.
+      const framed = panel.shot === 'wide' ? { x: body.x, y: rect.y, w: body.w, h: rect.h } : rect;
+      shots.push({ t: pStart, dur: TIMING.move, rect: grow(framed, REEL.shotPad), kind: 'panel' });
+      if (panel.shot === 'close') shots.push({ t: pStart + TIMING.move, dur: TIMING.move, rect: zoomIn(grow(rect, REEL.shotPad), CLOSE_ZOOM), kind: 'close' });
       // A screen is too small to read from the whole panel in a narrow container: once what is said has been said,
       // the camera moves in on it (only there: a wide stage does not need it, and never plays this shot).
       const screen = SCREENS[panel.scene];
       let focusAt = null;
       if (screen && lines.length) {
         const after = timed.length ? timed[timed.length - 1].end + 0.3 : pStart + TIMING.content;
-        const at = Math.min(Math.max(after, pStart + TIMING.move + 0.2), pStart + dur - TIMING.hold - 0.6);
+        const settled = pStart + TIMING.move * (panel.shot === 'close' ? 2 : 1) + 0.2;
+        const at = Math.min(Math.max(after, settled), pStart + dur - TIMING.hold - 0.6);
         const d = screen.device;
         focusAt = at;
         shots.push({ t: at, dur: 0.7, rect: grow({ x: rect.x + 4 + d.x, y: rect.y + 4 + d.y, w: d.w, h: d.h }, 8), kind: 'screen', narrowOnly: true });
       }
+      const sfxAt = panel.sfx ? (cueAt(panel.sfxCue) ?? pStart + TIMING.sfx) : null;
+      if (sfxAt !== null && panel.sound) stings.push({ panel: number, sound: panel.sound, at: sfxAt });
       t += dur;
       parts.panels += dur;
       return {
@@ -393,11 +563,14 @@ export function buildTimeline(comic, { audio } = {}) {
         words,
         rect,
         popAt: pStart + TIMING.pop,
-        captionAt: panel.caption ? pStart + TIMING.caption : null,
-        sfxAt: panel.sfx ? pStart + TIMING.sfx : null,
+        captionAt: panel.caption ? (cueAt(panel.captionCue) ?? pStart + TIMING.caption) : null,
+        sfxAt,
         bubbles: timed,
         lines: timedLines,
         focusAt,
+        shot: panel.shot ?? null,
+        stack,
+        stepTimes,
       };
     });
 
@@ -409,7 +582,8 @@ export function buildTimeline(comic, { audio } = {}) {
   const outro = { start: t, end: t + TIMING.outro };
   shots.push({ t: outro.start, dur: TIMING.outro, rect: { x: 0, y: 0, w: reel.w, h: reel.h }, kind: 'outro' });
   clips.sort((a, b) => a.start - b.start);
-  return { total: outro.end, parts, reel, pages, shots, outro, audio: clips };
+  stings.sort((a, b) => a.at - b.at);
+  return { total: outro.end, parts, reel, pages, shots, outro, audio: clips, stings };
 }
 
 /** Every panel of a timeline in reading order. */
@@ -437,7 +611,16 @@ export function panelState(panel, t) {
       speaking: t >= b.start + TIMING.bubblePop && t < b.end + 0.1,
     })),
     lines: panel.lines.map((l) => clamp((t - l.start) / (l.end - l.start || 1), 0, 1)),
+    stack: (panel.stack ?? []).map((at) => t >= at),
+    step: diagramStep(panel, t),
   };
+}
+
+/** The step of a diagram panel's diagram showing at time t: -1 before its first (the diagram alone), then 0, 1, ...; -1 for any other panel. */
+export function diagramStep(panel, t) {
+  let step = -1;
+  for (const at of panel.stepTimes ?? []) if (t >= at) step += 1;
+  return step;
 }
 
 /** A page's title banner shows once the camera is on its way to it. */

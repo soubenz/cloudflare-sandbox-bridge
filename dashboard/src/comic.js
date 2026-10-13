@@ -1,6 +1,21 @@
 /**
  * The motion comic player.
  *
+ * CONTRACT with the art (comic-art.js), motion comic v2. The player calls:
+ *   sceneArt(panel)                       the panel's frame, `{ svg, lines, viewBox, width, height }`, as ever. New:
+ *                                         `panel.cast[i]` is an id ('maren') or `{ who, mood?, pose? }` (castId() in
+ *                                         comic-kit gives the id; a string has no mood or pose); `panel.bg` may be
+ *                                         'night'; scene 'black' is the dark plate (no words: the player draws the
+ *                                         captions); scene 'diagram' draws `panel.diagram`, an id whose data is
+ *                                         diagramFor(id) in comic-timeline.js, showing the first `panel.steps.length` steps.
+ *   applyDiagramStep(figEl, panel, step)  shows step `step` (0-based) of a diagram panel in its <figure>; -1 means
+ *                                         no step yet (the diagram alone). Called once each time the step changes,
+ *                                         backwards too (Replay, a seek), and must not throw.
+ *   releaseDiagram(figEl)                 lets a diagram panel's picture go: called for each diagram panel on destroy.
+ * A black card's art may return `stack`, the box (art units) its captions are set in.
+ * The player draws every word as HTML over the art (textContent only), and the art styles it (comic.css):
+ *   .cm-stack > .cm-stack-title, .cm-stack-line   a black card's title and its captions, each `.on` once shown.
+ *
  *   const comic = mountComic(container, learn.comic, { onDone })
  *   comic.destroy()
  *
@@ -48,11 +63,19 @@
  * exist in normal use. With narration it also lists the scheduled clips (`audio`), records
  * every play and stop the player decides on (`audioLog()`; no real audio is started in test mode),
  * and `?comicAudio=blocked` makes play() refuse with NotAllowedError until the learner taps.
+ * The stings (`stings`: `{ panel, sound, at }`) are logged as `{ type: 'sting', sound, at }` when the
+ * player would have played one (comic-sfx.js; nothing is synthesised in test mode).
+ *
+ * Stings: an sfx with a `sound` makes a short synthesised sound at its moment (comic-sfx.js), on the same
+ * clock, about 14 dB under the storyteller. A comic with stings has the Sound toggle too, and plays none while
+ * it is off, under reduced motion, or while the comic is paused or finished. The page's one AudioContext is
+ * made by the learner's first tap on the comic (the same tap that lets the storyteller start).
  */
 
 import { CAST } from '../../src/labs/comic-kit.ts';
-import { captionIsDisplay, sceneArt } from './comic-art.js';
+import { applyDiagramStep, captionIsDisplay, releaseDiagram, sceneArt } from './comic-art.js';
 import { audioReduce, audioWanted, clipUrl, initialAudio } from './comic-audio.js';
+import { playSting, stingsDue, unlockStings } from './comic-sfx.js';
 import {
   DEFAULT_BG,
   NARROW,
@@ -150,7 +173,7 @@ function buildPanel(panel, tp, placement) {
   svg.innerHTML = art.svg;
   fig.append(svg);
 
-  const parts = { fig, cap: null, sfx: null, bubbles: [], lines: [], chars: [...svg.querySelectorAll('.cm-char')], last: '' };
+  const parts = { fig, panel, cap: null, sfx: null, bubbles: [], lines: [], stack: [], stackTitle: null, step: null, chars: [...svg.querySelectorAll('.cm-char')], last: '' };
 
   if (panel.caption) {
     if (captionIsDisplay(panel.scene)) {
@@ -172,6 +195,28 @@ function buildPanel(panel, tp, placement) {
     d.append(el('span', 'cm-display-a', 'Your'), el('span', 'cm-display-b', 'turn.'));
     fig.append(d);
     parts.cap = d;
+  }
+
+  // A black card: its title and captions stacked over the dark plate (in the band the art rules for them,
+  // `art.stack`, when it gives one), each shown as the clock reaches it.
+  if (panel.scene === 'black' && (panel.title || panel.captions?.length)) {
+    const box = el('div', 'cm-stack');
+    if (art.stack) {
+      box.style.left = `${(art.stack.x / art.width) * 100}%`;
+      box.style.top = `${(art.stack.y / art.height) * 100}%`;
+      box.style.width = `${(art.stack.w / art.width) * 100}%`;
+      box.style.height = `${(art.stack.h / art.height) * 100}%`;
+    }
+    if (panel.title) {
+      parts.stackTitle = el('p', 'cm-stack-title', panel.title);
+      box.append(parts.stackTitle);
+    }
+    for (const text of panel.captions ?? []) {
+      const line = el('p', 'cm-stack-line', text);
+      box.append(line);
+      parts.stack.push(line);
+    }
+    fig.append(box);
   }
 
   if (art.lines && panel.lines?.length) {
@@ -232,6 +277,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   const tl = buildTimeline(clean, { audio });
   const voices = cleanAudio(audio);
   const hasAudio = voices !== null && tl.audio.length > 0;
+  const hasStings = tl.stings.length > 0;
   const testMode = testModeOn();
   const mq = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   let reduced = Boolean(mq?.matches);
@@ -322,8 +368,8 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   controls.setAttribute('aria-label', 'Comic playback');
   controls.append(pauseBtn, replay, skip);
 
-  // Sound: only a comic with voices has these two.
-  let sound = hasAudio ? readSound() : false;
+  // Sound: only a comic with voices has these two (a comic with stings has the toggle too).
+  let sound = hasAudio || hasStings ? readSound() : false;
   const soundBtn = el('button', 'btn btn-ghost cm-btn cm-sound');
   soundBtn.type = 'button';
   soundBtn.id = 'btnComicSound';
@@ -337,7 +383,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   tap.type = 'button';
   tap.id = 'btnComicTapSound';
   tap.hidden = true;
-  if (hasAudio) {
+  if (hasAudio || hasStings) {
     paintSound();
     controls.append(soundBtn);
   }
@@ -365,7 +411,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     const focus = !calm && width < NARROW && tp.focusAt !== null && t >= tp.focusAt && t < tp.end;
     const bubbleKey = s.bubbles.map((b) => `${b.on ? 1 : 0}${calm && b.on ? 99 : b.words}${b.speaking ? 's' : ''}`).join(',');
     const lineKey = s.lines.map((p) => (calm ? (p > 0 ? 1 : 0) : (p >= 1 ? 1 : Math.ceil(p * 100) / 100))).join(',');
-    const key = `${s.on}|${s.caption}|${s.sfx}|${s.shake}|${focus}|${bubbleKey}|${lineKey}`;
+    const key = `${s.on}|${s.caption}|${s.sfx}|${s.shake}|${focus}|${bubbleKey}|${lineKey}|${s.stack.map((on) => (on ? 1 : 0)).join('')}|${s.step}`;
     if (key === parts.last) return;
     parts.last = key;
     parts.fig.classList.toggle('on', s.on);
@@ -373,6 +419,16 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     parts.fig.classList.toggle('focus', focus);
     parts.cap?.classList.toggle('on', s.caption || (parts.cap.classList.contains('cm-display') && s.on));
     parts.sfx?.classList.toggle('on', s.sfx);
+    parts.stackTitle?.classList.toggle('on', s.on);
+    s.stack.forEach((on, i) => parts.stack[i]?.classList.toggle('on', on));
+    if (parts.panel.scene === 'diagram' && s.step !== parts.step) {
+      parts.step = s.step;
+      try {
+        applyDiagramStep(parts.fig, parts.panel, s.step);
+      } catch {
+        /* the art could not show the step: the diagram stays as it is, and the comic plays on */
+      }
+    }
     let speaker = null;
     s.bubbles.forEach((b, i) => {
       const bp = parts.bubbles[i];
@@ -547,6 +603,19 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     feedAudio({ type: 'sync', wanted });
   }
 
+  /**
+   * Plays the stings whose moment the clock just reached going forwards (a tick, or a seek in a test), unless
+   * the sound is off, motion is reduced, or the comic is paused, finished or gone. In test mode they are logged, not played.
+   */
+  function syncStings(from, to) {
+    if (!hasStings || gone || reduced || !sound || userPaused || clock.status !== 'playing') return;
+    if (!testMode && !running()) return;
+    for (const st of stingsDue(tl.stings, from, to)) {
+      if (testMode) audioLog.push({ type: 'sting', sound: st.sound, at: st.at });
+      else playSting(st.sound);
+    }
+  }
+
   function releaseAudio() {
     for (const a of elements.values()) {
       try {
@@ -568,6 +637,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     if (clock !== before) {
       render();
       syncAudio();
+      if (action.type === 'tick' || action.type === 'seek') syncStings(before.t, clock.t);
       if (justFinished(before, clock)) finished();
     }
   }
@@ -639,6 +709,8 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   // inside the tap (this covers the "Tap to turn the sound on" button, Replay and the toggle).
   root.addEventListener('click', () => {
     unlocked = true;
+    // The stings' one AudioContext is made inside a tap too (never in a test, which plays no sound).
+    if (hasStings && !testMode) unlockStings();
     if (!ast.blocked) return;
     feedAudio({ type: 'gesture' });
     syncAudio();
@@ -693,6 +765,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     timeline: () => tl,
     audio: tl.audio.map((c) => ({ ...c, url: hasAudio ? clipUrl(voices.slug, c.key) : null })),
     audioLog: () => audioLog.slice(),
+    stings: tl.stings.map((st) => ({ ...st })),
     userPaused: () => userPaused,
     audioState: () => ({ sound, blocked: ast.blocked, current: ast.current, failed: [...ast.failed] }),
   };
@@ -705,6 +778,16 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     gone = true;
     syncAudio();
     releaseAudio();
+    for (const pp of pageParts) {
+      for (const p of pp.panels) {
+        if (p.panel.scene !== 'diagram') continue;
+        try {
+          releaseDiagram(p.fig);
+        } catch {
+          /* nothing left to release */
+        }
+      }
+    }
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
     ro?.disconnect();

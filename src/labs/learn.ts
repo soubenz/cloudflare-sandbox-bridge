@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import registry from '../../packages/catalogue/concepts.json';
 import { QUIZ_SKILLS } from '../skills';
-import { KNOWN_DIAGRAMS, diagramRefs } from './diagram';
-import { ComicSchema, checkComic, type Comic } from './comic';
+import { DIAGRAMS, KNOWN_DIAGRAMS, diagramRefs } from './diagram';
+import { ComicSchema, allPanels, checkComic, type Comic } from './comic';
 import { NARRATOR_VOICE, TTS_MODEL, VOICEOVER_MAX, legacyNarrationLines, narrationLines, usesVoiceover } from './comic-kit';
 
 /**
@@ -437,6 +437,28 @@ export function checkNarration(comic: Comic, audio: LearnAudio, label: { audio: 
   return problems;
 }
 
+/**
+ * A comic's diagram panels must name a diagram of packages/catalogue/diagrams.json (`diagrams`), and show no
+ * more steps than it has. Messages are worded like checkComic's.
+ */
+export function checkComicDiagrams(comic: Comic, diagrams: ReadonlySet<string> = KNOWN_DIAGRAMS): string[] {
+  const problems: string[] = [];
+  const multi = comic.pages.length > 1;
+  for (const { panel: p, page, indexInPage } of allPanels(comic)) {
+    if (!p.diagram) continue;
+    const at = multi ? `comic page ${page} panel ${indexInPage} (${p.scene})` : `comic panel ${indexInPage} (${p.scene})`;
+    if (!diagrams.has(p.diagram)) {
+      problems.push(`${at}: diagram "${p.diagram}" is not in packages/catalogue/diagrams.json`);
+      continue;
+    }
+    const d = DIAGRAMS.find((x) => x.id === p.diagram);
+    if (d && p.steps && p.steps.length > d.steps.length) {
+      problems.push(`${at}: lists ${p.steps.length} steps, but diagram "${p.diagram}" has ${d.steps.length}`);
+    }
+  }
+  return problems;
+}
+
 /** Every clip the bundle's narration names, opener and closing together (they share learn/audio/). */
 export function learnAudioClips(bundle: Pick<LearnBundle, 'audio' | 'closing'>): LearnAudio['clips'] {
   return { ...(bundle.audio?.clips ?? {}), ...(bundle.closing?.audio?.clips ?? {}) };
@@ -483,7 +505,7 @@ export function checkLearnBundle(
   }
 
   if (bundle.comic) {
-    problems.push(...checkComic(bundle.comic));
+    problems.push(...checkComic(bundle.comic), ...checkComicDiagrams(bundle.comic, diagrams));
     if (!bundle.story) problems.push('a comic needs learn/story.md too: the text story is what screen readers, skipped comics and old consoles show');
   }
 
@@ -493,7 +515,7 @@ export function checkLearnBundle(
   }
 
   if (bundle.closing) {
-    problems.push(...checkComic(bundle.closing.comic).map((p) => `closing: ${p}`));
+    problems.push(...[...checkComic(bundle.closing.comic), ...checkComicDiagrams(bundle.closing.comic, diagrams)].map((p) => `closing: ${p}`));
     if (bundle.closing.audio) problems.push(...checkNarration(bundle.closing.comic, bundle.closing.audio, { audio: 'learn/closing-audio.json', comic: 'closing.yaml' }));
   }
   const clips = new Set(Object.keys(learnAudioClips(bundle)));
