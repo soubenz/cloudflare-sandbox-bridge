@@ -1,0 +1,114 @@
+# The first six questions are the opener's closing card, one per problem, in
+# the order the story tells them. Each explanation names what is missing
+# without naming the gateway: the opener never names the solution.
+questions:
+  - id: q-rewrite-at-three
+    concept: gateway.why-one-door
+    type: single
+    prompt: "Saturday, 03:12: the support assistant's provider is down, and the only way to switch to another provider is to rewrite the app's code at three in the morning. Is that normal, or a sign that something is missing?"
+    options:
+      - { id: a, text: "Normal, it happens" }
+      - { id: b, text: "A sign something is missing" }
+    answer: [b]
+    explanation: "A sign something is missing. The provider is chosen inside the app's code, so moving to another provider means changing and redeploying the app."
+  - id: q-key-in-screenshot
+    concept: gateway.why-one-door
+    type: single
+    prompt: "Tuesday, 10:05: a provider key shows up in the corner of a screenshot in the team chat. Is that normal, or a sign that something is missing?"
+    options:
+      - { id: a, text: "Normal, it happens" }
+      - { id: b, text: "A sign something is missing" }
+    answer: [b]
+    explanation: "A sign something is missing. The keys live in every app, so any app, or any screenshot of one, can leak a key."
+  - id: q-weekend-of-retries
+    concept: gateway.why-one-door
+    type: single
+    prompt: "A script sends the same failing call again and again from Friday evening to Monday morning, and spends the month's budget. Is that normal, or a sign that something is missing?"
+    options:
+      - { id: a, text: "Normal, it happens" }
+      - { id: b, text: "A sign something is missing" }
+    answer: [b]
+    explanation: "A sign something is missing. Nothing sat between the app and the provider that could count the calls or stop them, so nobody knew until the money was gone."
+  - id: q-renamed-model
+    concept: gateway.why-one-door
+    type: single
+    prompt: "On a Sunday a provider renames one of its models, and three apps stop working at once. Is that normal, or a sign that something is missing?"
+    options:
+      - { id: a, text: "Normal, it happens" }
+      - { id: b, text: "A sign something is missing" }
+    answer: [b]
+    explanation: "A sign something is missing. The apps use the provider's own model names directly, so a rename on the provider's side breaks every app that typed the old name."
+  - id: q-one-invoice
+    concept: gateway.why-one-door
+    type: single
+    prompt: "The month ends with one invoice and one number on it, and nobody can say which team spent what. Is that normal, or a sign that something is missing?"
+    options:
+      - { id: a, text: "Normal, it happens" }
+      - { id: b, text: "A sign something is missing" }
+    answer: [b]
+    explanation: "A sign something is missing. Nothing records which team made which call, so the bill cannot be split between the teams."
+  - id: q-model-nobody-tried
+    concept: gateway.why-one-door
+    type: single
+    prompt: "A better, cheaper model comes out, and nobody tries it. Is that normal, or a sign that something is missing?"
+    options:
+      - { id: a, text: "Normal, it happens" }
+      - { id: b, text: "A sign something is missing" }
+    answer: [b]
+    explanation: "A sign something is missing. Changing the model means changing every app that uses it, so even a small trial is work in every app."
+  - id: q-gateway-what
+    concept: gateway.what-is-a-gateway
+    type: single
+    prompt: "What is an LLM gateway?"
+    options:
+      - { id: a, text: "One front door that apps call, which forwards each request to a model provider" }
+      - { id: b, text: "A faster model that apps use instead of the providers' models" }
+      - { id: c, text: "A service that trains a private model on every team's prompts" }
+      - { id: d, text: "A replacement for the providers, so no outside company runs the models" }
+    answer: [a]
+    explanation: "A gateway runs no model of its own. It sits between your apps and the providers that do, and adds keys, routing, records and limits on the way through."
+  - id: q-gateway-problems
+    concept: gateway.what-is-a-gateway
+    type: multi
+    prompt: "Which two problems does sending every model call through one gateway help with?"
+    options:
+      - { id: a, text: "Provider keys scattered across every team's repository" }
+      - { id: b, text: "No single record of which team made which calls and what they cost" }
+      - { id: c, text: "A model giving wrong answers because its training data is old" }
+      - { id: d, text: "A prompt being too long for the model to read" }
+    answer: [a, b]
+    explanation: "A gateway is plumbing and bookkeeping. It keeps keys in one place and sees every call, but it does not make a model more accurate or change what a model can read."
+  - id: q-not-a-model
+    concept: gateway.what-it-is-not
+    type: single
+    prompt: "An app sends a question through a gateway and gets a wrong answer back. What wrote that answer?"
+    options:
+      - { id: a, text: "The provider's model; the gateway only carried the call" }
+      - { id: b, text: "The gateway's own model, which sits in front of the providers" }
+      - { id: c, text: "The gateway, from a copy of an earlier answer" }
+      - { id: d, text: "The app, before the call left it" }
+    answer: [a]
+    explanation: "A gateway runs no model. It forwards the call to a provider, and the provider's model writes every answer, right or wrong."
+  - id: q-not-a-cache
+    concept: gateway.what-it-is-not
+    type: single
+    prompt: "Two apps send the same question through a gateway one minute apart, and no extra features are switched on. What happens?"
+    options:
+      - { id: a, text: "Both calls go on to a provider, and both are counted and paid for" }
+      - { id: b, text: "The second app gets the first answer back for free" }
+      - { id: c, text: "The gateway refuses the second call as a duplicate" }
+      - { id: d, text: "The gateway answers both from its own model" }
+    answer: [a]
+    explanation: "A gateway is not a cache. Unless a team adds a cache on purpose, every call goes on to a real provider and costs tokens."
+  - id: q-what-moves-to-the-door
+    concept: gateway.why-one-door
+    type: single
+    prompt: "Once every app sends its calls through a gateway, what happens to the provider keys, the choice of provider and the record of calls?"
+    options:
+      - { id: a, text: "The gateway holds the keys, picks the provider from its table and writes down every call" }
+      - { id: b, text: "Each app keeps its keys and its provider, and the gateway only adds a log" }
+      - { id: c, text: "The keys move to the providers, which then pick a model for each app" }
+      - { id: d, text: "Each app keeps its own record, and the gateway adds them up at the end of the month" }
+    answer: [a]
+    explanation: "All three move out of the apps and into one place. That is why a leaked key, an outage or a rename is fixed once, and why one record can answer Finance."
+    diagnostic: false

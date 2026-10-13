@@ -1,0 +1,90 @@
+title: Six things went wrong
+panels:
+  - scene: black
+    captions:
+      - { text: "Six things went wrong.", cue: "Six things" }
+      - { text: "Four will happen to you.", cue: "Four will" }
+    voiceover: Six things went wrong here. Four will happen to you.
+  - scene: desk
+    cast: [{ who: tomasz, mood: tired, pose: phone }]
+    bg: night
+    shot: close
+    caption: { text: "Saturday, 03:12", cue: "Saturday" }
+    sfx: { text: "BZZT!", cue: "stops answering", sound: phone }
+    voiceover: Saturday, three twelve in the morning. The support assistant stops answering customers. Its model provider, the company that runs the model, is down.
+    bubbles:
+      - { who: tomasz, text: "Search is fine. Support is dark.", cue: "is down" }
+    lines:
+      - { text: "support assistant: down", cue: "stops answering" }
+      - { text: "search assistant: fine", cue: "is down" }
+  - scene: desk
+    cast: [{ who: tomasz, mood: worried, pose: typing }]
+    bg: night
+    caption: { text: "03:40", cue: "three forty" }
+    sfx: { text: "TICK", cue: "three forty", sound: tick }
+    voiceover: Another provider is working. But the first provider's name is written into the app's code, so at three forty Tomasz, an engineer on the platform team, is rewriting that code by hand.
+    bubbles:
+      - { who: tomasz, text: "I've done good work at 3 a.m. That wasn't it.", cue: "by hand" }
+    lines:
+      - { text: "provider: provider-a", cue: "name is written" }
+      - { text: "provider: provider-b   (edit this)", cue: "rewriting" }
+  - scene: diagram
+    diagram: gateway-no-door
+    steps:
+      - { cue: "its own provider" }
+      - { cue: "A key is" }
+    voiceover: Every app at Larkfield has its own provider and its own key. A key is the secret that proves who is paying. Whoever holds it can make calls, and the bill goes to its owner.
+  - scene: message
+    cast: [{ who: maren, mood: worried }]
+    bg: rose
+    prop: key
+    shot: close
+    caption: { text: "Tuesday, 10:05", cue: "Tuesday" }
+    sfx: { text: "PING!", cue: "screenshot", sound: ping }
+    voiceover: Tuesday, ten oh five. Someone shares a screenshot in the team chat to show off a good answer. In the corner of the picture is a provider key.
+    bubbles:
+      - { who: maren, text: "Everybody liked the screenshot. Nobody noticed the key.", cue: "provider key" }
+  - scene: screen
+    caption: { text: "Friday evening to Monday morning", cue: "Friday evening" }
+    voiceover: Friday evening, a research script gets an error and sends the same call again. It keeps sending it until Monday morning, and by then it has spent the whole month's budget.
+    lines:
+      - { text: "$ retry", cue: "gets an error" }
+      - { text: "error: try again", cue: "gets an error" }
+      - { text: "$ retry", cue: "keeps sending" }
+      - { text: "error: try again", cue: "keeps sending" }
+      - { text: "budget left: 0", cue: "whole month's budget" }
+  - scene: duo
+    cast: [tomasz, maren]
+    bg: lilac
+    caption: { text: "Sunday", cue: "Sunday" }
+    voiceover: Sunday. A provider renames one of its models. Three apps have the old name typed into their code, and all three stop working.
+    bubbles:
+      - { who: tomasz, text: "They renamed it. On a Sunday.", cue: "stop working" }
+  - scene: message
+    cast: [{ who: maren, pose: shrug }]
+    bg: mint
+    prop: envelope
+    caption: { text: "End of the month", cue: "End of the month" }
+    sfx: { text: "INVOICE!", cue: "one invoice", sound: register }
+    voiceover: End of the month, one invoice arrives, with one number on it. Finance asks which team spent it, and with which provider. Nobody can say.
+    bubbles:
+      - { who: maren, text: "I've practised the shrug. It's very good now.", cue: "Nobody can say" }
+  - scene: desk
+    cast: [{ who: tomasz, mood: tired }]
+    bg: sand
+    caption: { text: "A better model", cue: "better model" }
+    voiceover: Then a better model comes out, faster and cheaper. Nobody tries it, because trying it means changing every app that would use it.
+    bubbles:
+      - { who: tomasz, text: "Maybe next quarter.", cue: "would use it" }
+    lines:
+      - { text: "new model: faster, cheaper", cue: "better model" }
+      - { text: "tried it: nobody", cue: "Nobody tries" }
+      - { text: "to try it: change every app", cue: "changing every app" }
+  - scene: black
+    captions:
+      - { text: "A rewrite at three in the morning.", cue: "three in the morning" }
+      - { text: "A key in a screenshot.", cue: "screenshot" }
+      - { text: "A weekend of retries.", cue: "retries" }
+      - { text: "A renamed model.", cue: "renamed model" }
+      - { text: "One invoice. A model nobody tried.", cue: "One invoice" }
+    voiceover: A rewrite at three in the morning. A key in a screenshot. A weekend of retries. A renamed model. One invoice. A model nobody tried. For each one, is this normal, or a sign that something is missing?

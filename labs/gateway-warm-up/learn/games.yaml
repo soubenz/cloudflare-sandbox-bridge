@@ -1,0 +1,61 @@
+# Four short games, played after the closing. Each tests one thing the
+# closing showed: who holds the keys, what keeps an app answering when a
+# provider fails, alias versus model, and the steps of one call.
+games:
+  - kind: sort
+    id: whose-key
+    title: Whose key is it?
+    prompt: "Six situations. In each one, who holds the provider key: the app, or the gateway?"
+    explanation: "An app that calls a provider directly must hold that provider's key, so the key can leak from the app. Behind a gateway, only the gateway holds provider keys, and changing one is one change in one place."
+    buckets:
+      - { id: app, label: The app holds the key }
+      - { id: gateway, label: The gateway holds the key }
+    cards:
+      - { id: direct-call, text: "The support app calls the provider directly", bucket: app }
+      - { id: settings-file, text: "A provider key is pasted into the search app's settings file", bucket: app }
+      - { id: screenshot, text: "A screenshot of the billing app's code shows a provider key", bucket: app }
+      - { id: alias-call, text: "The support app sends the alias support to the gateway, which calls the provider", bucket: gateway }
+      - { id: one-swap, text: "A leaked provider key is replaced in one place, and no app changes", bucket: gateway }
+      - { id: new-team, text: "A new team starts calling models without ever seeing a provider key", bucket: gateway }
+
+  - kind: flag
+    id: provider-down
+    title: Provider down
+    prompt: "Provider A has just stopped answering. Flag each setup that keeps the support assistant answering."
+    explanation: "What keeps an app answering is a second provider it can reach. A gateway with two providers behind one alias makes that switch for every app at once. An app that holds two keys can make it too, but then every app must carry that code and those keys."
+    items:
+      - { id: direct-a, text: "The app calls provider A directly", flag: false, why: "Its only provider is down, and nothing else is set up." }
+      - { id: gw-a-only, text: "The app calls a gateway that has only provider A behind support", flag: false, why: "The gateway has nowhere else to send the call." }
+      - { id: gw-a-and-b, text: "The app calls a gateway that has providers A and B behind support", flag: true, why: "The gateway sends the call to provider B, and the app changes nothing." }
+      - { id: direct-a-and-b, text: "The app calls providers directly and holds keys for both A and B", flag: true, why: "It keeps answering, but the app does the work: its own code must notice the failure, hold both keys and switch." }
+      - { id: gw-a-retry, text: "The app calls a gateway that has only provider A behind support, with a retry on A", flag: false, why: "A retry asks the same provider again. Provider A is down, so every retry fails too." }
+      - { id: gw-b-only, text: "The app calls a gateway that has only provider B behind support", flag: true, why: "Provider B never went down." }
+
+  - kind: sort
+    id: name-or-model
+    title: Name or model?
+    prompt: "Sort each name: is it an alias the app sends to the gateway, or a real model the gateway sends the call to?"
+    explanation: "An alias is Larkfield's own name for a job, such as support. The gateway's table maps each alias to a real provider model. Apps send only aliases, so the model behind one can change without any app changing."
+    buckets:
+      - { id: alias, label: Alias the app sends }
+      - { id: model, label: Real model the gateway picks }
+    cards:
+      - { id: support, text: support, bucket: alias }
+      - { id: fast, text: fast, bucket: alias }
+      - { id: research, text: research, bucket: alias }
+      - { id: gpt-4o, text: gpt-4o, bucket: model }
+      - { id: claude-sonnet, text: claude-sonnet, bucket: model }
+      - { id: llama-3-70b, text: llama-3-70b, bucket: model }
+
+  - kind: order-and-nest
+    id: through-the-door
+    title: Through the door
+    prompt: "Put the steps of one call in order, and nest each gateway step under the app's call it belongs to."
+    explanation: "The app's call holds every other step. The gateway looks the alias up, adds the key only it holds, calls the provider, passes the answer back and writes down the tokens with the team's name."
+    steps:
+      - { id: app-sends, text: "The app sends a call with the alias support", parent: null, order: 0 }
+      - { id: look-up, text: "The gateway looks support up in its table", parent: app-sends, order: 0 }
+      - { id: add-key, text: "The gateway adds the provider key", parent: app-sends, order: 1 }
+      - { id: call-provider, text: "The gateway sends the call to the provider", parent: app-sends, order: 2 }
+      - { id: answer-back, text: "The answer comes back to the app", parent: app-sends, order: 3 }
+      - { id: write-usage, text: "The gateway writes the usage to its log, with the team's name", parent: app-sends, order: 4 }
