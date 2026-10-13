@@ -215,15 +215,18 @@ describe('the committed labs page', () => {
     expect(committed).toBe(mod.renderLabsPage(mod.loadLabs()));
   });
 
-  it('has exactly two free labs: duplicate-emails and weekend-bill', () => {
+  it('has exactly two free labs: duplicate-emails and weekend-bill (warm-ups are free too, and are not labs to run)', () => {
     const labs = mod.loadLabs();
-    const free = labs.filter((l) => l.tier === 'free').map((l) => l.slug).sort();
+    const warmUps = labs.filter((l) => l.type === 'warm-up');
+    expect(warmUps.every((l) => l.tier === 'free')).toBe(true);
+    const free = labs.filter((l) => l.tier === 'free' && l.type !== 'warm-up').map((l) => l.slug).sort();
     expect(free).toEqual(['duplicate-emails', 'weekend-bill']);
     expect(labs.filter((l) => l.tier !== 'free').every((l) => l.tier === 'pro')).toBe(true);
-    // One Try it link per free lab, and every other card points at the waitlist.
-    expect(committed.match(/href="\/try"/g)?.length ?? 0).toBe(2 + 1 /* the nav button */);
-    expect(committed.match(/lab-chip-free/g)?.length ?? 0).toBe(2);
-    expect(committed.match(/lab-chip-pro/g)?.length ?? 0).toBe(labs.length - 2);
+    // One Try it link per free card (labs and warm-ups), and every other card points at the waitlist.
+    const freeCards = 2 + warmUps.length;
+    expect(committed.match(/href="\/try"/g)?.length ?? 0).toBe(freeCards + 1 /* the nav button */);
+    expect(committed.match(/lab-chip-free/g)?.length ?? 0).toBe(freeCards);
+    expect(committed.match(/lab-chip-pro/g)?.length ?? 0).toBe(labs.length - freeCards);
   });
 
   it('mentions the lab count computed from the manifests that have a path', () => {

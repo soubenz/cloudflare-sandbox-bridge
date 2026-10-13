@@ -1,0 +1,142 @@
+{
+  "model": "higgsfield/elevenlabs",
+  "clips": {
+    "3bde36e29dd02d0b": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Saturday, three in the morning. At three twelve the same provider goes down again, and the phone stays dark.",
+      "seconds": 6.27,
+      "bytes": 100772
+    },
+    "68b02ff1c7b62f36": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Larkfield's apps no longer call providers directly. They call one door, a gateway. It checks who is asking, and it holds the provider keys, so the apps never do.",
+      "seconds": 10.19,
+      "bytes": 163466
+    },
+    "7e83dd0a01f99caf": {
+      "who": "ollie",
+      "voice": "6b528d43-c056-4a2f-9d82-1591a7ba13b0",
+      "text": "So I can't paste a key I never had. Got it.",
+      "seconds": 3.63,
+      "bytes": 58558
+    },
+    "5e4fc9a8f9b3058a": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Follow one call. The support app sends a question with the name support. That name is an alias, Larkfield's own name for a job. The gateway looks it up in its table.",
+      "seconds": 10.03,
+      "bytes": 160958
+    },
+    "db86d096cd21f7bc": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "The table says provider A first, then provider B. Provider A is down, so the gateway sends the call to provider B, with the provider key that only the gateway holds.",
+      "seconds": 9.8,
+      "bytes": 157196
+    },
+    "6f07216596addfed": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Provider B answers. The gateway passes the answer back and writes one line in its log: the team, the alias and the tokens used, one thousand eight hundred and fifty. A token is a small piece of text that providers bill by.",
+      "seconds": 13.32,
+      "bytes": 213621
+    },
+    "531129ea57214dd8": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "At the end of the month, Finance reads the log and adds the rows up by team. The one number on the invoice now has a name beside every part of it.",
+      "seconds": 8.2,
+      "bytes": 131701
+    },
+    "246e65d1ab819f01": {
+      "who": "graham",
+      "voice": "dc382508-c8bd-443c-8cb2-46e57b8d2e6f",
+      "text": "Every line has a name. I could get used to this.",
+      "seconds": 3,
+      "bytes": 48527
+    },
+    "0d03604d1e852ce3": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "One thing is now easy. Every app asks for support, never for a model. When a better model comes out, the platform team changes one line of the table, and no app changes.",
+      "seconds": 10.27,
+      "bytes": 164719
+    },
+    "cd1362c82495a40d": {
+      "who": "jess",
+      "voice": "09878754-f20b-5330-9790-58a8027ab5b2",
+      "text": "So I can try the new model today? Today today?",
+      "seconds": 3,
+      "bytes": 48527
+    },
+    "d29f2b7eccc0d365": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Next come four short games on what you have just seen. Then the first lab, where you send calls to a real gateway and watch what it does with them.",
+      "seconds": 8.28,
+      "bytes": 132955
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "voiceover",
+      "clip": "3bde36e29dd02d0b"
+    },
+    {
+      "panel": 1,
+      "kind": "voiceover",
+      "clip": "68b02ff1c7b62f36"
+    },
+    {
+      "panel": 1,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "7e83dd0a01f99caf"
+    },
+    {
+      "panel": 2,
+      "kind": "voiceover",
+      "clip": "5e4fc9a8f9b3058a"
+    },
+    {
+      "panel": 3,
+      "kind": "voiceover",
+      "clip": "db86d096cd21f7bc"
+    },
+    {
+      "panel": 4,
+      "kind": "voiceover",
+      "clip": "6f07216596addfed"
+    },
+    {
+      "panel": 5,
+      "kind": "voiceover",
+      "clip": "531129ea57214dd8"
+    },
+    {
+      "panel": 5,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "246e65d1ab819f01"
+    },
+    {
+      "panel": 6,
+      "kind": "voiceover",
+      "clip": "0d03604d1e852ce3"
+    },
+    {
+      "panel": 6,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "cd1362c82495a40d"
+    },
+    {
+      "panel": 7,
+      "kind": "voiceover",
+      "clip": "d29f2b7eccc0d365"
+    }
+  ]
+}

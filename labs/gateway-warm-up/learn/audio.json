@@ -1,0 +1,257 @@
+{
+  "model": "higgsfield/elevenlabs",
+  "clips": {
+    "c44658533f1dd39b": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Six things went wrong here. Four will happen to you.",
+      "seconds": 3.32,
+      "bytes": 53542
+    },
+    "fe450cb69cf36b3f": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Saturday, three twelve in the morning. The support assistant stops answering customers. Its model provider, the company that runs the model, is down.",
+      "seconds": 9.17,
+      "bytes": 147165
+    },
+    "c657106dffc81d1e": {
+      "who": "tomasz",
+      "voice": "549ff70a-3ee7-4f04-a4d9-89a24fab7709",
+      "text": "Search is fine. Support is dark.",
+      "seconds": 2.85,
+      "bytes": 46019
+    },
+    "efeaca711aa7571c": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Another provider is working. But the first provider's name is written into the app's code, so at three forty Tomasz, an engineer on the platform team, is rewriting that code by hand.",
+      "seconds": 10.19,
+      "bytes": 163466
+    },
+    "9527a68a83ff55fe": {
+      "who": "tomasz",
+      "voice": "549ff70a-3ee7-4f04-a4d9-89a24fab7709",
+      "text": "I've done good work at three a.m. This isn't it.",
+      "seconds": 3.55,
+      "bytes": 57304
+    },
+    "7fa19f8797456423": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Every app at Larkfield has its own provider and its own key. A key is the secret that proves who is paying. Whoever holds it can make calls, and the bill goes to its owner.",
+      "seconds": 10.37,
+      "bytes": 166391
+    },
+    "9751b098a10ef13d": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Tuesday, ten oh five. Someone shares a screenshot in the team chat to show off a good answer. In the corner of the picture is a provider key.",
+      "seconds": 7.81,
+      "bytes": 125431
+    },
+    "3d1abb6c445ea3e8": {
+      "who": "ollie",
+      "voice": "6b528d43-c056-4a2f-9d82-1591a7ba13b0",
+      "text": "Look at this answer! Best one yet.",
+      "seconds": 2.43,
+      "bytes": 39332
+    },
+    "995c7e01d4cfe406": {
+      "who": "maren",
+      "voice": "3c2b83c0-2e0a-5ae8-998a-a5fe71b7eccd",
+      "text": "Ollie. Bottom corner. That's our provider key.",
+      "seconds": 3.08,
+      "bytes": 49781
+    },
+    "13701524bec57890": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Friday evening, a research script gets an error and sends the same call again. It keeps sending it until Monday morning, and by then it has spent the whole month's budget.",
+      "seconds": 9.8,
+      "bytes": 157196
+    },
+    "862a0ddc65db83e1": {
+      "who": "ollie",
+      "voice": "6b528d43-c056-4a2f-9d82-1591a7ba13b0",
+      "text": "In my defence, the error did say try again.",
+      "seconds": 3.79,
+      "bytes": 61066
+    },
+    "395c81ebe056962d": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Sunday. A provider renames one of its models. Three apps have the old name typed into their code, and all three stop working.",
+      "seconds": 7.89,
+      "bytes": 126685
+    },
+    "5bebae5d88ee1b65": {
+      "who": "tomasz",
+      "voice": "549ff70a-3ee7-4f04-a4d9-89a24fab7709",
+      "text": "They renamed it. On a Sunday.",
+      "seconds": 2.43,
+      "bytes": 39332
+    },
+    "92c6d6a03c8031a5": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "End of the month, one invoice arrives, with one number on it. Finance asks which team spent it, and with which provider. Nobody can say.",
+      "seconds": 8.44,
+      "bytes": 135462
+    },
+    "7677f5ef67a1555b": {
+      "who": "graham",
+      "voice": "dc382508-c8bd-443c-8cb2-46e57b8d2e6f",
+      "text": "Which team spent this? And with whom?",
+      "seconds": 2.69,
+      "bytes": 43511
+    },
+    "0a07fdcafa2971c7": {
+      "who": "maren",
+      "voice": "3c2b83c0-2e0a-5ae8-998a-a5fe71b7eccd",
+      "text": "I've practised the shrug. It's very good now.",
+      "seconds": 2.85,
+      "bytes": 46019
+    },
+    "4bb487e5e81d6d06": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "Then a better model comes out, faster and cheaper. Nobody tries it, because trying it means changing every app that would use it.",
+      "seconds": 7.71,
+      "bytes": 123759
+    },
+    "e237d273270e7225": {
+      "who": "jess",
+      "voice": "09878754-f20b-5330-9790-58a8027ab5b2",
+      "text": "It's faster AND cheaper! Can we try it today?",
+      "seconds": 3,
+      "bytes": 48527
+    },
+    "317f1ed5e93a706e": {
+      "who": "tomasz",
+      "voice": "549ff70a-3ee7-4f04-a4d9-89a24fab7709",
+      "text": "Sure. In every app. By hand.",
+      "seconds": 2.59,
+      "bytes": 41839
+    },
+    "c75f9f4a71255cee": {
+      "who": "narrator",
+      "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
+      "text": "A rewrite at three in the morning. A key in a screenshot. A weekend of retries. A renamed model. One invoice. A model nobody tried. For each one, is this normal, or a sign that something is missing?",
+      "seconds": 13.87,
+      "bytes": 222398
+    }
+  },
+  "lines": [
+    {
+      "panel": 0,
+      "kind": "voiceover",
+      "clip": "c44658533f1dd39b"
+    },
+    {
+      "panel": 1,
+      "kind": "voiceover",
+      "clip": "fe450cb69cf36b3f"
+    },
+    {
+      "panel": 1,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "c657106dffc81d1e"
+    },
+    {
+      "panel": 2,
+      "kind": "voiceover",
+      "clip": "efeaca711aa7571c"
+    },
+    {
+      "panel": 2,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "9527a68a83ff55fe"
+    },
+    {
+      "panel": 3,
+      "kind": "voiceover",
+      "clip": "7fa19f8797456423"
+    },
+    {
+      "panel": 4,
+      "kind": "voiceover",
+      "clip": "9751b098a10ef13d"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "3d1abb6c445ea3e8"
+    },
+    {
+      "panel": 4,
+      "kind": "bubble",
+      "bubble": 1,
+      "clip": "995c7e01d4cfe406"
+    },
+    {
+      "panel": 5,
+      "kind": "voiceover",
+      "clip": "13701524bec57890"
+    },
+    {
+      "panel": 5,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "862a0ddc65db83e1"
+    },
+    {
+      "panel": 6,
+      "kind": "voiceover",
+      "clip": "395c81ebe056962d"
+    },
+    {
+      "panel": 6,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "5bebae5d88ee1b65"
+    },
+    {
+      "panel": 7,
+      "kind": "voiceover",
+      "clip": "92c6d6a03c8031a5"
+    },
+    {
+      "panel": 7,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "7677f5ef67a1555b"
+    },
+    {
+      "panel": 7,
+      "kind": "bubble",
+      "bubble": 1,
+      "clip": "0a07fdcafa2971c7"
+    },
+    {
+      "panel": 8,
+      "kind": "voiceover",
+      "clip": "4bb487e5e81d6d06"
+    },
+    {
+      "panel": 8,
+      "kind": "bubble",
+      "bubble": 0,
+      "clip": "e237d273270e7225"
+    },
+    {
+      "panel": 8,
+      "kind": "bubble",
+      "bubble": 1,
+      "clip": "317f1ed5e93a706e"
+    },
+    {
+      "panel": 9,
+      "kind": "voiceover",
+      "clip": "c75f9f4a71255cee"
+    }
+  ]
+}

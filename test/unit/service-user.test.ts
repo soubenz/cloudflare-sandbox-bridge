@@ -254,9 +254,14 @@ describe('the lint mirrors the rule', () => {
   const labsDir = join(repoRoot, 'labs');
   const dirs = existsSync(labsDir) ? readdirSync(labsDir).filter((d) => existsSync(join(labsDir, d, 'manifest.yaml'))) : [];
   it.each(dirs)('agrees with parseManifest on labs/%s', (dir) => {
-    const raw = parseYaml(readFileSync(join(labsDir, dir, 'manifest.yaml'), 'utf8')) as { services: { user?: string }[] };
+    const raw = parseYaml(readFileSync(join(labsDir, dir, 'manifest.yaml'), 'utf8')) as { services?: { user?: string }[] };
     const parsed = parseManifest(raw);
-    raw.services.forEach((svc, i) => {
+    // A warm-up runs no container, so it has no services to compare.
+    if (!('services' in parsed)) {
+      expect(raw.services).toBeUndefined();
+      return;
+    }
+    (raw.services ?? []).forEach((svc, i) => {
       expect(svc.user ?? lint.defaultServiceUser(svc)).toBe(parsed.services[i]!.user);
     });
   });
