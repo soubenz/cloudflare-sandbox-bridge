@@ -21,15 +21,15 @@ games:
   - kind: flag
     id: provider-down
     title: Provider down
-    prompt: "Provider A has just stopped answering. Flag each setup that keeps the support assistant answering."
+    prompt: "OpenAI has just stopped answering. Flag each setup that keeps the support assistant answering."
     explanation: "What keeps an app answering is a second provider it can reach. A gateway with two providers behind one alias makes that switch for every app at once. An app that holds two keys can make it too, but then every app must carry that code and those keys."
     items:
-      - { id: direct-a, text: "The app calls provider A directly", flag: false, why: "Its only provider is down, and nothing else is set up." }
-      - { id: gw-a-only, text: "The app calls a gateway that has only provider A behind support", flag: false, why: "The gateway has nowhere else to send the call." }
-      - { id: gw-a-and-b, text: "The app calls a gateway that has providers A and B behind support", flag: true, why: "The gateway sends the call to provider B, and the app changes nothing." }
-      - { id: direct-a-and-b, text: "The app calls providers directly and holds keys for both A and B", flag: true, why: "It keeps answering, but the app does the work: its own code must notice the failure, hold both keys and switch." }
-      - { id: gw-a-retry, text: "The app calls a gateway that has only provider A behind support, with a retry on A", flag: false, why: "A retry asks the same provider again. Provider A is down, so every retry fails too." }
-      - { id: gw-b-only, text: "The app calls a gateway that has only provider B behind support", flag: true, why: "Provider B never went down." }
+      - { id: direct-a, text: "The app calls OpenAI directly", flag: false, why: "Its only provider is down, and nothing else is set up." }
+      - { id: gw-a-only, text: "The app calls a gateway that has only OpenAI behind support", flag: false, why: "The gateway has nowhere else to send the call." }
+      - { id: gw-a-and-b, text: "The app calls a gateway that has OpenAI and Anthropic behind support", flag: true, why: "The gateway sends the call to Anthropic, and the app changes nothing." }
+      - { id: direct-a-and-b, text: "The app calls providers directly and holds keys for both OpenAI and Anthropic", flag: true, why: "It keeps answering, but the app does the work: its own code must notice the failure, hold both keys and switch." }
+      - { id: gw-a-retry, text: "The app calls a gateway that has only OpenAI behind support, with a retry on OpenAI", flag: false, why: "A retry asks the same provider again. OpenAI is down, so every retry fails too." }
+      - { id: gw-b-only, text: "The app calls a gateway that has only Anthropic behind support", flag: true, why: "Anthropic never went down." }
 
   - kind: sort
     id: name-or-model

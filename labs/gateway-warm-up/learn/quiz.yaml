@@ -5,7 +5,7 @@ questions:
   - id: q-rewrite-at-three
     concept: gateway.why-one-door
     type: single
-    prompt: "Saturday, 03:12: the support assistant's provider is down, and the only way to switch to another provider is to rewrite the app's code at three in the morning. Is that normal, or a sign that something is missing?"
+    prompt: "Saturday, 03:12: the support assistant's provider, OpenAI, is down, and the only way to switch to Anthropic is to rewrite the app's code at three in the morning. Is that normal, or a sign that something is missing?"
     options:
       - { id: a, text: "Normal, it happens" }
       - { id: b, text: "A sign something is missing" }
@@ -14,7 +14,7 @@ questions:
   - id: q-key-in-screenshot
     concept: gateway.why-one-door
     type: single
-    prompt: "Tuesday, 10:05: a provider key shows up in the corner of a screenshot in the team chat. Is that normal, or a sign that something is missing?"
+    prompt: "Tuesday, 10:05: the team's OpenAI key shows up in the corner of a screenshot in the team chat. Is that normal, or a sign that something is missing?"
     options:
       - { id: a, text: "Normal, it happens" }
       - { id: b, text: "A sign something is missing" }
@@ -32,7 +32,7 @@ questions:
   - id: q-renamed-model
     concept: gateway.why-one-door
     type: single
-    prompt: "On a Sunday a provider renames one of its models, and three apps stop working at once. Is that normal, or a sign that something is missing?"
+    prompt: "On a Sunday Google renames one of its models, and three apps stop working at once. Is that normal, or a sign that something is missing?"
     options:
       - { id: a, text: "Normal, it happens" }
       - { id: b, text: "A sign something is missing" }

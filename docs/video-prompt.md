@@ -30,6 +30,25 @@ SHAPE
   that was hard before, then says what the viewer does next.
 - 6 to 12 panels. One idea per panel. About 90 to 120 seconds spoken.
 
+STORY
+- The narrator tells ONE story that runs through every panel, not a list of
+  separate facts. Open by putting the viewer inside the moment ("Imagine
+  waking up at three in the morning to a phone that won't stop buzzing.")
+  and link each panel to the last with a time or a cause ("Then, on Friday
+  evening...", "The trouble started long before that night.").
+- Use real names where a real thing exists: OpenAI, Anthropic, Google, an
+  OpenAI key. Larkfield and its people are fictional; the providers are not.
+
+SAY IT ONCE
+- Every beat is said by exactly one of: the narrator, a character, or the
+  picture. The narrator never says what a character is about to say, a
+  character never repeats the narrator, and a caption never repeats either.
+- Captions only carry what nobody says aloud: a timestamp ("03:12"), a
+  place, a number on a screen. If the narrator says "on Sunday", there is
+  no "Sunday" caption.
+- A character line must earn its place: it reacts, reveals or asks; it is
+  not a quip for its own sake. If it is weak, cut it.
+
 VOICE (the narrator)
 - Plain, calm teaching sentences. Short. Concrete nouns, real numbers, real
   times ("three in the morning", "1,850 tokens"), never vague ("a lot").

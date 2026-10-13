@@ -3,10 +3,10 @@ panels:
   - scene: clip
     clip: asleep-night
     cast: [tomasz]
-    caption: { text: "03:12", cue: "three twelve" }
-    voiceover: Saturday, three in the morning. At three twelve the same provider goes down again, and the phone stays dark.
+    caption: { text: "03:12", cue: "three in the morning" }
+    voiceover: Three months later, it's Saturday, three in the morning, and OpenAI goes down again. This time Tomasz's phone stays dark, and he sleeps right through it.
     lines:
-      - { text: "03:12  provider A: down", cue: "three twelve" }
+      - { text: "03:12  OpenAI: down", cue: "OpenAI goes down" }
       - { text: "support assistant: answering", cue: "stays dark" }
   - scene: diagram
     diagram: gateway-what-it-does
@@ -14,48 +14,46 @@ panels:
     steps:
       - { cue: "one door" }
       - { cue: "checks who is asking" }
-      - { cue: "holds the provider keys" }
-    voiceover: Larkfield's apps no longer call providers directly. They call one door, a gateway. It checks who is asking, and it holds the provider keys, so the apps never do.
+      - { cue: "holds the keys" }
+    voiceover: Here is what changed. Larkfield's apps no longer call providers directly. They all call one door, a gateway. It checks who is asking and holds the keys for every provider, so the apps never do.
     bubbles:
       - { who: ollie, text: "So I can't paste a key I never had. Got it.", cue: "apps never do" }
   - scene: diagram
     diagram: gateway-alias-routing
     steps:
-      - { cue: "the name support" }
+      - { cue: "asks for support" }
       - { cue: "looks it up" }
-    voiceover: Follow one call. The support app sends a question with the name support. That name is an alias, Larkfield's own name for a job. The gateway looks it up in its table.
+    voiceover: Follow the support assistant's call through that night. It asks for support, not for a model. That name is an alias, Larkfield's own name for a job. The gateway looks it up in its table.
   - scene: screen
-    voiceover: The table says provider A first, then provider B. Provider A is down, so the gateway sends the call to provider B, with the provider key that only the gateway holds.
+    voiceover: The table says OpenAI first, then Anthropic. OpenAI is down, so the gateway quietly sends the call to Anthropic, with the key only it holds. The customer gets an answer.
     lines:
-      - { text: "support: provider A, then B", cue: "provider A first" }
-      - { text: "provider A: no answer", cue: "is down" }
-      - { text: "provider B: answered", cue: "sends the call to provider B" }
+      - { text: "support: OpenAI, then Anthropic", cue: "OpenAI first" }
+      - { text: "OpenAI: no answer", cue: "is down" }
+      - { text: "Anthropic: answered", cue: "sends the call to Anthropic" }
   - scene: screen
-    caption: { text: "The log", cue: "log" }
-    voiceover: "Provider B answers. The gateway passes the answer back and writes one line in its log: the team, the alias and the tokens used, one thousand eight hundred and fifty. A token is a small piece of text that providers bill by."
+    voiceover: "Anthropic answers, and the gateway writes one line in its log: the team, the alias and the tokens used, one thousand eight hundred and fifty. A token is a small piece of text that providers bill by."
     lines:
-      - { text: "answer back to the support app", cue: "passes the answer back" }
-      - { text: "log: support, alias support, B, 1,850", cue: "writes one line" }
+      - { text: "log: support, support, anthropic, 1,850", cue: "one line in its log" }
       - { text: "token = a piece of text, billed by count", cue: "A token is" }
   - scene: desk
     cast: [{ who: graham, mood: pleased }]
     bg: mint
-    sfx: { text: "CHA-CHING", cue: "adds the rows up", sound: register }
-    voiceover: At the end of the month, Finance reads the log and adds the rows up by team. The one number on the invoice now has a name beside every part of it.
+    sfx: { text: "CHA-CHING", cue: "opens that log", sound: register }
+    voiceover: At the end of the month, Graham opens that log. Every row has a team beside it, so the one number on the invoice finally breaks down, team by team.
     lines:
-      - { text: "team        tokens      cost", cue: "Finance reads" }
-      - { text: "support     412,000     $3.10", cue: "adds the rows up" }
-      - { text: "search      208,500     $1.40", cue: "by team" }
-      - { text: "research     91,000     $0.60", cue: "every part" }
+      - { text: "team        tokens      cost", cue: "opens that log" }
+      - { text: "support     412,000     $3.10", cue: "team beside it" }
+      - { text: "search      208,500     $1.40", cue: "breaks down" }
+      - { text: "research     91,000     $0.60", cue: "team by team" }
     bubbles:
-      - { who: graham, text: "Every line has a name. I could get used to this.", cue: "every part" }
+      - { who: graham, text: "Every line has a name. I could get used to this.", cue: "team by team" }
   - scene: diagram
     diagram: gateway-alias-routing
     cast: [jess]
     steps:
-      - { cue: "asks for support" }
-      - { cue: "one line of the table" }
-    voiceover: One thing is now easy. Every app asks for support, never for a model. When a better model comes out, the platform team changes one line of the table, and no app changes.
+      - { cue: "next new model" }
+      - { cue: "one line in the table" }
+    voiceover: And when the next new model comes out, the platform team changes one line in the table. Every app that asks for support gets the new model, and no app changes.
     bubbles:
       - { who: jess, text: "So I can try the new model today? Today today?", cue: "no app changes" }
   - scene: you

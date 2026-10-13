@@ -2,22 +2,29 @@
 title: Six things went wrong
 minutes: 2
 ---
-Six things went wrong at one company last month. Four of them will happen to yours.
+This is the story of one bad month at a company called Larkfield. Six things go wrong. Four of them will happen to you.
 
-Saturday, 03:12. Larkfield's support assistant stopped answering customers. Its model provider, the company that runs the model it uses, was down. Another provider was working, but the first one's name was written into the app's code.
+Imagine waking up at three in the morning to a phone that won't stop buzzing. That's Tomasz, an engineer on Larkfield's platform team. The support assistant has stopped answering customers. Tomasz: "Search is fine. Support is dark."
 
-At 03:40 Tomasz, an engineer on the platform team, was still rewriting that code by hand to point at the other provider. Tomasz: "I've done good work at three a.m. This isn't it."
+OpenAI, the company that runs the assistant's model, is down. Anthropic is working fine, but OpenAI's name is written into the app's code. So at three forty, half asleep, Tomasz is rewriting that code by hand. Tomasz: "I've done good work at three a.m. This isn't it."
 
-Every app at Larkfield talks to a language model. Each app picked its own provider and holds its own key. A key is the secret that proves who is paying: anyone who has it can make calls, and the bill goes to its owner.
+The trouble started long before that night. Every app at Larkfield talks to its own provider, OpenAI, Anthropic or Google, and holds its own key. A key is the secret that proves who is paying.
 
-Tuesday, 10:05. Ollie, a developer, shared a screenshot in the team chat to show off a good answer. Ollie: "Look at this answer! Best one yet." A provider key was in the corner of it. Maren, who leads the platform team: "Ollie. Bottom corner. That's our provider key."
+On Tuesday, Ollie, a developer, is proud of an answer from the assistant and shares a screenshot in the team chat. Ollie: "Look at this answer! Best one yet." In the corner of the picture sits the team's OpenAI key. Maren, who leads the platform team: "Ollie. Bottom corner. That's our OpenAI key."
 
-Friday evening, a research script got an error and sent the same call again. It kept sending it until Monday morning. By then it had spent the whole month's budget. Ollie, who wrote the script: "In my defence, the error did say try again."
+Then, on Friday evening, Ollie's research script hits an error and simply tries again. It keeps trying all weekend. By Monday morning it has spent the whole month's budget. Ollie: "In my defence, the error did say try again."
 
-Sunday, a provider renamed one of its models. Three apps had the old name typed into their code, and all three stopped working. Tomasz: "They renamed it. On a Sunday."
+That Sunday, while the team is still cleaning up, Google renames one of its models. Three apps have the old name typed into their code, and all three stop working at once. Tomasz: "They renamed it. On a Sunday."
 
-At the end of the month one invoice arrived, with one number on it. Finance asked which team had spent it, and with which provider. Graham, the head of engineering: "Which team spent this? And with whom?" Nobody could say. Maren: "I've practised the shrug. It's very good now."
+At the end of the month, one invoice arrives with one number on it. Graham, the head of engineering, has a simple question for the team, and nobody can answer it. Graham: "Which team spent this? And with whom?"
 
-Then a better model came out, faster and cheaper. Nobody tried it, because trying it meant changing every app that would use it. Jess, a product manager: "It's faster AND cheaper! Can we try it today?" Tomasz: "Sure. In every app. By hand."
+The month ends on a missed chance. A new model comes out, faster and cheaper. Jess, the product manager, wants to try it today, but trying it means changing every app by hand. Jess: "It's faster AND cheaper! Can we try it today?" Tomasz: "Sure. In every app. By hand."
 
-Six beats, stacked on a black card: a rewrite at three in the morning, a key in a screenshot, a weekend of retries, a renamed model, one invoice, a model nobody tried. For each one, decide: is this normal, or a sign that something is missing?
+One month, six problems. Read each one, and ask yourself whether it is normal, or a sign that something is missing.
+
+- OpenAI goes down, and the fix is rewriting app code at 3 a.m.
+- An OpenAI key leaks in a screenshot in the team chat.
+- A script retries all weekend and spends the month's budget.
+- Google renames a model, and three apps break at once.
+- One invoice, and nobody can say which team spent what.
+- A faster, cheaper model nobody can try without changing every app.
