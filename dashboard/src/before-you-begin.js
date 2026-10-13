@@ -50,7 +50,9 @@ import { uiIcon } from './icons.js';
  *   onStep  (kind, n) => void, told every time a step comes on screen (kind is the path's word: 'story',
  *           'questions' or 'lessons'; n the step's number, null when the word alone names it), so the
  *           address bar can follow
- *   flowStore  where the visit is kept (default: createFlowStore, sessionStorage)
+ *   flowStore  where the visit is kept (default: createFlowStore, sessionStorage): load(), save(steps, answers,
+ *              { games, started_at, at }) with `at` the step on screen, and clear() when the visit ends (app.js passes
+ *              createProgressStore, learn-progress.js, which also saves it on the server)
  *   prepare        () => Promise, warms the lab's container up. Called ONCE per visit, the first time the
  *                  second-to-last step (`prefetchStepIndex`) or a later one comes on screen, never for
  *                  "Skip all" (that starts at once). Fire and forget: a failure is swallowed and Start works
@@ -94,7 +96,12 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       : []
   );
   const startedAt = warmUp ? ((restored && saved.started_at) || Date.now()) : 0;
-  const persist = () => flow.save(steps, Object.fromEntries(answers), warmUp ? { games: Object.fromEntries(solvedGames), started_at: startedAt } : undefined);
+  // `at` is the step on screen, given when one comes on (a store that saves to the server keeps it; see learn-progress.js).
+  const persist = (at) =>
+    flow.save(steps, Object.fromEntries(answers), {
+      ...(warmUp ? { games: Object.fromEntries(solvedGames), started_at: startedAt } : {}),
+      ...(at !== undefined ? { at } : {}),
+    });
   persist();
   /** The words on the last step's button. */
   const lastLabel = warmUp ? 'Finish the warm-up' : 'Start the lab';
@@ -258,6 +265,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
 
   /** Tells the page a step is on screen: the live region, and the address bar through `onStep`. */
   const arrived = (i) => {
+    persist(i);
     maybePrepare(i);
     announce(i);
     onStep?.(stepKindWord(steps[i]), stepNumberFor(steps, i));

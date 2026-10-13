@@ -52,6 +52,9 @@ const SERVICE_KEY_ONLY: Array<[string, string]> = [
   ['get', '/users/:uid/profile'],
   ['get', '/users/:uid/awards'],
   ['post', '/users/:uid/warmups/:slug/complete'],
+  ['get', '/users/:uid/labs/:slug/learn-progress'],
+  ['put', '/users/:uid/labs/:slug/learn-progress'],
+  ['delete', '/users/:uid/labs/:slug/learn-progress'],
   ['put', '/users/:uid/path-inputs'],
   ['post', '/users/:uid/path'],
   ['get', '/users/:uid/path'],
@@ -197,6 +200,16 @@ describe('route auth matrix', () => {
     expect(body).toContain('parseUserId(');
     expect(body.indexOf('requireServiceAuth(')).toBeLessThan(body.indexOf('c.req.text('));
     expect(body.indexOf('requireServiceAuth(')).toBeLessThan(body.indexOf('completeWarmUp('));
+  });
+
+  it.each(['get', 'put', 'delete'])('learn progress (%s) takes the service key only, before it reads or writes anything', (method) => {
+    // It reads and writes one user's place in a lab, so only the console Worker (which knows the user) may call it.
+    const body = handlerFor(method, '/users/:uid/labs/:slug/learn-progress');
+    expect(body).toContain('requireServiceAuth(');
+    expect(body).not.toContain('requireBrowserAuth(');
+    expect(body).toContain('parseUserId(');
+    expect(body.indexOf('requireServiceAuth(')).toBeLessThan(body.indexOf('LearnProgress('));
+    if (method === 'put') expect(body.indexOf('requireServiceAuth(')).toBeLessThan(body.indexOf('c.req.text('));
   });
 
   it('has no unauthenticated session-start route', () => {

@@ -7,6 +7,7 @@ import { insertCheckRun } from '../session/d1';
 import { recomputeAwards } from '../profile/store';
 import { refreshPath } from '../path/service';
 import { ApiError } from '../lib/errors';
+import { deleteLearnProgress } from './learn-progress';
 
 /**
  * Finishing a warm-up. A warm-up has no container, so no checks ever run for
@@ -85,10 +86,17 @@ export async function completeWarmUp(env: Env, uid: string, slug: string, body: 
     throw ApiError.badRequest('warm_up_incomplete', `Not every game of "${slug}" is solved or skipped: ${missing.join(', ')}`, { missing });
   }
 
+  // A finished warm-up has nowhere to continue from: its saved place (learn_progress) goes, so the console
+  // offers no "Continue where you left off" for it. Best effort: the completion is what matters.
+  const forgetPlace = () => deleteLearnProgress(env, uid, slug).catch((err) => console.error('warm-up learn progress delete failed:', err));
+
   const prior = await env.DB.prepare(`SELECT 1 AS done FROM check_runs WHERE user_id = ? AND lab_slug = ? AND passed_all = 1 LIMIT 1`)
     .bind(uid, slug)
     .first<{ done: number }>();
-  if (prior) return { done: true, already: true };
+  if (prior) {
+    await forgetPlace();
+    return { done: true, already: true };
+  }
 
   const result = (name: string, message: string): CheckResultEntry => ({ name, pass: true, message, duration_ms: 0, exit_code: 0, timed_out: false, weight: 1 });
   const results =
@@ -116,5 +124,6 @@ export async function completeWarmUp(env: Env, uid: string, slug: string, body: 
   // the row is written, so a failure here never fails the request. Awaited so the next read sees them.
   await recomputeAwards(env, uid, {}).catch((err) => console.error('warm-up awards recompute failed:', err));
   await refreshPath(env, uid).catch((err) => console.error('warm-up path refresh failed:', err));
+  await forgetPlace();
   return { done: true, already: false, run_id: run.run_id };
 }

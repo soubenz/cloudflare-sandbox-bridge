@@ -9,6 +9,7 @@ import { MAX_AUDIO_CLIPS, MAX_AUDIO_CLIP_BYTES } from './labs/learn';
 import { parseByteRange } from './lib/range';
 import { isWarmUp, parseManifest, requireRunnable } from './labs/manifest';
 import { completeWarmUp, parseWarmUpBody, parseWarmUpSlug, MAX_WARM_UP_BODY_BYTES } from './labs/warmup';
+import { deleteLearnProgress, loadLearnProgress, parseLearnProgressBody, saveLearnProgress, MAX_LEARN_PROGRESS_BYTES } from './labs/learn-progress';
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
 import { workspacePath } from './lib/paths';
@@ -657,6 +658,37 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     }
     const result = await completeWarmUp(c.env, uid, slug, parseWarmUpBody(raw));
     return c.json(result, result.already ? 200 : 201);
+  });
+
+  // Where the learner is in a lab's "Before you begin" or a warm-up, so another tab, browser or device can
+  // continue it (docs/api.md, "Learn progress"). One row per user per lab; DELETE is "Start over".
+  app.get('/users/:uid/labs/:slug/learn-progress', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const uid = parseUserId(c.req.param('uid'));
+    const slug = parseWarmUpSlug(c.req.param('slug'));
+    return c.json({ user_id: uid, slug, progress: await loadLearnProgress(c.env, uid, slug) });
+  });
+
+  app.put('/users/:uid/labs/:slug/learn-progress', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const uid = parseUserId(c.req.param('uid'));
+    const slug = parseWarmUpSlug(c.req.param('slug'));
+    const text = await c.req.text();
+    if (new TextEncoder().encode(text).length > MAX_LEARN_PROGRESS_BYTES) throw ApiError.payloadTooLarge(`learn progress exceeds ${MAX_LEARN_PROGRESS_BYTES} bytes`);
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      throw ApiError.badRequest('invalid_learn_progress', 'body must be JSON');
+    }
+    return c.json(await saveLearnProgress(c.env, uid, slug, parseLearnProgressBody(raw)));
+  });
+
+  app.delete('/users/:uid/labs/:slug/learn-progress', async (c) => {
+    requireServiceAuth(c.req.raw, c.env);
+    const uid = parseUserId(c.req.param('uid'));
+    const slug = parseWarmUpSlug(c.req.param('slug'));
+    return c.json({ deleted: await deleteLearnProgress(c.env, uid, slug) });
   });
 
   // --- Profile: skill scores, XP and awards (service auth; the app backend proxies these to learners) ---

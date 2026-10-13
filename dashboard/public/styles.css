@@ -960,6 +960,10 @@ kbd {
 .lab-detail-side .lab-start { width: 100%; min-height: 48px; }
 .lab-detail-side > .notice { margin: 0; }
 .lab-detail-note { margin: 0; color: var(--ink-muted); font-size: var(--fs-sm); line-height: 1.5; }
+/* Saved progress in the lab's "Before you begin" or warm-up: Continue where you left off, or Start over. */
+.lab-progress { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--border); }
+.lab-progress[hidden] { display: none; }
+.lab-progress .btn { width: 100%; min-height: 44px; }
 .lab-detail-more { margin: 0; font-size: var(--fs-sm); }
 .lab-detail-more a { color: var(--ink-2); text-underline-offset: 3px; }
 

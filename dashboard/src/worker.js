@@ -431,6 +431,22 @@ function cleanWarmUpBody(raw) {
   return body;
 }
 
+/** The largest learn-progress body read, in bytes (the API's own cap). */
+const MAX_LEARN_PROGRESS_BYTES = 32 * 1024;
+
+/**
+ * Checks a PUT /api/learn-progress/:slug body: exactly `{ version, state }`, a short version and a state
+ * that is an object. The API checks the state itself (zod) and answers 400 for one it does not take.
+ * Returns the body or null; nothing names a user, which is the cookie's subject.
+ */
+function cleanLearnProgressBody(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (Object.keys(raw).some((k) => k !== 'version' && k !== 'state')) return null;
+  if (typeof raw.version !== 'string' || raw.version.length === 0 || raw.version.length > 64) return null;
+  if (!raw.state || typeof raw.state !== 'object' || Array.isArray(raw.state)) return null;
+  return { version: raw.version, state: raw.state };
+}
+
 /**
  * Asks the API for something about the signed-in learner and hands its answer on as it came (status and
  * body), so the console can say what went wrong in its own plain words (api.js plainError reads the status).
@@ -812,6 +828,32 @@ async function route(request, env) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
+    }
+
+    // Where the learner is in a lab's "Before you begin" or a warm-up (GET), saved as they go (PUT, debounced, and
+    // with `keepalive` as the page closes) and forgotten on "Start over" (DELETE). Always the cookie's subject.
+    const progressMatch = url.pathname.match(/^\/api\/learn-progress\/([^/]+)$/);
+    if (progressMatch && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
+      let slug = '';
+      try {
+        slug = decodeURIComponent(progressMatch[1]);
+      } catch {
+        /* a malformed escape is not a slug */
+      }
+      if (!SLUG.test(slug)) return json({ error: 'not a lab slug' }, 400);
+      const path = learnerPath(subject, `labs/${encodeURIComponent(slug)}/learn-progress`);
+      if (request.method !== 'PUT') return relayForLearner(env, path, { method: request.method });
+      const text = await readCapped(request, MAX_LEARN_PROGRESS_BYTES);
+      if (text === null) return json({ error: 'progress is too large' }, 413);
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        return json({ error: 'progress must be JSON' }, 400);
+      }
+      const body = cleanLearnProgressBody(parsed);
+      if (!body) return json({ error: 'progress is not valid' }, 400);
+      return relayForLearner(env, path, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     }
 
     if (url.pathname.startsWith('/api/')) return json({ error: 'not found' }, 404);

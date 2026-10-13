@@ -208,6 +208,22 @@ export const api = {
   completeWarmUp: (slug, body) => completeWarmUp(slug, body),
 
   /**
+   * Where the learner is in a lab's "Before you begin" or a warm-up, saved on the server so another tab, browser or
+   * device can continue it: `{ progress: null | { version, state, updated_at } }`. `save` replaces it with
+   * `{ version, state }` (`keepalive` for a page that is closing), `clear` forgets it (Start over, or done).
+   */
+  learnProgress: (slug) => sameOrigin(`/api/learn-progress/${encodeURIComponent(slug)}`),
+  saveLearnProgress: (slug, body, { keepalive = false } = {}) =>
+    sameOrigin(`/api/learn-progress/${encodeURIComponent(slug)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      ...(keepalive ? { keepalive: true } : {}),
+    }),
+  clearLearnProgress: (slug, { keepalive = false } = {}) =>
+    sameOrigin(`/api/learn-progress/${encodeURIComponent(slug)}`, { method: 'DELETE', ...(keepalive ? { keepalive: true } : {}) }),
+
+  /**
    * Starting a session goes through this console's own Worker, which holds
    * the service key. The browser never sees that key, and the Worker knows
    * who is signed in, so it supplies the user id rather than this page

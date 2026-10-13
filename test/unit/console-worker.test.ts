@@ -756,3 +756,66 @@ describe('POST /api/warmups/:slug/complete', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe('/api/learn-progress/:slug', () => {
+  const STATE = { v: 1, steps: [{ kind: 'story' }, { kind: 'game', game: 'sort-calls' }], at: 1, answers: {} };
+  const send = (method: string, c: string | null, body?: unknown, slug = 'first-steps') =>
+    call(`/api/learn-progress/${slug}`, {
+      method,
+      cookie: c,
+      ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) }),
+    });
+
+  it("reads, saves and forgets the cookie's subject's place through the API, and hands the answer back as it came", async () => {
+    replies.push((u) => (u.endsWith('/learn-progress') ? { status: 200, body: { user_id: 'console', slug: 'first-steps', progress: null } } : undefined));
+    const got = await send('GET', cookie);
+    expect(got.status).toBe(200);
+    expect(await got.json()).toEqual({ user_id: 'console', slug: 'first-steps', progress: null });
+    const put = await send('PUT', cookie, { version: '1.0.0', state: STATE });
+    expect(put.status).toBe(200);
+    const del = await send('DELETE', cookie);
+    expect(del.status).toBe(200);
+
+    expect(calls.map((c) => [c.method, c.url])).toEqual([
+      ['GET', 'https://api.internal/users/console/labs/first-steps/learn-progress'],
+      ['PUT', 'https://api.internal/users/console/labs/first-steps/learn-progress'],
+      ['DELETE', 'https://api.internal/users/console/labs/first-steps/learn-progress'],
+    ]);
+    for (const c of calls) expect(c.headers.get('authorization')).toBe('Bearer svc-key');
+    expect(JSON.parse(calls[1]!.body)).toEqual({ version: '1.0.0', state: STATE });
+  });
+
+  it('passes an API refusal through (status and body)', async () => {
+    replies.push(() => ({ status: 400, body: { error: { code: 'invalid_learn_progress', message: 'no' } } }));
+    const res = await send('PUT', cookie, { version: '1.0.0', state: STATE });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error.code).toBe('invalid_learn_progress');
+  });
+
+  it('needs the cookie', async () => {
+    for (const method of ['GET', 'PUT', 'DELETE']) {
+      const res = await send(method, null, method === 'PUT' ? { version: '1.0.0', state: STATE } : undefined);
+      expect(res.status).toBe(401);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('refuses a body that is not { version, state }, an oversized one and a slug that is not one, and forwards nothing', async () => {
+    const bad: unknown[] = ['{nope', [], {}, { version: '1.0.0' }, { version: '', state: STATE }, { version: 'x'.repeat(65), state: STATE }, { version: '1.0.0', state: [] }, { version: '1.0.0', state: STATE, user_id: 'someone-else' }];
+    for (const body of bad) {
+      const res = await send('PUT', cookie, body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    const big = await send('PUT', cookie, { version: '1.0.0', state: { ...STATE, pad: 'x'.repeat(33 * 1024) } });
+    expect(big.status).toBe(413);
+    const slug = await send('GET', cookie, undefined, 'Not%20A%20Slug');
+    expect(slug.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('answers only GET, PUT and DELETE', async () => {
+    const res = await send('POST', cookie, { version: '1.0.0', state: STATE });
+    expect(res.status).toBe(404);
+    expect(calls).toHaveLength(0);
+  });
+});

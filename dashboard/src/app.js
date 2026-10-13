@@ -49,6 +49,8 @@ import { catalogueNextLab, createMasteryStore, normalizeLearn, introSeen, normal
 import { runOnboarding } from './onboarding.js';
 import { createProgressHub } from './progress-hub.js';
 import { runBeforeYouBegin } from './before-you-begin.js';
+import { createProgressClient, createProgressStore, pagePoint, progressSummary, resumePoint } from './learn-progress.js';
+import { actionBar, button as learnButton, focusHeading, screenHead, show as showIn } from './learn-ui.js';
 import { mountQuestionsForm } from './questions-form.js';
 import { SAFE_FILE } from './answers-file.js';
 import {
@@ -475,10 +477,11 @@ async function openLabStepRoute(route, stale) {
   const warmUp = lab.type === 'warm-up';
   showTransient(warmUp ? 'Opening the warm-up…' : 'Opening the lab…');
   // A warm-up is nothing but its learn bundle (/labs/<slug>/games?step=N, /labs/<slug>/closing are its own steps).
-  const entry = lab.has_learn || warmUp ? await fetchLearn(lab.slug) : null;
+  const wanted = lab.has_learn || warmUp;
+  const [entry, saved] = await Promise.all([wanted ? fetchLearn(lab.slug) : null, wanted ? savedPlace(lab.slug) : null]);
   if (stale()) return;
   if (!hasLearnScreen(lab, entry)) return landOnLabPage(lab.slug);
-  openLearnFlow(lab, entry, route.step, { fromRoute: true, n: route.n });
+  openLearnFlow(lab, entry, route.step, { fromRoute: true, n: route.n, seed: resumePoint(entry, saved) });
 }
 
 /** The lab's own page, with its address corrected to it (in place: the address that led here was not a page). */
@@ -1533,6 +1536,11 @@ function labPage(lab) {
     beginLab(lab, page);
   });
   side.append(status, button);
+  // Saved progress in its "Before you begin" or warm-up: Continue where you left off, or Start over (filled once read).
+  const place = node('div', 'lab-progress');
+  place.hidden = true;
+  side.append(place);
+  if (!(standing.locked || standing.planLocked) || adminMode.isOn()) fillLabPlace(place, lab, page);
   if (standing.planLocked && !adminMode.isOn()) {
     side.append(node('p', 'lab-detail-note', PLAN_LOCK_LONG));
   } else if (standing.locked && !adminMode.isOn()) {
@@ -2022,10 +2030,11 @@ async function beginLab(lab, card) {
   const resuming = runningSlug !== null || !$('resumeCard').hidden;
   // A lab whose story and questions the learner has been through once is not shown them again.
   if (!lab.has_learn || resuming || introSeen(mastery.get(), lab.slug)) return startSession(lab.slug, card);
+  const saved = savedPlace(lab.slug);
   const entry = await loadLearnFor(lab, card);
   if (entry === undefined) return;
   if (!hasLearnScreen(lab, entry)) return startSession(lab.slug, card);
-  openLearnFlow(lab, entry);
+  openOrOfferContinue(lab, entry, await saved);
 }
 
 /**
@@ -2069,13 +2078,106 @@ function hasLearnScreen(lab, entry) {
  * shown every time it is opened (Open again included): the last game's "Finish the warm-up" ends it (finishWarmUp).
  */
 async function openWarmUp(lab, card) {
+  const saved = savedPlace(lab.slug);
   const entry = await loadLearnFor(lab, card);
   if (entry === undefined) return;
   if (!hasLearnScreen(lab, entry)) {
     toast('Could not open the warm-up. Try again in a moment.', 'bad');
     return;
   }
-  openLearnFlow(lab, entry);
+  openOrOfferContinue(lab, entry, await saved);
+}
+
+// --- saved progress (docs/learning-content.md, "Saving progress")
+
+/** The learner's place in each lab's flow, on the server (GET/PUT/DELETE /api/learn-progress/<slug>), briefly remembered. */
+const learnPlace = createProgressClient(api);
+/** How long opening a lab waits for its saved place before going on without it. */
+const PLACE_WAIT_MS = 2500;
+
+/** The saved place of a lab, `{ version, state }` or null; never throws, and never holds a lab up for long. */
+function savedPlace(slug) {
+  return Promise.race([learnPlace.get(slug), new Promise((resolve) => setTimeout(() => resolve(null), PLACE_WAIT_MS))]);
+}
+
+/**
+ * Opens a lab's flow from its Start (or a warm-up's Open): with saved progress that still fits the bundle, first
+ * the choice between "Continue where you left off" and "Start over"; with progress that no longer fits (another
+ * version of the lab), it is forgotten and the flow starts afresh, without a word.
+ */
+function openOrOfferContinue(lab, entry, saved) {
+  const point = resumePoint(entry, saved);
+  if (!point) {
+    if (saved) learnPlace.clear(lab.slug);
+    return openLearnFlow(lab, entry);
+  }
+  hideLearnScreen();
+  showLearnScreen();
+  learnFlowLab = lab.slug;
+  const host = $('learnHost');
+  let gone = false;
+  // Stands in for the flow until a choice is made, so leaving the screen tears it down the same way.
+  learnFlow = { destroy: () => (gone = true) };
+  const warmUp = lab.type === 'warm-up';
+  const go = learnButton('Continue where you left off', { kind: 'accent', id: 'btnContinueFlow', onClick: () => !gone && openLearnFlow(lab, entry, undefined, { saved: point }) });
+  go.classList.add('btn-lg');
+  go.append(uiIcon('arrow', 16));
+  const over = learnButton('Start over', {
+    kind: 'quiet',
+    id: 'btnStartOver',
+    onClick: () => {
+      if (gone) return;
+      learnPlace.clear(lab.slug);
+      openLearnFlow(lab, entry);
+    },
+  });
+  const back = learnButton('← Back to labs', { kind: 'quiet', id: 'btnBeforeBack', onClick: () => router.navigate('lab', { slug: lab.slug }) });
+  showIn(
+    host,
+    screenHead({ eyebrow: `${warmUp ? 'Warm-up' : 'Before you begin'} · ${lab.title || lab.slug}`, title: 'Welcome back', meta: `You left off at ${progressSummary(point)}.` }),
+    actionBar([go, over, back])
+  );
+  focusHeading(host);
+}
+
+/**
+ * The Continue box on a lab's page: shown when the learner has saved progress in the lab's flow (and the lab is
+ * not running). Continue opens the flow on the saved step; Start over forgets it and starts the flow afresh.
+ */
+async function fillLabPlace(box, lab, page) {
+  if (!(lab.has_learn || lab.type === 'warm-up') || lab.slug === runningSlug) return;
+  const point = pagePoint(lab, await savedPlace(lab.slug));
+  if (!point || !box.isConnected || lab.slug === runningSlug) return;
+  const go = node('button', 'btn btn-accent', 'Continue where you left off');
+  go.type = 'button';
+  go.id = 'btnLabContinue';
+  const over = node('button', 'btn btn-ghost', 'Start over');
+  over.type = 'button';
+  over.id = 'btnLabStartOver';
+  go.addEventListener('click', () => continueLab(lab, page));
+  over.addEventListener('click', async () => {
+    over.disabled = true;
+    await learnPlace.clear(lab.slug);
+    box.hidden = true;
+    beginLab(lab, page);
+  });
+  box.replaceChildren(node('p', 'lab-detail-note', `You left off at ${progressSummary(point)}.`), go, over);
+  box.hidden = false;
+}
+
+/** The lab page's Continue: the flow on the saved step, or (the place no longer fitting the lab) the flow afresh. */
+async function continueLab(lab, page) {
+  if (lab.type !== 'warm-up' && guardDesktop(lab.slug)) return;
+  const saved = learnPlace.get(lab.slug);
+  const entry = await loadLearnFor(lab, page);
+  if (entry === undefined) return;
+  if (!hasLearnScreen(lab, entry)) return beginLab(lab, page);
+  const point = resumePoint(entry, await saved);
+  if (!point) {
+    learnPlace.clear(lab.slug);
+    return openLearnFlow(lab, entry);
+  }
+  openLearnFlow(lab, entry, undefined, { saved: point });
 }
 
 /**
@@ -2083,13 +2185,15 @@ async function openWarmUp(lab, card) {
  * the profile again, and takes the learner to the lab's page (which now says Done) with the next lab named. A
  * failed POST says why and resolves false: the flow stays on its last step, and the button tries again.
  */
-async function finishWarmUp(lab, { started_at, games }) {
+async function finishWarmUp(lab, { started_at, games }, flowStore) {
   try {
     await api.completeWarmUp(lab.slug, { ...(started_at ? { started_at } : {}), games });
   } catch (err) {
     toast(`Could not finish the warm-up. ${plainError(err)}`, 'bad');
     return false;
   }
+  // Done: there is nothing to continue (the API forgets the saved place too).
+  flowStore?.finish();
   // The card says Done once the catalogue is read again; the profile names the next lab.
   progress.invalidate();
   const area = skillForPlacement(lab.path, lab.module)?.id ?? null;
@@ -2108,10 +2212,16 @@ async function finishWarmUp(lab, { started_at, games }) {
  * /labs/x/questions, /labs/x/lessons?step=4 ...); from an address, the steps only correct it, and a
  * refresh picks up the plan and the answers this tab already had.
  */
-function openLearnFlow(lab, entry, initial, { fromRoute = false, n } = {}) {
+function openLearnFlow(lab, entry, initial, { fromRoute = false, n, saved, seed } = {}) {
   hideLearnScreen();
   showLearnScreen();
   learnFlowLab = lab.slug;
+  // The visit is kept in this tab (a refresh) and on the server (another tab, browser or device): learn-progress.js.
+  const flowStore = createProgressStore({ slug: lab.slug, version: entry.version, learn: entry.learn, remote: learnPlace });
+  // Continue where you left off: the saved visit becomes this one, on its step. An address with nothing kept in
+  // this tab (a link opened elsewhere) picks up the saved visit too, on the step the address names.
+  const from = saved ?? (seed && !flowStore.load() ? seed : null);
+  if (from) flowStore.seed(from.state);
   if (fromRoute) applying++;
   try {
     learnFlow = runBeforeYouBegin({
@@ -2120,15 +2230,22 @@ function openLearnFlow(lab, entry, initial, { fromRoute = false, n } = {}) {
       entry,
       store: mastery,
       post: (body) => api.postAnswers(body),
-      initial,
-      step: n,
-      resume: fromRoute,
+      initial: saved ? undefined : initial,
+      step: saved ? saved.at + 1 : n,
+      resume: fromRoute || Boolean(saved),
+      flowStore,
       onStep: (step, number) => onLabStep(lab.slug, step, number),
       // A warm-up has nothing to start: its last button records it (and nothing is prepared for it).
       warmUp: lab.type === 'warm-up',
-      onFinish: (games, { started_at }) => finishWarmUp(lab, { started_at, games }),
-      // The screen may have shrunk since Start was pressed: ask again before a container is claimed.
-      onStart: () => (guardDesktop(lab.slug) ? undefined : startSession(lab.slug)),
+      onFinish: (games, { started_at }) => finishWarmUp(lab, { started_at, games }, flowStore),
+      // The screen may have shrunk since Start was pressed: ask again before a container is claimed. Once the lab
+      // is up there is nothing left to continue, so the saved place goes.
+      onStart: async () => {
+        if (guardDesktop(lab.slug)) return undefined;
+        const started = await startSession(lab.slug);
+        if (started) flowStore.finish();
+        return started;
+      },
       // The container is warmed while the last steps are read, so Start is instant; a phone cannot run a lab, so it warms nothing.
       prepare: () => (isPhoneLike(readDevice()) ? undefined : api.prepareLab(lab.slug)),
       cancelPrepare: (opts) => api.cancelPrepare(lab.slug, opts),
