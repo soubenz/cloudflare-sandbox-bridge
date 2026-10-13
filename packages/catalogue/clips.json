@@ -9,17 +9,21 @@
     },
     {
       "id": "phone-alert-night",
-      "kind": "image",
-      "src": "/media/clips/phone-alert-night.webp",
+      "kind": "video",
+      "src": "/media/clips/phone-alert-night.mp4",
       "alt": "Night. Tomasz sits up in bed, tired, holding a phone that glows with a red alert.",
-      "seconds": 6
+      "seconds": 5,
+      "poster": "/media/clips/phone-alert-night.webp",
+      "loop": true
     },
     {
       "id": "asleep-night",
-      "kind": "image",
-      "src": "/media/clips/asleep-night.webp",
+      "kind": "video",
+      "src": "/media/clips/asleep-night.mp4",
       "alt": "The same bedroom at night. Tomasz is asleep and smiling; the phone on the bedside table stays dark.",
-      "seconds": 6
+      "seconds": 5,
+      "poster": "/media/clips/asleep-night.webp",
+      "loop": true
     },
     {
       "id": "maren-worried-laptop",
