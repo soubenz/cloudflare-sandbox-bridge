@@ -756,7 +756,7 @@
       "summary": "The support app asks the gateway for the alias support. The gateway reads its table, tries OpenAI, finds it down, sends the call to Anthropic with the key only it holds, passes the answer back to the app and writes one line in its log.",
       "nodes": [
         { "id": "app", "label": "Support app", "kind": "client", "x": 6, "y": 50 },
-        { "id": "gw", "label": "Gateway", "sub": "support: OpenAI, then Anthropic", "kind": "gateway", "x": 46, "y": 50 },
+        { "id": "gw", "label": "Gateway", "sub": "OpenAI, then Anthropic", "kind": "gateway", "x": 46, "y": 50 },
         { "id": "openai", "label": "OpenAI", "kind": "model", "x": 90, "y": 18 },
         { "id": "anthropic", "label": "Anthropic", "kind": "model", "x": 90, "y": 64 },
         { "id": "log", "label": "Log", "kind": "log", "x": 62, "y": 90 }
@@ -769,7 +769,7 @@
       ],
       "steps": [
         { "caption": "The support app sends its question with the alias support, not a model name and not a provider key.", "active": ["app"], "packets": [{ "edge": "app-gw", "label": "support", "tone": "default" }] },
-        { "caption": "The gateway looks support up in its table: OpenAI first, then Anthropic.", "active": ["gw"], "packets": [], "notes": [{ "node": "gw", "text": "OpenAI, then Anthropic", "tone": "ok" }] },
+        { "caption": "The gateway looks support up in its table: OpenAI first, then Anthropic.", "active": ["gw"], "packets": [], "notes": [{ "node": "gw", "text": "support found", "tone": "ok" }] },
         { "caption": "It tries OpenAI first. OpenAI is down and does not answer.", "active": ["gw", "openai"], "packets": [{ "edge": "gw-openai", "reverse": true, "label": "no answer", "tone": "bad" }], "notes": [{ "node": "openai", "text": "down", "tone": "bad" }] },
         { "caption": "The gateway sends the same call to Anthropic, with the Anthropic key that only it holds.", "active": ["gw", "anthropic"], "packets": [{ "edge": "gw-anthropic", "label": "call + key", "tone": "warn" }] },
         { "caption": "Anthropic answers, and the answer goes back to the support app. The customer never notices.", "active": ["anthropic", "gw", "app"], "packets": [{ "edge": "gw-anthropic", "reverse": true, "label": "answer", "tone": "ok" }, { "edge": "app-gw", "reverse": true, "label": "answer", "tone": "ok" }] },
