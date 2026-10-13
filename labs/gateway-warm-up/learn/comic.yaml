@@ -24,7 +24,7 @@ panels:
     sfx: { text: "TICK", cue: "three forty", sound: tick }
     voiceover: Another provider is working. But the first provider's name is written into the app's code, so at three forty Tomasz, an engineer on the platform team, is rewriting that code by hand.
     bubbles:
-      - { who: tomasz, text: "I've done good work at 3 a.m. That wasn't it.", cue: "by hand" }
+      - { who: tomasz, text: "I've done good work at three a.m. This isn't it.", cue: "by hand" }
     lines:
       - { text: "provider: provider-a", cue: "name is written" }
       - { text: "provider: provider-b   (edit this)", cue: "rewriting" }
@@ -36,17 +36,20 @@ panels:
     voiceover: Every app at Larkfield has its own provider and its own key. A key is the secret that proves who is paying. Whoever holds it can make calls, and the bill goes to its owner.
   - scene: clip
     clip: maren-worried-laptop
-    cast: [maren]
+    cast: [ollie, maren]
     shot: close
     caption: { text: "Tuesday, 10:05", cue: "Tuesday" }
     sfx: { text: "PING!", cue: "screenshot", sound: ping }
     voiceover: Tuesday, ten oh five. Someone shares a screenshot in the team chat to show off a good answer. In the corner of the picture is a provider key.
     bubbles:
-      - { who: maren, text: "Everybody liked the screenshot. Nobody noticed the key.", cue: "provider key" }
+      - { who: ollie, text: "Look at this answer! Best one yet.", cue: "show off" }
+      - { who: maren, text: "Ollie. Bottom corner. That's our provider key.", cue: "provider key" }
     lines:
       - { text: "team chat: 11 likes", cue: "show off" }
       - { text: "in the corner: key 4f9a-81c2-7d3e", cue: "In the corner" }
-  - scene: screen
+  - scene: desk
+    cast: [{ who: ollie, pose: typing }]
+    bg: sand
     caption: { text: "Friday evening to Monday morning", cue: "Friday evening" }
     voiceover: Friday evening, a research script gets an error and sends the same call again. It keeps sending it until Monday morning, and by then it has spent the whole month's budget.
     lines:
@@ -55,6 +58,8 @@ panels:
       - { text: "$ retry", cue: "keeps sending" }
       - { text: "error: try again", cue: "keeps sending" }
       - { text: "budget left: 0", cue: "whole month's budget" }
+    bubbles:
+      - { who: ollie, text: "In my defence, the error did say try again.", cue: "whole month's budget" }
   - scene: duo
     cast: [tomasz, maren]
     bg: lilac
@@ -62,26 +67,22 @@ panels:
     voiceover: Sunday. A provider renames one of its models. Three apps have the old name typed into their code, and all three stop working.
     bubbles:
       - { who: tomasz, text: "They renamed it. On a Sunday.", cue: "stop working" }
-  - scene: message
-    cast: [{ who: maren, pose: shrug }]
+  - scene: duo
+    cast: [graham, { who: maren, pose: shrug }]
     bg: mint
-    prop: envelope
     caption: { text: "End of the month", cue: "End of the month" }
-    sfx: { text: "INVOICE!", cue: "one invoice", sound: register }
     voiceover: End of the month, one invoice arrives, with one number on it. Finance asks which team spent it, and with which provider. Nobody can say.
     bubbles:
+      - { who: graham, text: "Which team spent this? And with whom?", cue: "Finance asks" }
       - { who: maren, text: "I've practised the shrug. It's very good now.", cue: "Nobody can say" }
-  - scene: desk
-    cast: [{ who: tomasz, mood: tired }]
+  - scene: duo
+    cast: [jess, { who: tomasz, mood: tired }]
     bg: sand
     caption: { text: "A better model", cue: "better model" }
     voiceover: Then a better model comes out, faster and cheaper. Nobody tries it, because trying it means changing every app that would use it.
     bubbles:
-      - { who: tomasz, text: "Maybe next quarter.", cue: "would use it" }
-    lines:
-      - { text: "new model: faster, cheaper", cue: "better model" }
-      - { text: "tried it: nobody", cue: "Nobody tries" }
-      - { text: "to try it: change every app", cue: "changing every app" }
+      - { who: jess, text: "It's faster AND cheaper! Can we try it today?", cue: "faster and cheaper" }
+      - { who: tomasz, text: "Sure. In every app. By hand.", cue: "would use it" }
   - scene: black
     captions:
       - { text: "A rewrite at three in the morning.", cue: "three in the morning" }
