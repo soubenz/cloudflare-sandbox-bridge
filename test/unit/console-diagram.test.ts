@@ -855,3 +855,155 @@ describe('renderDiagram: the player', () => {
     el.destroy();
   });
 });
+
+describe('renderDiagram with controls: false (the lessons)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('draws the picture and its short caption, with no buttons, step count or "Read as text"', () => {
+    const { doc } = fakeEnv();
+    const el = renderDiagram(sample, { document: doc, autoplay: false, controls: false });
+    expect(el.classSet.has('diagram-bare')).toBe(true);
+    for (const cls of ['diagram-controls', 'diagram-play', 'diagram-prev', 'diagram-next', 'diagram-restart', 'diagram-count', 'diagram-text', 'diagram-text-summary']) {
+      expect(byClass(el, cls), cls).toHaveLength(0);
+    }
+    expect(all(el).filter((e) => e.tag === 'button' || e.tag === 'details' || e.tag === 'summary')).toHaveLength(0);
+    expect(el.textContent).not.toMatch(/Read as text|Step \d+ of|Previous|Next|Restart|Pause|Play/);
+    // The step's caption still teaches, under the drawing; it is not a live region (the list says all of it).
+    const caption = one(el, 'diagram-caption');
+    expect(caption.textContent).toBe(sample.steps[0]!.caption);
+    expect(caption.getAttribute('aria-live')).toBeNull();
+    expect(caption.getAttribute('aria-hidden')).toBe('true');
+    expect(byClass(el, 'diagram-node')).toHaveLength(sample.nodes.length);
+    expect(el.getAttribute('role')).toBe('group');
+    expect(el.getAttribute('aria-label')).toBe(sample.title);
+  });
+
+  it('keeps every step caption, in order and with its detail, as a visually hidden list for screen readers', () => {
+    const { doc } = fakeEnv();
+    for (const d of DIAGRAMS) {
+      const el = renderDiagram(d, { document: doc, autoplay: false, controls: false });
+      const hidden = one(el, 'diagram-step-list');
+      expect(hidden.classSet.has('diagram-sr-only'), d.id).toBe(true);
+      expect(hidden.getAttribute('aria-hidden')).toBeNull();
+      expect(hidden.getAttribute('hidden')).toBeNull();
+      const items = byClass(hidden, 'diagram-step-caption');
+      expect(items, d.id).toHaveLength(d.steps.length);
+      items.forEach((li, i) => expect(one(li, 'diagram-step-text').textContent).toBe(d.steps[i]!.caption));
+    }
+    const el = renderDiagram(sample, { document: doc, autoplay: false, controls: false });
+    expect(byClass(el, 'diagram-step-detail')[0]!.textContent).toContain('model: support, Support app to Gateway');
+    // The list is part of the same group as the description screen readers already read.
+    expect(one(el, 'diagram-step-list').parent).toBe(el);
+  });
+
+  it('still has its buttons and text version by default, and with controls: true', () => {
+    const { doc } = fakeEnv();
+    for (const o of [{}, { controls: true }, { controls: undefined }]) {
+      const el = renderDiagram(sample, { document: doc, autoplay: false, ...o });
+      expect(el.classSet.has('diagram-bare')).toBe(false);
+      for (const cls of ['diagram-play', 'diagram-prev', 'diagram-next', 'diagram-restart', 'diagram-count', 'diagram-text']) expect(byClass(el, cls), cls).toHaveLength(1);
+      expect(byClass(el, 'diagram-step-list')).toHaveLength(0);
+    }
+  });
+
+  it('plays by itself while on screen: step by step, a pause at the end, then round again', () => {
+    vi.useFakeTimers();
+    const env = fakeEnv();
+    const el = renderDiagram(sample, { document: env.doc, controls: false });
+    expect(el.getAttribute('data-step')).toBe('0');
+    env.seen(true);
+    expect(el.classSet.has('is-playing')).toBe(true);
+    vi.advanceTimersByTime(3199);
+    expect(el.getAttribute('data-step')).toBe('0');
+    vi.advanceTimersByTime(2);
+    expect(el.getAttribute('data-step')).toBe('1');
+    expect(one(el, 'diagram-caption').textContent).toBe(sample.steps[1]!.caption);
+    vi.advanceTimersByTime(3200 * 2);
+    expect(el.getAttribute('data-step')).toBe('3');
+    // The last step is held for the loop pause on top of its own time, then it wraps and goes on.
+    vi.advanceTimersByTime(3200 + 2400 - 5);
+    expect(el.getAttribute('data-step')).toBe('3');
+    vi.advanceTimersByTime(10);
+    expect(el.getAttribute('data-step')).toBe('0');
+    vi.advanceTimersByTime(3300);
+    expect(el.getAttribute('data-step')).toBe('1');
+    el.destroy();
+  });
+
+  it('pauses when scrolled off screen and goes on when it is back, and a press or a key on it changes nothing', () => {
+    vi.useFakeTimers();
+    const env = fakeEnv();
+    const el = renderDiagram(sample, { document: env.doc, controls: false });
+    env.seen(true);
+    vi.advanceTimersByTime(3300);
+    expect(el.getAttribute('data-step')).toBe('1');
+    env.seen(false);
+    expect(el.classSet.has('is-playing')).toBe(false);
+    vi.advanceTimersByTime(30_000);
+    expect(el.getAttribute('data-step')).toBe('1');
+    env.seen(true);
+    expect(el.classSet.has('is-playing')).toBe(true);
+    // Nothing a hand does ends it for good (there is nothing to touch): it is not a "touched" player.
+    el.emit('pointerdown', { target: one(el, 'diagram-figure') });
+    el.emit('keydown', { target: one(el, 'diagram-figure') });
+    expect(el.classSet.has('is-playing')).toBe(true);
+    vi.advanceTimersByTime(3300);
+    expect(el.getAttribute('data-step')).toBe('2');
+    env.seen(false);
+    env.seen(true);
+    expect(el.classSet.has('is-playing')).toBe(true);
+    // A hidden tab stops the clock; coming back starts it again.
+    env.hide(true);
+    vi.advanceTimersByTime(30_000);
+    expect(el.getAttribute('data-step')).toBe('2');
+    env.hide(false);
+    vi.advanceTimersByTime(3300);
+    expect(el.getAttribute('data-step')).toBe('3');
+    el.destroy();
+    expect(env.observers[0]!.disconnected).toBe(true);
+  });
+
+  it('with reduced motion does not play: it rests on the last step, caption and list intact', () => {
+    vi.useFakeTimers();
+    const env = fakeEnv({ reduced: true });
+    const el = renderDiagram(sample, { document: env.doc, controls: false });
+    const last = sample.steps.length - 1;
+    expect(el.getAttribute('data-step')).toBe(String(last));
+    expect(one(el, 'diagram-caption').textContent).toBe(sample.steps[last]!.caption);
+    expect(el.classSet.has('is-reduced')).toBe(true);
+    env.seen(true);
+    expect(el.classSet.has('is-playing')).toBe(false);
+    vi.advanceTimersByTime(30_000);
+    expect(el.getAttribute('data-step')).toBe(String(last));
+    expect(byClass(one(el, 'diagram-step-list'), 'diagram-step-caption')).toHaveLength(sample.steps.length);
+    el.destroy();
+    // The option that forces reduced motion does the same as the media query.
+    const env2 = fakeEnv();
+    const forced = renderDiagram(sample, { document: env2.doc, controls: false, reducedMotion: true });
+    env2.seen(true);
+    expect(forced.getAttribute('data-step')).toBe(String(last));
+    expect(forced.classSet.has('is-playing')).toBe(false);
+    forced.destroy();
+    // A chosen start step is still respected.
+    const chosen = renderDiagram(sample, { document: env2.doc, controls: false, reducedMotion: true, startIndex: 1 });
+    expect(chosen.getAttribute('data-step')).toBe('1');
+    chosen.destroy();
+  });
+
+  it('with autoplay off it stays on its first step', () => {
+    vi.useFakeTimers();
+    const env = fakeEnv();
+    const el = renderDiagram(sample, { document: env.doc, controls: false, autoplay: false });
+    expect(env.observers).toHaveLength(0);
+    vi.advanceTimersByTime(30_000);
+    expect(el.getAttribute('data-step')).toBe('0');
+    el.destroy();
+  });
+
+  it('the lessons ask for it: the pager renders its diagrams without controls', () => {
+    const source = readFileSync(new URL('../../dashboard/src/learn-lessons.js', import.meta.url), 'utf8');
+    expect(source).toMatch(/diagramOptions:\s*\{\s*controls:\s*false\s*\}/);
+  });
+});

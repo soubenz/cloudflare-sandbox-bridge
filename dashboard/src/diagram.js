@@ -450,6 +450,14 @@ const f = (n) => Math.round(n * 100) / 100;
  *                  the media query decides, live
  *   stepMs, packetMs, loopPauseMs   timings, in milliseconds
  *   startIndex     the step shown first (default 0)
+ *   controls       true (default): Play/Pause, Previous, Next, "Step n of m", Restart and
+ *                  the "Read as text" disclosure. false: the picture and its short step
+ *                  caption only. It plays by itself while on screen (step after step,
+ *                  a pause at the end, then round again), stops when scrolled away or the
+ *                  tab is hidden, and with reduced motion rests on the last step (the one
+ *                  that has the whole story told) and its caption. Every step's caption is
+ *                  a visually hidden list for screen readers either way, and nothing a hand
+ *                  does stops it.
  * The returned element has destroy(), which stops the timer and removes every
  * listener and observer, plus play(), pause() and goTo(i) for callers.
  */
@@ -487,7 +495,8 @@ export function renderDiagram(diagram, opts = {}) {
   }
 
   // --- root ---------------------------------------------------------------
-  const root = html('div', 'diagram');
+  const bare = opts.controls === false;
+  const root = html('div', bare ? 'diagram diagram-bare' : 'diagram');
   root.setAttribute('role', 'group');
   root.setAttribute('aria-label', textOf(diagram.title));
   root.setAttribute('aria-describedby', `${uid}-summary`);
@@ -585,8 +594,13 @@ export function renderDiagram(diagram, opts = {}) {
 
   // --- caption and controls ----------------------------------------------
   const caption = html('p', 'diagram-caption');
-  caption.setAttribute('aria-live', 'polite');
-  caption.setAttribute('aria-atomic', 'true');
+  if (bare) {
+    // The list of every step below says it all; a caption changing every few seconds would only chatter.
+    caption.setAttribute('aria-hidden', 'true');
+  } else {
+    caption.setAttribute('aria-live', 'polite');
+    caption.setAttribute('aria-atomic', 'true');
+  }
 
   const button = (cls, glyph, label) => {
     const b = html('button', `diagram-btn ${cls}`);
@@ -614,8 +628,9 @@ export function renderDiagram(diagram, opts = {}) {
   controls.appendChild(restart.b);
 
   // --- the text version ---------------------------------------------------
-  const text = html('details', 'diagram-text');
-  text.appendChild(html('summary', 'diagram-text-summary', 'Read as text'));
+  // With controls it is a "Read as text" disclosure; without, a list only screen readers see.
+  const text = html(bare ? 'div' : 'details', bare ? 'diagram-step-list diagram-sr-only' : 'diagram-text');
+  if (!bare) text.appendChild(html('summary', 'diagram-text-summary', 'Read as text'));
   const list = html('ol', 'diagram-steps');
   for (let i = 0; i < total; i++) {
     const m = stepModel(diagram, i);
@@ -631,13 +646,16 @@ export function renderDiagram(diagram, opts = {}) {
   root.appendChild(summaryEl);
   root.appendChild(figure);
   root.appendChild(caption);
-  root.appendChild(controls);
+  if (!bare) root.appendChild(controls);
   root.appendChild(text);
 
   // --- state --------------------------------------------------------------
   const mq = win && typeof win.matchMedia === 'function' ? win.matchMedia('(prefers-reduced-motion: reduce)') : null;
   const reduced = () => (typeof opts.reducedMotion === 'boolean' ? opts.reducedMotion : Boolean(mq && mq.matches));
-  let index = total === 0 ? 0 : clamp(Math.trunc(num(opts.startIndex, 0)), 0, total - 1);
+  const lastStep = Math.max(0, total - 1);
+  // Without controls nobody can step through it, so with reduced motion it rests on the last step:
+  // the one that has the whole story told.
+  let index = total === 0 ? 0 : clamp(Math.trunc(num(opts.startIndex, bare && reduced() ? lastStep : 0)), 0, lastStep);
   let playing = false;
   /** Playing because it scrolled into view, not because someone pressed Play. */
   let auto = false;
@@ -851,20 +869,22 @@ export function renderDiagram(diagram, opts = {}) {
   // (The buttons handle themselves: stopping on their pointerdown or keydown
   // would let the click that follows start playback again.)
   const outsideButtons = (ev) => !(ev.target && typeof ev.target.closest === 'function' && ev.target.closest('.diagram-btn'));
-  on(root, 'pointerdown', (ev) => {
-    if (!outsideButtons(ev)) return;
-    if (auto) touch();
-    touched = true;
-  });
-  on(root, 'keydown', (ev) => {
-    if (!outsideButtons(ev)) return;
-    if (auto) touch();
-    touched = true;
-  });
-  on(text, 'toggle', () => {
-    if (auto) touch();
-    touched = true;
-  });
+  if (!bare) {
+    on(root, 'pointerdown', (ev) => {
+      if (!outsideButtons(ev)) return;
+      if (auto) touch();
+      touched = true;
+    });
+    on(root, 'keydown', (ev) => {
+      if (!outsideButtons(ev)) return;
+      if (auto) touch();
+      touched = true;
+    });
+    on(text, 'toggle', () => {
+      if (auto) touch();
+      touched = true;
+    });
+  }
 
   // Hidden tab: stop the clock, and pick it up again when it is back.
   if (doc.addEventListener) {
@@ -878,9 +898,13 @@ export function renderDiagram(diagram, opts = {}) {
   if (mq && typeof mq.addEventListener === 'function' && typeof opts.reducedMotion !== 'boolean') {
     on(mq, 'change', () => {
       if (reduced()) {
-        if (auto) setPlaying(false);
+        if (auto || bare) setPlaying(false);
+        if (bare) index = lastStep;
         draw(false);
+      } else if (bare && inView && !playing && !destroyed) {
+        setPlaying(true, true);
       }
+      syncReduced();
     });
   }
 
@@ -921,9 +945,13 @@ export function renderDiagram(diagram, opts = {}) {
     goTo(i);
   };
 
+  function syncReduced() {
+    root.classList.toggle('is-reduced', reduced());
+  }
+
   syncPlayButton();
   draw(false);
-  if (reduced()) root.classList.add('is-reduced');
+  syncReduced();
   return root;
 }
 
@@ -933,7 +961,7 @@ export function renderDiagram(diagram, opts = {}) {
  * `<script type="application/json" data-diagram-library>` blocks in the page,
  * which are data, not code, so a strict script-src policy allows them. A
  * placeholder may carry data-autoplay="false", data-step-ms, data-packet-ms,
- * data-reduced-motion="true|false" and data-start. A `[data-diagram-all]`
+ * data-reduced-motion="true|false", data-controls="false" and data-start. A `[data-diagram-all]`
  * container is filled with one non-autoplaying player per library diagram.
  */
 export function mountDiagrams(root = document, library = []) {
@@ -973,6 +1001,7 @@ export function mountDiagrams(root = document, library = []) {
     if (slot.dataset.packetMs) o.packetMs = Number(slot.dataset.packetMs);
     if (slot.dataset.reducedMotion) o.reducedMotion = slot.dataset.reducedMotion === 'true';
     if (slot.dataset.start) o.startIndex = Number(slot.dataset.start);
+    if (slot.dataset.controls === 'false') o.controls = false;
     const el = renderDiagram(d, o);
     slot.textContent = '';
     slot.appendChild(el);

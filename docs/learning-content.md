@@ -67,6 +67,7 @@ The pages are cut like this, so write with it in mind:
 - A part longer than about 120 words is cut further, between paragraphs and lists, into pages of even length. A paragraph is never cut, so a paragraph much over 120 words is a long page: split it.
 - A list is never cut. A paragraph ending in ":" (or a bold line on its own, such as `**Words this lab uses**`) stays on the page of what it introduces, unless together they are longer than a page.
 - A `::diagram[...]` or a fenced code block gets a page of its own, with the paragraph just before it as its introduction. So put one short paragraph that introduces the picture right above it, not a list.
+- In a lesson the diagram has no buttons: it plays by itself while it is on screen (step after step, a pause at the end, then round again), pauses when scrolled away, and with reduced motion rests on its last step. It keeps its short step caption under the drawing, so make each step's caption teach on its own; screen readers get every caption as a list.
 
 ### Foundation lesson
 

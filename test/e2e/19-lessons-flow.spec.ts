@@ -803,7 +803,7 @@ test.describe('the lessons screen', () => {
     await expect(card.locator('.lesson-dots')).toHaveAttribute('aria-hidden', 'true');
     await expect(card.locator('.lesson-position')).toHaveText(`Lesson 1 of ${full.concepts.length}`);
     // A page is short: no page of the real lesson is much over 120 words of text.
-    const words = async () => (await card.locator('.lesson-body > p, .lesson-body li').allInnerTexts()).join(' ').split(/\s+/).filter(Boolean).length;
+    const words = async () => (await card.locator('.lesson-body > p, .lesson-body > ul > li, .lesson-body > ol > li').allInnerTexts()).join(' ').split(/\s+/).filter(Boolean).length;
     expect(await words()).toBeLessThanOrEqual(140);
     // No Previous on the very first page; the step's own button waits for the last.
     await expect(page.locator('#btnLessonPrev')).toBeHidden();
@@ -1078,6 +1078,65 @@ const VARIANTS = [
   { name: 'dark-2000', theme: 'dark' as const, width: 2000, height: 1100 },
 ];
 
+test.describe('the action bar and the page', () => {
+  // The bar floats at the foot of the screen; a lesson page must end above it (a diagram is drawn smaller to fit),
+  // unless the page is so tall that the card's own top is already at the top of the screen.
+  const measure = (page: Page) =>
+    page.evaluate(async () => {
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect();
+      const bar = rect('#learnHost .learn-actions-sticky')!;
+      const body = rect('#learnHost .lesson-body');
+      const card = rect('#learnHost .lesson')!;
+      const scroller = rect('.learn-screen')!;
+      const dg = rect('#learnHost .lesson-body .diagram');
+      return {
+        position: getComputedStyle(document.querySelector('#learnHost .learn-actions-sticky')!).position,
+        barTop: bar.top,
+        bodyBottom: body ? body.bottom : null,
+        diagramBottom: dg ? dg.bottom : null,
+        diagramWidth: dg ? dg.width : null,
+        cardTop: card.top,
+        scrollerTop: scroller.top,
+        overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    });
+
+  for (const size of [
+    { width: 1440, height: 900 },
+    { width: 1280, height: 720 },
+    { width: 800, height: 700 },
+  ]) {
+    test(`at ${size.width}x${size.height} no lesson page sits under the sticky action bar`, async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await toLessons(page, BUILD, size);
+      let pages = 0;
+      let withDiagram = 0;
+      for (let guard = 0; guard < 80; guard++) {
+        if ((await host(page).locator('.lesson').getAttribute('data-state')) === 'expanded') {
+          const m = await measure(page);
+          expect(m.position, 'the bar is sticky from 761px').toBe('sticky');
+          pages++;
+          if (m.diagramBottom != null) withDiagram++;
+          const tall = m.cardTop <= m.scrollerTop + 20;
+          if (!tall) expect(m.bodyBottom!, `page ${pages}: the lesson ends above the bar`).toBeLessThanOrEqual(m.barTop);
+          if (m.diagramBottom != null && !tall) expect(m.diagramBottom, `page ${pages}: the diagram ends above the bar`).toBeLessThanOrEqual(m.barTop);
+        }
+        if (!(await page.locator('#btnLessonNext').isVisible())) break;
+        await page.locator('#btnLessonNext').click();
+      }
+      expect(pages).toBeGreaterThan(3);
+      expect(withDiagram).toBeGreaterThan(0);
+    });
+  }
+
+  test('a phone keeps the bar in the page, not over it', async ({ page }) => {
+    await toLessons(page, BUILD, { width: 1280, height: 800 });
+    await page.setViewportSize({ width: 375, height: 812 });
+    expect((await measure(page)).position).toBe('static');
+  });
+});
+
 test.describe('screenshots', () => {
   test.skip(process.env.FLOW_SHOTS === '0', 'FLOW_SHOTS=0');
 
@@ -1102,6 +1161,27 @@ test.describe('screenshots', () => {
       await shot('page-2');
       await finishLessons(page);
       await shot('last-page');
+    });
+  }
+
+  // The first page with a diagram, above the action bar: the diagram plays by itself (no buttons), or rests with the steps listed.
+  for (const v of [
+    { width: 1440, height: 900, motion: 'no-preference' as const },
+    { width: 1280, height: 720, motion: 'no-preference' as const },
+    { width: 1440, height: 900, motion: 'reduce' as const },
+    { width: 1280, height: 720, motion: 'reduce' as const },
+  ]) {
+    test(`a lesson diagram above the action bar, ${v.width}x${v.height}, ${v.motion}`, async ({ page }) => {
+      mkdirSync(SHOTS, { recursive: true });
+      await page.emulateMedia({ reducedMotion: v.motion });
+      await toLessons(page, BUILD, v);
+      for (let guard = 0; guard < 40 && (await host(page).locator('.lesson').getAttribute('data-state')) !== 'expanded'; guard++) await page.locator('#btnLessonNext').click();
+      const dg = host(page).locator('.lesson-body .diagram');
+      await expect(dg).toBeVisible();
+      await expect(dg.locator('button, details, summary')).toHaveCount(0);
+      if (v.motion === 'no-preference') await expect(dg).toHaveClass(/is-playing/);
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: join(SHOTS, `lesson-diagram-${v.width}x${v.height}-${v.motion}.png`) });
     });
   }
 

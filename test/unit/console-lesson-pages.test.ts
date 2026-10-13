@@ -183,3 +183,27 @@ describe('the lessons of every lab, paged', () => {
     }
   });
 });
+
+describe('the pager and its action bar (learn-lessons.js, learn.css)', () => {
+  const src = (file: string) => readFileSync(new URL(`../../dashboard/${file}`, import.meta.url), 'utf8');
+  const css = src('public/learn.css');
+
+  it('renders the lesson diagrams without controls: they play by themselves', () => {
+    expect(src('src/learn-lessons.js')).toMatch(/renderMarkdownNodes\(.*diagramOptions:\s*\{\s*controls:\s*false\s*\}/);
+  });
+
+  it('keeps the page clear of the sticky bar: a diagram fits above it, the screen scrolls clear of it, a phone un-sticks it', () => {
+    // The diagram is drawn within the height left above the bar, from 761px up.
+    expect(css).toMatch(/@media \(min-width: 761px\) \{\s*\.learn-wrap-lessons \.lesson-body \.diagram-svg \{ max-height: max\(12rem, calc\(100dvh - 32rem\)\); \}/);
+    // The screen keeps no dead padding under the bar and scrolls clear of it.
+    expect(css).toMatch(/\.learn-screen:has\(\.learn-wrap-lessons\) \{ padding-bottom: 16px; scroll-padding-bottom: 112px; \}/);
+    // On a phone the bar is in the page.
+    expect(css).toMatch(/@media \(max-width: 760px\) \{[^@]*\.learn-wrap-lessons \.learn-actions-sticky \{ position: static; \}/);
+  });
+
+  it('scrolls the card on past the bar when its body would end under it (a no-op where the bar is not sticky)', () => {
+    const js = src('src/learn-lessons.js');
+    expect(js).toContain("getComputedStyle(bar).position !== 'sticky'");
+    expect(js).toContain('requestAnimationFrame(reveal)');
+  });
+});

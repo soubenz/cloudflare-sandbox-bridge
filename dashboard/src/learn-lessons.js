@@ -276,7 +276,7 @@ export function buildLessons(host, { learn, store, onPlan, onProgress, only, off
       root.append(make('p', 'lesson-recap', concept.recap));
     } else {
       const body = make('div', 'lesson-body lesson-page');
-      const r = renderMarkdownNodes(pages(id)[page]?.blocks ?? [], { headingLevel: 3 });
+      const r = renderMarkdownNodes(pages(id)[page]?.blocks ?? [], { headingLevel: 3, diagramOptions: { controls: false } });
       for (const n of r.nodes) body.appendChild(n);
       markdown = r;
       if (dir) body.dataset.enter = dir;
@@ -292,6 +292,8 @@ export function buildLessons(host, { learn, store, onPlan, onProgress, only, off
     remember();
     report();
 
+    afterDraw();
+
     if (focus === 'toggle') toggle.focus();
     else if (focus === 'heading') {
       const target = pageHeading ?? title;
@@ -301,6 +303,28 @@ export function buildLessons(host, { learn, store, onPlan, onProgress, only, off
       if (typeof root.scrollIntoView === 'function' && root.getBoundingClientRect?.().top < 0) root.scrollIntoView({ block: 'start' });
     }
   }
+
+  /**
+   * Keeps the page clear of the sticky action bar. The page's own layout fits a diagram in the room above the
+   * bar (learn.css); what is left is where the card sits in the scroll: when its body would end under the bar,
+   * the screen scrolls on by as much as needed, never more than brings the card's top to the screen's top.
+   * (A phone's bar is not sticky: nothing to do.) Runs a frame after a draw, when the card is in the page.
+   */
+  let destroyed = false;
+  function reveal() {
+    if (destroyed || !host.isConnected || !card) return;
+    const bar = navBox.closest('.learn-actions-sticky');
+    const scroller = host.closest('.learn-screen');
+    const body = card.querySelector('.lesson-body');
+    if (!bar || !scroller || !body || getComputedStyle(bar).position !== 'sticky') return;
+    const excess = body.getBoundingClientRect().bottom - (bar.getBoundingClientRect().top - 16);
+    const room = card.getBoundingClientRect().top - (scroller.getBoundingClientRect().top + 16);
+    const by = Math.min(excess, room);
+    if (by >= 1) scroller.scrollTop += by;
+  }
+  const afterDraw = () => {
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(reveal);
+  };
 
   /** Says where the learner is now, on the next turn so the same words twice are still said. */
   const announce = (lessonChanged) => {
@@ -382,6 +406,7 @@ export function buildLessons(host, { learn, store, onPlan, onProgress, only, off
     next: () => turn(1),
     prev: () => turn(-1),
     destroy() {
+      destroyed = true;
       document.removeEventListener('keydown', onKey);
       markdown?.destroy();
       markdown = null;

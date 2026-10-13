@@ -355,8 +355,19 @@
 }
 /* A short page should not leave the action bar jumping up and down from one page to the next. */
 .learn-wrap-lessons .lesson[data-state="expanded"] { min-height: min(440px, 52vh); }
-/* A page turn brings the lesson's top into view below the console's floating header. */
-.learn-wrap-lessons .lesson { scroll-margin-top: 104px; }
+/* A page turn brings the lesson's top into view, just under the top of the screen. */
+.learn-wrap-lessons .lesson { scroll-margin-top: 16px; }
+/*
+ * Nothing of a page sits under the action bar. The bar floats 16px above the foot of the screen, so the
+ * screen keeps no padding of its own below it (the bar is the last thing in the page, in flow, at its end),
+ * and what the bar floats over is only ever the page scrolling past. A diagram is drawn to fit the room
+ * above the bar (the console's header, the card's head, the bar and the diagram's own caption take the
+ * rest of the screen), and the screen's scroll keeps clear of the bar for anything that scrolls into view.
+ */
+.learn-screen:has(.learn-wrap-lessons) { padding-bottom: 16px; scroll-padding-bottom: 112px; }
+@media (min-width: 761px) {
+  .learn-wrap-lessons .lesson-body .diagram-svg { max-height: max(12rem, calc(100dvh - 32rem)); }
+}
 @media (max-width: 760px) {
   .lesson-nav { flex: 1 1 100%; }
   .lesson-nav .btn { flex: 1 1 0; min-width: 0; }
@@ -364,6 +375,8 @@
   .learn-wrap-lessons .lesson[data-state="expanded"] { min-height: 0; }
   /* On a phone the bar, with its quiet buttons stacked, would cover half the page: it follows the page instead. */
   .learn-wrap-lessons .learn-actions-sticky { position: static; }
+  .learn-wrap-lessons .lesson { scroll-margin-top: 104px; }
+  .learn-screen:has(.learn-wrap-lessons) { padding-bottom: 40px; scroll-padding-bottom: 0; }
 }
 
 /* ---------- the desktop notice ---------- */
