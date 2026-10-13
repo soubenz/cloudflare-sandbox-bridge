@@ -10,7 +10,8 @@ You are writing a short educational motion-comic video for Opalix, a hands-on
 course on production AI engineering. The viewer is a working engineer who is
 new to this topic. Make them understand ONE idea, remember it, and want to
 try it. Write for the ear: this is narrated by a calm male voice (an
-articulate engineering professor), and the pictures are simple animated
+articulate engineering professor), the characters speak their own speech
+bubbles aloud in their own voices, and the pictures are simple animated
 panels.
 
 TOPIC: <one idea, in one sentence, e.g. "what an AI gateway is and why a team runs one">
@@ -52,18 +53,34 @@ PICTURES
   over it; concept panels stay diagrams.
 - What is on screen must be what the voice is talking about at that moment.
   Mark the word in the voiceover where each picture element should appear
-  (a cue), e.g. a screen line appears on "support", a bubble appears after
-  the sentence it reacts to.
+  (a cue), e.g. a screen line appears on "support". A bubble is spoken, so it
+  plays after the narrator's line, in its own time; it needs no cue.
 - Screen lines are short and literal: "support assistant: down".
 
 CHARACTERS AND HUMOUR
-- The cast is Larkfield's platform team: Maren (platform lead) and Tomasz
-  (engineer). Other people (Finance, Support) are mentioned, never drawn.
-- Humour lives only in speech bubbles, as text, never in the voice. One
-  bubble per panel at most, and it reacts to the sentence just spoken. A
-  bubble must make sense on its own; if it needs a setup the viewer did not
-  see, cut it.
-- The bubbles are dry and kind, never mocking the viewer.
+- The narrator stays calm and never jokes. The characters speak their
+  bubbles aloud, each in their own voice, right after the narrator's line
+  for that panel; the humour lives there and only there.
+- The cast is Larkfield's team (packages/catalogue/voices.json has their
+  voices):
+    Maren (platform lead): warm and direct; briefs you, keeps the team calm.
+    Tomasz (staff engineer): built most of it; dry, precise, knows every log.
+    Graham (head of engineering, the boss): asks the blunt question nobody
+      wants: who, how much, when is it fixed.
+    Ollie (engineer): well-meaning and eager; the one who makes the mistakes,
+      and owns up to them.
+    Jess (product manager): excitable; wants it shipped by Friday and asks
+      the customer's question.
+    Priya (head of Support): kind; speaks for the customers who are waiting.
+    You (the learner): may have a bubble, but is never voiced.
+  Finance (Jonas) and data protection (Anneke) are mentioned, never drawn.
+- A bubble is a spoken line: short, 90 characters or fewer recommended
+  (150 at most), and at most two per panel. It reacts to the sentence just
+  spoken and must make sense on its own; if it needs a setup the viewer did
+  not see, cut it. Write it the way that person talks (Graham's blunt
+  question, Ollie owning up, Jess's "can we still ship it?").
+- The bubbles are dry and kind, never mocking the viewer. A character never
+  repeats the narrator, and the narrator never repeats a bubble.
 
 HOOK (panel 1)
 - The first spoken sentence is under 12 words, no name, no term, no setup,
@@ -112,9 +129,11 @@ OUTPUT
 1. Title (3 to 6 words, names the idea or the incident, not the lab).
 2. A table with columns: # | ON SCREEN | VOICE | BUBBLE. Put cues in
    square brackets inside ON SCREEN, e.g. "[on 'support'] screen line: model: support".
+   Write each bubble as "Speaker: words" (e.g. "Ollie: That might be my test script.").
 3. If this is an opener: the quiz questions (one per problem), each with the
    two answer options and a one-line explanation.
 4. A 10-second read-aloud check: list any sentence over 240 characters, any
-   term used before it was explained, any joke in the voice track. Fix them
+   bubble over 90 characters, any panel with more than two bubbles, any term
+   used before it was explained, any joke in the voice track. Fix them
    before you hand the script in.
 ```

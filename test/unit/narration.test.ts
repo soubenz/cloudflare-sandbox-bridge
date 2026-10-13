@@ -8,13 +8,13 @@ const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const panel = (p: Record<string, unknown>) => ({ scene: 'desk', cast: [], prop: 'none', bubbles: [], ...p }) as any;
 
 describe('the storyteller is configured in one place', () => {
-  it('has one female narrator voice, no voice for anybody in the cast, and the three retired people marked', () => {
+  it('has one female narrator voice for Workers AI, no voice in the cast list (voices.json has them), and the two retired people marked', () => {
     expect(TTS_MODEL).toBe('@cf/deepgram/aura-2-en');
     expect(NARRATOR_VOICE).toBe('thalia');
     expect(CAST.every((c) => !('voice' in c))).toBe(true);
-    expect(ACTIVE_CAST_IDS).toEqual(['maren', 'tomasz', 'you']);
-    expect(RETIRED_CAST_IDS).toEqual(['priya', 'jonas', 'anneke']);
-    expect(CAST.map((c) => c.id)).toEqual(['maren', 'tomasz', 'priya', 'jonas', 'anneke', 'you']); // the art keeps every entry
+    expect(ACTIVE_CAST_IDS).toEqual(['maren', 'tomasz', 'graham', 'ollie', 'jess', 'priya', 'you']);
+    expect(RETIRED_CAST_IDS).toEqual(['jonas', 'anneke']);
+    expect(CAST.map((c) => c.id)).toEqual(['maren', 'tomasz', 'graham', 'ollie', 'jess', 'priya', 'jonas', 'anneke', 'you']); // the art keeps every entry
   });
 });
 

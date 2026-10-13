@@ -489,21 +489,25 @@ Old versions keep the bundle they were published with. Rolling `current` back
 ### Narration clips
 
 A comic can be narrated by one storyteller voice (`labs narrate`, see
-`docs/learning-content.md#narration-the-storyteller`). Each panel of the comic may carry a
-`voiceover` (plain single-line text, up to 240 characters); the narrator reads it, and nothing else
-(captions and speech bubbles are shown as text and never voiced). The bundle's `audio` is the index:
-`clips` maps a 16-hex key to `{ voice, text, seconds, bytes }` (at most 80 clips, each at most 400 KB and
-70 s; `text` up to 240 characters), and `lines` lists, in reading order, which clip reads which
+`docs/learning-content.md#narration-the-storyteller`), and the people in it can speak their bubbles in
+their own voices (`labs narrate --from-dir` with a manifest that names who speaks each clip). Each panel
+of the comic may carry a `voiceover` (plain single-line text, up to 240 characters); the narrator reads
+it. Captions are never voiced; a bubble is voiced only by its speaker, never the learner's. The bundle's `audio` is the index:
+`clips` maps a 16-hex key to `{ who?, voice, text, seconds, bytes }` (at most 80 clips, each at most 400 KB and
+70 s; `text` up to 240 characters; `who` is `narrator` or the speaker's cast id, absent on the single-voice
+shape), and `lines` lists, in reading order, which clip reads which
 panel's voiceover (`{ panel, kind: "voiceover", clip }`; `panel` counts across pages from 0; a panel with no
-voiceover has no line). `parseLearnBundle` cross-checks it against the comic with the same
+voiceover has no line) and, with the cast's voices, which clip speaks which bubble (`{ panel, kind: "bubble",
+bubble, clip }`, after its panel's voiceover). Once any bubble is voiced every bubble of a speaking person must
+be, in that person's one voice, or the bundle is `400 invalid_learn_bundle` ("voices some bubbles but not ..."). `parseLearnBundle` cross-checks it against the comic with the same
 `narrationLines` the CLI used (`src/labs/comic-kit.ts`): audio that is not word for word the comic's
 voiceovers, in the narrator voice, is `400 invalid_learn_bundle` ("out of date, run `labs narrate`").
 Narration stays optional, but a comic with a voiceover that carries audio must carry audio of this shape: the older shape (`kind` `caption` or `bubble`,
 several voices) still parses, and is accepted only for a comic that has no voiceover at all (a lab not yet
 rewritten); with a voiceover in the comic it is refused as out of date. A console plays only the new shape and
 plays any other, or any mismatch, silent. A comic with a voiceover is also held to the storyteller
-contract by the same check: only `maren`, `tomasz` and `you` in `cast` or as a bubble speaker (the
-retired `priya`, `jonas` and `anneke` still parse but are refused), and at most 9 panels in all.
+contract by the same check: only `maren`, `tomasz`, `graham`, `ollie`, `jess`, `priya` and `you` in `cast`
+or as a bubble speaker (the retired `jonas` and `anneke` still parse but are refused), and at most 12 panels in all.
 
 The clips themselves are `audio` parts of `POST /labs/publish` (content type `audio/mpeg`, file
 name `<key>.mp3`). The Worker rejects the publish with `400 invalid_audio`, storing nothing, unless every

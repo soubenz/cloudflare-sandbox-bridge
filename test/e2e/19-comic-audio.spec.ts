@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { test as base, expect, type Locator, type Page, type Route } from '@playwright/test';
 import { serveConsole } from './console-server';
 import { MODULE_PAGE, pressStart } from './browse';
-import { MULTI as MULTI_COMIC, SINGLE, bundleOf, narrationOf, oldShapeNarrationOf, type FixtureAudio, type FixtureBundle } from './comic-fixture';
+import { CAST_COMIC, MULTI as MULTI_COMIC, SINGLE, bundleOf, castNarrationOf, narrationOf, oldShapeNarrationOf, type FixtureAudio, type FixtureBundle } from './comic-fixture';
 
 /**
  * The motion comic's storyteller in the console: a lab whose comic is narrated (one voiceover clip per
@@ -46,6 +46,9 @@ const MULTI = 'follow-one-request-through-the-stack';
 const SILENT = 'see-how-requests-are-routed';
 const OLD_SHAPE = 'prove-where-one-requests-data-went';
 const MISMATCH = 'see-why-a-document-matched';
+/** The characters speak their bubbles: a narration with the cast's voices, and one that voices only some bubbles. */
+const CAST = 'hear-the-team-speak';
+const HALF_VOICED = 'hear-half-the-team';
 const audio = narrationOf(SINGLE);
 const multiAudio = narrationOf(MULTI_COMIC);
 const bundle = bundleOf(SINGLE, audio);
@@ -54,7 +57,17 @@ const oldShape = oldShapeNarrationOf(SINGLE);
 /** Narration of other words than the comic's: a voice must never say what the panel does not. */
 const wrongWords: FixtureAudio = structuredClone(audio);
 wrongWords.clips[wrongWords.lines[1]!.clip]!.text = 'Some other words entirely.';
+const castAudio = castNarrationOf(CAST_COMIC);
+/** Jess's bubble has no clip: a comic must never be half voiced, so the console plays it silent, whole. */
+const halfVoiced: FixtureAudio = structuredClone(castAudio);
+{
+  const i = halfVoiced.lines.findIndex((l) => l.kind === 'bubble' && l.panel === 1 && l.bubble === 1);
+  delete halfVoiced.clips[halfVoiced.lines[i]!.clip];
+  halfVoiced.lines.splice(i, 1);
+}
 const BUNDLES: Record<string, Bundle> = {
+  [CAST]: bundleOf(CAST_COMIC, castAudio),
+  [HALF_VOICED]: bundleOf(CAST_COMIC, halfVoiced),
   [VOICED]: bundle,
   [MULTI]: bundleOf(MULTI_COMIC, multiAudio),
   [SILENT]: bundleOf(SINGLE),
@@ -62,7 +75,7 @@ const BUNDLES: Record<string, Bundle> = {
   [MISMATCH]: bundleOf(SINGLE, wrongWords),
 };
 /** The labs whose clips the audio route serves. */
-const NARRATED = new Set([VOICED, MULTI, OLD_SHAPE, MISMATCH]);
+const NARRATED = new Set([VOICED, MULTI, OLD_SHAPE, MISMATCH, CAST, HALF_VOICED]);
 
 const lab = (o: Record<string, unknown>): Record<string, any> => ({
   version: '1.0.0',
@@ -87,6 +100,8 @@ const LABS = [
   lab({ slug: SILENT, title: 'See how requests are routed', order: 3 }),
   lab({ slug: OLD_SHAPE, title: 'Prove where one request data went', order: 4 }),
   lab({ slug: MISMATCH, title: 'See why a document matched', order: 5 }),
+  lab({ slug: CAST, title: 'Hear the team speak', order: 6 }),
+  lab({ slug: HALF_VOICED, title: 'Hear half the team', order: 7 }),
 ];
 
 // ------------------------------------------------------------- a fake console
@@ -165,8 +180,10 @@ const test = base.extend<object, { staticServer: string }>({
 
 interface Clip {
   key: string;
-  kind: 'voiceover';
-  bubble: null;
+  kind: 'voiceover' | 'bubble';
+  bubble: number | null;
+  /** `narrator`, or the speaker of a bubble clip. */
+  who: string;
   panel: number;
   start: number;
   end: number;
@@ -732,4 +749,73 @@ test.describe('a narrated comic of several pages', () => {
       expect(s.errors).toEqual([]);
     });
   }
+});
+
+test.describe('the characters speak their bubbles (the cast\'s voices)', () => {
+  test('lists every clip with who speaks it: the storyteller, then each spoken bubble, one after another', async ({ page }) => {
+    const s = await beforeYouBegin(page, CAST);
+    const list = await clips(page);
+    expect(list.map((c) => `${c.panel}:${c.who}`)).toEqual(['1:narrator', '1:graham', '2:narrator', '2:ollie', '2:jess', '3:narrator', '3:priya', '4:narrator', '4:maren', '5:narrator']);
+    expect(list.filter((c) => c.kind === 'bubble').map((c) => c.bubble)).toEqual([0, 0, 1, 0, 0]);
+    for (const c of list) expect(c.url).toBe(`/api/audio/${CAST}/${c.key}.mp3`);
+    for (let i = 1; i < list.length; i++) {
+      expect(list[i]!.start).toBeGreaterThan(list[i - 1]!.end);
+      if (list[i]!.panel === list[i - 1]!.panel) expect(list[i]!.start).toBeCloseTo(list[i - 1]!.end + 0.35, 6);
+    }
+    await expect(soundBtn(page)).toHaveAccessibleName('Sound on');
+    expect(s.errors).toEqual([]);
+  });
+
+  test('a bubble pops and types when its clip starts, its speaker talks while it plays, and the voice is the one sounding', async ({ page }) => {
+    await beforeYouBegin(page, CAST);
+    const list = await clips(page);
+    const jess = list.find((c) => c.who === 'jess')!;
+    const ollie = list.find((c) => c.who === 'ollie')!;
+    const panel = page.locator(`#learnHost .cm-pane[data-panel="${jess.panel}"]`);
+    // Before Ollie's clip, neither bubble of the duo is up; during it, Ollie's types and Ollie talks; Jess waits.
+    await at(page, ollie.start - 0.05);
+    await expect(panel.locator('.cm-bub').nth(0)).not.toHaveClass(/\bon\b/);
+    await at(page, (ollie.start + ollie.end) / 2);
+    expect((await audioState(page)).current).toBe(ollie.key);
+    await expect(panel.locator('.cm-bub').nth(0)).toHaveClass(/\bon\b/);
+    expect(await bubbleWordsOn(panel, 0)).toBeGreaterThan(0);
+    await expect(panel.locator('.cm-char[data-cast="ollie"]')).toHaveClass(/speaking/);
+    await expect(panel.locator('.cm-bub').nth(1)).not.toHaveClass(/\bon\b/);
+    // Jess's bubble appears with her clip.
+    await at(page, jess.start + 0.3);
+    expect((await audioState(page)).current).toBe(jess.key);
+    await expect(panel.locator('.cm-bub').nth(1)).toHaveClass(/\bon\b/);
+    await expect(panel.locator('.cm-char[data-cast="jess"]')).toHaveClass(/speaking/);
+    await expect(panel.locator('.cm-char[data-cast="ollie"]')).not.toHaveClass(/speaking/);
+  });
+
+  test('sweeping the whole clock, one clip at most is sounding, every clip is played, and Skip stops the voice', async ({ page }) => {
+    const s = await beforeYouBegin(page, CAST);
+    const tl = await timeline(page);
+    const list = await clips(page);
+    for (let t = 0; t <= tl.total; t += 0.4) {
+      await at(page, t);
+      const want = list.find((c) => t >= c.start && t < c.end)?.key ?? null;
+      expect((await audioState(page)).current, `at ${t.toFixed(1)} s`).toBe(want);
+    }
+    const entries = await log(page);
+    neverTwoAtOnce(entries);
+    expect(new Set(entries.filter((e) => e.type === 'play').map((e) => e.key))).toEqual(new Set(list.map((c) => c.key)));
+    await replayBtn(page).click();
+    await at(page, list[1]!.start + 0.2);
+    expect((await audioState(page)).current).toBe(list[1]!.key);
+    await skipBtn(page).click();
+    await expect(cm(page)).toHaveAttribute('data-state', 'done');
+    expect((await audioState(page)).current).toBeNull();
+    expect(s.errors).toEqual([]);
+  });
+
+  test('a narration that voices only some bubbles plays the comic silent, whole: no Sound toggle, nothing scheduled or fetched', async ({ page }) => {
+    const s = await beforeYouBegin(page, HALF_VOICED);
+    await expect(page.locator('#learnHost .cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip']);
+    expect(await clips(page)).toEqual([]);
+    await at(page, 6);
+    expect(s.clipRequests).toEqual([]);
+    expect(s.errors).toEqual([]);
+  });
 });

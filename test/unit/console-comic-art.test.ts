@@ -32,7 +32,7 @@ const panelFor = (scene: string, over: Partial<Panel> = {}): Panel => ({ scene, 
 
 describe('the cast', () => {
   it('draws every person in the story bible, and the learner', () => {
-    expect(CAST.map((c) => c.id)).toEqual(['maren', 'tomasz', 'priya', 'jonas', 'anneke', 'you']);
+    expect(CAST.map((c) => c.id)).toEqual(['maren', 'tomasz', 'graham', 'ollie', 'jess', 'priya', 'jonas', 'anneke', 'you']);
     for (const c of CAST) {
       const svg = A.bust(c.id, 10, 20, 120);
       expect(svg, c.id).toContain(`data-cast="${c.id}"`);
@@ -56,12 +56,38 @@ describe('the cast', () => {
     expect(drawn.get('tomasz')).toContain('<circle cx="46" cy="58" r="10"'); // round glasses
     expect(drawn.get('tomasz')).not.toContain('<rect x="33" y="50"');
     // the shirts differ, so a person is known by colour across the page
-    const shirts = new Set(['maren', 'tomasz', 'priya', 'jonas', 'anneke'].map((id) => /M8 130c2-30 22-42 52-42s50 12 52 42z" fill="(#[0-9a-f]{6})"/.exec(drawn.get(id)!)![1]));
-    expect(shirts.size).toBe(5);
+    const faces = ['maren', 'tomasz', 'graham', 'ollie', 'jess', 'priya', 'jonas', 'anneke'];
+    const shirts = new Set(faces.map((id) => /M8 130c2-30 22-42 52-42s50 12 52 42z" fill="(#[0-9a-f]{6})"/.exec(drawn.get(id)!)![1]));
+    expect(shirts.size).toBe(faces.length);
     // everybody blinks and talks: eyes and mouth carry the classes comic.css animates (the learner has no face)
-    for (const id of ['maren', 'tomasz', 'priya', 'jonas', 'anneke']) {
+    for (const id of faces) {
       expect(drawn.get(id), id).toContain('class="cm-eye"');
       expect(drawn.get(id), id).toContain('class="cm-mouth"');
+    }
+  });
+
+  it('draws the new people so they are known at a glance: Graham, Ollie and Jess', () => {
+    const svg = (id: string) => A.bust(id, 0, 0, 120);
+    const shirt = (id: string) => /M8 130c2-30 22-42 52-42s50 12 52 42z" fill="(#[0-9a-f]{6})"/.exec(svg(id))![1];
+    // Graham: grey-silver short hair and a short beard (the same silver), a charcoal blazer over a white shirt and a tie
+    expect(shirt('graham')).toBe('#3e4462');
+    expect(svg('graham').match(/fill="#b3b9d1"/g)!.length).toBeGreaterThanOrEqual(2); // hair and beard
+    expect(svg('graham')).toContain('<path d="M57 96h6l1.5 14-4.5 5-4.5-5z" fill="#3552f2"'); // the tie
+    // Ollie: messy blond hair, a big grin, an orange hoodie with its strings, headphones round his neck
+    expect(shirt('ollie')).toBe('#f0a548');
+    expect(svg('ollie')).toContain('#e6bf62'); // blond
+    expect(svg('ollie')).toContain('<path class="cm-mouth" d="M46 70q15 18 30 0z"'); // the grin
+    expect(svg('ollie')).toContain('<rect x="27" y="78" width="13" height="17" rx="5" fill="#26305a"'); // an ear cup
+    // Jess: curly auburn hair in a high bun, a mustard cardigan, a lanyard with a badge
+    expect(shirt('jess')).toBe('#e6bf62');
+    expect(svg('jess')).toContain('<circle cx="60" cy="10" r="13" fill="#8f3f24"'); // the bun
+    expect(svg('jess')).toContain('stroke="#0e8577" stroke-width="4"'); // the lanyard
+    // Priya, back in the cast, keeps her headset; nobody else wears one
+    for (const id of ['graham', 'ollie', 'jess']) expect(svg(id), id).not.toContain('<circle cx="48" cy="92" r="5"');
+    // each draws in a scene too, with what the scene gives them
+    for (const id of ['graham', 'ollie', 'jess', 'priya']) {
+      expect(A.sceneArt(panelFor('portrait', { cast: [id] })).svg, id).toContain(`data-cast="${id}"`);
+      expect(A.sceneArt(panelFor('duo', { cast: [id, 'maren'] })).svg, id).toContain(`data-cast="${id}"`);
     }
   });
 

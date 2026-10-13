@@ -107,15 +107,30 @@ fields:
 
 ## The motion comic (optional): `learn/comic.yaml`
 
-The story can also be told as a motion comic that plays like a short audio story with pictures: a camera moves across a comic page and zooms into each panel as it pops in, **one storyteller** tells the story over it, speech bubbles type out on screen, and the learner sees Replay, Skip and a Sound toggle. The art is drawn by the console from code, so a comic is a few lines of data per panel, never an image. `learn/story.md` stays required: it is the fallback for screen readers, for a skipped comic and for older consoles.
+The story can also be told as a motion comic that plays like a short audio story with pictures: a camera moves across a comic page and zooms into each panel as it pops in, **one storyteller** tells the story over it, the people in the panels **speak their bubbles in their own voices** (when the lab's narration includes them) while the bubbles type out on screen, and the learner sees Replay, Skip and a Sound toggle. The art is drawn by the console from code, so a comic is a few lines of data per panel, never an image. `learn/story.md` stays required: it is the fallback for screen readers, for a skipped comic and for older consoles.
 
-### Who tells it
+### Who tells it, and who speaks
 
-The story is a team's, and Maren tells it.
+The story is a team's: a calm storyteller tells it, and the people in it speak their own lines.
 
-- **The storyteller is Maren**, the platform lead, speaking to you as a member of her team: first person, and "we", "our platform", "your team". She is warm and direct. Her words are the `voiceover` of each panel, and one voice (`thalia`, set once in `src/labs/comic-kit.ts` as `NARRATOR_VOICE`) reads all of them.
-- **Three people are drawn:** Maren, Tomasz (the engineer who built things) and You (the learner). Only `maren`, `tomasz` and `you` may appear in `cast` or as a bubble speaker.
-- **Finance (Jonas), Support (Priya) and data protection (Anneke) are retired from the cast.** They are never drawn and never speak. The story still has them: Maren mentions them in the voiceover ("Jonas in Finance asked us...") or a caption names them, and a `message` panel can show their note arriving while the voiceover says who it is from. `labs learn-check` refuses `priya`, `jonas` and `anneke` in `cast` or as a bubble speaker, with the message "retired: use maren, tomasz or you; mention them in the voiceover or caption instead". (The names still parse so that a comic that has no voiceover yet keeps working until it is rewritten; see [Moving an old comic over](#moving-an-old-comic-over).)
+- **The storyteller** (the narrator) is not a character: the words are the `voiceover` of each panel, read by one voice. With Workers AI that is `thalia` (`NARRATOR_VOICE` in `src/labs/comic-kit.ts`); with the cast's voices it is the narrator of `packages/catalogue/voices.json` (Mark). The storyteller is calm, plain and never jokes (see `video-prompt.md`).
+- **The characters speak their bubbles.** Every bubble whose `who` has a voice in the cast is spoken aloud in that person's own voice when the lab's narration includes bubble clips (imported with a manifest that names who speaks each clip, see [Narration](#narration-the-storyteller)). The learner (`you`) is drawn and may have a bubble, but is never voiced; a bubble with no `who` is never voiced either. A narration without bubble clips (Workers AI, or an import of the voiceovers alone) keeps every bubble as text, exactly as before.
+- **The cast.** Only these may appear in `cast` or as a bubble speaker in a comic with a voiceover:
+
+| id | Who | Personality (one line) | Voice (`voices.json`, model `higgsfield/elevenlabs`) | Drawn as |
+| --- | --- | --- | --- | --- |
+| `maren` | Maren, platform lead | Warm and direct; briefs you and keeps the team calm. | Helena `3c2b83c0-2e0a-5ae8-998a-a5fe71b7eccd` | dark swept fringe, cobalt jacket |
+| `tomasz` | Tomasz, staff engineer | Built most of it; dry, precise, knows where every log lives. | Bram `549ff70a-3ee7-4f04-a4d9-89a24fab7709` | brown hair, round glasses, teal |
+| `graham` | Graham, head of engineering (the boss) | Asks the blunt question nobody wants: who, how much, and when is it fixed. | Sterling `dc382508-c8bd-443c-8cb2-46e57b8d2e6f` | grey-silver hair, short beard, charcoal blazer and tie, older |
+| `ollie` | Ollie, engineer | Well-meaning and eager; the one who makes the mistakes, and owns up. | John `6b528d43-c056-4a2f-9d82-1591a7ba13b0` | messy blond hair, big grin, orange hoodie, headphones round his neck |
+| `jess` | Jess, product manager | Excitable; wants it shipped by Friday, and asks the customer's question. | Gracie `09878754-f20b-5330-9790-58a8027ab5b2` | curly auburn hair in a high bun, mustard cardigan, lanyard |
+| `priya` | Priya, head of Support | Kind; speaks for the customers who are waiting. | Remy `b9c5c5db-4eb7-468a-a0b7-d06423af0335` | long dark hair, support headset, rose |
+| `you` | You, the learner | The new platform engineer; never voiced. | none | a plain dark silhouette |
+| (narrator) | The storyteller | Calm, plain, no jokes. | Mark `27c04473-84a9-4b60-a41f-c8e8458bd4f1` | not drawn |
+
+- **Finance (Jonas) and data protection (Anneke) are retired from the cast.** They are never drawn and never speak. The story still has them: the voiceover mentions them ("Jonas in Finance asked us...") or a caption names them, and a `message` panel can show their note arriving while the voiceover says who it is from. `labs learn-check` refuses `jonas` and `anneke` in `cast` or as a bubble speaker, with the message "retired: use maren, tomasz, graham, ollie, jess, priya or you; mention them in the voiceover or caption instead". (The names still parse so that a comic that has no voiceover yet keeps working until it is rewritten; see [Moving an old comic over](#moving-an-old-comic-over).) Priya is back in the cast.
+
+The voices live in one file, `packages/catalogue/voices.json`: `{ "model", "narrator": { "name", "voice" }, "cast": { "<id>": { "name", "voice" } } }`, one entry per speaking person (everybody above but `you`), every voice different (`src/labs/voices.ts` checks it). `name` is the voice's own name in that service, `voice` its id, which is stored with each clip and is part of the clip's key. Change a voice there and plan and import the lab again (`labs narrate --plan`, then `--from-dir`).
 
 ### The panel
 
@@ -123,7 +138,7 @@ The story is a team's, and Maren tells it.
 title: Which provider answered?
 panels:                         # one page; for several pages write `pages:` (below)
   - scene: desk                 # desk, message, portrait, screen, duo, you, black, diagram or clip
-    cast: [tomasz]              # who is drawn: maren, tomasz or you (none for screen and you scenes)
+    cast: [tomasz]              # who is drawn: maren, tomasz, graham, ollie, jess, priya or you (none for screen and you scenes)
     caption: Tuesday, a little after ten.
     voiceover: On Tuesday morning Jonas in Finance asked us a question that nobody on the team could answer.
     bubbles:
@@ -141,9 +156,9 @@ Each panel has up to four things to say, and they differ:
 
 | Field | What it is | How it is shown | Limits |
 | --- | --- | --- | --- |
-| `voiceover` | What the storyteller **says** over the panel. This is how the story is told. | **Spoken** by the one narrator voice (and part of "Read as text"). Not drawn on the panel. | Optional, plain single-line text, up to 240 characters |
+| `voiceover` | What the storyteller **says** over the panel. This is how the story is told. | **Spoken** by the one narrator voice, first on its panel (and part of "Read as text"). Not drawn on the panel. | Optional, plain single-line text, up to 240 characters |
 | `caption` | A short **label** on the picture: a time, a place, the call to action. | Fades in at the panel start. **Never spoken.** | Optional, up to 100 characters |
-| `bubbles` | A short quoted line of someone in the panel. | **Text only**, typed out word by word. **Never spoken.** At most two a panel. | `who` (maren, tomasz or you, in the panel's `cast`; optional), `text` up to 150 characters |
+| `bubbles` | A short line someone in the panel says. The humour lives here. | Typed out word by word, and **spoken in the speaker's own voice** when the narration includes bubble clips (after the voiceover, one after the other). The learner's bubble and one with no `who` are text only. At most two a panel. | `who` (one of the cast, in the panel's `cast`; optional), `text` up to 150 characters (90 or fewer recommended: it is spoken) |
 | `lines` / `sfx` | What a screen shows, one line per entry; a sound-effect word slammed onto the panel. | Typed on the screen; slammed in with a shake (and a [sting](#stings) with `sound`). Never spoken. | up to 6 lines of 44 characters; `sfx` up to 14 |
 
 More than one page:
@@ -159,7 +174,7 @@ pages:
 
 | Scene | Panel size | Cast | Needs |
 | --- | --- | --- | --- |
-| `desk` | wide (2 of 3 columns) | 1 (maren, tomasz or you) | optional `lines` for the screen |
+| `desk` | wide (2 of 3 columns) | 1 (any of the cast) | optional `lines` for the screen |
 | `message` | square (1 column) | 1 | optional `prop`, `sfx`; the sender is named in the voiceover |
 | `portrait` | square | 1 | optional `prop`, `sfx` |
 | `screen` | wide | none | `lines` (typed out one by one) |
@@ -169,13 +184,14 @@ pages:
 | `diagram` | wide | 0 or 1 | `diagram` (see [The diagram scene](#the-diagram-scene)) |
 | `clip` | wide | 0 to 2, not drawn (they name who speaks) | `clip` (see [The clip scene](#the-clip-scene)) |
 
-A `screen` or `you` scene draws nobody, so it needs no cast. A `message` scene still has one of the three in the room with the envelope: the person who wrote the note is spoken about in the voiceover (bubbles need a speaker who is in the cast).
+A `screen` or `you` scene draws nobody, so it needs no cast. A `message` scene still has one of the cast in the room with the envelope: the person who wrote the note is spoken about in the voiceover (bubbles need a speaker who is in the cast).
 
 ### Writing the voiceover
 
 Start from the writing prompt in `video-prompt.md`: it fixes the shape (an opener shows problems and ends by asking "is this normal?"; a closing introduces the answer and walks one example through it), the voice (plain, calm teaching sentences, every term explained on first use, no jokes in the voice track), and the picture rule (every panel is an ON SCREEN | VOICE | BUBBLE triple, concept panels are diagrams). The rules below are the format limits the prompt points to.
 
-- **A voice-over for the team.** The narrator is not a character: no "I", no name. "We" and "our" are fine ("our support assistant"); the drawn characters speak only in bubbles, which are never voiced.
+- **A voice-over for the team.** The narrator is not a character: no "I", no name. "We" and "our" are fine ("our support assistant"). The drawn characters speak only in bubbles, in their own voices; the narrator never jokes, the bubbles may.
+- **Bubbles are spoken lines.** Keep each to 90 characters or fewer (150 is the hard limit) and at most two a panel: each is a clip that plays after the voiceover, so a long one holds the panel up. Write them as people talk: Graham's blunt question, Ollie owning up, Jess's "can we still ship it?".
 - **Short and natural.** One or two sentences, about 35 words at most (the hard limit is 240 characters). One idea a panel; the next panel carries the next.
 - **Spell numbers and sizes** the way you would say them: "three in the morning", "four teams", "two hundred". No digits for amounts of money, counts or times that you want read out.
 - **No code, symbols or file names.** Say "the gateway log", not `gateway.log`; no slashes, underscores, backticks, `$` or `%`. Put the exact text on a screen `line` instead and let the voiceover say what it means.
@@ -188,9 +204,10 @@ A comic is **5 to 12 panels** and **one page**, unless the story really turns (a
 ### Rules `labs learn-check` enforces
 
 - 1 to 6 pages, 1 to 12 panels on a page, at least 4 panels in all, and **at most 12 in all once any panel has a `voiceover` or the comic uses a `black`, `diagram` or `clip` card**. Panels flow in reading order into rows of three columns (wide counts 2, square 1). Any count works: a wide panel that does not fit the rest of a row starts the next row, and a row that is not full sits in the middle of the page, so there is nothing to balance by hand.
-- A voiceover is at most 240 characters. Speakers must be in the panel's cast, and cast and speakers are only `maren`, `tomasz` and `you` (see above). At most two bubbles per panel, 150 characters each, plain text. Under 130 bubble words on a page and under 520 in all.
+- A voiceover is at most 240 characters. Speakers must be in the panel's cast, and cast and speakers are only `maren`, `tomasz`, `graham`, `ollie`, `jess`, `priya` and `you` (see above). At most two bubbles per panel, 150 characters each, plain text. Under 130 bubble words on a page and under 520 in all.
 - Every panel says something (a voiceover, a caption, a bubble or screen lines). `sfx` is for `message`, `portrait`, `desk` and `clip` panels. A `screen` or `you` panel needs `lines`.
 - Narration is optional: a comic with no `voiceover` anywhere is valid and plays without sound.
+- A narration that voices bubbles voices **all** of them: once any bubble clip is in `audio.json`, every bubble of a speaking person (anyone of the cast but `you`) needs its clip, in that person's one voice (not the narrator's), with the bubble's exact words. A missing one fails, naming it: `learn/audio.json voices some bubbles but not panel 2 bubble 2 of comic.yaml (Jess: "Can we still ship on Friday?"): ...`; a bubble whose words or speaker changed since is "out of date".
 
 Lines on a screen are coloured by how they start: `$` is a command, `200` or `ok` is green, `4xx`, `5xx` or `error` is orange or red. Use `?` where the lab wants the learner to find the value.
 
@@ -259,7 +276,7 @@ A cast entry is an id (`maren`) or `{ who, mood, pose }`: `mood` is `tired`, `wo
 ```yaml
   - scene: clip
     clip: night-office-still                 # an id of packages/catalogue/clips.json (required)
-    cast: [{ who: tomasz, mood: tired }]     # optional, 0 to 2 of maren, tomasz, you; NOT drawn, only bubble speakers
+    cast: [{ who: tomasz, mood: tired }]     # optional, 0 to 2 of the cast; NOT drawn, only bubble speakers
     voiceover: Late on Sunday Tomasz opened the gateway log, and one line told him which team it was.
     caption: { text: "Sunday, 23:47.", cue: "late on sunday" }
     bubbles: [{ who: tomasz, text: "There you are.", cue: "one line" }]
@@ -268,7 +285,7 @@ A cast entry is an id (`maren`) or `{ who, mood, pose }`: `mood` is `tired`, `wo
     shot: close
 ```
 
-- **Fields.** `clip` is required on a clip scene and refused on every other scene. `cast` (up to two of `maren`, `tomasz`, `you`, with `mood` and `pose` allowed) is never drawn: it is there so bubbles have speakers, and the retired people are refused even in a comic with no voiceover. `bubbles`, `caption`, `sfx` (with `sound` and `cue`), `lines` (a small screen card at the top right, typed like screen lines, coloured by how they start) and `shot: close | wide` all work and are timed by their cues as on any panel; a clip never changes a panel's length. `captions` and `title` stay black-card only, `diagram` and `steps` diagram only.
+- **Fields.** `clip` is required on a clip scene and refused on every other scene. `cast` (up to two of the cast, with `mood` and `pose` allowed) is never drawn: it is there so bubbles have speakers, and the retired people are refused even in a comic with no voiceover. `bubbles`, `caption`, `sfx` (with `sound` and `cue`), `lines` (a small screen card at the top right, typed like screen lines, coloured by how they start) and `shot: close | wide` all work and are timed by their cues as on any panel; a clip never changes a panel's length. `captions` and `title` stay black-card only, `diagram` and `steps` diagram only.
 - **The library.** `{ "clips": [ { "id", "kind": "video" | "image", "src", "poster"?, "alt", "seconds"?, "loop"?: true } ] }`. `id` is like a diagram's (lowercase letters, digits, hyphens, up to 40). `src` and `poster` are paths the console serves: `/media/clips/<file>` (a video `.mp4` or `.webm`; an image or poster `.webp`, `.png`, `.jpg`, `.jpeg` or `.avif`). `alt` (240 characters, plain) says what the clip shows; it is the clip's text in **Read as text**, read before the panel's caption, voiceover, bubbles and screen lines. `seconds` is the clip's length until the video knows its own. `loop: true` (videos only) loops it while its panel is on; without it the clip rests on its last frame when it ends. The library is checked by `src/labs/clip.ts`; `labs learn-check` fails an id that is not in it: `comic panel 3 (clip): clip "no-such-clip" is not in packages/catalogue/clips.json`.
 - **The files** live in `dashboard/public/media/clips/`, which the console Worker serves as static assets (`dashboard/wrangler.jsonc` `assets.directory` is `./public`) at `/media/clips/<file>`, behind the sign-in like every page. Keep a clip small: a few seconds, 720p or less, a few MB (Workers serves no single asset over 25 MiB; `test/unit/console-comic-clip.test.ts` checks every file exists, is tracked, is the type its name says and is under that limit). The CSP needs nothing more: `default-src 'self'` covers a video of the console's own origin, `img-src 'self'` a still.
 - **To add a clip:** generate it (a short, silent, loopable shot is best), export it small (an `.mp4` plus a `.webp` poster of its first frame, or a still `.webp`), put the files in `dashboard/public/media/clips/`, add an entry to `clips.json` with an `alt` that says what is seen, and reference its `id` from a panel. **Keep text out of the generated picture**: no captions, signs, screen text or logos. All words are overlaid by the player (they stay sharp, translatable, accessible and correct), and the picture is cropped to the panel (`object-fit: cover`), so keep what matters near the middle.
@@ -277,7 +294,7 @@ A cast entry is an id (`maren`) or `{ who, mood, pose }`: `mood` is `tired`, `wo
 
 ### Moving an old comic over
 
-The comic used to be read by several voices (a narrator for captions, each person for their bubbles). That contract is retired for new work but still validates, so a lab keeps working until it is rewritten: a comic with **no `voiceover`** keeps the old rules (any of the five people may be in it, up to 36 panels) and its old `learn/audio.json` is still accepted by `labs learn-check` and `labs publish`. The console does not play that old narration (it plays such a comic silent, with no Sound toggle). To move a lab over: write a `voiceover` on each panel in Maren's voice, drop the retired people from `cast` and the bubbles (mention them in the voiceover instead), then run `labs narrate`. As soon as one panel has a `voiceover`, the comic is held to the new rules and the old-shape `audio.json` is refused ("out of date ... run `labs narrate`"); `labs narrate` writes the new one and deletes the old clips.
+The comic used to be read by several voices (a narrator for captions, each person for their bubbles). That contract is retired for new work but still validates, so a lab keeps working until it is rewritten: a comic with **no `voiceover`** keeps the old rules (anybody of the cast list, the retired included, may be in it, up to 36 panels) and its old `learn/audio.json` is still accepted by `labs learn-check` and `labs publish`. The console does not play that old narration (it plays such a comic silent, with no Sound toggle). To move a lab over: write a `voiceover` on each panel (the storyteller's, see [Writing the voiceover](#writing-the-voiceover)), drop the retired people from `cast` and the bubbles (mention them in the voiceover instead), then run `labs narrate`. As soon as one panel has a `voiceover`, the comic is held to the new rules and the old-shape `audio.json` is refused ("out of date ... run `labs narrate`"); `labs narrate` writes the new one and deletes the old clips.
 
 ### How it plays
 
@@ -291,7 +308,7 @@ The console (`dashboard/src/comic.js`) lays the whole comic out as one reel (eve
 
 ### Narration (the storyteller)
 
-A comic can be read aloud by one voice. The voice is made once, by an author, with `labs narrate`, and committed; nothing calls a model when a lab is published or played.
+A comic can be read aloud: by the storyteller alone (Workers AI, `labs narrate`), or by the storyteller and the cast, each person speaking their own bubbles (clips made in any text-to-speech tool from `labs narrate --plan` and imported with `labs narrate --from-dir`). The voices are made once, by an author, and committed; nothing calls a model when a lab is published or played.
 
 ```
 export CLOUDFLARE_API_TOKEN=...      # a token that may run Workers AI; never commit it
@@ -301,25 +318,42 @@ npm run opalix -- labs narrate labs/<slug>                   # make it
 git add labs/<slug>/learn/audio.json labs/<slug>/learn/audio
 ```
 
-- **Who says what.** One storyteller reads the `voiceover` of every panel that has one, and nothing else: not a `caption`, not a `bubble` (bubbles are text only, whoever speaks them), not `lines` or `sfx`. A panel with no voiceover has no clip and is silent. The voice is set in one place, `src/labs/comic-kit.ts`: `NARRATOR_VOICE` (a Workers AI `@cf/deepgram/aura-2-en` speaker, `thalia`, a female voice) with `TTS_MODEL` for the model. Other female Aura-2 voices to try: `athena`, `luna`, `helena`, `andromeda`, `juno`, `vesta`. `narrationLines(comic)` there is the one definition of what is spoken.
-- **What it writes.** `learn/audio/<key>.mp3`, one file per distinct (model, voice, text), where `<key>` is the first 16 hex digits of the SHA-256 of `model\nvoice\ntext`; and `learn/audio.json`: `{ model, clips: { <key>: { voice, text, seconds, bytes } }, lines: [{ panel, kind: "voiceover", clip }] }`, where `lines` has one entry per voiced panel in reading order (`panel` counts across pages from 0). Identical words share a file.
+- **Who says what.** One storyteller reads the `voiceover` of every panel that has one; with the cast's voices each bubble of a speaking person is spoken too, in that person's voice (comic-kit `spokenLines`: per panel the voiceover, then the bubbles in order). Never a `caption`, `lines` or `sfx`, never the learner's bubble. Plain `labs narrate` (Workers AI) makes the voiceovers only: its bubbles stay text. The voice is set in one place, `src/labs/comic-kit.ts`: `NARRATOR_VOICE` (a Workers AI `@cf/deepgram/aura-2-en` speaker, `thalia`, a female voice) with `TTS_MODEL` for the model. Other female Aura-2 voices to try: `athena`, `luna`, `helena`, `andromeda`, `juno`, `vesta`. `narrationLines(comic)` there is the one definition of what is spoken.
+- **What it writes.** `learn/audio/<key>.mp3`, one file per distinct (model, voice, text), where `<key>` is the first 16 hex digits of the SHA-256 of `model\nvoice\ntext`; and `learn/audio.json`: `{ model, clips: { <key>: { who?, voice, text, seconds, bytes } }, lines: [{ panel, kind: "voiceover", clip }, { panel, kind: "bubble", bubble, clip }] }`, where `lines` has one entry per voiced panel in reading order (`panel` counts across pages from 0) and, with the cast's voices, one `bubble` line per spoken bubble after its panel's voiceover (`bubble` is 0 or 1). A clip's `who` is `narrator` or the speaker's id; the single-voice shape has no `who` (its clips are the narrator's) and stays valid. Identical words in the same voice share a file.
 - **When to run it again.** Whenever a `voiceover` changes, or the voice or the model is changed in comic-kit (changing the voice makes every clip anew). Changing a caption or a bubble needs no new narration. It only makes the clips that are missing (a second run with nothing changed makes no network call and rewrites nothing) and deletes the clips nothing uses any more. `labs learn-check` and `labs publish` refuse a lab whose `audio.json` no longer matches the comic's voiceovers word for word, or whose clip files are missing, and say to run `labs narrate`, so a voice can never say words the story does not have.
 - **Clips from another text-to-speech.** `labs narrate labs/<slug> --from-dir <clips> --model <id> --voice <id>` files clips made elsewhere (ElevenLabs, say) exactly as if `labs narrate` had made them, with no token and no network call. `<clips>` holds `01.mp3`, `02.mp3`, ... in voiceover order, and `closing/01.mp3`, ... for the closing; or a `manifest.json` (`{ "model", "voice", "clips": [{ "file", "text" }], "closing": [...] }`) that matches each file to its voiceover by its exact words and refuses words the comic does not have. Model and voice are stored as given (`"model": "elevenlabs/eleven_v4"`) and are part of each key, so reuse, orphan removal and the stale check work as above; a number of clips that is not the number of voiceovers is refused, and `--dry-run` lists file, panel and key. `labs learn-check` holds an imported narration to one voice throughout, and `labs publish` is unchanged. After a voiceover edit, import again. A plain `labs narrate` refuses a lab whose `audio.json` or `closing-audio.json` names a model other than Workers AI's (it would make every clip anew and remove the imported ones); delete those indexes, or pass `--replace`, to re-narrate it with Workers AI.
+- **The cast's voices: plan, make, import.** `labs narrate labs/<slug> --plan` prints (or with `--out <file>` writes) every line to make, as JSON, for the opener and the closing: per panel the voiceover (who `narrator`), then each bubble of a speaking person, once per distinct speaker and words, each with the file to save it as, the voice id and the voice's name from `packages/catalogue/voices.json`:
+
+  ```json
+  {
+    "lab": "labs/<slug>",
+    "model": "higgsfield/elevenlabs",
+    "voices": { "narrator": "27c0...", "maren": "3c2b...", "tomasz": "549f...", "graham": "dc38...", "ollie": "6b52...", "jess": "0987...", "priya": "b9c5..." },
+    "clips": [
+      { "file": "01-narrator.mp3", "who": "narrator", "name": "Mark", "voice": "27c0...", "panel": 1, "text": "On Monday the bill for the weekend reached our head of engineering." },
+      { "file": "02-graham.mp3", "who": "graham", "name": "Sterling", "voice": "dc38...", "panel": 1, "bubble": 1, "text": "Who signed off on this?" }
+    ],
+    "closing": [ { "file": "closing-01-narrator.mp3", "...": "..." } ]
+  }
+  ```
+
+  Generate each line in that voice with any text-to-speech tool, save it under its `file` in one folder, and save the plan there as `manifest.json`. Then `labs narrate labs/<slug> --from-dir <folder>` imports it. The manifest form that names who speaks is `{ "model"?, "voices"?, "clips": [{ "file", "text", "who" }], "closing"?: [...] }`: `who` is `narrator` or a cast id (no `who` means `narrator`); `voices` is `{ narrator, maren, ... }` and defaults to `voices.json` (whose model is then the default model too; for another model give both `model` and `voices`); `voice`, `name`, `panel` and `bubble` on a clip are what `--plan` writes and are ignored, except that a `voice` must be its speaker's. Clips are matched to the comic by **(who, words)**, not by order; a clip whose words are not that speaker's line, a speaking bubble with no clip, two speakers sharing a voice or a speaker with no voice are refused before anything is written. `--voice` (one voice for all) does not go with this form. The single-voice forms (`NN.mp3` with `--model` and `--voice`, or a manifest with `voice` and no `who`) work as before and voice no bubbles.
 - **Cost.** Workers AI bills text-to-speech by the character. A comic of 5 to 12 voiceovers of up to 240 characters is a few hundred to about three thousand characters, so a lab costs a cent or so; only changed voiceovers are paid for again. `--dry-run` prints the character count first. Each clip is limited to 400 KB and a lab to 80 clips.
 - **Where the files go.** `labs publish` uploads the clips beside the bundle (the bundle carries `audio.json` as `learn.audio`); the Worker validates them (names, sizes, MP3 content, exactly the set `audio` names) and stores them at `labs/{slug}/{version}/audio/<key>.mp3`. See [the API](api.md#narration-clips). The console plays them from `/api/audio/<slug>/<key>.mp3`.
+- **How it plays with the cast's voices.** On a panel with a bubble clip the clips play one after another, never two at once: the storyteller's first (0.6 s into the panel, as above), then each bubble in the panel's order, starting `TIMING.speakerGap` (**0.35 s**) after the clip before it ends (the first bubble 0.6 s in when the panel has no voiceover). A spoken bubble **pops and types when its clip starts**, its words typed over the clip (never slower than the reading pace), and its speaker's mouth moves while the clip plays; its `cue` is not used (keep cues for comics whose bubbles are text). A bubble nobody voices (the learner's) takes its turn in the same order, typed at the reading pace. The panel lasts until the last clip has ended plus the usual hold (2 s), or its reading time if that is longer. Pause, seek, Skip, Replay, the Sound toggle and the test seam work as for the voiceovers: `__comicClock.audio` lists every clip, bubble clips included, each with `kind` (`voiceover` or `bubble`), `bubble`, `who` (`narrator` or the speaker), `panel`, `start`, `end` and `url`. A narration with no bubble clips plays exactly as below.
 - **How it plays.** The storyteller runs on the comic's own clock (`dashboard/src/comic-timeline.js` and `comic-audio.js`). A voiced panel's clip starts **0.6 s into the panel**, once the picture has landed. The panel stays up for the larger of what it takes to read everything it shows and the clip's end plus the usual hold (`TIMING.hold`, 2 s), so no panel is ever cut before its clip ends, and the silence between one voiceover and the next is never less than `TIMING.breath` (0.5 s; in practice the hold plus the 0.6 s lead, so the storyteller pauses between panels like a person turning a page). The panel's bubbles appear as text and type out starting **0.8 s after the clip starts**, one after the other, at the reading pace (`TIMING.word`, 0.2 s a word), clamped so the last bubble is done by the clip's end plus one second; if there are more bubble words than fit, they type faster, never slower than the voice allows. The caption fades in at the panel start. Skip, Replay, a seek, a hidden tab, Sound off and leaving the screen stop the clip, and exactly one narrator clip plays at a time. A clip that cannot load is skipped in silence. A lab without narration plays exactly as before.
-- **If the narration cannot be trusted the console plays the comic silent, whole.** If the narration is not of the voiceovers in the comic (other words, a panel without a voiceover, a voiceover without a clip, or any line of the old caption-and-bubble shape), the console turns all of it off rather than play part of it: no sound, no Sound toggle, the ordinary silent schedule.
+- **If the narration cannot be trusted the console plays the comic silent, whole.** If the narration is not of the words in the comic (other words, a panel without a voiceover, a voiceover without a clip, a bubble clip whose speaker is not the bubble's, a comic whose bubbles are partly voiced, or any line of the old caption-and-bubble shape), the console turns all of it off rather than play part of it: no sound, no Sound toggle, the ordinary silent schedule.
 - **The Sound toggle** sits beside Replay and Skip, only on a narrated comic. It is named for its state (**Sound on** or **Sound off**), is pressed when on, is on by default and is remembered (`localStorage` `opalix.comicSound`).
 - **Autoplay.** The comic tries to start sound by itself. If the browser refuses (it wants a tap first), a small non-modal **Tap to turn the sound on** button appears in the frame; tapping it, or Replay, or the toggle, starts the clip where the clock is. With `prefers-reduced-motion: reduce` no audio plays by itself (the comic starts finished); Replay plays it hard-cut, with its audio.
 - **Always text too.** Captions, bubbles and "Read as text" (which includes the voiceovers) are all still there, so nothing depends on hearing.
 
-Tests drive the voice without sound: with `?comicTest=1` the player never calls `play()`, and `window.__comicClock.audio` lists the scheduled clips (key, start, end), `audioLog()` what it decided to play and stop, and `?comicAudio=blocked` makes play() refuse as a browser does (`test/e2e/19-comic-audio.spec.ts`, which carries its own small comic and narration in `test/e2e/comic-fixture.ts`). Stings are not synthesised in a test either: `__comicClock.stings` lists them (`{ panel, sound, at }`) and `audioLog()` has a `{ type: 'sting', sound, at }` entry for each one the player would have played. Clip videos are never played in a test (`__comicClock.clips`, `clipLog()`; see [The clip scene](#the-clip-scene)). `comic-fixture.ts` `V2` is a comic with one panel of each v2 feature, a clip panel among them.
+Tests drive the voice without sound: with `?comicTest=1` the player never calls `play()`, and `window.__comicClock.audio` lists the scheduled clips (key, kind, bubble, who, start, end), `audioLog()` what it decided to play and stop, and `?comicAudio=blocked` makes play() refuse as a browser does (`test/e2e/19-comic-audio.spec.ts`, which carries its own small comic and narration in `test/e2e/comic-fixture.ts`). Stings are not synthesised in a test either: `__comicClock.stings` lists them (`{ panel, sound, at }`) and `audioLog()` has a `{ type: 'sting', sound, at }` entry for each one the player would have played. Clip videos are never played in a test (`__comicClock.clips`, `clipLog()`; see [The clip scene](#the-clip-scene)). `comic-fixture.ts` `V2` is a comic with one panel of each v2 feature, a clip panel among them; `CAST_COMIC` with `castNarrationOf` is a comic of the new cast with the narration a manifest import writes (every speaking bubble voiced).
 
 ## Closing comic (optional): `learn/closing.md` and `learn/closing.yaml`
 
 A lab can end with a second story: what the case turned out to be. `closing.md` has the same front matter as `story.md` (`title`, `minutes`, a body), and `closing.yaml` is a comic of exactly the shape of `comic.yaml` and is held to the same rules (its problems are reported prefixed `closing:`). Both files are needed: `closing.yaml` without `closing.md` is an error, as is the reverse.
 
-`labs narrate` narrates the closing in the same run as the opener: its clips go into the same `learn/audio/` (same 16-hex keys, a line both comics say is one file) and its index into `learn/closing-audio.json`, the shape of `audio.json`. A clip either comic uses is kept. `labs learn-check` refuses a `closing-audio.json` that no longer matches `closing.yaml`, and the 80-clip limit counts both comics together. Commit `closing-audio.json` with `audio.json`.
+`labs narrate` (and `--plan`, and `--from-dir`) narrates the closing in the same run as the opener: its clips go into the same `learn/audio/` (same 16-hex keys, a line both comics say is one file) and its index into `learn/closing-audio.json`, the shape of `audio.json`. A clip either comic uses is kept. `labs learn-check` refuses a `closing-audio.json` that no longer matches `closing.yaml`, and the 80-clip limit counts both comics together. Commit `closing-audio.json` with `audio.json`.
 
 ## Games (optional): `learn/games.yaml`
 

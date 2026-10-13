@@ -1,0 +1,12 @@
+{
+  "model": "higgsfield/elevenlabs",
+  "narrator": { "name": "Mark", "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1" },
+  "cast": {
+    "maren": { "name": "Helena", "voice": "3c2b83c0-2e0a-5ae8-998a-a5fe71b7eccd" },
+    "tomasz": { "name": "Bram", "voice": "549ff70a-3ee7-4f04-a4d9-89a24fab7709" },
+    "graham": { "name": "Sterling", "voice": "dc382508-c8bd-443c-8cb2-46e57b8d2e6f" },
+    "ollie": { "name": "John", "voice": "6b528d43-c056-4a2f-9d82-1591a7ba13b0" },
+    "jess": { "name": "Gracie", "voice": "09878754-f20b-5330-9790-58a8027ab5b2" },
+    "priya": { "name": "Remy", "voice": "b9c5c5db-4eb7-468a-a0b7-d06423af0335" }
+  }
+}

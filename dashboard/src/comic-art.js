@@ -133,16 +133,28 @@ function kit(mood, pose) {
   };
 }
 
-const SKIN = { maren: '#f1c7a1', tomasz: '#e8b98f', jonas: '#f3d2b3', priya: '#c98f66', anneke: '#f6d9c0', you: '#4a5896' };
-const SHIRT = { maren: '#3552f2', tomasz: '#0e8577', jonas: '#f0a04b', priya: '#d02650', anneke: '#7c3aed', you: '#9aabff' };
+const SKIN = { maren: '#f1c7a1', tomasz: '#e8b98f', graham: '#e3b593', ollie: '#f6d3b5', jess: '#b97a55', jonas: '#f3d2b3', priya: '#c98f66', anneke: '#f6d9c0', you: '#4a5896' };
+const SHIRT = { maren: '#3552f2', tomasz: '#0e8577', graham: '#3e4462', ollie: '#f0a548', jess: '#e6bf62', jonas: '#f0a04b', priya: '#d02650', anneke: '#7c3aed', you: '#9aabff' };
+/** Hair: Graham's grey-silver (and his beard), Ollie's blond, Jess's auburn. */
+const SILVER = '#b3b9d1';
+const BLOND = '#e6bf62';
+const AUBURN = '#8f3f24';
+/** Headphones and headsets: the dark of the props. */
+const GEAR = '#26305a';
 
 /**
  * Each bust is drawn on a 120 by 130 board. What tells them apart at a glance:
  *   maren   dark swept fringe, cobalt jacket with a white collar        (platform lead)
  *   tomasz  short brown hair, round glasses, teal                        (staff engineer)
- *   jonas   grey hair, heavy brows, amber                                (finance)
+ *   graham  short grey-silver hair, a short beard, a charcoal blazer     (head of engineering, older)
+ *           over a white shirt and a cobalt tie, lines on the forehead
+ *   ollie   messy blond hair, a big grin, an orange hoodie with its      (engineer, the one who makes the mistakes)
+ *           strings, headphones round his neck
+ *   jess    curly auburn hair in a high bun, a mustard cardigan over a   (product manager)
+ *           white top, a teal lanyard with a badge
+ *   jonas   grey hair, heavy brows, amber                                (finance, retired)
  *   priya   long dark hair, a support headset with a microphone, rose    (head of support)
- *   anneke  blond bob, square glasses, violet, a lanyard with a badge    (data protection)
+ *   anneke  blond bob, square glasses, violet, a lanyard with a badge    (data protection, retired)
  *   you     a plain dark silhouette: the learner
  * `k` is kit(): with no mood and no pose every bust draws exactly as it always has.
  */
@@ -156,6 +168,49 @@ const BUSTS = {
     `<path d="M26 46c0-24 14-36 34-36s34 12 34 36c-8-10-16-14-34-14s-26 4-34 14z" fill="#5a3a22" ${line()} stroke-linejoin="round"/>` +
     `<circle cx="46" cy="58" r="10" fill="#fff" fill-opacity=".55" ${line(3.5)}/><circle cx="76" cy="58" r="10" fill="#fff" fill-opacity=".55" ${line(3.5)}/><path d="M56 58h10" ${line(3.5)}/>` +
     k.eyes(58, 3.5, 46, 76) + k.mouth(smile('M52 77c6 4 14 4 20-2'), 62, 78),
+  graham: (k) =>
+    k.body(SHIRT.graham) +
+    // a white shirt and a cobalt tie in the blazer's V, the lapels drawn over it
+    `<path d="M46 89l14 24 14-24z" fill="#fff" ${line(3)} stroke-linejoin="round"/>` +
+    `<path d="M57 96h6l1.5 14-4.5 5-4.5-5z" fill="#3552f2" ${line(2.5)} stroke-linejoin="round"/>` +
+    `<path d="M44 89l14 26M76 89l-14 26" fill="none" ${line(3)} stroke-linecap="round"/>` +
+    neck(SKIN.graham) + head(SKIN.graham) +
+    // short grey-silver hair, receding a little at the temples
+    `<path d="M27 50c-3-22 11-36 33-36s36 14 33 36c-3-8-7-13-12-15-10-4-32-4-42 0-5 2-9 7-12 15z" fill="${SILVER}" ${line()} stroke-linejoin="round"/>` +
+    // a short beard round the jaw, the mouth drawn on it
+    `<path d="M29 60c0 18 13 28 31 28s31-10 31-28c-5 7-10 10-15 10-5-3-27-3-32 0-5 0-10-3-15-10z" fill="${SILVER}" ${line(3)} stroke-linejoin="round"/>` +
+    // lines on the forehead: the oldest of the team
+    `<path d="M49 41h22M52 46h16" fill="none" ${line(2)} stroke-linecap="round" opacity=".45"/>` +
+    k.eyes(57) + k.brows(`<path d="M40 49l13-2M80 49l-13-2" ${line(4)} stroke-linecap="round"/>`) +
+    k.mouth(smile('M52 76c5 3 13 3 18 0'), 61, 77),
+  ollie: (k) =>
+    k.body(SHIRT.ollie) +
+    // the hoodie's hood lying round the neck, and its two strings
+    `<path d="M30 94c-3-10 3-18 12-20h36c9 2 15 10 12 20-8-5-18-7-30-7s-22 2-30 7z" fill="${SHIRT.ollie}" ${line(3.5)} stroke-linejoin="round"/>` +
+    `<path d="M53 98v16M67 98v16" stroke="#fff" stroke-width="3" stroke-linecap="round"/>` +
+    neck(SKIN.ollie) +
+    // headphones round his neck
+    `<path d="M36 84c0 13 10 20 24 20s24-7 24-20" fill="none" stroke="${GEAR}" stroke-width="5" stroke-linecap="round"/>` +
+    `<rect x="27" y="78" width="13" height="17" rx="5" fill="${GEAR}" ${line(3)}/><rect x="80" y="78" width="13" height="17" rx="5" fill="${GEAR}" ${line(3)}/>` +
+    head(SKIN.ollie) +
+    // messy blond hair, tufts every way
+    `<path d="M25 52c-5-14 0-28 12-35l3 7 5-12 5 9 7-11 5 10 8-8 3 10 9-5-1 10c8 6 11 16 8 27-5-9-12-15-22-17-4 5-9 7-15 6 2-3 2-6 1-8-9 2-21 8-28 17z" fill="${BLOND}" ${line()} stroke-linejoin="round"/>` +
+    k.eyes(57) + k.brows(`<path d="M41 47q7-4 13 0M68 47q7-4 13 0" fill="none" ${line(3.5)} stroke-linecap="round"/>`) +
+    // a big grin
+    k.mouth(`<path class="cm-mouth" d="M46 70q15 18 30 0z" fill="${INK}" ${line(3)} stroke-linejoin="round"/>`, 61, 76),
+  jess: (k) =>
+    // the high bun, behind the head
+    `<circle cx="60" cy="10" r="13" fill="${AUBURN}" ${line()}/><path d="M52 6a7 7 0 0 1 9-3M58 17a7 7 0 0 0 9-4" fill="none" ${line(2)} stroke-linecap="round"/>` +
+    k.body(SHIRT.jess) +
+    // a white top in the cardigan's V, a teal lanyard with a badge, the cardigan's buttons
+    `<path d="M46 89l14 24 14-24z" fill="#fff" ${line(3)} stroke-linejoin="round"/>` +
+    `<path d="M47 90l13 25 13-25" fill="none" stroke="#0e8577" stroke-width="4" stroke-linejoin="round"/><rect x="53" y="112" width="14" height="14" rx="3" fill="#fff" ${line(3)}/><path d="M56 117h8" stroke="#0e8577" stroke-width="2.5"/>` +
+    `<circle cx="80" cy="108" r="2.2" fill="${INK}"/><circle cx="83" cy="119" r="2.2" fill="${INK}"/>` +
+    neck(SKIN.jess) + head(SKIN.jess) +
+    // curly auburn hair pulled up: a scalloped hairline and a curl by each ear
+    `<path d="M26 52c-4-24 10-38 34-38s38 14 34 38a6 6 0 0 1-8-6a6 6 0 0 1-10-4a6 6 0 0 1-10-2a6 6 0 0 1-12 0a6 6 0 0 1-10 2a6 6 0 0 1-10 4a6 6 0 0 1-8 6z" fill="${AUBURN}" ${line()} stroke-linejoin="round"/>` +
+    `<circle cx="26" cy="60" r="6" fill="${AUBURN}" ${line(3)}/><circle cx="94" cy="60" r="6" fill="${AUBURN}" ${line(3)}/>` +
+    k.eyes(58) + k.mouth(smile('M50 75c6 7 16 7 22 0'), 61, 77),
   jonas: (k) =>
     k.body(SHIRT.jonas) + collar + neck(SKIN.jonas) + head(SKIN.jonas) +
     `<path d="M28 44c2-20 14-32 32-32s30 12 32 32c-6-8-12-12-32-12s-26 4-32 12z" fill="#9aa3c7" ${line()} stroke-linejoin="round"/>` +

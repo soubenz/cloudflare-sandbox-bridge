@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -9,7 +9,7 @@ import { OpalixClient } from '../client';
 import { fileURLToPath } from 'node:url';
 import { compileLearnDir } from '../learn-compile';
 import { learnAudioClips } from '../../../src/labs/learn';
-import { accountIdFrom, importNarration, narrateLab } from '../narrate';
+import { accountIdFrom, importNarration, narrateLab, narrationPlanFile, speakerName } from '../narrate';
 
 /**
  * The lint rules live in scripts/lint-labs.mjs (plain Node, also runnable as
@@ -199,14 +199,35 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
   labs
     .command('narrate <dir...>')
     .description(
-      "Give each lab's motion comic its storyteller voice: narrate the opener (learn/comic.yaml) and, when present, the closing comic (learn/closing.yaml): synthesise the panel voiceovers that have no clip yet into learn/audio/ and write learn/audio.json (and learn/closing-audio.json for the closing) (needs CLOUDFLARE_API_TOKEN; the files are committed, publishing never calls the model). With --from-dir, file clips made by another text-to-speech instead (no token, no network)"
+      "Give each lab's motion comic its voices: narrate the opener (learn/comic.yaml) and, when present, the closing comic (learn/closing.yaml): synthesise the panel voiceovers that have no clip yet into learn/audio/ and write learn/audio.json (and learn/closing-audio.json for the closing) (needs CLOUDFLARE_API_TOKEN; the files are committed, publishing never calls the model). With --from-dir, file clips made by another text-to-speech instead (no token, no network); a manifest.json there that names who speaks each clip imports the cast's voices too, so the characters speak their bubbles. With --plan, print the lines to make with the cast's voices (packages/catalogue/voices.json) as JSON"
     )
     .option('--dry-run', 'list what would be synthesised and how many characters it is, change nothing, call nothing')
-    .option('--from-dir <clipsDir>', 'import clips made elsewhere: NN.mp3 in voiceover order (closing/NN.mp3 for the closing), or a manifest.json matching each file to its words; one lab only')
+    .option('--from-dir <clipsDir>', 'import clips made elsewhere: NN.mp3 in voiceover order (closing/NN.mp3 for the closing), or a manifest.json matching each file to its words (and, with `who` on each clip, its speaker: the cast\'s voices); one lab only')
     .option('--model <id>', 'with --from-dir: the model that made the clips, stored as given (e.g. elevenlabs/eleven_v4)')
-    .option('--voice <id>', 'with --from-dir: the voice that made the clips, stored as given (e.g. an ElevenLabs voice id)')
+    .option('--voice <id>', 'with --from-dir: the voice that made the clips, stored as given (e.g. an ElevenLabs voice id); not with a manifest that names who speaks')
     .option('--replace', 'narrate with Workers AI a lab whose narration was imported (--from-dir): every clip is made anew and the imported ones removed')
-    .action(async (dirs: string[], opts: { dryRun?: boolean; fromDir?: string; model?: string; voice?: string; replace?: boolean }) => {
+    .option('--plan', 'print, as JSON, every line to make with the cast\'s voices (who, voice id, words; opener and closing): save the files it names beside it as manifest.json and import them with --from-dir; one lab only')
+    .option('--out <file>', 'with --plan: write the JSON to this file instead of printing it')
+    .action(async (dirs: string[], opts: { dryRun?: boolean; fromDir?: string; model?: string; voice?: string; replace?: boolean; plan?: boolean; out?: string }) => {
+      if (opts.out !== undefined && !opts.plan) throw new Error('--out goes with --plan');
+      if (opts.plan) {
+        if (opts.fromDir || opts.replace || opts.dryRun || opts.model !== undefined || opts.voice !== undefined) {
+          throw new Error('--plan only reads the lab: it takes no --from-dir, --replace, --dry-run, --model or --voice (the voices are packages/catalogue/voices.json)');
+        }
+        if (dirs.length !== 1) throw new Error('--plan plans one lab at a time');
+        const plan = narrationPlanFile(dirs[0]!);
+        const json = `${JSON.stringify(plan, null, 2)}\n`;
+        if (opts.out) {
+          writeFileSync(opts.out, json);
+          const all = [...plan.clips, ...(plan.closing ?? [])];
+          const by = new Map<string, number>();
+          for (const e of all) by.set(e.who, (by.get(e.who) ?? 0) + 1);
+          console.error(`${opts.out}: ${all.length} line${all.length === 1 ? '' : 's'} to make (${[...by].map(([who, n]) => `${speakerName(who)} ${n}`).join(', ')}) with ${plan.model}`);
+        } else {
+          process.stdout.write(json);
+        }
+        return;
+      }
       if (!opts.fromDir && (opts.model !== undefined || opts.voice !== undefined)) throw new Error('--model and --voice go with --from-dir; Workers AI narration uses the model and voice set in src/labs/comic-kit.ts');
       if (opts.fromDir && opts.replace) throw new Error('--replace is for Workers AI narration; --from-dir already replaces what the clips folder changes');
       if (opts.fromDir && dirs.length !== 1) throw new Error('--from-dir imports into one lab at a time');
@@ -230,7 +251,7 @@ export function registerLabsCommands(program: Command, getClient: () => OpalixCl
         made += r.made;
         const verb = opts.fromDir ? (opts.dryRun ? 'to copy' : 'copied') : opts.dryRun ? 'to make' : 'made';
         console.log(
-          `  ${r.lines} voiceover${r.lines === 1 ? '' : 's'}, ${r.clips} clip${r.clips === 1 ? '' : 's'}: ${r.made} ${verb}${opts.fromDir ? '' : ` (${r.characters} characters)`}, ${r.reused} reused, ${r.removed} ${opts.dryRun ? 'to remove' : 'removed'}` +
+          `  ${r.lines} spoken line${r.lines === 1 ? '' : 's'}, ${r.clips} clip${r.clips === 1 ? '' : 's'}: ${r.made} ${verb}${opts.fromDir ? '' : ` (${r.characters} characters)`}, ${r.reused} reused, ${r.removed} ${opts.dryRun ? 'to remove' : 'removed'}` +
             (opts.dryRun ? '' : `; ${r.seconds.toFixed(1)} s of audio, ${Math.round(r.bytes / 1024)} KB`)
         );
       }

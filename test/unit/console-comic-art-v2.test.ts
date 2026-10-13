@@ -50,7 +50,7 @@ describe('moods and poses', () => {
   });
 
   it('draws a plain entry exactly as before: an object without mood or pose, or an unknown one, is the id', () => {
-    for (const id of ['maren', 'tomasz', 'priya', 'jonas', 'anneke', 'you']) {
+    for (const id of ['maren', 'tomasz', 'graham', 'ollie', 'jess', 'priya', 'jonas', 'anneke', 'you']) {
       const plain = A.bust(id, 10, 20, 120, 'cm-tilt');
       expect(A.bust({ who: id }, 10, 20, 120, 'cm-tilt'), id).toBe(plain);
       expect(A.bust({ who: id, mood: 'angry', pose: 'dance' }, 10, 20, 120, 'cm-tilt'), id).toBe(plain);
@@ -60,7 +60,7 @@ describe('moods and poses', () => {
   });
 
   it('gives every mood its own face, which still blinks and talks', () => {
-    for (const id of ['maren', 'tomasz', 'priya', 'jonas', 'anneke']) {
+    for (const id of ['maren', 'tomasz', 'graham', 'ollie', 'jess', 'priya', 'jonas', 'anneke']) {
       const faces = new Set([A.bust(id, 0, 0, 120)]);
       for (const mood of A.MOODS) {
         const svg = A.bust({ who: id, mood }, 0, 0, 120);
@@ -84,7 +84,7 @@ describe('moods and poses', () => {
   });
 
   it('gives every pose its own hands, for anybody including the learner', () => {
-    for (const id of ['maren', 'you']) {
+    for (const id of ['maren', 'graham', 'ollie', 'jess', 'priya', 'you']) {
       const shapes = new Set([A.bust(id, 0, 0, 120)]);
       for (const pose of A.POSES) {
         const svg = A.bust({ who: id, pose }, 0, 0, 120);

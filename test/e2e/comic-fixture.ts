@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { NARRATOR_VOICE, TTS_MODEL, clipKey, narrationLines } from '../../src/labs/comic-kit';
+import { readFileSync } from 'node:fs';
+import { NARRATOR_VOICE, TTS_MODEL, clipKey, narrationLines, spokenLines } from '../../src/labs/comic-kit';
+
+/** packages/catalogue/voices.json, read from disk (the browser specs load this file outside any bundler). */
+const voiceCast = JSON.parse(readFileSync(new URL('../../packages/catalogue/voices.json', import.meta.url), 'utf8')) as {
+  model: string;
+  narrator: { name: string; voice: string };
+  cast: Record<string, { name: string; voice: string }>;
+};
 
 /**
  * The content of the comic specs (18-comic.spec.ts, 19-comic-audio.spec.ts): a small learn bundle and two
@@ -35,7 +43,7 @@ export interface FixtureComic {
 }
 export interface FixtureAudio {
   model: string;
-  clips: Record<string, { voice: string; text: string; seconds: number; bytes: number }>;
+  clips: Record<string, { who?: string; voice: string; text: string; seconds: number; bytes: number }>;
   lines: Array<{ panel: number; kind: string; bubble?: number; clip: string }>;
 }
 export interface FixtureBundle {
@@ -164,6 +172,45 @@ export function narrationOf(comic: FixtureComic, bytes = 1000): FixtureAudio {
     return { panel: l.panel, kind: l.kind, clip: key };
   });
   return { model: TTS_MODEL, clips, lines };
+}
+
+/**
+ * The cast comic (one page, five panels, every one voiced): the new people speak. Graham (the boss) asks, Ollie
+ * owns up and Jess wants to ship it anyway (a duo with two spoken bubbles), Priya speaks for support, and Maren
+ * hands over to You (whose bubble is never voiced).
+ */
+export const CAST_COMIC: FixtureComic = {
+  title: 'Who broke the weekend?',
+  pages: [
+    {
+      panels: [
+        panelOf({ scene: 'desk', cast: [{ who: 'graham', mood: 'worried' }], bg: 'ice', voiceover: 'On Monday the bill for the weekend reached our head of engineering.', bubbles: [{ who: 'graham', text: 'Who signed off on this?' }], lines: ['spend: x3'] }),
+        panelOf({ scene: 'duo', cast: ['ollie', { who: 'jess', mood: 'pleased' }], bg: 'lilac', voiceover: 'A test script had been calling the most expensive model all weekend.', bubbles: [{ who: 'ollie', text: 'That might be my test script.' }, { who: 'jess', text: 'Can we still ship on Friday?' }] }),
+        panelOf({ scene: 'portrait', cast: ['priya'], bg: 'rose', voiceover: 'Support had answered every customer, but slowly.', bubbles: [{ who: 'priya', text: 'Our customers waited. Let us be kind and fix it.' }] }),
+        panelOf({ scene: 'duo', cast: ['maren', 'you'], bg: 'mint', voiceover: 'So Maren asked you to find where the calls went.', bubbles: [{ who: 'maren', text: 'Have a look at the log.' }, { who: 'you', text: 'On it.' }] }),
+        panelOf({ scene: 'you', bg: 'navy', caption: 'Your turn.', voiceover: 'Now it is your turn.', lines: ['$ go'] }),
+      ],
+    },
+  ],
+};
+
+/** The voice of each speaker in packages/catalogue/voices.json: `{ narrator, maren, ... }`. */
+export const CAST_VOICES: Record<string, string> = { narrator: voiceCast.narrator.voice, ...Object.fromEntries(Object.entries(voiceCast.cast).map(([id, c]) => [id, c.voice])) };
+
+/**
+ * The narration `labs narrate --from-dir` writes from a manifest that names who speaks each clip: the voiceovers in the
+ * narrator's voice, then each bubble of a speaking person in that person's voice (packages/catalogue/voices.json), its
+ * clips carrying `who`. Made-up lengths as narrationOf.
+ */
+export function castNarrationOf(comic: FixtureComic, bytes = 1000): FixtureAudio {
+  const clips: FixtureAudio['clips'] = {};
+  const lines = spokenLines(comic as never).map((l) => {
+    const voice = CAST_VOICES[l.who]!;
+    const key = clipKey(voiceCast.model, voice, l.text, sha);
+    clips[key] = { who: l.who, voice, text: l.text, seconds: Math.round((1.2 + l.text.length / 14) * 100) / 100, bytes };
+    return { panel: l.panel, kind: l.kind, ...(l.bubble !== undefined ? { bubble: l.bubble } : {}), clip: key };
+  });
+  return { model: voiceCast.model, clips, lines };
 }
 
 /** The old narration shape (a clip per caption, one voice each, in `caption` and `bubble` lines): a console must play it silent. */

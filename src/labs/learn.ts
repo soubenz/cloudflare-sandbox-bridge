@@ -4,7 +4,7 @@ import { QUIZ_SKILLS } from '../skills';
 import { DIAGRAMS, KNOWN_DIAGRAMS, diagramRefs } from './diagram';
 import { KNOWN_CLIPS } from './clip';
 import { ComicSchema, allPanels, checkComic, type Comic } from './comic';
-import { NARRATOR_VOICE, TTS_MODEL, VOICEOVER_MAX, legacyNarrationLines, narrationLines, usesVoiceover } from './comic-kit';
+import { CAST, NARRATOR_ID, NARRATOR_VOICE, SPEAKING_CAST_IDS, TTS_MODEL, VOICEOVER_MAX, legacyNarrationLines, narrationLines, spokenLines, usesVoiceover } from './comic-kit';
 
 /**
  * The learning layer of a lab: a short story, one lesson per concept, quiz
@@ -307,9 +307,13 @@ export const VOICE_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$/;
  * (docs/api.md) and the console plays them from /api/audio/<slug>/<key>.mp3.
  *
  * `lines` has one entry per panel voiceover of the comic in reading order (comic-kit narrationLines):
- * `{ panel, kind: voiceover, clip }`. The older shape (`caption` and `bubble` lines, several
- * voices) still parses so that an old comic keeps its old narration until it is rewritten, but a comic
- * with any voiceover needs the new shape (checkLearnBundle), and the console plays only the new one.
+ * `{ panel, kind: voiceover, clip }`. A narration with the cast's voices (imported with a manifest that names
+ * who speaks each clip) also has one `{ panel, kind: bubble, bubble, clip }` per bubble of a speaking person
+ * (comic-kit spokenLines), each after its panel's voiceover; its clips carry `who` (`narrator` or the
+ * speaker's id) beside `voice`. A clip with no `who` is the narrator's (the single-voice shape, still read).
+ * The older shape (`caption` and `bubble` lines with no `who`, several voices) still parses so that an old
+ * comic keeps its old narration until it is rewritten, but a comic with any voiceover needs the new shape
+ * (checkLearnBundle), and the console plays only the new one.
  */
 export const AudioSchema = z
   .object({
@@ -318,6 +322,11 @@ export const AudioSchema = z
       .record(
         z.string().regex(CLIP_KEY),
         z.object({
+          /** Who speaks it: `narrator`, or a person of the speaking cast. Absent on the single-voice shape (the narrator's) and the old one. */
+          who: z
+            .string()
+            .refine((w) => w === NARRATOR_ID || SPEAKING_CAST_IDS.includes(w), `narrator or one of ${SPEAKING_CAST_IDS.join(', ')}`)
+            .optional(),
           voice: z.string().regex(VOICE_ID, 'a voice id: letters, digits and . _ : / - only'),
           text: plain(VOICEOVER_MAX),
           seconds: z.number().min(0.05).max(70),
@@ -330,7 +339,7 @@ export const AudioSchema = z
         z.object({
           panel: z.number().int().min(0).max(35),
           kind: z.enum(['voiceover', 'caption', 'bubble']),
-          /** Only the old `bubble` lines have one. */
+          /** Which bubble of the panel (a `bubble` line has one, a voiceover none). */
           bubble: z.number().int().min(0).max(1).optional(),
           clip: z.string().regex(CLIP_KEY),
         })
@@ -341,6 +350,7 @@ export const AudioSchema = z
     for (const l of a.lines) {
       if (!(l.clip in a.clips)) ctx.addIssue({ code: 'custom', message: `narration line for panel ${l.panel + 1} names clip ${l.clip}, which is not in clips` });
       if (l.kind === 'voiceover' && l.bubble !== undefined) ctx.addIssue({ code: 'custom', message: `narration line for panel ${l.panel + 1} is a voiceover and has no bubble number` });
+      if (l.kind === 'bubble' && l.bubble === undefined) ctx.addIssue({ code: 'custom', message: `narration line for panel ${l.panel + 1} is a bubble and needs its bubble number` });
     }
     const used = new Set(a.lines.map((l) => l.clip));
     for (const k of Object.keys(a.clips)) {
@@ -392,27 +402,30 @@ export function checkNarration(comic: Comic, audio: LearnAudio, label: { audio: 
   if (usesVoiceover(comic)) {
     // The voiceover contract: one clip per panel voiceover, all in the one narrator voice. Made by Workers AI
     // that is NARRATOR_VOICE; imported from another model (`labs narrate --from-dir`) it is the voice those
-    // clips were made in, the same for every line.
+    // clips were made in, the same for every line. A narration with the cast's voices adds the bubbles (checkBubbleClips).
+    const old = have.some((l) => l.kind === 'caption' || (l.kind === 'bubble' && !clipOf(l.clip)?.who));
+    const voiceovers = have.filter((l) => l.kind === 'voiceover');
     const want = narrationLines(comic);
-    const narrator = audio.model === TTS_MODEL ? NARRATOR_VOICE : (clipOf(have[0]?.clip ?? '')?.voice ?? NARRATOR_VOICE);
-    if (have.some((l) => l.kind !== 'voiceover')) {
+    const narrator = audio.model === TTS_MODEL ? NARRATOR_VOICE : (clipOf(voiceovers[0]?.clip ?? '')?.voice ?? NARRATOR_VOICE);
+    if (old) {
       stale('it is in the old caption-and-bubble format, and the comic is now told by a voiceover');
-    } else if (want.length !== have.length) {
-      stale(`the comic has ${want.length} voiceover${want.length === 1 ? '' : 's'}, the narration ${have.length}`);
+    } else if (want.length !== voiceovers.length) {
+      stale(`the comic has ${want.length} voiceover${want.length === 1 ? '' : 's'}, the narration ${voiceovers.length}`);
     } else {
       for (let i = 0; i < want.length; i++) {
         const w = want[i]!;
-        const h = have[i]!;
+        const h = voiceovers[i]!;
         const clip = clipOf(h.clip);
         if (w.panel !== h.panel) {
           stale(`voiceover ${i + 1} is not where the comic has it`);
           break;
         }
-        if (!clip || clip.text !== w.text || clip.voice !== narrator) {
+        if (!clip || clip.text !== w.text || clip.voice !== narrator || (clip.who !== undefined && clip.who !== NARRATOR_ID)) {
           stale(`panel ${w.panel + 1}: the voiceover or the narrator\x27s voice changed`);
           break;
         }
       }
+      if (have.some((l) => l.kind === 'bubble')) problems.push(...checkBubbleClips(comic, audio, label, narrator));
     }
   } else {
     // An older comic (no voiceover) keeps its older narration (caption and bubble lines) until it is rewritten.
@@ -434,6 +447,53 @@ export function checkNarration(comic: Comic, audio: LearnAudio, label: { audio: 
         }
       }
     }
+  }
+  return problems;
+}
+
+/**
+ * The bubbles of a narration with the cast's voices (it has `bubble` lines whose clips carry `who`): once any
+ * bubble is spoken, every bubble of a speaking person (comic-kit spokenLines) must be, in its speaker's own voice
+ * (one voice per person, not the narrator's), with the bubble's exact words. A comic must never be half voiced:
+ * a spoken bubble with no clip is named, panel and bubble.
+ */
+function checkBubbleClips(comic: Comic, audio: LearnAudio, label: { audio: string; comic: string }, narrator: string): string[] {
+  const problems: string[] = [];
+  const stale = (msg: string) => problems.push(`${label.audio} is out of date with ${label.comic} (${msg}); run \`labs narrate --from-dir\` on the lab again`);
+  const nameOf = (id: string) => CAST.find((c) => c.id === id)?.name ?? id;
+  const want = spokenLines(comic).filter((l) => l.kind === 'bubble');
+  const wanted = new Map(want.map((w) => [`${w.panel}:${w.bubble}`, w]));
+  const seen = new Set<string>();
+  const voiceOf = new Map<string, string>();
+  for (const h of audio.lines) {
+    if (h.kind !== 'bubble') continue;
+    const at = `panel ${h.panel + 1} bubble ${(h.bubble ?? 0) + 1}`;
+    const key = `${h.panel}:${h.bubble}`;
+    const w = wanted.get(key);
+    const clip = audio.clips[h.clip];
+    if (!w) {
+      stale(`${at}: the comic has no bubble there that a person speaks`);
+      continue;
+    }
+    if (seen.has(key)) {
+      stale(`${at} has two clips`);
+      continue;
+    }
+    seen.add(key);
+    if (!clip || clip.who !== w.who || clip.text !== w.text) {
+      stale(`${at}: the bubble\x27s words or its speaker changed`);
+      continue;
+    }
+    const before = voiceOf.get(w.who);
+    if (clip.voice === narrator) stale(`${at}: ${nameOf(w.who)} speaks in the narrator\x27s voice`);
+    else if (before !== undefined && before !== clip.voice) stale(`${at}: ${nameOf(w.who)} speaks in two voices (${before} and ${clip.voice})`);
+    else voiceOf.set(w.who, clip.voice);
+  }
+  for (const w of want) {
+    if (seen.has(`${w.panel}:${w.bubble}`)) continue;
+    problems.push(
+      `${label.audio} voices some bubbles but not panel ${w.panel + 1} bubble ${(w.bubble ?? 0) + 1} of ${label.comic} (${nameOf(w.who)}: "${w.text}"): once one bubble is spoken every bubble of ${SPEAKING_CAST_IDS.join(', ')} must be; import its clip with \`labs narrate --from-dir\``
+    );
   }
   return problems;
 }

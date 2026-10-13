@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { accountIdFrom, importNarration, importedIndexes, narrateLab, planNarration, sha256Hex } from '../../cli/src/narrate';
+import { execFileSync } from 'node:child_process';
+import { accountIdFrom, importNarration, importedIndexes, narrateLab, narrationPlanFile, planCastNarration, planNarration, sha256Hex } from '../../cli/src/narrate';
+import { VOICE_CAST, voicesOf } from '../../src/labs/voices';
 import { buildLearnUpload } from '../../cli/src/commands/labs';
 import { compileLearnDir, readComic } from '../../cli/src/learn-compile';
 import { AudioSchema } from '../../src/labs/learn';
@@ -276,10 +278,10 @@ describe('labs narrate and the contract', () => {
   });
 
   it('refuses a comic that uses a retired person, before any call', async () => {
-    const dir = lab(COMIC().replace('cast: [tomasz]', 'cast: [priya]').replace('who: tomasz', 'who: priya'));
+    const dir = lab(COMIC().replace('cast: [tomasz]', 'cast: [jonas]').replace('who: tomasz', 'who: jonas'));
     try {
       const s = stub();
-      await expect(narrateLab(dir, opts(s))).rejects.toThrow(/priya is retired: use maren, tomasz or you/);
+      await expect(narrateLab(dir, opts(s))).rejects.toThrow(/jonas is retired: use maren, tomasz, graham, ollie, jess, priya or you/);
       expect(s.calls).toHaveLength(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -712,6 +714,202 @@ describe('labs narrate --from-dir (clips made by another text-to-speech)', () =>
   });
 });
 
+// ---- the cast's voices: a manifest that names who speaks each clip, and `labs narrate --plan` --------------
+
+const CAST_V = voicesOf();
+const castKey = (who: string, text: string, model = VOICE_CAST.model, voices: Record<string, string> = CAST_V) => clipKey(model, voices[who]!, text, sha256Hex);
+const OPENER_LINES: [string, string][] = [
+  ['narrator', VOICEOVERS[0]!],
+  ['maren', 'Which provider answered?'],
+  ['narrator', VOICEOVERS[1]!],
+  ['tomasz', 'I built it, I can tell you.'],
+  ['narrator', VOICEOVERS[2]!],
+  ['narrator', VOICEOVERS[3]!],
+];
+
+/** A clips folder holding what `--plan` names (the n-th file `3 + n` frames) and the plan itself as manifest.json. */
+function plannedClips(dir: string): { from: string; plan: ReturnType<typeof narrationPlanFile> } {
+  const plan = narrationPlanFile(dir);
+  const files: Record<string, Buffer | string> = { 'manifest.json': JSON.stringify(plan) };
+  [...plan.clips, ...(plan.closing ?? [])].forEach((e, i) => (files[e.file] = frames(3 + i)));
+  return { from: clipsDir(files), plan };
+}
+
+describe('labs narrate --plan: the lines to make with the cast\'s voices', () => {
+  it('lists, per panel, the voiceover (narrator) then each bubble of a speaking person, with voice, name, place and words, opener and closing', () => {
+    const dir = labWithClosing();
+    try {
+      const plan = narrationPlanFile(dir);
+      expect(plan.model).toBe('higgsfield/elevenlabs');
+      expect(plan.voices).toEqual(CAST_V);
+      expect(plan.clips.map((e) => [e.who, e.text])).toEqual(OPENER_LINES);
+      expect(plan.clips[0]).toEqual({ file: '01-narrator.mp3', who: 'narrator', name: 'Mark', voice: CAST_V.narrator, panel: 1, text: VOICEOVERS[0] });
+      expect(plan.clips[1]).toEqual({ file: '02-maren.mp3', who: 'maren', name: 'Helena', voice: CAST_V.maren, panel: 1, bubble: 1, text: 'Which provider answered?' });
+      expect(plan.clips[3]).toMatchObject({ file: '04-tomasz.mp3', who: 'tomasz', name: 'Bram', panel: 2, bubble: 1 });
+      expect(plan.closing!.map((e) => e.file)).toEqual(['closing-01-narrator.mp3', 'closing-02-maren.mp3', 'closing-03-narrator.mp3', 'closing-04-narrator.mp3', 'closing-05-narrator.mp3']);
+      // it only reads
+      expect(clipFiles(dir)).toEqual([]);
+      expect(existsSync(join(dir, 'learn', 'audio.json'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('lists the same words by the same speaker once, never the learner\'s bubble, and refuses a lab with nothing to speak', () => {
+    const twice = COMIC().replace('text: "I built it, I can tell you."', 'text: "Which provider answered?"').replace('cast: [tomasz]', 'cast: [maren]').replace('who: tomasz', 'who: maren');
+    const dir = lab(
+      twice
+        .replace('  - scene: you\n    caption: Your turn.', '  - scene: portrait\n    cast: [you]\n    bubbles: [{ who: you, text: "On it." }]\n    caption: Your turn.')
+        .replace('    lines: ["$ go", "ready."]\n', '')
+    );
+    try {
+      const plan = narrationPlanFile(dir);
+      expect(plan.clips.filter((e) => e.who === 'maren')).toHaveLength(1);
+      expect(plan.clips.some((e) => e.text === 'On it.')).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    const old = lab(COMIC().replace(/    voiceover: .*\n/g, ''));
+    try {
+      expect(() => narrationPlanFile(old)).toThrow(/nothing to speak/);
+    } finally {
+      rmSync(old, { recursive: true, force: true });
+    }
+  });
+
+  it('is what `opalix labs narrate <lab> --plan` prints, and --out writes it to a file', () => {
+    const dir = lab();
+    try {
+      const run = (...args: string[]) => execFileSync(process.execPath, ['--import', 'tsx', join(ROOT, 'cli/src/index.ts'), 'labs', 'narrate', dir, ...args], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      expect(JSON.parse(run('--plan'))).toEqual(JSON.parse(JSON.stringify(narrationPlanFile(dir))));
+      const out = join(dir, 'plan.json');
+      run('--plan', '--out', out);
+      expect(JSON.parse(readFileSync(out, 'utf8')).clips).toHaveLength(6);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+describe('labs narrate --from-dir with a manifest that names who speaks each clip', () => {
+  it('imports the plan as it is: voiceovers in the narrator\'s voice, every bubble in its speaker\'s, clips that say who, and learn-check and publish accept it', () => {
+    const dir = labWithClosing();
+    const { from, plan } = plannedClips(dir);
+    try {
+      const r = importNarration(dir, { fromDir: from });
+      expect(r).toMatchObject({ lines: 11, clips: 11, made: 11, reused: 0, removed: 0, wroteIndex: true });
+      const audio = readAudio(dir);
+      expect(audio.model).toBe(VOICE_CAST.model);
+      expect(audio.lines.map((l) => [l.panel, l.kind, l.bubble])).toEqual([[0, 'voiceover', undefined], [0, 'bubble', 0], [1, 'voiceover', undefined], [1, 'bubble', 0], [2, 'voiceover', undefined], [3, 'voiceover', undefined]]);
+      expect(audio.lines.map((l) => l.clip)).toEqual(OPENER_LINES.map(([who, text]) => castKey(who, text)));
+      expect(audio.clips[castKey('maren', 'Which provider answered?')]).toMatchObject({ who: 'maren', voice: CAST_V.maren, text: 'Which provider answered?', bytes: 417 * 4 });
+      expect(audio.clips[castKey('narrator', VOICEOVERS[0]!)]).toMatchObject({ who: 'narrator', voice: CAST_V.narrator });
+      const closing = readAudio(dir, 'closing-audio.json');
+      expect(closing.lines.filter((l) => l.kind === 'bubble')).toHaveLength(1);
+      expect(compileLearnDir(dir)!.problems).toEqual([]);
+      expect(buildLearnUpload(dir)!.audio).toHaveLength(11);
+      expect(plan.clips).toHaveLength(6);
+      // a second run reuses everything and rewrites nothing
+      expect(importNarration(dir, { fromDir: from })).toMatchObject({ made: 0, reused: 11, removed: 0, wroteIndex: false });
+      // the plan written beside the files is what the committed-labs check re-plans from
+      expect(planCastNarration(readComic(dir).comic!, audio.model, CAST_V).lines.map((l) => l.key)).toEqual(audio.lines.map((l) => l.clip));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(from, { recursive: true, force: true });
+    }
+  });
+
+  it('takes the model and voices from the manifest for another service, matching each clip by who and words', () => {
+    const dir = lab();
+    const voices = { narrator: 'n-1', maren: 'm-1', tomasz: 't-1' };
+    const entries = [...OPENER_LINES].reverse().map(([who, text], i) => ({ file: `c${i}.mp3`, who, text }));
+    const from = clipsDir({ ...Object.fromEntries(entries.map((e, i) => [e.file, frames(3 + i)])), 'manifest.json': JSON.stringify({ model: EL_MODEL, voices, clips: entries }) });
+    try {
+      importNarration(dir, { fromDir: from });
+      const audio = readAudio(dir);
+      expect(audio.model).toBe(EL_MODEL);
+      expect(audio.lines.map((l) => l.clip)).toEqual(OPENER_LINES.map(([who, text]) => castKey(who, text, EL_MODEL, voices)));
+      expect(compileLearnDir(dir)!.problems).toEqual([]);
+      // a narrate run would remake it with Workers AI: refused as an import, as ever
+      expect(importedIndexes(dir)).toEqual([{ name: 'audio.json', model: EL_MODEL }]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(from, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a missing bubble clip, a clip for the wrong speaker or the learner, and a voice that is not the speaker\'s, before writing anything', () => {
+    const dir = lab();
+    const entries = OPENER_LINES.map(([who, text], i) => ({ file: `${i + 1}.mp3`, who, text }));
+    const files = Object.fromEntries(entries.map((e, i) => [e.file, frames(3 + i)]));
+    const folder = (clips: unknown[], extra: Record<string, unknown> = {}) => clipsDir({ ...files, 'manifest.json': JSON.stringify({ clips, ...extra }) });
+    const short = folder(entries.filter((e) => e.who !== 'tomasz'));
+    const wrong = folder(entries.map((e) => (e.who === 'tomasz' ? { ...e, who: 'maren' } : e)));
+    const learner = folder([...entries, { file: '1.mp3', who: 'you', text: 'On it.' }]);
+    const voice = folder(entries.map((e) => (e.who === 'maren' ? { ...e, voice: CAST_V.tomasz } : e)));
+    try {
+      expect(() => importNarration(dir, { fromDir: short })).toThrow(/manifest\.json `clips` has 5 clips but comic\.yaml has 6 distinct spoken lines; no clip for:\n {2}- tomasz: "I built it, I can tell you\."/);
+      expect(() => importNarration(dir, { fromDir: wrong })).toThrow(/not a line of comic\.yaml for that speaker[^\n]*:\n {2}- 4\.mp3 \(maren\): "I built it, I can tell you\."/);
+      expect(() => importNarration(dir, { fromDir: learner })).toThrow(/1\.mp3 \(you\): "On it\."/);
+      expect(() => importNarration(dir, { fromDir: voice })).toThrow(/2\.mp3 says it is in voice 549ff70a.*but maren speaks in 3c2b83c0/);
+      expect(clipFiles(dir)).toEqual([]);
+      expect(existsSync(join(dir, 'learn', 'audio.json'))).toBe(false);
+    } finally {
+      for (const d of [dir, short, wrong, learner, voice]) rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a single --voice with it, voices of another model without `voices`, a speaker with no voice, and two speakers sharing one', () => {
+    const dir = lab();
+    const entries = OPENER_LINES.map(([who, text], i) => ({ file: `${i + 1}.mp3`, who, text }));
+    const files = Object.fromEntries(entries.map((e, i) => [e.file, frames(3 + i)]));
+    const folder = (extra: Record<string, unknown>) => clipsDir({ ...files, 'manifest.json': JSON.stringify({ clips: entries, ...extra }) });
+    const plain = folder({});
+    const other = folder({ model: EL_MODEL });
+    const noModel = folder({ voices: { narrator: 'n-1', maren: 'm-1', tomasz: 't-1' } });
+    const noTomasz = folder({ model: EL_MODEL, voices: { narrator: 'n-1', maren: 'm-1' } });
+    const shared = folder({ model: EL_MODEL, voices: { narrator: 'n-1', maren: 'm-1', tomasz: 'm-1' } });
+    const stranger = folder({ model: EL_MODEL, voices: { narrator: 'n-1', maren: 'm-1', tomasz: 't-1', jonas: 'j-1' } });
+    try {
+      expect(() => importNarration(dir, { fromDir: plain, voice: 'x' })).toThrow(/the voices are its `voices` \(or packages\/catalogue\/voices\.json\), not --voice/);
+      expect(() => importNarration(dir, { fromDir: other })).toThrow(/voices\.json is the voice cast of higgsfield\/elevenlabs, and these clips are of elevenlabs\/eleven_v4/);
+      expect(() => importNarration(dir, { fromDir: noModel })).toThrow(/--model is needed/);
+      expect(importNarration(dir, { fromDir: noModel, model: EL_MODEL, dryRun: true })).toMatchObject({ made: 6 });
+      expect(() => importNarration(dir, { fromDir: noTomasz })).toThrow(/no voice for tomasz/);
+      expect(() => importNarration(dir, { fromDir: shared })).toThrow(/two speakers share a voice/);
+      expect(() => importNarration(dir, { fromDir: stranger })).toThrow(/jonas is not narrator or one of/);
+      // with no `voices` and no model it is voices.json's cast and model
+      expect(importNarration(dir, { fromDir: plain, dryRun: true })).toMatchObject({ lines: 6, made: 6 });
+    } finally {
+      for (const d of [dir, plain, other, noModel, noTomasz, shared, stranger]) rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('--dry-run names the bubble and its speaker for a bubble clip; after a bubble edit learn-check calls it stale and a new import replaces that clip', () => {
+    const dir = lab();
+    const { from } = plannedClips(dir);
+    try {
+      const lines: string[] = [];
+      importNarration(dir, { fromDir: from, dryRun: true, log: (l) => lines.push(l) });
+      expect(lines[1]).toBe(`  02-maren.mp3 → comic.yaml panel 1 bubble 1 (maren) → ${castKey('maren', 'Which provider answered?')}.mp3 (would copy)  Which provider answered?`);
+      expect(lines[0]).toBe(`  01-narrator.mp3 → comic.yaml panel 1 → ${castKey('narrator', VOICEOVERS[0]!)}.mp3 (would copy)  ${VOICEOVERS[0]}`);
+      importNarration(dir, { fromDir: from });
+      writeFileSync(join(dir, 'learn', 'comic.yaml'), COMIC().replace('text: "Which provider answered?"', 'text: "Who answered, then?"'));
+      expect(compileLearnDir(dir)!.problems.join('\n')).toMatch(/learn\/audio\.json is out of date with comic\.yaml \(panel 1 bubble 1: the bubble's words or its speaker changed\)/);
+      const again = plannedClips(dir);
+      try {
+        expect(importNarration(dir, { fromDir: again.from })).toMatchObject({ made: 1, removed: 1 });
+        expect(compileLearnDir(dir)!.problems).toEqual([]);
+      } finally {
+        rmSync(again.from, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(from, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('the account id', () => {
   it('comes from the environment, else from wrangler.jsonc vars', () => {
     expect(accountIdFrom({ CLOUDFLARE_ACCOUNT_ID: 'from-env' }, join(ROOT, 'wrangler.jsonc'))).toBe('from-env');
@@ -750,7 +948,10 @@ describe('the narration committed with the labs', () => {
         for (const [name, comicFile] of indexes) {
           const audio = AudioSchema.parse(JSON.parse(readFileSync(join(dir, 'learn', name), 'utf8')));
           const voice = Object.values(audio.clips)[0]!.voice;
-          const plan = planNarration(readComic(dir, comicFile).comic!, audio.model, voice);
+          // With the cast's voices (clips that say who), each speaker's voice is the one its clips carry.
+          const voices = Object.fromEntries(Object.values(audio.clips).filter((c) => c.who).map((c) => [c.who!, c.voice]));
+          const comic = readComic(dir, comicFile).comic!;
+          const plan = Object.keys(voices).length > 0 ? planCastNarration(comic, audio.model, voices) : planNarration(comic, audio.model, voice);
           expect(audio.lines.map((l) => l.clip), `${name} keys are those of ${audio.model} / ${voice}`).toEqual(plan.lines.map((l) => l.key));
           for (const l of plan.lines) keys.add(`${l.key}.mp3`);
         }

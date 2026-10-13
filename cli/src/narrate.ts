@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { TTS_MODEL, clipKey, narrationLines, type NarrationLine } from '../../src/labs/comic-kit';
+import { CAST, NARRATOR_ID, SPEAKING_CAST_IDS, TTS_MODEL, clipKey, narrationLines, spokenLines } from '../../src/labs/comic-kit';
 import { MAX_AUDIO_CLIPS, MAX_AUDIO_CLIP_BYTES, VOICE_ID, type LearnAudio } from '../../src/labs/learn';
+import { VOICE_CAST, voiceNameOf, voicesOf } from '../../src/labs/voices';
 import { looksLikeMp3, mp3Seconds } from '../../src/labs/mp3';
 import { readComic } from './learn-compile';
 
@@ -21,6 +22,11 @@ import { readComic } from './learn-compile';
  *
  * `labs narrate <dir> --from-dir <clips>` (importNarration) files clips made by another text-to-speech
  * the same way: same keys (of that model and voice), same indexes, same orphan cleanup, and no network.
+ * With a manifest that names who speaks each clip (`who`: `narrator` or a person of the speaking cast) it
+ * imports the cast's voices too: the voiceovers in the narrator's voice and every bubble of a speaking person
+ * in that person's own voice (packages/catalogue/voices.json, or the manifest's `voices`), so the characters
+ * speak their bubbles. `labs narrate <dir> --plan` (narrationPlanFile) lists those lines, who, voice and words,
+ * as JSON a person can generate in any text-to-speech tool and then import.
  */
 
 export const sha256Hex = (input: string): string => createHash('sha256').update(input).digest('hex');
@@ -29,20 +35,52 @@ export interface PlannedClip {
   key: string;
   voice: string;
   text: string;
+  /** Who speaks it, on a plan with the cast's voices (planCastNarration): `narrator` or a cast id. */
+  who?: string;
+}
+/** One spoken line: a panel's voiceover, or (with the cast's voices) one of its bubbles. */
+export interface PlannedLine {
+  panel: number;
+  kind: 'voiceover' | 'bubble';
+  bubble?: number;
+  who?: string;
+  voice: string;
+  text: string;
+  key: string;
 }
 export interface NarrationPlan {
   /** Every spoken line in reading order, with the key of its clip. */
-  lines: (NarrationLine & { key: string })[];
+  lines: PlannedLine[];
   /** The distinct clips, in order of first use. */
   clips: PlannedClip[];
 }
 
+const distinct = (lines: readonly PlannedLine[]): PlannedClip[] => {
+  const clips = new Map<string, PlannedClip>();
+  for (const l of lines) if (!clips.has(l.key)) clips.set(l.key, { key: l.key, voice: l.voice, text: l.text, ...(l.who ? { who: l.who } : {}) });
+  return [...clips.values()];
+};
+
 /** The lines of a comic and the distinct clips they need; `voice` replaces the narrator's (imported clips). Pure. */
 export function planNarration(comic: Parameters<typeof narrationLines>[0], model: string = TTS_MODEL, voice?: string): NarrationPlan {
-  const lines = narrationLines(comic).map((l) => ({ ...l, voice: voice ?? l.voice, key: clipKey(model, voice ?? l.voice, l.text, sha256Hex) }));
-  const clips = new Map<string, PlannedClip>();
-  for (const l of lines) if (!clips.has(l.key)) clips.set(l.key, { key: l.key, voice: l.voice, text: l.text });
-  return { lines, clips: [...clips.values()] };
+  const lines: PlannedLine[] = narrationLines(comic).map((l) => ({ ...l, voice: voice ?? l.voice, key: clipKey(model, voice ?? l.voice, l.text, sha256Hex) }));
+  return { lines, clips: distinct(lines) };
+}
+
+/**
+ * The lines of a comic spoken by the cast (comic-kit spokenLines: per panel the voiceover, then each bubble of a
+ * speaking person) with each speaker's voice from `voices` (`{ narrator, maren, ... }`), and the distinct clips.
+ * Throws naming the speakers that have no voice. Pure.
+ */
+export function planCastNarration(comic: Parameters<typeof spokenLines>[0], model: string, voices: Readonly<Record<string, string>>): NarrationPlan {
+  const spoken = spokenLines(comic);
+  const voiceless = [...new Set(spoken.map((l) => l.who).filter((who) => !voices[who]))];
+  if (voiceless.length > 0) throw new Error(`no voice for ${voiceless.join(', ')}: give ${voiceless.length === 1 ? 'it' : 'each'} a voice in \`voices\` (manifest.json) or packages/catalogue/voices.json`);
+  const lines: PlannedLine[] = spoken.map((l) => {
+    const voice = voices[l.who]!;
+    return { ...l, voice, key: clipKey(model, voice, l.text, sha256Hex) };
+  });
+  return { lines, clips: distinct(lines) };
 }
 
 /** The audio.json for a plan, given each clip's measured length and size. Deterministic, so a second run writes the same bytes. */
@@ -50,12 +88,12 @@ export function buildAudioIndex(plan: NarrationPlan, measured: ReadonlyMap<strin
   const clips: LearnAudio['clips'] = {};
   for (const c of plan.clips) {
     const m = measured.get(c.key)!;
-    clips[c.key] = { voice: c.voice, text: c.text, seconds: Math.round(m.seconds * 100) / 100, bytes: m.bytes };
+    clips[c.key] = { ...(c.who ? { who: c.who } : {}), voice: c.voice, text: c.text, seconds: Math.round(m.seconds * 100) / 100, bytes: m.bytes };
   }
   return {
     model,
     clips,
-    lines: plan.lines.map((l) => ({ panel: l.panel, kind: l.kind, clip: l.key })),
+    lines: plan.lines.map((l) => ({ panel: l.panel, kind: l.kind, ...(l.bubble !== undefined ? { bubble: l.bubble } : {}), clip: l.key })),
   };
 }
 
@@ -171,19 +209,24 @@ interface LabPlan {
   clips: PlannedClip[];
 }
 
+/** How a lab is planned: the narrator alone (Workers AI, or clips of one imported voice), or the whole cast with its voices. */
+type Voicing = { model?: string; voice?: string } | { model: string; voices: Readonly<Record<string, string>> };
+
 /** Reads and plans the opener and, when there is one, the closing. Throws with the reason when either cannot be narrated. */
-function planLab(labDir: string, model?: string, voice?: string): LabPlan {
+function planLab(labDir: string, voicing: Voicing = {}): LabPlan {
+  const plan1 = (comic: Parameters<typeof spokenLines>[0]) =>
+    'voices' in voicing ? planCastNarration(comic, voicing.model, voicing.voices) : planNarration(comic, voicing.model, voicing.voice);
   const { comic, problems } = readComic(labDir);
   if (!comic) throw new Error(`cannot narrate ${labDir}:\n${problems.map((p) => `  - ${p}`).join('\n')}`);
-  const plan = planNarration(comic, model, voice);
-  if (plan.lines.length === 0) throw new Error(`${labDir}: the comic has nothing to speak: no panel has a \`voiceover\` (the storyteller reads the voiceovers; see docs/learning-content.md)`);
+  const plan = plan1(comic);
+  if (!plan.lines.some((l) => l.kind === 'voiceover')) throw new Error(`${labDir}: the comic has nothing to speak: no panel has a \`voiceover\` (the storyteller reads the voiceovers; see docs/learning-content.md)`);
 
   let closingPlan: NarrationPlan | undefined;
   if (existsSync(join(labDir, 'learn', 'closing.yaml'))) {
     const closing = readComic(labDir, 'closing.yaml');
     if (!closing.comic) throw new Error(`cannot narrate the closing of ${labDir}:\n${closing.problems.map((p) => `  - ${p}`).join('\n')}`);
-    closingPlan = planNarration(closing.comic, model, voice);
-    if (closingPlan.lines.length === 0) {
+    closingPlan = plan1(closing.comic);
+    if (!closingPlan.lines.some((l) => l.kind === 'voiceover')) {
       throw new Error(`${labDir}: the closing comic has nothing to speak: no panel of closing.yaml has a \`voiceover\` (see docs/learning-content.md)`);
     }
   }
@@ -332,7 +375,8 @@ export async function narrateLab(labDir: string, opts: NarrateOptions = {}): Pro
 export interface ImportOptions {
   /**
    * The folder of clips: `01.mp3`, `02.mp3`, ... in voiceover order for the opener and the same in `closing/`
-   * for the closing; or a `manifest.json` there that names each clip's words, matched to the comic by text.
+   * for the closing; or a `manifest.json` there that names each clip's words (and, for the cast's voices, who
+   * speaks them), matched to the comic by text.
    */
   fromDir: string;
   /** The model and voice that made the clips, stored as given (they are part of each clip's key). A manifest may give them instead. */
@@ -342,14 +386,42 @@ export interface ImportOptions {
   log?: (line: string) => void;
 }
 
-const ManifestClips = z.array(z.object({ file: z.string().min(1), text: z.string().min(1) }).strict());
-/** `<fromDir>/manifest.json`: which file speaks which words, for the opener (`clips`) and the closing. */
+/**
+ * One clip of a manifest: the file and the words it speaks; `who` (narrator or a person of the speaking cast)
+ * on a manifest with the cast's voices. `voice` (checked against the speaker's), `name`, `panel` and `bubble`
+ * are what `labs narrate --plan` writes beside them, so its output can be used as the manifest as it is.
+ */
+const ManifestClips = z.array(
+  z
+    .object({
+      file: z.string().min(1),
+      text: z.string().min(1),
+      who: z.string().min(1).optional(),
+      voice: z.string().min(1).optional(),
+      name: z.string().optional(),
+      panel: z.number().int().optional(),
+      bubble: z.number().int().optional(),
+    })
+    .strict()
+);
+/** `<fromDir>/manifest.json`: which file speaks which words, for the opener (`clips`) and the closing; `voices` (who speaks in which voice) for the cast form. */
 const ImportManifestSchema = z
-  .object({ model: z.string().optional(), voice: z.string().optional(), clips: ManifestClips, closing: ManifestClips.optional() })
+  .object({
+    model: z.string().optional(),
+    voice: z.string().optional(),
+    voices: z.record(z.string(), z.string()).optional(),
+    lab: z.string().optional(),
+    clips: ManifestClips,
+    closing: ManifestClips.optional(),
+  })
   .strict();
+type ImportManifest = z.infer<typeof ImportManifestSchema>;
 type ManifestEntry = z.infer<typeof ManifestClips>[number];
 
-/** One voiceover line and the file (relative to the clips folder) that speaks it. */
+/** Whether a manifest names who speaks its clips (the cast's voices), rather than one voice for all. */
+const isCastManifest = (m: ImportManifest): boolean => m.voices !== undefined || [...m.clips, ...(m.closing ?? [])].some((e) => e.who !== undefined);
+
+/** One spoken line and the file (relative to the clips folder) that speaks it. */
 interface ImportSource {
   file: string;
   comic: string;
@@ -372,24 +444,42 @@ function sourcesByOrder(fromDir: string, rel: string, plan: NarrationPlan, comic
   return plan.lines.map((line, i) => ({ file: rel === '' ? files[i]! : join(rel, files[i]!), comic, line }));
 }
 
-/** By manifest: each entry's words must be a voiceover of `comic`, and each voiceover must have exactly one entry. */
-function sourcesByText(entries: readonly ManifestEntry[], list: string, plan: NarrationPlan, comic: string): ImportSource[] {
-  const voiced = new Set(plan.lines.map((l) => l.text));
+/**
+ * By manifest: each entry's words must be a line of `comic`, and each line must have exactly one entry. With the
+ * cast's voices (`cast`) a line is who speaks it and its words (the same words said by two people are two clips),
+ * else a voiceover's words.
+ */
+function sourcesByText(entries: readonly ManifestEntry[], list: string, plan: NarrationPlan, comic: string, cast: boolean): ImportSource[] {
+  const whoOf = (e: { who?: string }) => e.who ?? NARRATOR_ID;
+  const idOf = (who: string, text: string) => (cast ? `${who}\n${text}` : text);
+  const lineOf = new Map(plan.lines.map((l) => [idOf(l.who ?? NARRATOR_ID, l.text), l]));
+  const show = (e: ManifestEntry) => (cast ? `${e.file} (${whoOf(e)}): "${e.text}"` : `${e.file}: "${e.text}"`);
   // A clip of words the comic does not have is a stale clip: refuse it rather than let it land on some panel.
-  const unknown = entries.filter((e) => !voiced.has(e.text));
+  const unknown = entries.filter((e) => !lineOf.has(idOf(whoOf(e), e.text)));
   if (unknown.length > 0) {
-    throw new Error(`manifest.json \`${list}\`: ${unknown.length} clip${unknown.length === 1 ? ' speaks words that are' : 's speak words that are'} not a voiceover of ${comic}:\n${unknown.map((e) => `  - ${e.file}: "${e.text}"`).join('\n')}`);
+    const what = cast ? `not a line of ${comic} for that speaker (a voiceover for narrator, a bubble of that person)` : `not a voiceover of ${comic}`;
+    throw new Error(`manifest.json \`${list}\`: ${unknown.length} clip${unknown.length === 1 ? ' speaks words that are' : 's speak words that are'} ${what}:\n${unknown.map((e) => `  - ${show(e)}`).join('\n')}`);
   }
   const fileOf = new Map<string, string>();
   for (const e of entries) {
-    if (fileOf.has(e.text)) throw new Error(`manifest.json \`${list}\`: ${fileOf.get(e.text)} and ${e.file} both speak "${e.text}"; keep one`);
-    fileOf.set(e.text, e.file);
+    const id = idOf(whoOf(e), e.text);
+    if (fileOf.has(id)) throw new Error(`manifest.json \`${list}\`: ${fileOf.get(id)} and ${e.file} both speak "${e.text}"${cast ? ` as ${whoOf(e)}` : ''}; keep one`);
+    fileOf.set(id, e.file);
+    // A voice written beside a clip (as `--plan` writes it) must be the voice its speaker has, or the clip was made in another.
+    const line = lineOf.get(id)!;
+    if (e.voice !== undefined && e.voice !== line.voice) {
+      throw new Error(`manifest.json \`${list}\`: ${e.file} says it is in voice ${e.voice}, but ${whoOf(e)} speaks in ${line.voice}; make it again in that voice, or fix \`voices\``);
+    }
   }
-  const missing = [...voiced].filter((t) => !fileOf.has(t));
+  const wanted = [...new Set(plan.lines.map((l) => idOf(l.who ?? NARRATOR_ID, l.text)))];
+  const missing = wanted.filter((id) => !fileOf.has(id));
   if (missing.length > 0) {
-    throw new Error(`manifest.json \`${list}\` has ${entries.length} clip${entries.length === 1 ? '' : 's'} but ${comic} has ${voiced.size} distinct voiceover${voiced.size === 1 ? '' : 's'}; no clip for:\n${missing.map((t) => `  - "${t}"`).join('\n')}`);
+    const say = (id: string) => (cast ? `${id.split('\n')[0]}: "${id.slice(id.indexOf('\n') + 1)}"` : `"${id}"`);
+    throw new Error(
+      `manifest.json \`${list}\` has ${entries.length} clip${entries.length === 1 ? '' : 's'} but ${comic} has ${wanted.length} distinct ${cast ? 'spoken line' : 'voiceover'}${wanted.length === 1 ? '' : 's'}; no clip for:\n${missing.map((t) => `  - ${say(t)}`).join('\n')}`
+    );
   }
-  return plan.lines.map((line) => ({ file: fileOf.get(line.text)!, comic, line }));
+  return plan.lines.map((line) => ({ file: fileOf.get(idOf(line.who ?? NARRATOR_ID, line.text))!, comic, line }));
 }
 
 /** The flag's value, else the manifest's; both given must agree. */
@@ -401,17 +491,40 @@ function pick(name: 'model' | 'voice', flag: string | undefined, manifest: strin
 }
 
 /**
+ * Who speaks in which voice for a cast import: the manifest's `voices`, else packages/catalogue/voices.json (whose
+ * model the clips must then be of). Every voice is checked; two speakers may not share one (a clip's key is its
+ * model, voice and words, so they could not be told apart).
+ */
+function castVoices(model: string, given: Readonly<Record<string, string>> | undefined): Record<string, string> {
+  if (given === undefined && model !== VOICE_CAST.model) {
+    throw new Error(`packages/catalogue/voices.json is the voice cast of ${VOICE_CAST.model}, and these clips are of ${model}: give \`voices\` ({ narrator, maren, ... }) in manifest.json`);
+  }
+  const voices = given ?? voicesOf();
+  for (const [who, voice] of Object.entries(voices)) {
+    if (who !== NARRATOR_ID && !SPEAKING_CAST_IDS.includes(who)) throw new Error(`manifest.json \`voices\`: ${who} is not narrator or one of ${SPEAKING_CAST_IDS.join(', ')}`);
+    if (!VOICE_ID.test(voice)) throw new Error(`manifest.json \`voices\`: ${who}'s voice "${voice}" must be one token of letters, digits and . _ : / - (at most 80)`);
+  }
+  const ids = Object.values(voices);
+  if (new Set(ids).size !== ids.length) throw new Error('manifest.json `voices`: two speakers share a voice; give everybody their own');
+  return { ...voices };
+}
+
+/**
  * Files clips made outside the repo into a lab exactly as `narrateLab` would have made them: each goes to
  * learn/audio/<clipKey(model, voice, text)>.mp3 (a key already there is reused, not overwritten), the
  * indexes are written by buildAudioIndex, and clips nothing uses are removed. Every source file is checked
  * (an MP3, under the size limit, with audio in it) before anything is written. Never calls a model.
+ *
+ * A manifest that names who speaks each clip (`who`) imports the cast's voices: the voiceovers in the narrator's
+ * voice and every bubble of a speaking person in that person's (manifest `voices`, else voices.json), each
+ * matched by who and words; every such bubble needs its clip, so a comic is never half voiced.
  */
 export function importNarration(labDir: string, opts: ImportOptions): NarrateResult {
   const log = opts.log ?? (() => {});
   const { fromDir } = opts;
   if (!existsSync(fromDir) || !statSync(fromDir).isDirectory()) throw new Error(`${fromDir} is not a folder of clips`);
 
-  let manifest: z.infer<typeof ImportManifestSchema> | undefined;
+  let manifest: ImportManifest | undefined;
   const manifestPath = join(fromDir, 'manifest.json');
   if (existsSync(manifestPath)) {
     let raw: unknown;
@@ -424,12 +537,26 @@ export function importNarration(labDir: string, opts: ImportOptions): NarrateRes
     if (!parsed.success) throw new Error(`${manifestPath}: ${parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')}`);
     manifest = parsed.data;
   }
-  const model = pick('model', opts.model, manifest?.model);
-  const voice = pick('voice', opts.voice, manifest?.voice);
-  if (!/^\S{1,80}$/.test(model)) throw new Error(`model "${model}" must be 1 to 80 characters with no spaces`);
-  if (!VOICE_ID.test(voice)) throw new Error(`voice "${voice}" must be one token of letters, digits and . _ : / - (at most 80)`);
+  const cast = manifest !== undefined && isCastManifest(manifest);
+  let voicing: Voicing;
+  let model: string;
+  if (cast) {
+    if (opts.voice !== undefined || manifest!.voice !== undefined) {
+      throw new Error('this manifest names who speaks each clip: the voices are its `voices` (or packages/catalogue/voices.json), not --voice or `voice`');
+    }
+    const usesCatalogue = manifest!.voices === undefined;
+    model = pick('model', opts.model, manifest!.model ?? (usesCatalogue && opts.model === undefined ? VOICE_CAST.model : undefined));
+    if (!/^\S{1,80}$/.test(model)) throw new Error(`model "${model}" must be 1 to 80 characters with no spaces`);
+    voicing = { model, voices: castVoices(model, manifest!.voices) };
+  } else {
+    model = pick('model', opts.model, manifest?.model);
+    const voice = pick('voice', opts.voice, manifest?.voice);
+    if (!/^\S{1,80}$/.test(model)) throw new Error(`model "${model}" must be 1 to 80 characters with no spaces`);
+    if (!VOICE_ID.test(voice)) throw new Error(`voice "${voice}" must be one token of letters, digits and . _ : / - (at most 80)`);
+    voicing = { model, voice };
+  }
 
-  const lab = planLab(labDir, model, voice);
+  const lab = planLab(labDir, voicing);
   const hasClosingClips = manifest ? manifest.closing !== undefined : existsSync(join(fromDir, 'closing'));
   if (!lab.closingPlan && hasClosingClips) {
     throw new Error(`${fromDir} has clips for a closing (${manifest ? 'manifest.json `closing`' : 'closing/'}), but ${labDir} has no learn/closing.yaml`);
@@ -437,9 +564,9 @@ export function importNarration(labDir: string, opts: ImportOptions): NarrateRes
   if (lab.closingPlan && !hasClosingClips) {
     throw new Error(`${labDir} has a closing comic (learn/closing.yaml): its clips are needed too, ${manifest ? 'as a `closing` list in manifest.json' : `as NN.mp3 in ${join(fromDir, 'closing')}`}`);
   }
-  const sources = manifest ? sourcesByText(manifest.clips, 'clips', lab.plan, 'comic.yaml') : sourcesByOrder(fromDir, '', lab.plan, 'comic.yaml');
+  const sources = manifest ? sourcesByText(manifest.clips, 'clips', lab.plan, 'comic.yaml', cast) : sourcesByOrder(fromDir, '', lab.plan, 'comic.yaml');
   if (lab.closingPlan) {
-    sources.push(...(manifest ? sourcesByText(manifest.closing!, 'closing', lab.closingPlan, 'closing.yaml') : sourcesByOrder(fromDir, 'closing', lab.closingPlan, 'closing.yaml')));
+    sources.push(...(manifest ? sourcesByText(manifest.closing!, 'closing', lab.closingPlan, 'closing.yaml', cast) : sourcesByOrder(fromDir, 'closing', lab.closingPlan, 'closing.yaml')));
   }
 
   // One file per key (identical words share a clip, the first file that speaks them is the one kept), each checked before anything is written.
@@ -477,7 +604,8 @@ export function importNarration(labDir: string, opts: ImportOptions): NarrateRes
     for (const s of sources) {
       const kept = fileOf.get(s.line.key)!;
       const what = !toCopy.has(s.line.key) ? 'already there' : kept === s.file ? 'would copy' : `same words as ${kept}`;
-      log(`  ${s.file} → ${s.comic} panel ${s.line.panel + 1} → ${s.line.key}.mp3 (${what})  ${s.line.text}`);
+      const where = s.line.kind === 'bubble' ? `panel ${s.line.panel + 1} bubble ${(s.line.bubble ?? 0) + 1} (${s.line.who})` : `panel ${s.line.panel + 1}`;
+      log(`  ${s.file} → ${s.comic} ${where} → ${s.line.key}.mp3 (${what})  ${s.line.text}`);
     }
     for (const f of orphans) log(`  would remove ${f} (nothing uses it)`);
     return result;
@@ -486,8 +614,77 @@ export function importNarration(labDir: string, opts: ImportOptions): NarrateRes
   if (missing.length > 0) mkdirSync(audioDir, { recursive: true });
   for (const c of missing) {
     writeClip(audioDir, c.key, bytesOf.get(c.key)!);
-    log(`  copied ${fileOf.get(c.key)} → ${c.key}.mp3  ${c.text}`);
+    log(`  copied ${fileOf.get(c.key)} → ${c.key}.mp3  ${c.who && c.who !== NARRATOR_ID ? `${c.who}: ` : ''}${c.text}`);
   }
   finishLab(labDir, lab, audioDir, orphans, model, result, log);
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// The plan: the lines to make, for a person generating them in any text-to-speech tool
+// ---------------------------------------------------------------------------
+
+/** One line to make: the file to save it as, who says it (and their voice), where it is, and the words. */
+export interface PlanEntry {
+  file: string;
+  who: string;
+  /** The voice's own name in that service (Mark, Helena, ...), when the voice cast has one. */
+  name?: string;
+  voice: string;
+  /** The panel it is on, counted from 1 across pages; and for a bubble, which (from 1). */
+  panel: number;
+  bubble?: number;
+  text: string;
+}
+/** What `labs narrate --plan` prints: a manifest.json for `--from-dir` once the files are made, with where each line is. */
+export interface PlanFile {
+  lab: string;
+  model: string;
+  voices: Record<string, string>;
+  clips: PlanEntry[];
+  closing?: PlanEntry[];
+}
+
+/**
+ * The lines of a lab to generate with the cast's voices (packages/catalogue/voices.json, or `voices` for another
+ * model), opener and closing: per panel the voiceover (who `narrator`), then each bubble of a speaking person,
+ * once per distinct speaker and words. Each entry names the file to save it as (`01-narrator.mp3`, `02-maren.mp3`;
+ * `closing-01-narrator.mp3` for the closing), so the plan, saved as manifest.json beside the files, imports as it
+ * is with `labs narrate <lab> --from-dir <that folder>`. Reads only; throws when the lab cannot be narrated.
+ */
+export function narrationPlanFile(labDir: string, opts: { model?: string; voices?: Readonly<Record<string, string>> } = {}): PlanFile {
+  const model = opts.model ?? VOICE_CAST.model;
+  const voices = castVoices(model, opts.voices);
+  const lab = planLab(labDir, { model, voices });
+  const entries = (plan: NarrationPlan, prefix: string): PlanEntry[] => {
+    const seen = new Set<string>();
+    const out: PlanEntry[] = [];
+    for (const l of plan.lines) {
+      const who = l.who ?? NARRATOR_ID;
+      const id = `${who}\n${l.text}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const name = opts.voices === undefined ? voiceNameOf(who) : undefined;
+      out.push({
+        file: `${prefix}${String(out.length + 1).padStart(2, '0')}-${who}.mp3`,
+        who,
+        ...(name ? { name } : {}),
+        voice: l.voice,
+        panel: l.panel + 1,
+        ...(l.bubble !== undefined ? { bubble: l.bubble + 1 } : {}),
+        text: l.text,
+      });
+    }
+    return out;
+  };
+  return {
+    lab: labDir,
+    model,
+    voices,
+    clips: entries(lab.plan, ''),
+    ...(lab.closingPlan ? { closing: entries(lab.closingPlan, 'closing-') } : {}),
+  };
+}
+
+/** The display name of a speaker for a person reading a plan: the cast member's name, or Narrator. */
+export const speakerName = (who: string): string => (who === NARRATOR_ID ? 'Narrator' : (CAST.find((c) => c.id === who)?.name ?? who));

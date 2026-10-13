@@ -20,15 +20,20 @@ export interface CastMember {
 }
 
 /**
- * The team of the story: Maren (the platform lead, who is also the storyteller: she briefs you),
- * Tomasz (the engineer who built things) and You (the learner). Finance, Support and data protection
- * (Jonas, Priya, Anneke) are retired from the drawn cast: the story mentions them or shows their
- * messages, but they are never drawn, never in `cast`, never a bubble speaker, and never voiced.
+ * The team of the story. Drawn and speaking: Maren (the platform lead), Tomasz (the engineer who built
+ * things), Graham (head of engineering, the boss), Ollie (a well-meaning colleague who makes the
+ * mistakes), Jess (the product manager, excitable), Priya (head of Support, kind) and You (the learner,
+ * never voiced). Finance and data protection (Jonas, Anneke) are retired from the drawn cast: the story
+ * mentions them or shows their messages, but they are never drawn, never in `cast`, never a bubble
+ * speaker, and never voiced. The voices the speaking cast use are in packages/catalogue/voices.json.
  */
 export const CAST: readonly CastMember[] = [
   { id: 'maren', name: 'Maren', role: 'Platform lead' },
   { id: 'tomasz', name: 'Tomasz', role: 'Staff engineer' },
-  { id: 'priya', name: 'Priya', role: 'Head of Support', retired: true },
+  { id: 'graham', name: 'Graham', role: 'Head of engineering' },
+  { id: 'ollie', name: 'Ollie', role: 'Engineer' },
+  { id: 'jess', name: 'Jess', role: 'Product manager' },
+  { id: 'priya', name: 'Priya', role: 'Head of Support' },
   { id: 'jonas', name: 'Jonas', role: 'Finance', retired: true },
   { id: 'anneke', name: 'Anneke', role: 'Data protection', retired: true },
   { id: 'you', name: 'You', role: 'New platform engineer' },
@@ -36,11 +41,22 @@ export const CAST: readonly CastMember[] = [
 /** The people a comic written to the voiceover contract may draw. */
 export const ACTIVE_CAST_IDS: readonly string[] = CAST.filter((c) => !c.retired).map((c) => c.id);
 export const RETIRED_CAST_IDS: readonly string[] = CAST.filter((c) => c.retired).map((c) => c.id);
+/** The learner: drawn, may have a bubble, never voiced. */
+export const LEARNER_ID = 'you';
+/**
+ * The people whose bubbles are spoken aloud, each in their own voice (packages/catalogue/voices.json `cast`),
+ * when a lab's narration includes bubble clips: everybody active but the learner.
+ */
+export const SPEAKING_CAST_IDS: readonly string[] = ACTIVE_CAST_IDS.filter((id) => id !== LEARNER_ID);
+/** Who speaks a clip: the storyteller, or a person of the speaking cast. */
+export const NARRATOR_ID = 'narrator';
+/** The allowed cast as words, for messages: "maren, tomasz, graham, ollie, jess, priya or you". */
+export const ACTIVE_CAST_WORDS = `${ACTIVE_CAST_IDS.slice(0, -1).join(', ')} or ${ACTIVE_CAST_IDS[ACTIVE_CAST_IDS.length - 1]}`;
 
 /**
- * The one storyteller voice: a single narrator (Maren, the platform lead, speaking to her team) reads
- * every `voiceover`. It is chosen here and only here: change it, run `labs narrate` again and every
- * clip is made anew. Other female Workers AI Aura-2 voices to try: athena, luna, helena, andromeda, juno, vesta.
+ * The storyteller's voice when Workers AI narrates (`labs narrate`): a single narrator reads every
+ * `voiceover`. It is chosen here and only here: change it, run `labs narrate` again and every clip is
+ * made anew. (Narration imported with the cast's voices uses packages/catalogue/voices.json instead.) Other female Workers AI Aura-2 voices to try: athena, luna, helena, andromeda, juno, vesta.
  */
 export const NARRATOR_VOICE = 'thalia';
 /** Longest a panel's voiceover may be, in characters (about 40 words, a few breaths of speech). */
@@ -281,9 +297,10 @@ export function usesVoiceover(comic: { pages: readonly { panels: readonly { voic
 }
 
 /**
- * What is read aloud, in reading order: the voiceover of each panel that has one, all in the narrator's
- * voice (one storyteller). Captions, bubbles (text only), screen lines and sound effects are never
- * spoken; a panel with no voiceover has no clip.
+ * What the storyteller reads aloud, in reading order: the voiceover of each panel that has one, all in the
+ * narrator's voice. Captions, screen lines and sound effects are never spoken; a panel with no voiceover has
+ * no clip. Bubbles are not in it: they are spoken only when a narration imports the cast's voices too
+ * (spokenLines), which `labs narrate` with Workers AI never does.
  */
 export function narrationLines(comic: { pages: readonly { panels: readonly TranscriptPanel[] }[] }): NarrationLine[] {
   const out: NarrationLine[] = [];
@@ -291,6 +308,41 @@ export function narrationLines(comic: { pages: readonly { panels: readonly Trans
   for (const pg of comic.pages) {
     for (const p of pg.panels) {
       if (p.voiceover) out.push({ panel, kind: 'voiceover', voice: NARRATOR_VOICE, text: p.voiceover });
+      panel += 1;
+    }
+  }
+  return out;
+}
+
+/** One line of a comic spoken by the cast: the storyteller's voiceover, or a bubble in its speaker's own voice. */
+export interface SpokenLine {
+  panel: number;
+  kind: 'voiceover' | 'bubble';
+  /** The bubble's index in its panel (0 or 1), for a bubble line. */
+  bubble?: number;
+  /** `narrator` for a voiceover, else the speaker's cast id. */
+  who: string;
+  text: string;
+}
+
+/** Whether a bubble is spoken aloud once a lab's narration voices bubbles: its speaker is of the speaking cast (not the learner, not retired). */
+export const isSpokenBubble = (b: { who?: string }): boolean => typeof b.who === 'string' && SPEAKING_CAST_IDS.includes(b.who);
+
+/**
+ * What is spoken when a comic is narrated with the cast's voices, in playing order: per panel the voiceover
+ * (the storyteller) first, then each bubble whose speaker has a voice (isSpokenBubble), in the panel's order.
+ * A bubble of the learner, of nobody, or of a retired person is text only. The voices come from
+ * packages/catalogue/voices.json (or an import's manifest); this says only who speaks which words.
+ */
+export function spokenLines(comic: { pages: readonly { panels: readonly TranscriptPanel[] }[] }): SpokenLine[] {
+  const out: SpokenLine[] = [];
+  let panel = 0;
+  for (const pg of comic.pages) {
+    for (const p of pg.panels) {
+      if (p.voiceover) out.push({ panel, kind: 'voiceover', who: NARRATOR_ID, text: p.voiceover });
+      p.bubbles.forEach((b, bubble) => {
+        if (isSpokenBubble(b)) out.push({ panel, kind: 'bubble', bubble, who: b.who!, text: b.text });
+      });
       panel += 1;
     }
   }

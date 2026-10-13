@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   BACKGROUNDS,
+  ACTIVE_CAST_WORDS,
   BUBBLE_POSITIONS,
   CAST_IDS,
   MOODS,
@@ -33,8 +34,10 @@ import {
  * The console plays it like a video: a camera moves across the comic page and
  * zooms into each panel as it pops in. Art is drawn from code (comic-kit.ts),
  * so a comic is a few lines of data per panel, never an image. The story is told
- * by ONE storyteller voice (the `voiceover` of each panel, read by Maren); `caption`
- * is a short on-screen label and `bubbles` are speech shown as text only, never voiced.
+ * by ONE storyteller voice (the `voiceover` of each panel); `caption` is a short
+ * on-screen label and `bubbles` are what the people in the panel say: typed out, and
+ * spoken aloud in each speaker's own voice when the lab's narration includes them
+ * (packages/catalogue/voices.json, `labs narrate --from-dir` with a manifest).
  *
  * Motion comic v2 (docs/learning-content.md): a caption, sfx, bubble or screen line can carry a `cue`, a
  * phrase of the voiceover it appears on; a panel can have a `shot` (close, wide); cast entries can carry a
@@ -168,10 +171,11 @@ export const usesCards = (comic: Comic): boolean => comic.pages.some((pg) => pg.
 /**
  * Cross-checks a schema-valid comic: cast counts, speakers present, length.
  *
- * A comic with at least one `voiceover` is written to the storyteller contract and is held to it: only
- * maren, tomasz and you may be drawn or speak (Priya, Jonas and Anneke are mentioned, never drawn). It, and a
- * comic that uses a black card, a diagram or a clip panel, has at most MAX_VOICED_PANELS (12) panels in all. A
- * clip panel is of the current contract whatever the rest of the comic is: its cast is maren, tomasz or you. A comic
+ * A comic with at least one `voiceover` is written to the storyteller contract and is held to it: only the
+ * active cast (maren, tomasz, graham, ollie, jess, priya and you) may be drawn or speak (Jonas and Anneke are
+ * retired: mentioned, never drawn). It, and a comic that uses a black card, a diagram or a clip panel, has at
+ * most MAX_VOICED_PANELS (12) panels in all. A clip panel is of the current contract whatever the rest of the
+ * comic is: its cast is of the active cast too. A comic
  * with neither keeps the older rules, so the labs that have not been rewritten yet keep working.
  */
 export function checkComic(comic: Comic): string[] {
@@ -186,7 +190,7 @@ export function checkComic(comic: Comic): string[] {
       const retired = new Set<string>();
       for (const id of cast) if (RETIRED_CAST_IDS.includes(id)) retired.add(id);
       for (const b of p.bubbles) if (b.who && RETIRED_CAST_IDS.includes(b.who)) retired.add(b.who);
-      for (const id of retired) problems.push(`${at}: ${id} is retired: use maren, tomasz or you; mention them in the voiceover or caption instead`);
+      for (const id of retired) problems.push(`${at}: ${id} is retired: use ${ACTIVE_CAST_WORDS}; mention them in the voiceover or caption instead`);
     }
     if (cast.length < rule.minCast || cast.length > rule.maxCast) {
       problems.push(`${at}: needs ${rule.minCast === rule.maxCast ? rule.minCast : `${rule.minCast} to ${rule.maxCast}`} cast member(s), has ${cast.length}`);

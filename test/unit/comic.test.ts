@@ -262,18 +262,31 @@ describe('voiceover: the story is told by one storyteller', () => {
   });
 
   it('still parses the retired ids, but rejects them in cast or as a bubble speaker once there is a voiceover', () => {
-    for (const id of ['priya', 'jonas', 'anneke']) {
+    for (const id of ['jonas', 'anneke']) {
       expect(CAST.find((c) => c.id === id)!.retired).toBe(true);
       const inCast = voiced((p, i) => (i === 3 ? { ...p, cast: [id], bubbles: [{ who: id, text: 'Hi.' }] } : p));
       const problems = checkComic(inCast).join('\n');
-      expect(problems).toContain(`comic panel 4 (portrait): ${id} is retired: use maren, tomasz or you; mention them in the voiceover or caption instead`);
+      expect(problems).toContain(`comic panel 4 (portrait): ${id} is retired: use maren, tomasz, graham, ollie, jess, priya or you; mention them in the voiceover or caption instead`);
       expect(problems.match(new RegExp(`${id} is retired`, 'g'))).toHaveLength(1); // once, though named twice
     }
     // as a speaker only (the speaker must also be in the cast, which is checked on its own)
-    const speaker = voiced((p, i) => (i === 2 ? { ...p, bubbles: [{ who: 'maren', text: 'Hi.' }, { who: 'priya', text: 'Hello.' }] } : p));
+    const speaker = voiced((p, i) => (i === 2 ? { ...p, bubbles: [{ who: 'maren', text: 'Hi.' }, { who: 'jonas', text: 'Hello.' }] } : p));
     const problems = checkComic(speaker).join('\n');
-    expect(problems).toMatch(/priya is retired: use maren, tomasz or you/);
-    expect(problems).toMatch(/priya speaks but is not in the panel's cast/);
+    expect(problems).toMatch(/jonas is retired: use maren, tomasz, graham, ollie, jess, priya or you/);
+    expect(problems).toMatch(/jonas speaks but is not in the panel's cast/);
+  });
+
+  it('draws and lets speak the whole active cast: graham, ollie, jess and priya (no longer retired) as well as maren, tomasz and you', () => {
+    expect(CAST.find((c) => c.id === 'priya')!.retired).toBeUndefined();
+    for (const id of ['graham', 'ollie', 'jess', 'priya']) {
+      for (const scene of ['desk', 'message', 'portrait']) {
+        const c = voiced((p, i) => (i === 3 ? { ...p, scene, cast: [{ who: id, mood: 'worried', pose: 'shrug' }], bubbles: [{ who: id, text: 'Hi.' }], sfx: undefined } : p));
+        expect(checkComic(c), `${id} in ${scene}`).toEqual([]);
+      }
+    }
+    const pair = voiced((p, i) => (i === 2 ? { ...p, cast: ['ollie', 'jess'], bubbles: [{ who: 'ollie', text: 'That was my script.' }, { who: 'jess', text: 'Can we still ship it?' }] } : p));
+    expect(checkComic(pair)).toEqual([]);
+    expect(() => ComicSchema.parse({ ...VOICED, panels: VOICED.panels.map((p, i) => (i === 3 ? { ...p, cast: ['boss'] } : p)) })).toThrow();
   });
 
   it('names the page and panel of a retired person on a comic of several pages', () => {
@@ -421,8 +434,9 @@ describe('motion comic v2 in the schema and the checks', () => {
   it('counts, matches and checks cast entries by person whichever way they are written', () => {
     const twice = withPanel(2, { cast: ['maren', { who: 'maren', mood: 'pleased' }] });
     expect(checkComic(twice).join()).toMatch(/the same person appears twice/);
-    const retired = withPanel(3, { cast: [{ who: 'priya', mood: 'tired' }], bubbles: [] });
-    expect(checkComic(retired).join()).toMatch(/priya is retired/);
+    const retired = withPanel(3, { cast: [{ who: 'anneke', mood: 'tired' }], bubbles: [] });
+    expect(checkComic(retired).join()).toMatch(/anneke is retired/);
+    expect(checkComic(withPanel(3, { cast: [{ who: 'priya', mood: 'tired' }], bubbles: [] }))).toEqual([]);
     const speaker = withPanel(3, { cast: [{ who: 'you', mood: 'pleased' }], bubbles: [{ who: 'you', text: 'On it.' }] });
     expect(checkComic(speaker)).toEqual([]);
   });

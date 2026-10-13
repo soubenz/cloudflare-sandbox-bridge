@@ -43,10 +43,11 @@
  * the comic starts finished (every page drawn, no camera, nothing typing).
  *
  * Narration (`{ audio }`, the lab's learn.audio plus its slug): when the lab has a storyteller
- * the same clock plays her. One narrator clip per voiced panel (its `voiceover`; speech bubbles are
- * text only and never voiced) starts when the clock reaches its start (the timeline already sized the
- * panel to its clip) and stops on Skip, Replay, a hidden tab, the Sound toggle and destroy; exactly one
- * clip plays at a time (comic-audio.js is the pure logic). A clip that cannot load is skipped in silence. If the browser refuses to start
+ * the same clock plays her. One narrator clip per voiced panel (its `voiceover`) starts when the clock
+ * reaches its start (the timeline already sized the panel to its clip); with the cast's voices each spoken
+ * bubble has its own clip too, in its speaker's voice, after the voiceover and one after another, and the
+ * bubble pops and types as its clip starts. Every clip stops on Skip, Replay, a hidden tab, the Sound toggle
+ * and destroy; exactly one clip plays at a time (comic-audio.js is the pure logic). A clip that cannot load is skipped in silence. If the browser refuses to start
  * sound before the learner has tapped anything, a small "Tap to turn the sound on" button
  * appears in the frame. The one other control, beside Replay and Skip and only on a comic
  * that has a storyteller, is the Sound on/off toggle (kept in localStorage `opalix.comicSound`,
@@ -63,7 +64,8 @@
  * Test seam: with `?comicTest=1` in the page address the clock does not start
  * by itself and window.__comicClock steps it (seek, pause, resume), so a
  * screenshot of "7.5 seconds" is the same picture every time. It does not
- * exist in normal use. With narration it also lists the scheduled clips (`audio`), records
+ * exist in normal use. With narration it also lists the scheduled clips (`audio`: key, kind, bubble, who
+ * (`narrator` or the bubble's speaker), panel, start, end, url), records
  * every play and stop the player decides on (`audioLog()`; no real audio is started in test mode),
  * and `?comicAudio=blocked` makes play() refuse with NotAllowedError until the learner taps.
  * The stings (`stings`: `{ panel, sound, at }`) are logged as `{ type: 'sting', sound, at }` when the
@@ -84,7 +86,7 @@
  * made by the learner's first tap on the comic (the same tap that lets the storyteller start).
  */
 
-import { CAST } from '../../src/labs/comic-kit.ts';
+import { CAST, NARRATOR_ID } from '../../src/labs/comic-kit.ts';
 import { applyDiagramStep, captionIsDisplay, clipMedia, clipOf, clipVideo, isClockCaption, releaseDiagram, sceneArt } from './comic-art.js';
 import { audioReduce, audioWanted, clipUrl, initialAudio } from './comic-audio.js';
 import { playSting, stingsDue, unlockStings } from './comic-sfx.js';
@@ -867,7 +869,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     status: () => clock.status,
     doneCalls: () => doneCalls,
     timeline: () => tl,
-    audio: tl.audio.map((c) => ({ ...c, url: hasAudio ? clipUrl(voices.slug, c.key) : null })),
+    audio: tl.audio.map((c) => ({ ...c, who: c.who ?? NARRATOR_ID, url: hasAudio ? clipUrl(voices.slug, c.key) : null })),
     audioLog: () => audioLog.slice(),
     stings: tl.stings.map((st) => ({ ...st })),
     clips: tl.clips.map((c) => ({ ...c })),
