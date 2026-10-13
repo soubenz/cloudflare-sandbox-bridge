@@ -209,11 +209,28 @@ export interface TranscriptPanel {
   /** A black card's heading and its stacked captions. */
   title?: string;
   captions?: readonly Cued[];
-  /** A diagram panel's diagram id, and the steps it shows (the first `steps.length` of the diagram; all when absent). */
+  /**
+   * A diagram panel's diagram id, the step it starts at (`from`, 1-based, default 1) and the steps it shows: `steps.length`
+   * of them from `from` on; all the rest of the diagram when absent (diagramSteps).
+   */
   diagram?: string;
+  from?: number;
   steps?: readonly unknown[];
   /** A clip panel's clip id: the transcript reads what the clip shows (its `alt`) when `clipOf` finds it. */
   clip?: string;
+}
+
+/**
+ * Which of a diagram's `total` steps a diagram panel shows: `count` of them from `start` (0-based). A panel starts at
+ * step `from` (1-based, default 1) and shows one step per entry of its `steps`, or every step from there to the end
+ * when it lists none; never past the diagram's last step. Several panels in a row can so walk through one diagram.
+ */
+export function diagramSteps(total: number, from?: number, listed?: number): { start: number; count: number } {
+  const n = Math.max(0, Math.floor(total) || 0);
+  const start = Math.min(Math.max(0, Math.floor(Number(from) || 1) - 1), Math.max(0, n - 1));
+  const rest = Math.max(0, n - start);
+  const want = listed && listed > 0 ? Math.floor(listed) : rest;
+  return { start, count: Math.min(want, rest) };
 }
 
 /** What the transcript needs of a diagram: its title and the caption of each step. */
@@ -269,7 +286,8 @@ export function comicTranscript(panels: readonly TranscriptPanel[], diagramOf?: 
     if (p.voiceover) parts.push(p.voiceover);
     const d = p.diagram ? diagramOf?.(p.diagram) : undefined;
     if (d) {
-      const shown = d.steps.slice(0, p.steps && p.steps.length > 0 ? p.steps.length : d.steps.length);
+      const { start, count } = diagramSteps(d.steps.length, p.from, p.steps?.length);
+      const shown = d.steps.slice(start, start + count);
       parts.push(`Diagram: ${d.title}.`, ...shown.map((s) => s.caption));
     }
     for (const b of p.bubbles) parts.push(b.who ? `${nameOf.get(b.who) ?? b.who}: ${b.text}` : b.text);

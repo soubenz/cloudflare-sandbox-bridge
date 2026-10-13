@@ -364,6 +364,26 @@ describe('applyDiagramStep', () => {
     expect(frame.classList.contains('cm-dgm-idle')).toBe(true);
   });
 
+  it('embeds only the drawing: no buttons, no step caption, no "Step 1 of N", no text version (the storyteller says it once)', () => {
+    const d = library.diagrams.find((x) => x.id === 'gateway-what-it-does') as unknown as { steps: Array<{ caption: string }> };
+    const { fig } = fakePanel();
+    for (const step of [-1, 0, 1, 2]) {
+      A.applyDiagramStep(fig, { scene: 'diagram', diagram: 'gateway-what-it-does' }, step);
+      expect(walk(fig).filter((e) => ['button', 'details', 'summary', 'input', 'a'].includes(e.tag)), `step ${step}`).toHaveLength(0);
+      for (const cls of ['diagram-controls', 'diagram-caption', 'diagram-text', 'diagram-title', 'diagram-step', 'diagram-figure']) expect(byClass(fig, cls), `${cls} at step ${step}`).toHaveLength(0);
+      const text = fig.textContent;
+      for (const st of d.steps) expect(text, `step ${step}`).not.toContain(st.caption);
+      expect(text).not.toMatch(/Step \d+ of \d+|Restart|Read as text|Previous|Next/);
+    }
+    // and a panel that starts part-way (`from`) shows that step of the diagram, the one before it until its first
+    const { fig: later, frame } = fakePanel();
+    expect(A.applyDiagramStep(later, { scene: 'diagram', diagram: 'gateway-what-it-does', from: 3 }, -1)).toBe(1);
+    expect(frame.classList.contains('cm-dgm-idle')).toBe(false);
+    expect(A.applyDiagramStep(later, { scene: 'diagram', diagram: 'gateway-what-it-does', from: 3 }, 0)).toBe(2);
+    expect(A.applyDiagramStep(later, { scene: 'diagram', diagram: 'gateway-what-it-does', from: 3 }, 1)).toBe(3);
+    expect(A.applyDiagramStep(later, { scene: 'diagram', diagram: 'gateway-what-it-does', from: 3 }, 99)).toBe(d.steps.length - 1);
+  });
+
   it('empties the frame for an id the library does not have', () => {
     const { fig, frame, port } = fakePanel();
     A.applyDiagramStep(fig, panel, 0);

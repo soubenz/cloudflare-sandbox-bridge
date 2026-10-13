@@ -104,6 +104,8 @@
 
 /* ---------- the player ---------- */
 .cm { display: block; position: relative; min-width: 0; margin: 0 0 var(--s4); }
+/* The stage and its controls: what goes full screen. */
+.cm-frame { position: relative; outline: none; }
 
 /* The frame: as wide as its container; comic.js sets its height (it grows to the whole comic at the end). */
 .cm-stage {
@@ -160,6 +162,13 @@
   background-size: 14px 14px; animation: cm-drift 12s linear infinite;
 }
 .cm-art { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+/*
+ * The picture layer: the halftone, a clip, the art, a drawn screen's lines, a black card's stack. A `shot: close`
+ * (and a clip's still, slowly) pushes it in by --zoom, which comic.js sets from the clock (comic-timeline.js
+ * pictureZoom, at most 1.08). The panel's frame does not move and the words over the picture are not in this
+ * layer, so the camera never cuts them.
+ */
+.cm-shot { position: absolute; inset: 0; overflow: hidden; transform: scale(var(--zoom, 1)); transform-origin: 50% 50%; }
 
 /* Caption: the yellow strip along the foot. */
 .cm-cap {
@@ -192,8 +201,10 @@
   opacity: 0; transform: translateY(0.6em); transition: opacity 0.45s ease, transform 0.55s cubic-bezier(0.2, 1, 0.3, 1);
 }
 .cm-stack-line + .cm-stack-line { border-top: 1px solid var(--cm-black-rule); }
-/* Four or five captions: a size smaller, so the stack keeps to its band. */
+/* Four or five captions: a size smaller, so the stack keeps to its band; six: smaller again, and on a phone they grow less. */
 .cm-stack:has(> .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line) .cm-stack-line { font-size: calc(15px * var(--ts, 1)); padding: 0.3em 0; }
+.cm-stack:has(> .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line) .cm-stack-line { font-size: calc(12.5px * min(var(--ts, 1), 1.4)); line-height: 1.2; padding: 0.16em 0; }
+.cm-stack:has(> .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line) .cm-stack-title { margin-bottom: 0.35em; font-size: calc(11px * min(var(--tt, 1), 1.6)); }
 .cm-stack-title.on, .cm-stack-line.on { opacity: 1; transform: none; }
 
 /* A caption that is a time of day ("23:47"): set like a clock, the digits all one width. */
@@ -298,19 +309,19 @@
 
 /* ---------- the clip card ---------- */
 /*
- * A clip of the library (comic.js clipMedia) fills the panel, cropped to it (object-fit: cover), under the art and
- * the words. A still is pushed in slowly by --kb, the panel's progress from 0 to 1, which comic.js sets from the clock
- * (so it is the same picture at the same second, and holds still when the comic is paused). A clip that cannot be
- * shown leaves a plain dark panel with what the clip shows, in words.
+ * A clip of the library (comic.js clipMedia) fills the panel, which is the clip's own shape, so it is shown whole
+ * (object-fit: contain; a clip of another shape is letterboxed over a blurred copy of itself, never cropped), under the
+ * art and the words. A still, and a close shot, are pushed in slowly with the picture layer (.cm-shot, --zoom, which
+ * comic.js sets from the clock: the same picture at the same second, still when the comic is paused). A clip that
+ * cannot be shown leaves a plain dark panel with what the clip shows, in words.
  */
 .cm-scene-clip { --cm-pbg: var(--cm-black); --cm-pfg: var(--cm-fg-black); }
 .cm-scene-clip .cm-halftone { display: none; }
 .cm-clip { position: absolute; inset: 0; overflow: hidden; background: var(--cm-black); }
-.cm-clip-media { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
-.cm-clip-kb {
-  transform-origin: 60% 40%;
-  transform: scale(calc(1 + 0.12 * var(--kb, 0))) translate(calc(-1.5% * var(--kb, 0)), calc(-1% * var(--kb, 0)));
-}
+/* The panel is the clip's own shape, so the whole picture fills it; one of another shape is letterboxed, never cropped. */
+.cm-clip-media { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; }
+/* What a letterboxed clip leaves either side: a blurred, darkened copy of the picture. */
+.cm-clip-back { position: absolute; inset: -6%; display: block; width: 112%; height: 112%; object-fit: cover; filter: blur(18px) brightness(0.45); }
 .cm-clip-alt {
   display: none; position: absolute; inset: 0; margin: 0; padding: 12% 14%;
   align-items: center; justify-content: center; text-align: center;
@@ -318,11 +329,49 @@
 }
 .cm-clip-failed .cm-clip-alt { display: flex; }
 .cm-clip-failed .cm-clip-media { display: none; }
-.cm-scene-clip .cm-cap { max-width: 56%; }
-.cm-scene-clip .cm-bub { --bw: 50%; }
-.cm-scene-clip .cm-sfx { right: 24px; top: 47%; }
-/* Reduced motion: a still stays where it is. */
-.cm[data-reduced] .cm-clip-kb { transform: none; }
+/*
+ * A clip's words, laid out like a film's: in a safe area 5% in from the frame, the bubbles at the top (each side a
+ * column, one under another, at most 45% of the panel wide), the screen card at the top right, the caption a small
+ * lower-third tag at the lower left, the sound effect at the lower right. Sizes are in the panel's own units
+ * (container query units of the panel), times the phone's text scale, so they scale with it, full screen included.
+ */
+.cm-scene-clip { container-type: size; }
+.cm-over {
+  position: absolute; inset: 5%; z-index: 1; pointer-events: none;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas: "l r" "cap sfx"; column-gap: 4cqw; row-gap: 2cqh;
+}
+.cm-over-l, .cm-over-r { display: flex; flex-direction: column; gap: 4.5cqh; min-height: 0; min-width: 0; }
+.cm-over-l { grid-area: l; align-items: flex-start; }
+.cm-over-r { grid-area: r; align-items: flex-end; }
+.cm-over .cm-bub {
+  position: relative; left: auto; right: auto; top: auto; bottom: auto; max-width: 100%; margin-top: 0.75em;
+  padding: 0.55em 0.8em; border-width: 2px; border-radius: 16px; box-shadow: 2px 2px 0 var(--cm-ink);
+  font-size: calc(2.05cqw * var(--ts, 1));
+}
+.cm-over .cm-bub::after { border-right-width: 2px; border-bottom-width: 2px; width: 0.7em; height: 0.7em; bottom: -0.47em; }
+.cm-over .cm-tag { font-size: calc(1.55cqw * var(--tt, 1)); }
+.cm-over .cm-cap {
+  grid-area: cap; justify-self: start; align-self: end;
+  position: relative; left: auto; bottom: auto; max-width: 100%;
+  padding: 0.35em 0.7em; border-width: 2px; border-radius: 4px; box-shadow: 2px 2px 0 var(--cm-ink);
+  font-size: calc(1.55cqw * min(var(--tt, 1), 1.7));
+}
+.cm-over .cm-caption--clock { font-size: calc(1.9cqw * min(var(--tt, 1), 1.6)); }
+.cm-over .cm-sfx {
+  grid-area: sfx; justify-self: end; align-self: end; position: relative;
+  font-size: min(5.2cqw, calc(26cqw / (0.62 * var(--sfxlen, 6)))); -webkit-text-stroke: 2px var(--cm-ink);
+}
+/* The screen card: see-through dark glass, mono, the longest line fitting when it can, else wrapping (never cut). */
+.cm-card {
+  max-width: 89%; padding: 0.5em 0.75em; border-radius: 10px;
+  background: color-mix(in srgb, var(--cm-screen-bg) 82%, transparent); border: 2px solid color-mix(in srgb, var(--cm-screen-text) 55%, transparent);
+  font: 600 clamp(calc(1.5cqw * var(--ts, 1)), calc(33cqw / (0.62 * var(--maxlen, 30))), calc(1.75cqw * var(--ts, 1)))/1.35 var(--mono);
+}
+.cm-card-in { display: flex; flex-direction: column; gap: 0.2em; }
+.cm-card .cm-scrline { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Reduced motion: the picture stays where it is. */
+.cm[data-reduced] .cm-shot { transform: none; }
 
 /* ---------- the diagram card ---------- */
 /* The frame carries diagram.css's class, so the diagram's own tokens apply; the plate is the diagram's ground. */
@@ -335,6 +384,8 @@
 .cm-dgm-idle .diagram-node.is-lit .diagram-node-glow { stroke-opacity: 0; }
 .cm-dgm-idle .diagram-node.is-lit .diagram-node-box { stroke-width: 0.35; }
 .cm-dgm-idle .diagram-edge.is-lit .diagram-edge-line { stroke: var(--dg-border-strong); stroke-width: 0.4; }
+/* Only the drawing: whatever chrome the diagram player has (its caption, buttons, step count, text version) never shows in a panel. */
+.cm-pane .diagram-controls, .cm-pane .diagram-caption, .cm-pane .diagram-text, .cm-pane .diagram-title { display: none; }
 @keyframes cm-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @keyframes cm-lean { 0%, 100% { rotate: -1.6deg; } 50% { rotate: 1.8deg; } }
 @keyframes cm-blink { 0%, 91%, 100% { transform: scaleY(1); } 94% { transform: scaleY(0.08); } }
@@ -357,7 +408,7 @@
 .cm[data-state="done"] .cm-pane, .cm[data-state="done"] .cm-banner { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .cm-reel * { animation: none !important; transition: none !important; }
-  .cm-clip-kb { transform: none !important; }
+  .cm-shot { transform: none !important; }
 }
 
 /* ---------- Replay and Skip, the timecode, the text version ---------- */
@@ -376,12 +427,29 @@
 }
 .cm-time { margin-left: auto; font: 500 12.5px/1 var(--mono); color: var(--ink-muted); font-variant-numeric: tabular-nums; }
 
-.cm-text, .cm-story-text { margin-top: var(--s4); border: 1px solid var(--border); border-radius: 16px; background: var(--surface-2); }
-.cm-text > summary, .cm-story-text > summary { padding: 12px 16px; cursor: pointer; font-weight: 600; font-size: 14.5px; color: var(--ink-2); border-radius: 16px; }
-.cm-text > summary:hover, .cm-story-text > summary:hover { color: var(--ink); }
-.cm-text[open] > summary, .cm-story-text[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-.cm-transcript { margin: 0; padding: 4px 16px 16px; list-style: none; display: flex; flex-direction: column; gap: 8px; color: var(--ink-2); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
-.cm-story-text > .learn-prose, .cm-story-text > .markdown-body { padding: 4px 16px 8px; }
+/* "Continuing…": after a comic that played to its end, a short bar runs down before the flow moves on; Stay here keeps the story. */
+.cm-next { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; color: var(--ink-2); font-size: 14.5px; font-weight: 600; }
+.cm-next[hidden] { display: none; }
+.cm-next-bar { flex: 1 1 80px; max-width: 220px; height: 4px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--cm-stage-bar) 25%, transparent); }
+.cm-next-bar > span { display: block; height: 100%; width: 100%; background: var(--cm-stage-bar); transform-origin: 0 50%; animation: cm-countdown 1.5s linear both; }
+.cm[data-test] .cm-next-bar > span { animation: none; }
+@keyframes cm-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .cm-next-bar > span { animation: none; } }
+
+/* Full screen: the frame fills the screen, the stage letterboxed in the middle (comic.js sizes it to fit), the controls under it. */
+.cm-frame:fullscreen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  width: 100%; height: 100%; padding: 16px; box-sizing: border-box; background: var(--surface);
+}
+.cm-frame:-webkit-full-screen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  width: 100%; height: 100%; padding: 16px; box-sizing: border-box; background: var(--surface);
+}
+.cm[data-fullscreen] .cm-stage { flex: none; max-width: 100%; }
+.cm[data-fullscreen] .cm-controls, .cm[data-fullscreen] .cm-next { flex: none; width: 100%; max-width: 1200px; margin-top: 0; justify-content: center; }
+
+/* The text version is for screen readers only (.sr-only): the panels' words in order, as a list. */
+.cm-transcript { margin: 0; padding: 0; list-style: none; }
 
 /* A story that is a comic gets a wider card on the Before you begin screen. */
 .learn-wrap.learn-wrap-comic { max-width: 1100px; }

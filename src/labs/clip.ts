@@ -45,6 +45,15 @@ export const ClipSchema = z
     seconds: z.number().positive().max(120).optional(),
     /** A video loops while its panel is on screen; without `loop` it rests on its last frame when it ends. */
     loop: z.literal(true).optional(),
+    /**
+     * The clip's shape, width to height ("16:9"), when its pixel size is not given: a clip panel is drawn that shape
+     * (as tall as it needs, up to 4:3), so the clip is shown whole, never cropped. Without it (and without `width`
+     * and `height`) a clip is taken to be 16:9.
+     */
+    aspect: z.string().regex(/^\d{1,5}:\d{1,5}$/, 'width:height, like 16:9').optional(),
+    /** The clip's size in pixels (both or neither): its shape, when `aspect` does not give it. */
+    width: z.number().int().positive().max(10000).optional(),
+    height: z.number().int().positive().max(10000).optional(),
   })
   .strict()
   .superRefine((c, ctx) => {
@@ -53,6 +62,12 @@ export const ClipSchema = z
       ctx.addIssue({ code: 'custom', path: ['src'], message: `a ${c.kind} clip's src is /media/clips/<file> ending .${exts.join(', .')}` });
     }
     if (c.kind === 'image' && c.loop) ctx.addIssue({ code: 'custom', path: ['loop'], message: 'only a video loops' });
+    if ((c.width === undefined) !== (c.height === undefined)) ctx.addIssue({ code: 'custom', path: ['width'], message: 'width and height go together' });
+    if (c.aspect) {
+      const [w, h] = c.aspect.split(':').map(Number);
+      const r = h! > 0 ? w! / h! : 0;
+      if (!(r >= 0.5 && r <= 4)) ctx.addIssue({ code: 'custom', path: ['aspect'], message: 'an aspect between 1:2 and 4:1' });
+    }
   });
 export type Clip = z.infer<typeof ClipSchema>;
 

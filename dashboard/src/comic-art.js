@@ -537,26 +537,19 @@ const SCENE_ART = {
 
   /**
    * The clip card: the clip itself is HTML under this art (clipMedia), so the art only darkens the top and the
-   * foot a little, where the bubbles and the caption sit, and draws a small screen card at the top right for the
-   * panel's screen lines, if it has any. Nobody is drawn: the cast of a clip panel only names who speaks.
+   * foot a little, where the bubbles and the caption sit. Its screen lines are not drawn here: the player sets them
+   * as a small card in the panel's safe area, over the clip (comic.js). Nobody is drawn: the cast of a clip panel
+   * only names who speaks.
    */
-  clip: (p, { w }) => {
-    const d = SCREENS.clip.device;
-    const card = Array.isArray(p.lines) && p.lines.length > 0;
-    return {
-      svg:
-        `<defs><linearGradient id="cm-clip-shade" x1="0" y1="0" x2="0" y2="1">` +
-        `<stop offset="0" stop-color="#000" stop-opacity=".38"/><stop offset=".3" stop-color="#000" stop-opacity="0"/>` +
-        `<stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".45"/>` +
-        `</linearGradient></defs>` +
-        `<rect class="cm-clip-shade" width="${w}" height="${ART.h}" fill="url(#cm-clip-shade)"/>` +
-        (card
-          ? `<g class="cm-clip-card"><rect x="${d.x + 5}" y="${d.y + 5}" width="${d.w}" height="${d.h}" rx="12" fill="${INK}" opacity=".5"/>` +
-            `<rect x="${d.x}" y="${d.y}" width="${d.w}" height="${d.h}" rx="12" fill="${SCREEN_BG}" ${line(3)}/></g>`
-          : ''),
-      lines: SCREENS.clip.lines,
-    };
-  },
+  clip: (_p, { w }) => ({
+    svg:
+      `<defs><linearGradient id="cm-clip-shade" x1="0" y1="0" x2="0" y2="1">` +
+      `<stop offset="0" stop-color="#000" stop-opacity=".38"/><stop offset=".3" stop-color="#000" stop-opacity="0"/>` +
+      `<stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".45"/>` +
+      `</linearGradient></defs>` +
+      `<rect class="cm-clip-shade" width="${w}" height="${ART.h}" fill="url(#cm-clip-shade)"/>`,
+    lines: null,
+  }),
 };
 
 /** Film grain: specks scattered by a fixed seed, so the same card always draws the same. */
@@ -597,11 +590,14 @@ export function sceneArt(panel) {
 // ---------------------------------------------------------------------------
 
 /**
- * The picture of a clip panel, `div.cm-clip`, to sit under the panel's art and words (object-fit: cover):
+ * The picture of a clip panel, `div.cm-clip`, to sit under the panel's art and words. The panel is the clip's own
+ * shape (comic-timeline.js clipPanelHeight), and the picture is shown whole (object-fit: contain), over a blurred,
+ * darkened copy of itself (`img.cm-clip-back`: the poster, or the still) that fills any band a clip of another
+ * shape leaves, so nothing is ever cropped:
  *   a video clip     a muted, inline <video class="cm-clip-media cm-clip-video"> (preload metadata, `loop` as the
  *                    library says, its poster if it has one) that comic.js plays on the comic's clock: never here
- *   a still          an <img class="cm-clip-media cm-clip-kb">, which comic.css pushes in slowly by `--kb`, the
- *                    panel's progress (comic.js sets it from the clock, so a seek lands on the same picture)
+ *   a still          an <img class="cm-clip-media cm-clip-kb">, which the player pushes in slowly with the rest of
+ *                    the panel's picture (its `.cm-shot` layer, scaled by the clock: comic-timeline.js pictureZoom)
  *   `still: true`    reduced motion: a video shows its poster (an <img>, no push-in), or with none the video,
  *                    never played
  * A picture that fails to load gives way to the poster, and with no poster (or a poster that fails too) to a
@@ -620,10 +616,26 @@ export function clipMedia(doc, clip, { still = false } = {}) {
   alt.textContent = typeof clip.alt === 'string' ? clip.alt : '';
   wrap.appendChild(alt);
 
+  // The blurred backdrop: the poster of a video, or the still itself; decoration only, and it goes if it fails.
+  const backSrc = clip.kind === 'image' ? clip.src : clip.poster;
+  let back = null;
+  if (backSrc) {
+    back = doc.createElement('img');
+    back.setAttribute('class', 'cm-clip-back');
+    back.setAttribute('alt', '');
+    back.setAttribute('aria-hidden', 'true');
+    back.setAttribute('decoding', 'async');
+    back.setAttribute('draggable', 'false');
+    back.setAttribute('src', backSrc);
+    back.addEventListener('error', () => back.parentNode === wrap && wrap.removeChild(back), { once: true });
+    wrap.appendChild(back);
+  }
+
   let media = null;
   const failed = () => {
     if (media && media.parentNode === wrap) wrap.removeChild(media);
     media = null;
+    if (back && back.parentNode === wrap) wrap.removeChild(back);
     wrap.classList.add('cm-clip-failed');
   };
   const image = (src, kb) => {
@@ -756,10 +768,11 @@ export function releaseDiagram(figEl) {
 }
 
 /**
- * Shows step `step` (0-based) of the panel's diagram in the frame sceneArt drew
+ * Shows step `step` (0-based, of the steps the panel shows) of the panel's diagram in the frame sceneArt drew
  * for it: `figEl` is the panel's element (anything holding that art). `step` -1
  * (or anything not a number) is "nothing yet": the boxes and lines ghosted,
- * nothing lit, nothing travelling. A step past the end shows the last one.
+ * nothing lit, nothing travelling (for a panel with `from`, the step before it). A step past the end shows the last one.
+ * A panel with `from` (1-based) starts there: its step 0 is the diagram's step `from - 1`.
  *
  * The picture is diagram.js's own: its player is built off the page with no
  * autoplay, its picture moved into the frame's port (a nested <svg> that keeps
@@ -802,8 +815,11 @@ export function applyDiagramStep(figEl, panel, step) {
       players.set(port, p);
     }
     const total = Array.isArray(d.steps) ? d.steps.length : 0;
+    // A panel that starts part-way through its diagram (`from`, 1-based) counts its steps from there; before its first
+    // one it shows the diagram where the panel before it left it (the step before `from`), not an empty diagram.
+    const from = Number.isInteger(panel?.from) && panel.from > 1 ? Math.min(panel.from, total) - 1 : 0;
     const want = typeof step === 'number' && Number.isFinite(step) ? Math.trunc(step) : -1;
-    const shown = want < 0 || total === 0 ? -1 : Math.min(want, total - 1);
+    const shown = total === 0 ? -1 : want < 0 ? from - 1 : Math.min(from + want, total - 1);
     if (shown !== p.shown) {
       // goTo sends the step's packets on their way (or, still, sets them down); "nothing yet" only hides what is drawn.
       if (shown >= 0) p.root.goTo(shown);

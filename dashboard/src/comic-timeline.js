@@ -25,6 +25,7 @@ import {
   BUBBLE_POSITIONS,
   CAST,
   MOODS,
+  PAGE,
   PAGE_W,
   POSES,
   PROPS,
@@ -36,6 +37,7 @@ import {
   castId,
   comicPagesTranscript,
   cueSpan,
+  diagramSteps,
   layoutComic,
   panelSeconds,
 } from '../../src/labs/comic-kit.ts';
@@ -90,8 +92,12 @@ export const TIMING = {
   stepGap: 0.6,
 };
 
-/** How much closer than the usual framing a `shot: close` panel is framed. */
-export const CLOSE_ZOOM = 1.35;
+/**
+ * How far a `shot: close` panel's picture is pushed in by the end of the panel (and the most a clip's still is
+ * pushed in by its slow Ken Burns move). The camera never pushes past a panel's frame: only the picture inside it
+ * moves (comic.js's `.cm-shot` layer), so the words over it are never cut. Gentle, so the subject stays in frame.
+ */
+export const CLOSE_ZOOM = 1.08;
 
 /** The reel's geometry, in the units of the page (comic-kit's PAGE). */
 export const REEL = { margin: 30, paper: 14, gap: 56, banner: 74, shotPad: 28 };
@@ -113,7 +119,12 @@ export const diagramFor = (id) => (typeof id === 'string' ? DIAGRAMS.get(id) : u
 function stepsShown(panel) {
   const d = diagramFor(panel.diagram);
   if (!d) return 0;
-  return Array.isArray(panel.steps) && panel.steps.length > 0 ? Math.min(panel.steps.length, d.steps.length) : d.steps.length;
+  return diagramSteps(d.steps.length, panel.from, Array.isArray(panel.steps) ? panel.steps.length : 0).count;
+}
+/** The diagram step (0-based) a diagram panel starts at: its `from`, 1-based (diagramSteps). */
+function stepsFrom(panel) {
+  const d = diagramFor(panel.diagram);
+  return d ? diagramSteps(d.steps.length, panel.from, 1).start : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,12 +136,34 @@ const CLIP_SRC = /^\/media\/clips\/[a-z0-9][a-z0-9._-]{0,99}\.(mp4|webm|webp|png
 const CLIP_IMAGE = /\.(webp|png|jpg|jpeg|avif)$/;
 const CLIP_ID = /^[a-z][a-z0-9-]{0,39}$/;
 
-/** A library entry as the player can trust it: `{ id, kind, src, poster?, alt, seconds?, loop }`, or null. */
+/** The shape a clip is assumed to have when the library does not say: a film's 16:9. */
+export const CLIP_ASPECT = 16 / 9;
+
+/**
+ * A clip's width over its height: its `aspect` ("16:9", or a number), else its `width` and `height` in pixels,
+ * else CLIP_ASPECT. Anything out of reason (narrower than 1:2, wider than 4:1) is CLIP_ASPECT too.
+ */
+export function clipAspect(c) {
+  const ok = (v) => (Number.isFinite(v) && v >= 0.5 && v <= 4 ? v : null);
+  if (!c || typeof c !== 'object') return CLIP_ASPECT;
+  const a = c.aspect;
+  if (typeof a === 'number') return ok(a) ?? CLIP_ASPECT;
+  if (typeof a === 'string') {
+    const m = /^(\d{1,5}(?:\.\d+)?):(\d{1,5}(?:\.\d+)?)$/.exec(a);
+    if (m && Number(m[2]) > 0) return ok(Number(m[1]) / Number(m[2])) ?? CLIP_ASPECT;
+  }
+  const w = Number(c.width);
+  const h = Number(c.height);
+  if (w > 0 && h > 0) return ok(w / h) ?? CLIP_ASPECT;
+  return CLIP_ASPECT;
+}
+
+/** A library entry as the player can trust it: `{ id, kind, src, poster?, alt, seconds?, loop, aspect }`, or null. */
 function cleanClip(c) {
   if (!c || typeof c !== 'object' || typeof c.id !== 'string' || !CLIP_ID.test(c.id)) return null;
   if (c.kind !== 'video' && c.kind !== 'image') return null;
   if (typeof c.src !== 'string' || !CLIP_SRC.test(c.src) || (c.kind === 'image' && !CLIP_IMAGE.test(c.src))) return null;
-  const out = { id: c.id, kind: c.kind, src: c.src, alt: typeof c.alt === 'string' ? c.alt.slice(0, 240) : '', loop: c.kind === 'video' && c.loop === true };
+  const out = { id: c.id, kind: c.kind, src: c.src, alt: typeof c.alt === 'string' ? c.alt.slice(0, 240) : '', loop: c.kind === 'video' && c.loop === true, aspect: clipAspect(c) };
   if (typeof c.poster === 'string' && CLIP_SRC.test(c.poster) && CLIP_IMAGE.test(c.poster)) out.poster = c.poster;
   const seconds = Number(c.seconds);
   if (seconds > 0 && seconds <= 120) out.seconds = seconds;
@@ -170,13 +203,13 @@ export const clipProgress = (clip, t) => (clip && clip.end > clip.start ? clamp(
  * Where a scene's screen is, in the panel's own units: `lines` is the box the typed
  * text fills, `device` the monitor or laptop round it. The art draws to these (comic-art.js)
  * and, in a narrow container, the camera pushes in on `device` so the text can be read.
- * A clip panel's screen is a small card over the clip, at its top right.
+ * (A clip panel has no drawn screen: its lines are a small card the player sets over the clip, in the
+ * panel's safe area, and the camera never moves inside a clip panel.)
  */
 export const SCREENS = {
   desk: { lines: { x: 352, y: 150, w: 294, h: 84 }, device: { x: 330, y: 132, w: 338, h: 118 } },
   screen: { lines: { x: 78, y: 54, w: 541, h: 170 }, device: { x: 48, y: 26, w: 601, h: 226 } },
   you: { lines: { x: 46, y: 184, w: 372, h: 104 }, device: { x: 20, y: 164, w: 424, h: 140 } },
-  clip: { lines: { x: 436, y: 34, w: 226, h: 92 }, device: { x: 420, y: 20, w: 258, h: 120 } },
 };
 
 /** A container narrower than this gets the push-in on screens (and a squarer frame). */
@@ -196,7 +229,7 @@ export function panelWords(panel) {
   for (const l of panel.lines ?? []) n += wordsIn(l);
   n += wordsIn(panel.title);
   for (const c of panel.captions ?? []) n += wordsIn(c);
-  if (panel.diagram) for (const st of diagramFor(panel.diagram)?.steps.slice(0, stepsShown(panel)) ?? []) n += wordsIn(st.caption);
+  if (panel.diagram) for (const st of diagramFor(panel.diagram)?.steps.slice(stepsFrom(panel), stepsFrom(panel) + stepsShown(panel)) ?? []) n += wordsIn(st.caption);
   return n;
 }
 
@@ -294,7 +327,7 @@ function cleanPanel(p) {
   if (p.scene === 'black') {
     const title = str(p.title, 60);
     if (title) out.title = title;
-    const captions = (Array.isArray(p.captions) ? p.captions : []).map((c) => cuedOf(c, 80)).filter(Boolean).slice(0, 5);
+    const captions = (Array.isArray(p.captions) ? p.captions : []).map((c) => cuedOf(c, 80)).filter(Boolean).slice(0, 6);
     if (captions.length) {
       out.captions = captions.map((c) => c.text);
       if (captions.some((c) => c.cue)) out.captionCues = captions.map((c) => c.cue ?? null);
@@ -305,7 +338,10 @@ function cleanPanel(p) {
     if (!diagramFor(p.diagram)) return null;
     out.diagram = p.diagram;
     const listed = Array.isArray(p.steps) ? p.steps : [];
-    out.steps = Array.from({ length: stepsShown({ diagram: p.diagram, steps: listed }) }, (_, k) => {
+    // A panel can start part-way through its diagram (`from`, 1-based), to walk through one diagram over several panels.
+    const from = Number.isInteger(p.from) && p.from > 1 ? stepsFrom({ diagram: p.diagram, from: p.from }) + 1 : 1;
+    if (from > 1) out.from = from;
+    out.steps = Array.from({ length: stepsShown({ diagram: p.diagram, from, steps: listed }) }, (_, k) => {
       const cue = listed[k] && typeof listed[k] === 'object' ? str(listed[k].cue, CUE_MAX) : undefined;
       return cue ? { cue } : {};
     });
@@ -349,10 +385,42 @@ export const transcriptOf = (comic) => comicPagesTranscript(comic.pages, diagram
 // The schedule
 // ---------------------------------------------------------------------------
 
+/** The tallest a clip panel grows to show its clip whole: a 4:3 picture (the shortest is the page's row). */
+const CLIP_TALLEST = 4 / 3;
+
+/**
+ * How tall a clip panel `w` units wide is drawn: as tall as its clip's own shape needs (clipAspect), so the
+ * picture fills the panel without being cropped, never shorter than the page's row nor taller than a 4:3 picture
+ * (a clip of another shape is letterboxed inside it, never cropped: comic.css).
+ */
+export function clipPanelHeight(panel, w) {
+  const lib = panel && panel.scene === 'clip' ? clipFor(panel.clip) : undefined;
+  const aspect = lib ? lib.aspect : CLIP_ASPECT;
+  return clamp(w / aspect, PAGE.rowH, w / CLIP_TALLEST);
+}
+
+/**
+ * A page's layout (comic-kit's layoutComic) with each clip panel as tall as its clip needs (clipPanelHeight):
+ * its row grows to fit it, the rows under it move down, and the other panels of that row keep their height,
+ * centred in it. A page with no clip panel is laid out exactly as layoutComic says.
+ */
+export function fitClipRows(laid, panels) {
+  const want = laid.placements.map((pl, k) => (panels[k]?.scene === 'clip' ? clipPanelHeight(panels[k], pl.w) : pl.h));
+  if (want.every((h, k) => h === laid.placements[k].h)) return laid;
+  const rowH = new Map();
+  laid.placements.forEach((pl, k) => rowH.set(pl.row, Math.max(rowH.get(pl.row) ?? 0, want[k])));
+  const top = new Map();
+  let y = 0;
+  for (const r of [...rowH.keys()].sort((a, b) => a - b)) {
+    top.set(r, y);
+    y += rowH.get(r) + PAGE.gap;
+  }
+  const placements = laid.placements.map((pl, k) => ({ ...pl, y: top.get(pl.row) + (rowH.get(pl.row) - want[k]) / 2, h: want[k] }));
+  return { ...laid, placements, height: y - PAGE.gap };
+}
+
 /** A rectangle grown by `pad` on every side. */
 const grow = (r, pad) => ({ x: r.x - pad, y: r.y - pad, w: r.w + 2 * pad, h: r.h + 2 * pad });
-/** The middle of a rectangle `k` times smaller: what a camera `k` times closer frames. */
-const zoomIn = (r, k) => ({ x: r.x + (r.w - r.w / k) / 2, y: r.y + (r.h - r.h / k) / 2, w: r.w / k, h: r.h / k });
 
 /**
  * When a voiced panel's storyteller says `cue`: the clip's start plus the same fraction of the clip as the
@@ -581,14 +649,16 @@ function castPanel(panel, voiced, row, pStart) {
  * and for each panel: start, end, dur, words, rect (its place on the reel),
  * popAt, captionAt, sfxAt, focusAt (when a narrow container's camera pushes in on its screen, or null),
  * bubbles [{ who, pos, start, end, step, wordTimes }], lines [{ start, end }], shot ('close', 'wide' or null),
+ * push ({ start, end } of a `shot: close` panel's picture push-in, else null; see pictureZoom),
  * stack (when each caption of a black card appears), stepTimes (when each shown step of a diagram starts) and clip
  * ({ id, kind, loop, seconds?, start, end } for a clip panel whose clip the library has, else null; see clipTimeAt).
  * Every rectangle is in page units.
  *
  * Cues (a voiced panel's caption, sfx, bubbles, screen lines, black-card captions and diagram steps) move a
  * part to the moment the storyteller says its phrase (cueTime); without narration they change nothing.
- * Shots: `close` adds a push-in (kind 'close', CLOSE_ZOOM times closer) once the camera has arrived; `wide`
- * frames the panel's whole row instead of the panel.
+ * Shots: `close` pushes the panel's picture in (`push`, up to CLOSE_ZOOM) once the camera has arrived, never the
+ * camera, so the words over it are never cut; `wide` frames the panel's whole row instead of the panel. A clip
+ * panel is as tall as its clip needs (fitClipRows), so the clip is shown whole.
  */
 export function buildTimeline(comic, { audio } = {}) {
   const narration = resolveNarration(comic, audio);
@@ -608,7 +678,7 @@ export function buildTimeline(comic, { audio } = {}) {
   comic.pages.forEach((pg, pi) => {
     const titled = Boolean(pg.title);
     const bannerH = titled ? REEL.banner : 0;
-    const laid = layoutComic(pg.panels);
+    const laid = fitClipRows(layoutComic(pg.panels), pg.panels);
     const sheet = { x: M, y, w: sheetW, h: P + bannerH + laid.height + P };
     const banner = titled ? { x: M + P, y: y + P, w: PAGE_W, h: REEL.banner - 14 } : null;
     const body = { x: M + P, y: y + P + bannerH, w: PAGE_W, h: laid.height };
@@ -683,21 +753,29 @@ export function buildTimeline(comic, { audio } = {}) {
         if (late > pStart + dur - TIMING.hold + 1e-9) dur = late - pStart + TIMING.hold;
       }
 
-      // The camera: the panel, or with `shot: wide` its whole row; with `shot: close` it then pushes in.
+      // The camera: the panel, or with `shot: wide` its whole row. It never goes closer than the whole panel, so
+      // nothing over the picture is ever cut: `shot: close` pushes the picture in inside the panel instead (`push`,
+      // from the camera's arrival to the panel's end; pictureZoom).
       const framed = panel.shot === 'wide' ? { x: body.x, y: rect.y, w: body.w, h: rect.h } : rect;
       shots.push({ t: pStart, dur: TIMING.move, rect: grow(framed, REEL.shotPad), kind: 'panel' });
-      if (panel.shot === 'close') shots.push({ t: pStart + TIMING.move, dur: TIMING.move, rect: zoomIn(grow(rect, REEL.shotPad), CLOSE_ZOOM), kind: 'close' });
+      const push = panel.shot === 'close' ? { start: pStart + TIMING.move, end: pStart + dur } : null;
       // A screen is too small to read from the whole panel in a narrow container: once what is said has been said,
-      // the camera moves in on it (only there: a wide stage does not need it, and never plays this shot).
+      // the camera moves in on it (only there: a wide stage does not need it, and never plays this shot). A clip
+      // panel has none: its lines are a card over the clip, sized to be read from the whole panel.
       const screen = SCREENS[panel.scene];
       let focusAt = null;
       if (screen && lines.length) {
         const after = timed.length ? timed[timed.length - 1].end + 0.3 : pStart + TIMING.content;
-        const settled = pStart + TIMING.move * (panel.shot === 'close' ? 2 : 1) + 0.2;
+        const settled = pStart + TIMING.move + 0.2;
         const at = Math.min(Math.max(after, settled), pStart + dur - TIMING.hold - 0.6);
         const d = screen.device;
         focusAt = at;
-        shots.push({ t: at, dur: 0.7, rect: grow({ x: rect.x + 4 + d.x, y: rect.y + 4 + d.y, w: d.w, h: d.h }, 8), kind: 'screen', narrowOnly: true });
+        // The device as it is drawn: a pushed-in picture has it a little bigger, about the panel's middle.
+        const k = push ? CLOSE_ZOOM : 1;
+        const cx = rect.x + rect.w / 2;
+        const cy = rect.y + rect.h / 2;
+        const dev = { x: cx + (rect.x + 4 + d.x - cx) * k, y: cy + (rect.y + 4 + d.y - cy) * k, w: d.w * k, h: d.h * k };
+        shots.push({ t: at, dur: 0.7, rect: grow(dev, 8), kind: 'screen', narrowOnly: true });
       }
       const sfxAt = panel.sfx ? (cueAt(panel.sfxCue) ?? pStart + TIMING.sfx) : null;
       if (sfxAt !== null && panel.sound) stings.push({ panel: number, sound: panel.sound, at: sfxAt });
@@ -724,6 +802,7 @@ export function buildTimeline(comic, { audio } = {}) {
         lines: timedLines,
         focusAt,
         shot: panel.shot ?? null,
+        push,
         stack,
         stepTimes,
         clip,
@@ -740,6 +819,17 @@ export function buildTimeline(comic, { audio } = {}) {
   voices.sort((a, b) => a.start - b.start);
   stings.sort((a, b) => a.at - b.at);
   return { total: outro.end, parts, reel, pages, shots, outro, audio: voices, stings, clips: media };
+}
+
+/**
+ * How much a panel's picture is pushed in at time t (the scale of comic.js's `.cm-shot` layer, 1 for none): a
+ * `shot: close` panel's push from the camera's arrival to its end, eased, and a clip's still pushed in slowly over
+ * its panel (the Ken Burns move); at most CLOSE_ZOOM. Only the picture: the words over it never move.
+ */
+export function pictureZoom(panel, t) {
+  const push = panel?.push && panel.push.end > panel.push.start ? easeInOut(clamp((t - panel.push.start) / (panel.push.end - panel.push.start), 0, 1)) : 0;
+  const kb = panel?.clip?.kind === 'image' ? clipProgress(panel.clip, t) : 0;
+  return 1 + (CLOSE_ZOOM - 1) * Math.max(push, kb);
 }
 
 /** Every panel of a timeline in reading order. */
@@ -812,12 +902,25 @@ function mixCamera(a, b, p) {
   return { cx: a.cx + (b.cx - a.cx) * p, cy: a.cy + (b.cy - a.cy) * p, k: Math.exp(Math.log(a.k) + (Math.log(b.k) - Math.log(a.k)) * p) };
 }
 
-/** The viewport at time t: `width` wide, as tall as the playing frame, easing to the whole comic's height at the end. */
-export function viewportAt(tl, t, width) {
+/**
+ * The viewport at time t: `width` wide, as tall as the playing frame, easing to the whole comic's height at the end;
+ * never taller than `maxH` (full screen: the camera then frames the whole comic smaller instead).
+ */
+export function viewportAt(tl, t, width, maxH = Infinity) {
   const play = width / playAspect(width);
   const whole = tl.reel.h * (width / tl.reel.w);
   const p = clamp((t - tl.outro.start) / TIMING.outro, 0, 1);
-  return { w: width, h: play + (whole - play) * easeInOut(p) };
+  return { w: width, h: Math.min(maxH, play + (whole - play) * easeInOut(p)) };
+}
+
+/** The widest frame that fits a `w` by `h` box (full screen) at the shape playAspect gives that width. */
+export function fitWidth(w, h) {
+  if (!(w > 0) || !(h > 0)) return 0;
+  for (const aspect of [16 / 9, 4 / 3, 1]) {
+    const cand = Math.min(w, h * aspect);
+    if (cand / playAspect(cand) <= h + 0.5) return Math.floor(cand);
+  }
+  return Math.floor(Math.min(w, h));
 }
 
 /** The shots a viewport plays: all of them in a narrow one, all but the push-ins on screens in a wide one. */

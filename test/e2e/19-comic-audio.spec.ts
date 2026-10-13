@@ -261,7 +261,7 @@ const bubbleWordsOn = (panel: Locator, bubble: number) => panel.locator('.cm-bub
 test.describe('the Sound toggle', () => {
   test('is the third control beside Replay and Skip, on by default, named for its state and pressed when on', async ({ page }) => {
     const s = await beforeYouBegin(page, VOICED);
-    await expect(page.locator('#learnHost .cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip', 'Sound on']);
+    await expect(page.locator('#learnHost .cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip', 'Sound on', 'Full screen']);
     await expect(soundBtn(page)).toHaveAccessibleName('Sound on');
     await expect(soundBtn(page)).toHaveAttribute('aria-pressed', 'true');
     // Replay and Skip are still the only playback controls, and the stage itself has no controls in it.
@@ -620,8 +620,8 @@ const timecodeSeconds = async (page: Page) => {
 test.describe('a lab with no narration', () => {
   test('is exactly as it was: Pause, Replay and Skip only, no sound controls, nothing fetched, nothing scheduled', async ({ page }) => {
     const s = await beforeYouBegin(page, SILENT);
-    await expect(page.locator('#learnHost .cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip']);
-    expect(await page.locator('#learnHost .cm button').count()).toBe(3);
+    await expect(page.locator('#learnHost .cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip', 'Full screen']);
+    expect(await page.locator('#learnHost .cm button').count()).toBe(4);
     await expect(page.locator('#btnComicSound, #btnComicTapSound')).toHaveCount(0);
     expect(await clips(page)).toEqual([]);
     const tl = await timeline(page);
@@ -653,7 +653,7 @@ test.describe('narration a console cannot trust plays silent, whole', () => {
   ] as const) {
     test(`${what}: Replay and Skip only, no sound controls, nothing scheduled, nothing fetched, nothing broken`, async ({ page }) => {
       const s = await beforeYouBegin(page, slug);
-      await expect(page.locator('#learnHost .cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip']);
+      await expect(page.locator('#learnHost .cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip', 'Full screen']);
       await expect(page.locator('#btnComicSound, #btnComicTapSound')).toHaveCount(0);
       expect(await clips(page)).toEqual([]);
       const tl = await timeline(page);
@@ -812,7 +812,7 @@ test.describe('the characters speak their bubbles (the cast\'s voices)', () => {
 
   test('a narration that voices only some bubbles plays the comic silent, whole: no Sound toggle, nothing scheduled or fetched', async ({ page }) => {
     const s = await beforeYouBegin(page, HALF_VOICED);
-    await expect(page.locator('#learnHost .cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip']);
+    await expect(page.locator('#learnHost .cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip', 'Full screen']);
     expect(await clips(page)).toEqual([]);
     await at(page, 6);
     expect(s.clipRequests).toEqual([]);

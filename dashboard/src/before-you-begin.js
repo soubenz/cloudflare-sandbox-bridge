@@ -272,8 +272,10 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     const telling = closing ? learn.closing : learn;
     const s = telling.story ?? { title: telling.comic.title, minutes: 0 };
     const more = i + 1 < steps.length;
-    // The motion comic when the lab has one, with the text story folded under it; the text alone otherwise.
-    prose = storyContent(telling, { headingLevel: 2 });
+    // The motion comic when the lab has one (its text version is in it, for screen readers); the text story otherwise.
+    // A comic that plays to its end moves on to the next step by itself (after a "Continuing…" the learner can stop);
+    // never to Start the lab or Finish the warm-up, which are always pressed on purpose.
+    prose = storyContent(telling, { headingLevel: 2, onContinue: more ? () => enterStep(i + 1, 'forward') : undefined });
     const body = prose.node;
     host.classList.toggle('learn-wrap-comic', prose.hasComic);
     // Whether the comic has ended, was skipped or never played, Continue is how the learner moves on:

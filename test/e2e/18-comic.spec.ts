@@ -8,10 +8,11 @@ import { MULTI as MULTI_PAGE, SINGLE, bundleOf, type FixtureBundle, type Fixture
 
 /**
  * The motion comic in the console: it plays in "Before you begin" (the story step) and nowhere
- * else, not in the session's guide; Replay and Skip are its only buttons; Skip ends it on the
- * finished comic and Replay starts it over; reduced motion shows it finished;
- * "Read as text" lists every panel; a lab with no comic (or one that cannot be
- * drawn) still shows the text story; nothing scrolls sideways at any width.
+ * else, not in the session's guide; Pause, Replay, Skip and Full screen are its buttons; Skip ends it on the
+ * finished comic and Replay starts it over; reduced motion shows it finished; a comic that plays to its end
+ * moves on to the next step after "Continuing…" (Stay here keeps it); full screen fits the screen;
+ * its text version lists every panel for screen readers (nothing to unfold on screen); a lab with no comic
+ * (or one that cannot be drawn) still shows the text story; nothing scrolls sideways at any width.
  *
  * Like 16-learning.spec.ts and 17-session-layout.spec.ts this needs no password,
  * no API and no container: a static server serves dashboard/public (the built
@@ -200,6 +201,10 @@ declare global {
       status: () => string;
       doneCalls: () => number;
       timeline: () => Timeline;
+      ended: () => string | null;
+      continuing: () => boolean;
+      continueNow: () => void;
+      fullscreen: () => boolean;
     };
   }
 }
@@ -304,28 +309,28 @@ const panelCount = (c: Comic) => c.pages.reduce((n, p) => n + p.panels.length, 0
 // =========================================================================
 
 test.describe('in Before you begin', () => {
-  test('plays by itself, as a picture with a title, with the text story folded under it', async ({ page }) => {
+  test('plays by itself, as a picture with a title, with nothing to unfold under it', async ({ page }) => {
     const s = await beforeYouBegin(page, EXPLORE);
     const st = stage(page, '#learnHost');
     await expect(st).toHaveAttribute('role', 'img');
-    await expect(st).toHaveAttribute('aria-label', `${single.title}. An animated comic of ${panelCount(single)} panels over ${single.pages.length} pages. The text version is below, under Read as text.`);
+    await expect(st).toHaveAttribute('aria-label', `${single.title}. An animated comic of ${panelCount(single)} panels over ${single.pages.length} pages. Its text version follows the playback buttons.`);
     // The clock runs on its own: the timecode moves off zero.
     await expect.poll(async () => (await timecode(page, '#learnHost').textContent())?.split(' / ')[0], { timeout: 8000 }).not.toBe('0:00');
     await expect(page.locator('#learnHost .cm')).toHaveAttribute('data-state', 'playing');
-    // The screen's own heading is still the story's title, and the text story is there, folded.
+    // The screen's own heading is still the story's title; no "Read the story as text" or "Read as text" to open.
     await expect(page.locator('#learnHost [data-learn-heading]')).toHaveText(bundle.story!.title);
-    const fold = page.locator('#learnHost .cm-story-text');
-    await expect(fold).not.toHaveAttribute('open', '');
-    await fold.locator('summary').click();
-    await expect(fold.locator('.learn-prose p').first()).toBeVisible();
+    await expect(page.locator('#learnHost .cm-story-text, #learnHost .cm-story details, #learnHost .cm-story summary')).toHaveCount(0);
+    await expect(page.locator('#learnHost .cm-story').getByText('Read as text')).toHaveCount(0);
+    // the text version is there for screen readers only: visually hidden (a 1px clip)
+    expect((await page.locator('#learnHost .cm-text').boundingBox())!.width).toBeLessThanOrEqual(1);
     expect(s.errors).toEqual([]);
   });
 
-  test('has three buttons, Pause, Replay and Skip, and nothing else to press on the stage', async ({ page }) => {
+  test('has four buttons, Pause, Replay, Skip and Full screen, and nothing else to press on the stage', async ({ page }) => {
     await beforeYouBegin(page, EXPLORE);
     const controls = page.locator('#learnHost .cm-controls');
-    await expect(controls.getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip']);
-    expect(await page.locator('#learnHost .cm button').count()).toBe(3);
+    await expect(controls.getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip', 'Full screen']);
+    expect(await page.locator('#learnHost .cm button').count()).toBe(4);
     expect(await page.locator('#learnHost .cm-stage button, #learnHost .cm-stage a, #learnHost .cm-stage input, #learnHost .cm-stage [tabindex]').count()).toBe(0);
     await expect(replayBtn(page, '#learnHost')).toBeEnabled();
     await expect(skipBtn(page, '#learnHost')).toBeEnabled();
@@ -409,6 +414,78 @@ test.describe('in Before you begin', () => {
     await expect(cm).not.toHaveAttribute('data-paused', '');
   });
 
+  test('a comic that plays to its end says "Continuing…" and moves on to the next step; Stay here keeps the story', async ({ page }) => {
+    await beforeYouBegin(page, EXPLORE, { test: true });
+    const cm = page.locator('#learnHost .cm');
+    const note = cm.locator('.cm-next');
+    await expect(note).toHaveCount(0);
+    // Run the clock for real over the last two seconds: the comic plays to its end.
+    const total = await page.evaluate(() => window.__comicClock!.total);
+    await at(page, total - 2);
+    await clock.resume(page);
+    await expect(cm).toHaveAttribute('data-state', 'done', { timeout: 10_000 });
+    expect(await page.evaluate(() => window.__comicClock!.ended())).toBe('played');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('Continuing…');
+    // In a test the notice waits for the seam; Stay here keeps the story, and nothing moves on.
+    await note.getByRole('button', { name: 'Stay here' }).click();
+    await expect(note).toHaveCount(0);
+    expect(await page.evaluate(() => window.__comicClock!.continuing())).toBe(false);
+    await expect(page.locator('#learnHost [data-learn-heading]')).toHaveText(bundle.story!.title);
+    await expect(replayBtn(page, '#learnHost')).toBeFocused();
+    // Again, and this time it goes on.
+    await replayBtn(page, '#learnHost').click();
+    await at(page, total - 1);
+    await clock.resume(page);
+    await expect(note).toBeVisible({ timeout: 10_000 });
+    await page.evaluate(() => window.__comicClock!.continueNow());
+    await expect(page.locator('#learnHost .cm')).toHaveCount(0);
+    await expect(page.locator('#learnHost [data-learn-heading]')).not.toHaveText(bundle.story!.title);
+  });
+
+  test('Skip does not move on: the finished comic waits for Continue', async ({ page }) => {
+    await beforeYouBegin(page, EXPLORE, { test: true });
+    await skipBtn(page, '#learnHost').click();
+    await expect(page.locator('#learnHost .cm')).toHaveAttribute('data-state', 'done');
+    expect(await page.evaluate(() => window.__comicClock!.ended())).toBe('skipped');
+    await expect(page.locator('#learnHost .cm-next')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__comicClock!.continuing())).toBe(false);
+    await expect(page.locator('#btnStoryNext')).toBeVisible();
+  });
+
+  test('Full screen fills the screen with the comic, letterboxed, the controls under it; F and the button go back', async ({ page }) => {
+    await beforeYouBegin(page, EXPLORE, { test: true });
+    const btn = page.locator('#btnComicFullscreen');
+    await expect(btn).toHaveText('Full screen');
+    await expect(btn).toHaveAttribute('aria-pressed', 'false');
+    await btn.click();
+    await expect(btn).toHaveText('Exit full screen');
+    await expect(btn).toHaveAttribute('aria-pressed', 'true');
+    expect(await page.evaluate(() => document.fullscreenElement?.className)).toBe('cm-frame');
+    const vw = await page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+    const st = (await stage(page, '#learnHost').boundingBox())!;
+    const ctl = (await page.locator('#learnHost .cm-controls').boundingBox())!;
+    // the stage fits the screen above the controls, at its playing shape, and the controls are on screen
+    expect(st.width).toBeLessThanOrEqual(vw.w + 0.5);
+    expect(st.y).toBeGreaterThanOrEqual(-0.5);
+    expect(st.y + st.height).toBeLessThanOrEqual(ctl.y + 0.5);
+    expect(ctl.y + ctl.height).toBeLessThanOrEqual(vw.h + 0.5);
+    expect(Math.max(st.width / vw.w, st.height / (vw.h - ctl.height))).toBeGreaterThan(0.85);
+    // the camera keeps working there
+    const tl = await timeline(page);
+    await at(page, tl.pages[0]!.panels[0]!.start + 1.2);
+    await expect(page.locator('#learnHost .cm-pane.on')).toHaveCount(1);
+    await btn.click();
+    await expect(btn).toHaveText('Full screen');
+    expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+    // F with the comic focused goes in, and again comes out
+    await replayBtn(page, '#learnHost').focus();
+    await page.keyboard.press('f');
+    await expect(btn).toHaveText('Exit full screen');
+    await page.keyboard.press('f');
+    await expect(btn).toHaveText('Full screen');
+  });
+
   test('the buttons work from the keyboard and show where focus is', async ({ page }) => {
     await beforeYouBegin(page, EXPLORE, { test: true });
     await replayBtn(page, '#learnHost').focus();
@@ -427,11 +504,12 @@ test.describe('in Before you begin', () => {
     await expect(page.locator('#learnHost .cm')).toHaveAttribute('data-state', 'playing');
   });
 
-  test('"Read as text" under the stage lists every panel, in order, as an ordered list', async ({ page }) => {
+  test('its text version lists every panel, in order, as an ordered list, for screen readers only', async ({ page }) => {
     await beforeYouBegin(page, EXPLORE);
     const text = page.locator('#learnHost .cm-text');
-    await expect(text.locator('summary')).toHaveText('Read as text');
-    await text.locator('summary').click();
+    await expect(text).toHaveClass(/sr-only/);
+    expect((await text.boundingBox())!.height).toBeLessThanOrEqual(1);
+    await expect(text.locator('ol')).toHaveAttribute('aria-label', `${single.title}, as text`);
     const items = text.locator('ol > li');
     await expect(items).toHaveCount(panelCount(single) + single.pages.length);
     await expect(items.nth(0)).toContainText('Page 1: Tuesday morning.');
@@ -451,7 +529,6 @@ test.describe('in Before you begin', () => {
   test('a comic of several pages lists a heading line per page and numbers its panels across them', async ({ page }) => {
     await beforeYouBegin(page, MULTI);
     const text = page.locator('#learnHost .cm-text');
-    await text.locator('summary').click();
     const items = text.locator('ol > li');
     await expect(items).toHaveCount(panelCount(multi) + 3);
     await expect(items.nth(0)).toHaveText('Page 1: Tuesday afternoon.');
@@ -545,7 +622,7 @@ test.describe('reduced motion', () => {
     await expect(cm).toHaveAttribute('data-reduced', '1');
     await expect(cm.locator('.cm-pane.on')).toHaveCount(panelCount(single));
     expect(await cm.locator('.cm-w:not(.on)').count()).toBe(0);
-    await expect(cm.locator('.cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip']);
+    await expect(cm.locator('.cm-controls').getByRole('button')).toHaveText(['Pause', 'Replay', 'Skip', 'Full screen']);
     await expect(skipBtn(page, '#learnHost')).toBeDisabled();
     await expect(page.locator('#btnComicPause')).toBeDisabled();
     const parts = (await timecode(page, '#learnHost').textContent())!.split(' / ');

@@ -515,8 +515,8 @@ function checkBubbleClips(comic: Comic, audio: LearnAudio, label: { audio: strin
 }
 
 /**
- * A comic's diagram panels must name a diagram of packages/catalogue/diagrams.json (`diagrams`), and show no
- * more steps than it has. Messages are worded like checkComic's.
+ * A comic's diagram panels must name a diagram of packages/catalogue/diagrams.json (`diagrams`), start (`from`) at a
+ * step it has, and show no step past its last. Messages are worded like checkComic's.
  */
 export function checkComicDiagrams(comic: Comic, diagrams: ReadonlySet<string> = KNOWN_DIAGRAMS): string[] {
   const problems: string[] = [];
@@ -529,8 +529,16 @@ export function checkComicDiagrams(comic: Comic, diagrams: ReadonlySet<string> =
       continue;
     }
     const d = DIAGRAMS.find((x) => x.id === p.diagram);
-    if (d && p.steps && p.steps.length > d.steps.length) {
-      problems.push(`${at}: lists ${p.steps.length} steps, but diagram "${p.diagram}" has ${d.steps.length}`);
+    if (!d) continue;
+    const from = p.from ?? 1;
+    if (from > d.steps.length) {
+      problems.push(`${at}: starts at step ${from} (from), but diagram "${p.diagram}" has ${d.steps.length}`);
+    } else if (p.steps && from + p.steps.length - 1 > d.steps.length) {
+      problems.push(
+        from === 1
+          ? `${at}: lists ${p.steps.length} steps, but diagram "${p.diagram}" has ${d.steps.length}`
+          : `${at}: lists ${p.steps.length} steps from step ${from}, so up to step ${from + p.steps.length - 1}, but diagram "${p.diagram}" has ${d.steps.length}`
+      );
     }
   }
   return problems;

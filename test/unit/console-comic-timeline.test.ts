@@ -580,10 +580,11 @@ describe('cleaning what the API sent', () => {
 
 // ---- motion comic v2 ------------------------------------------------------------------------------
 
-type V2Panel = TPanel & { shot: string | null; stack: number[]; stepTimes: number[] };
+type V2Panel = TPanel & { shot: string | null; push: { start: number; end: number } | null; stack: number[]; stepTimes: number[] };
 type V2Timeline = Timeline & { pages: Array<TPage & { panels: V2Panel[] }>; stings: Array<{ panel: number; sound: string; at: number }>; audio: Array<{ panel: number; start: number; end: number; seconds: number }> };
 const V = T as unknown as {
   CLOSE_ZOOM: number;
+  pictureZoom: (p: unknown, t: number) => number;
   TIMING: typeof T.TIMING & { stackGap: number; stepGap: number; voice: number; bubbleLag: number };
   buildTimeline: (c: unknown, o?: { audio?: unknown }) => V2Timeline;
   cleanComic: (raw: unknown) => { title: string; pages: Array<{ panels: Array<Record<string, any>> }> } | null;
@@ -752,17 +753,19 @@ describe('v2: shots', () => {
   const vp = { w: 1000, h: 562.5 };
   const pad = T.REEL.shotPad;
 
-  it('close: once the camera has arrived it pushes in over TIMING.move to about 1.35 times the usual framing', () => {
+  it('close: the camera stays on the whole panel (nothing over the picture is cut); the picture is pushed in, up to CLOSE_ZOOM', () => {
     const usual = T.cameraFor({ x: desk.rect.x - pad, y: desk.rect.y - pad, w: desk.rect.w + 2 * pad, h: desk.rect.h + 2 * pad }, vp);
-    expect(T.cameraAt(tl, desk.start + T.TIMING.move, vp).k).toBeCloseTo(usual.k, 6);
-    const pushed = T.cameraAt(tl, desk.start + 2 * T.TIMING.move + 0.01, vp);
-    expect(pushed.k / usual.k).toBeCloseTo(V.CLOSE_ZOOM, 6);
-    expect(pushed.cx).toBeCloseTo(usual.cx, 6);
-    expect(pushed.cy).toBeCloseTo(usual.cy, 6);
-    const mid = T.cameraAt(tl, desk.start + 1.5 * T.TIMING.move, vp).k;
-    expect(mid).toBeGreaterThan(usual.k);
-    expect(mid).toBeLessThan(pushed.k);
-    expect(tl.shots.filter((s) => s.kind === 'close')).toHaveLength(1);
+    for (const t of [desk.start + T.TIMING.move, desk.start + 2 * T.TIMING.move + 0.01, desk.end - 0.01]) expect(T.cameraAt(tl, t, vp)).toEqual(usual);
+    expect(tl.shots.filter((s) => s.kind === 'close')).toHaveLength(0);
+    expect(desk.push).toEqual({ start: desk.start + T.TIMING.move, end: desk.end });
+    expect(V.CLOSE_ZOOM).toBeCloseTo(1.08, 9);
+    expect(V.pictureZoom(desk, desk.start + T.TIMING.move)).toBe(1);
+    const mid = V.pictureZoom(desk, (desk.push!.start + desk.push!.end) / 2);
+    expect(mid).toBeGreaterThan(1);
+    expect(mid).toBeLessThan(V.CLOSE_ZOOM);
+    expect(V.pictureZoom(desk, desk.end)).toBeCloseTo(V.CLOSE_ZOOM, 9);
+    // a panel with no close shot is never pushed in
+    for (const p of six(tl).slice(1)) if (p.scene !== 'clip') expect(V.pictureZoom(p, p.end), p.scene).toBe(1);
   });
 
   it('wide: frames the whole row of the page from the panel\'s start', () => {
@@ -777,9 +780,19 @@ describe('v2: shots', () => {
     expect(T.cameraAt(tl, next.start + T.TIMING.move + 0.01, vp).cx).toBeCloseTo(next.rect.x + next.rect.w / 2, 6);
   });
 
-  it('keeps the shots in time order, and a close panel\'s screen push-in waits for the close shot', () => {
+  it('keeps the shots in time order, and a close panel\'s narrow screen push-in frames the screen as the pushed-in picture draws it', () => {
     for (let i = 1; i < tl.shots.length; i++) expect(tl.shots[i]!.t).toBeGreaterThanOrEqual(tl.shots[i - 1]!.t);
-    expect(desk.focusAt!).toBeGreaterThanOrEqual(desk.start + 2 * T.TIMING.move + 0.2 - 1e-9);
+    expect(desk.focusAt!).toBeGreaterThanOrEqual(desk.start + T.TIMING.move + 0.2 - 1e-9);
+    const shot = tl.shots.find((s) => s.narrowOnly && s.t === desk.focusAt)!;
+    const d = T.SCREENS.desk.device;
+    const cx = desk.rect.x + desk.rect.w / 2;
+    const cy = desk.rect.y + desk.rect.h / 2;
+    const k = V.CLOSE_ZOOM;
+    // the device, scaled about the panel's middle by the most the picture is pushed in, is inside the shot
+    expect(shot.rect.x).toBeLessThanOrEqual(cx + (desk.rect.x + 4 + d.x - cx) * k + 1e-6);
+    expect(shot.rect.x + shot.rect.w).toBeGreaterThanOrEqual(cx + (desk.rect.x + 4 + d.x + d.w - cx) * k - 1e-6);
+    expect(shot.rect.y).toBeLessThanOrEqual(cy + (desk.rect.y + 4 + d.y - cy) * k + 1e-6);
+    expect(shot.rect.y + shot.rect.h).toBeGreaterThanOrEqual(cy + (desk.rect.y + 4 + d.y + d.h - cy) * k - 1e-6);
   });
 });
 

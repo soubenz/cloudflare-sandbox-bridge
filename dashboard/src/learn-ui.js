@@ -35,48 +35,43 @@ export function button(label, { kind = '', onClick, type = 'button', id } = {}) 
 }
 
 /**
- * The story of a learn bundle: the motion comic when the bundle has one, with
- * the text story folded under it ("Read the story as text"), else the text
- * story alone. The text story is also the complete fallback when the comic
- * cannot be drawn (a malformed bundle, a browser without what it needs): a
- * mount that throws leaves nothing behind and the text shows as if there were
- * no comic.
+ * The story of a learn bundle: the motion comic when the bundle has one, else the
+ * text story. Under the comic there is nothing to unfold: its text version (every
+ * panel's words, in order) is in the comic itself, for screen readers only. The
+ * text story is the complete fallback when the comic cannot be drawn (a malformed
+ * bundle, a browser without what it needs): a mount that throws leaves nothing
+ * behind and the text shows as if there were no comic.
  *
  *   learn          the bundle ({ story, comic? })
  *   headingLevel   the level the story's own headings start at
- *   onDone         called when the comic has played to its end (or was skipped)
+ *   onDone         called with `{ how }` when the comic has finished ('played', 'skipped', 'reduced')
+ *   onContinue     where to go once the comic has played to its end: the comic says "Continuing…" and goes there
+ *                  after a short beat unless the learner presses Stay here (never after Skip or for reduced motion)
  *
- * Returns { node, hasComic, destroy }; `destroy` stops the comic's clock and the markdown's diagrams.
+ * Returns { node, hasComic, destroy }; `destroy` stops the comic's clock (or the markdown's diagrams).
  */
-export function storyContent(learn, { headingLevel = 2, onDone } = {}) {
-  const prose = make('div', 'learn-prose story-quote');
-  const markdown = learn.story ? mountMarkdown(prose, learn.story.body, { headingLevel }) : null;
+export function storyContent(learn, { headingLevel = 2, onDone, onContinue } = {}) {
   let comic = null;
   const holder = make('div', 'cm-holder');
   if (learn.comic) {
     try {
-      comic = mountComic(holder, learn.comic, { onDone, audio: learn.audio });
+      comic = mountComic(holder, learn.comic, { onDone, onContinue, audio: learn.audio });
     } catch {
       comic = null;
     }
   }
   if (!comic) {
+    const prose = make('div', 'learn-prose story-quote');
+    const markdown = learn.story ? mountMarkdown(prose, learn.story.body, { headingLevel }) : null;
     return { node: prose, hasComic: false, destroy: () => markdown?.destroy() };
   }
-  const nodes = [holder];
-  if (markdown) {
-    const fold = make('details', 'cm-story-text');
-    fold.append(make('summary', '', 'Read the story as text'), prose);
-    nodes.push(fold);
-  }
   const node = make('div', 'cm-story');
-  node.append(...nodes);
+  node.append(holder);
   return {
     node,
     hasComic: true,
     destroy() {
       comic.destroy();
-      markdown?.destroy();
     },
   };
 }

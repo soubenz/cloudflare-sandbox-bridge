@@ -12,15 +12,20 @@
  *                                         no step yet (the diagram alone). Called once each time the step changes,
  *                                         backwards too (Replay, a seek), and must not throw.
  *   releaseDiagram(figEl)                 lets a diagram panel's picture go: called for each diagram panel on destroy.
- *   clipMedia(document, clip, { still })  a clip panel's picture (`div.cm-clip`: a muted <video>, or an <img> pushed in by
- *                                         `--kb`), set under the art; clipVideo(el) finds its <video>. The player plays,
+ *   clipMedia(document, clip, { still })  a clip panel's picture (`div.cm-clip`: a muted <video>, or a still <img>), set in the
+ *                                         panel's picture layer under the art; clipVideo(el) finds its <video>. The player plays,
  *                                         pauses and seeks that video on the comic's clock (see Clips below).
  * A black card's art may return `stack`, the box (art units) its captions are set in.
  * The player draws every word as HTML over the art (textContent only), and the art styles it (comic.css):
  *   .cm-stack > .cm-stack-title, .cm-stack-line   a black card's title and its captions, each `.on` once shown.
  *
- *   const comic = mountComic(container, learn.comic, { onDone })
+ *   const comic = mountComic(container, learn.comic, { onDone, onContinue, audio })
  *   comic.destroy()
+ *
+ * A panel is two layers: its picture (`.cm-shot`: the halftone, a clip, the art, a drawn screen's lines, a black
+ * card's stack), which a `shot: close` pushes in gently inside the panel's frame (--zoom, comic-timeline.js
+ * pictureZoom), and the words over it, which never move, so the camera never cuts them (it frames whole panels
+ * only). A clip panel's words sit in a safe area 5% in from its frame (`.cm-over`), laid out like a film's.
  *
  * Draws every page of the comic as a sheet on one reel, then plays it like a
  * video: a camera moves down the reel and zooms into each panel as it pops in,
@@ -35,6 +40,10 @@
  * exact, the timecode is honest, and the clock stops itself at the end.
  * (CSS only eases a class flip, and the ambient loops of the art; both are
  * switched off for reduced motion, for a finished comic and for the test clock.)
+ *
+ * After a comic that played to its end (never one skipped, nor one that started finished), and only when the caller
+ * gives `onContinue`, a "Continuing…" bar runs for CONTINUE_MS with a Stay here button, then onContinue is called.
+ * onDone is called with `{ how }`: 'played', 'skipped', 'reduced' (finished from the start) or 'seek' (the test seam).
  *
  * Three playback buttons: Pause, Replay and Skip. Pause stops the clock and the voice where they
  * are and turns into Play, which carries on from the same moment (the voice resumes mid-sentence);
@@ -53,7 +62,10 @@
  * that has a storyteller, is the Sound on/off toggle (kept in localStorage `opalix.comicSound`,
  * on by default): browsers need a way to turn sound off. Captions, bubbles and the
  * transcript are always there, so nothing depends on hearing.
- * The stage is role="img" with the title; "Read as text" under it is the
+ * Full screen, the other exception, puts the frame (the stage and its controls) full screen where the browser can
+ * (the Fullscreen API, webkit-prefixed too; no button where it cannot): the stage letterboxed to fit, the controls
+ * under it, F to go in and out with the comic focused, Esc to leave; destroy leaves it too.
+ * The stage is role="img" with the title; the transcript after the controls, for screen readers only, is its
  * accessible equivalent (the same transcript the CLI checks).
  *
  * The animated parts are aria-hidden, so a screen reader hears the title and
@@ -76,7 +88,7 @@
  * allows it without a tap); Pause, a hidden tab, a scrolled-away comic and the end pause it, and whenever it is not
  * playing (and when it drifts) it is set to the frame the clock says (clipTimeAt in comic-timeline.js: the time
  * into the panel, round the clip's length; its last frame after the panel and on Skip). A still is pushed in slowly
- * by the panel's progress (the Ken Burns move), so it too is a function of the clock. Under reduced motion a clip
+ * by the panel's progress (the Ken Burns move, the picture layer's --zoom), so it too is a function of the clock. Under reduced motion a clip
  * shows its poster or a still frame, nothing moves. In test mode no video is ever played: `__comicClock.clips` lists
  * them (`{ panel, id, start, end }`) and `clipLog()` what the player would have played and paused.
  *
@@ -99,8 +111,8 @@ import {
   cameraTransform,
   cleanAudio,
   cleanComic,
+  fitWidth,
   clipPlaying,
-  clipProgress,
   clipTimeAt,
   CLIP_LAST_FRAME,
   clockReduce,
@@ -108,6 +120,7 @@ import {
   justFinished,
   mmss,
   panelState,
+  pictureZoom,
   textScale,
   transcriptOf,
   viewportAt,
@@ -119,7 +132,9 @@ const NAME = new Map(CAST.map((c) => [c.id, c.name]));
 /** Where a panel comes from as it pops in, round the compass. */
 const ENTER = ['left', 'top', 'right', 'zoom', 'left', 'up'];
 /** Default places for a panel's bubbles: first speaker, then the answer. */
-const BUBBLE_DEFAULT = { message: ['tr', 'bl'], duo: ['tl', 'tr'], default: ['tl', 'br'] };
+const BUBBLE_DEFAULT = { message: ['tr', 'bl'], duo: ['tl', 'tr'], clip: ['tl', 'tr'], default: ['tl', 'br'] };
+/** How long the "Continuing…" notice waits after a comic has played to its end before the flow moves on, in ms. */
+export const CONTINUE_MS = 1500;
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -179,15 +194,28 @@ function buildPanel(panel, tp, placement, { still = false } = {}) {
   fig.style.height = `${placement.h}px`;
   fig.dataset.panel = String(tp.number);
   fig.dataset.scene = panel.scene;
-  fig.append(el('div', 'cm-halftone'));
+  // Two layers. The picture (`.cm-shot`: the halftone, a clip, the art, a drawn screen's lines, a black card's
+  // stack) is what a `shot: close` pushes in, inside the panel's frame; the words over it (bubbles, a caption, a
+  // sound effect, a clip's screen card) are not in it, so the camera never cuts them.
+  const shot = el('div', 'cm-shot');
+  fig.append(shot);
+  shot.append(el('div', 'cm-halftone'));
+  const isClip = panel.scene === 'clip';
+  // A clip panel's words sit in a safe area inset from the frame, laid out like a film's: bubbles at the top,
+  // the screen card at the top right, the caption at the lower left, the sound effect at the lower right.
+  const over = isClip ? el('div', 'cm-over') : null;
+  const overL = isClip ? el('div', 'cm-over-l') : null;
+  const overR = isClip ? el('div', 'cm-over-r') : null;
+  if (over) over.append(overL, overR);
+  const layer = over ?? fig;
 
   // A clip panel's picture lies under the art and the words: a video, or a still (comic-art.js clipMedia).
   let clip = null;
-  if (panel.scene === 'clip') {
+  if (isClip) {
     const lib = clipOf(panel);
     const media = clipMedia(document, lib, { still });
-    fig.append(media);
-    clip = { el: media, tc: tp.clip, kind: lib?.kind ?? null, id: lib?.id ?? null, panel: tp.number, playing: false, kb: -1 };
+    shot.append(media);
+    clip = { el: media, tc: tp.clip, kind: lib?.kind ?? null, id: lib?.id ?? null, panel: tp.number, playing: false };
   }
 
   const art = sceneArt(panel);
@@ -198,9 +226,9 @@ function buildPanel(panel, tp, placement, { still = false } = {}) {
   svg.setAttribute('focusable', 'false');
   // Art is code this repository wrote and holds none of a lab's words (comic-art.js), so this is safe.
   svg.innerHTML = art.svg;
-  fig.append(svg);
+  shot.append(svg);
 
-  const parts = { fig, panel, clip, cap: null, sfx: null, bubbles: [], lines: [], stack: [], stackTitle: null, step: null, chars: [...svg.querySelectorAll('.cm-char')], last: '' };
+  const parts = { fig, shot, over, panel, clip, zoom: 1, cap: null, sfx: null, bubbles: [], lines: [], stack: [], stackTitle: null, step: null, chars: [...svg.querySelectorAll('.cm-char')], last: '' };
 
   if (panel.caption) {
     if (captionIsDisplay(panel.scene)) {
@@ -214,7 +242,7 @@ function buildPanel(panel, tp, placement, { still = false } = {}) {
       parts.cap = d;
     } else {
       const cap = el('figcaption', isClockCaption(panel.caption) ? 'cm-cap cm-caption--clock' : 'cm-cap', panel.caption);
-      fig.append(cap);
+      layer.append(cap);
       parts.cap = cap;
     }
   } else if (captionIsDisplay(panel.scene)) {
@@ -243,10 +271,26 @@ function buildPanel(panel, tp, placement, { still = false } = {}) {
       box.append(line);
       parts.stack.push(line);
     }
-    fig.append(box);
+    shot.append(box);
   }
 
-  if (art.lines && panel.lines?.length) {
+  /** A typed screen line: its colour by what it says, its typing state for paintPanel. */
+  const screenLine = (text) => {
+    const row = el('div', 'cm-scrline', text);
+    row.dataset.kind = /^[$>]/.test(text) ? 'cmd' : /^(200|ok|ready)/i.test(text) ? 'ok' : /^(4\d\d|5\d\d|error|fail)/i.test(text) ? 'warn' : 'out';
+    parts.lines.push({ row, len: text.length, chars: -1 });
+    return row;
+  };
+
+  if (isClip && panel.lines?.length) {
+    // A clip's screen lines: a small see-through card at the top right of the safe area, its words wrapping (never cut).
+    const card = el('div', 'cm-card');
+    card.style.setProperty('--maxlen', String(Math.max(...panel.lines.map((l) => l.length), 12)));
+    const inner = el('div', 'cm-card-in');
+    for (const text of panel.lines) inner.append(screenLine(text));
+    card.append(inner);
+    overR.append(card);
+  } else if (art.lines && panel.lines?.length) {
     const box = el('div', 'cm-lines');
     box.style.left = `${(art.lines.x / art.width) * 100}%`;
     box.style.top = `${(art.lines.y / art.height) * 100}%`;
@@ -254,32 +298,32 @@ function buildPanel(panel, tp, placement, { still = false } = {}) {
     box.style.height = `${(art.lines.h / art.height) * 100}%`;
     box.style.setProperty('--maxlen', String(Math.max(...panel.lines.map((l) => l.length), 12)));
     const inner = el('div', 'cm-lines-in');
-    panel.lines.forEach((text) => {
-      const row = el('div', 'cm-scrline', text);
-      row.dataset.kind = /^[$>]/.test(text) ? 'cmd' : /^(200|ok|ready)/i.test(text) ? 'ok' : /^(4\d\d|5\d\d|error|fail)/i.test(text) ? 'warn' : 'out';
-      inner.append(row);
-      parts.lines.push({ row, len: text.length, chars: -1 });
-    });
+    for (const text of panel.lines) inner.append(screenLine(text));
     box.append(inner);
-    fig.append(box);
+    // A drawn screen's lines are part of the picture: they move with it.
+    shot.append(box);
   }
 
   const slots = BUBBLE_DEFAULT[panel.scene] ?? BUBBLE_DEFAULT.default;
   panel.bubbles.forEach((b, i) => {
-    const bub = el('div', `cm-bub cm-pos-${b.pos ?? slots[i] ?? slots[0]}`);
+    const pos = b.pos ?? slots[i] ?? slots[0];
+    const bub = el('div', `cm-bub cm-pos-${pos}`);
     if (b.who && NAME.has(b.who)) bub.append(el('span', 'cm-tag', NAME.get(b.who)));
     const words = b.text.split(/\s+/).filter(Boolean).map((w) => el('span', 'cm-w', `${w} `));
     bub.append(...words);
-    fig.append(bub);
+    // On a clip, a bubble goes to its side of the safe area (under the screen card on the right), one under another.
+    if (isClip) (pos === 'tr' || pos === 'br' ? overR : overL).append(bub);
+    else fig.append(bub);
     parts.bubbles.push({ bub, words, shown: -1, who: b.who });
   });
 
   if (panel.sfx) {
     const sfx = el('span', 'cm-sfx', panel.sfx);
     sfx.style.setProperty('--sfxlen', String(Math.max(panel.sfx.length, 4)));
-    fig.append(sfx);
+    layer.append(sfx);
     parts.sfx = sfx;
   }
+  if (over) fig.append(over);
   return parts;
 }
 
@@ -289,6 +333,9 @@ const pauseIcon = () => svgIcon('<path d="M5 3.5v9M11 3.5v9"/>', 16, 16, 2);
 const playIcon = () => svgIcon('<path d="M5 3.5l8 4.5-8 4.5z"/>', 16, 16, 1.6);
 const arrowIcon = () => svgIcon('<path d="M3 8h10M9 4l4 4-4 4"/>', 16, 16, 1.8);
 const SPEAKER = '<path d="M2.5 6h2.7L9 3v10L5.2 10H2.5z"/>';
+/** Full screen: four corners pointing out; Exit: four corners pointing in. */
+const fullIcon = (on) =>
+  svgIcon(on ? '<path d="M6 2.5V6H2.5M10 2.5V6h3.5M6 13.5V10H2.5M10 13.5V10h3.5"/>' : '<path d="M2.5 6V2.5H6M13.5 6V2.5H10M2.5 10v3.5H6M13.5 10v3.5H10"/>', 16, 16, 1.6);
 const soundIcon = (on) => svgIcon(on ? `${SPEAKER}<path d="M11.4 5.6a3.4 3.4 0 0 1 0 4.8M13 3.8a6 6 0 0 1 0 8.4"/>` : `${SPEAKER}<path d="M11.5 6l3 4M14.5 6l-3 4"/>`, 16, 16, 1.6);
 
 /**
@@ -298,7 +345,7 @@ const soundIcon = (on) => svgIcon(on ? `${SPEAKER}<path d="M11.4 5.6a3.4 3.4 0 0
  * there is nothing to play, so the caller can fall back to the text story.
  * Returns { destroy }.
  */
-export function mountComic(container, comic, { onDone, audio } = {}) {
+export function mountComic(container, comic, { onDone, audio, onContinue } = {}) {
   const clean = cleanComic(comic);
   if (!clean) throw new Error('comic: nothing to play');
   const tl = buildTimeline(clean, { audio });
@@ -319,6 +366,12 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   let gone = false;
   let lastKey = '';
   let doneCalls = 0;
+  /** How the comic last finished: 'played' (the clock ran to the end), 'skipped', 'reduced' or 'seek' (the test seam). */
+  let endedHow = null;
+  /** Full screen: whether the frame is the page's full-screen element, and the height the frame may take there. */
+  let isFull = false;
+  let maxH = Infinity;
+  let layoutKey = '';
 
   // ---- the DOM -----------------------------------------------------------
 
@@ -333,7 +386,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   stage.setAttribute('role', 'img');
   stage.setAttribute(
     'aria-label',
-    `${clean.title}. An animated comic of ${panelCount} panels${clean.pages.length > 1 ? ` over ${clean.pages.length} pages` : ''}. The text version is below, under Read as text.`
+    `${clean.title}. An animated comic of ${panelCount} panels${clean.pages.length > 1 ? ` over ${clean.pages.length} pages` : ''}. Its text version follows the playback buttons.`
   );
   const view = el('div', 'cm-view');
   view.setAttribute('aria-hidden', 'true');
@@ -395,6 +448,10 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   controls.setAttribute('aria-label', 'Comic playback');
   controls.append(pauseBtn, replay, skip);
 
+  // The frame: the stage and its controls, which is what goes full screen (so the controls stay with it).
+  const frame = el('div', 'cm-frame');
+  frame.tabIndex = -1;
+
   // Sound: only a comic with voices has these two (a comic with stings has the toggle too).
   let sound = hasAudio || hasStings ? readSound() : false;
   const soundBtn = el('button', 'btn btn-ghost cm-btn cm-sound');
@@ -414,19 +471,52 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     paintSound();
     controls.append(soundBtn);
   }
+
+  // Full screen: the frame fills the screen (letterboxed, controls under it). Only where the browser can do it.
+  const fsDoc = document;
+  const fullElement = () => fsDoc.fullscreenElement ?? fsDoc.webkitFullscreenElement ?? null;
+  const canFull =
+    Boolean(fsDoc.fullscreenEnabled || fsDoc.webkitFullscreenEnabled) &&
+    (typeof frame.requestFullscreen === 'function' || typeof frame.webkitRequestFullscreen === 'function');
+  const fullBtn = el('button', 'btn btn-ghost cm-btn cm-full');
+  fullBtn.type = 'button';
+  fullBtn.id = 'btnComicFullscreen';
+  const paintFull = () => {
+    fullBtn.setAttribute('aria-pressed', String(isFull));
+    fullBtn.replaceChildren(fullIcon(isFull), document.createTextNode(isFull ? 'Exit full screen' : 'Full screen'));
+  };
+  if (canFull) {
+    paintFull();
+    controls.append(fullBtn);
+  }
   controls.append(time);
+
+  // After a comic that played to its end: "Continuing…", then on to the next step, unless the learner stays.
+  const nextNote = el('div', 'cm-next');
+  nextNote.hidden = true;
+  const nextText = el('span', 'cm-next-text', 'Continuing…');
+  const nextBar = el('span', 'cm-next-bar');
+  nextBar.setAttribute('aria-hidden', 'true');
+  nextBar.append(el('span'));
+  const stayBtn = el('button', 'btn btn-ghost cm-btn cm-stay', 'Stay here');
+  stayBtn.type = 'button';
+  stayBtn.id = 'btnComicStay';
+  nextNote.append(nextText, nextBar, stayBtn);
 
   const status = el('p', 'sr-only');
   status.setAttribute('role', 'status');
 
-  const details = el('details', 'cm-text');
-  const summary = el('summary', '', 'Read as text');
+  // The text version, for screen readers only (the stage is a picture to them): every panel's words, in order.
+  const textVersion = el('div', 'cm-text sr-only');
   const list = el('ol', 'cm-transcript');
+  list.setAttribute('aria-label', `${clean.title}, as text`);
   for (const t of transcriptOf(clean)) list.append(el('li', '', t));
-  details.append(summary, list);
+  textVersion.append(list);
 
-  root.append(stage, controls, status, details);
-  if (hasAudio) root.append(tap);
+  // ("Continuing…" is put in the frame only while it waits, so the comic has no button that does nothing.)
+  frame.append(stage, controls);
+  if (hasAudio) frame.append(tap);
+  root.append(frame, status, textVersion);
   container.append(root);
 
   // ---- one frame ---------------------------------------------------------
@@ -438,14 +528,16 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     const focus = !calm && width < NARROW && tp.focusAt !== null && t >= tp.focusAt && t < tp.end;
     const bubbleKey = s.bubbles.map((b) => `${b.on ? 1 : 0}${calm && b.on ? 99 : b.words}${b.speaking ? 's' : ''}`).join(',');
     const lineKey = s.lines.map((p) => (calm ? (p > 0 ? 1 : 0) : (p >= 1 ? 1 : Math.ceil(p * 100) / 100))).join(',');
-    // A still clip is pushed in by the panel's progress (none when calm): a function of the clock, like everything else.
-    const kb = parts.clip?.kind === 'image' && tp.clip ? (calm ? 0 : Math.round(clipProgress(tp.clip, t) * 1000) / 1000) : -1;
-    const key = `${s.on}|${s.caption}|${s.sfx}|${s.shake}|${focus}|${bubbleKey}|${lineKey}|${s.stack.map((on) => (on ? 1 : 0)).join('')}|${s.step}|${kb}`;
+    // The picture is pushed in by a close shot, a still clip by its panel's progress (none when calm): a function of
+    // the clock, like everything else. Only the picture layer moves; the words over it stay where they are.
+    const zoom = calm ? 1 : Math.round(pictureZoom(tp, t) * 10000) / 10000;
+    const key = `${s.on}|${s.caption}|${s.sfx}|${s.shake}|${focus}|${bubbleKey}|${lineKey}|${s.stack.map((on) => (on ? 1 : 0)).join('')}|${s.step}|${zoom}`;
     if (key === parts.last) return;
     parts.last = key;
-    if (kb >= 0 && kb !== parts.clip.kb) {
-      parts.clip.kb = kb;
-      parts.clip.el.style.setProperty('--kb', String(kb));
+    if (zoom !== parts.zoom) {
+      parts.zoom = zoom;
+      if (zoom === 1) parts.shot.style.removeProperty('--zoom');
+      else parts.shot.style.setProperty('--zoom', String(zoom));
     }
     parts.fig.classList.toggle('on', s.on);
     parts.fig.classList.toggle('shake', s.shake);
@@ -492,7 +584,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     // A calm (reduced motion) replay cuts from shot to shot instead of travelling.
     const t = clock.t;
     const camT = calm ? settledTime(t) : t;
-    const vp = viewportAt(tl, camT, width);
+    const vp = viewportAt(tl, camT, width, maxH);
     const cam = cameraAt(tl, camT, vp);
     const key = `${vp.w}|${vp.h.toFixed(1)}|${cam.cx.toFixed(1)}|${cam.cy.toFixed(1)}|${cam.k.toFixed(4)}`;
     if (key !== lastKey) {
@@ -521,11 +613,30 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     return shot.t + shot.dur;
   }
 
-  /** Sizes everything to the container: the stage is as wide as it, and the words of narrow panels are drawn larger. */
+  /**
+   * Sizes everything to the container: the stage is as wide as it, and the words of narrow panels are drawn larger.
+   * In full screen the stage is the largest frame that fits the screen above the controls (fitWidth), centred, and
+   * never taller than that (the finished comic is framed smaller rather than run off the screen).
+   */
   function layout() {
-    const w = Math.round(root.clientWidth);
-    if (w === width) return;
+    let w;
+    let h = Infinity;
+    if (isFull) {
+      const cs = typeof getComputedStyle === 'function' ? getComputedStyle(frame) : null;
+      const padY = cs ? parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) || 0 : 0;
+      const padX = cs ? parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) || 0 : 0;
+      const gap = cs ? parseFloat(cs.rowGap) || 0 : 0;
+      h = Math.max(120, Math.floor(frame.clientHeight - padY - controls.offsetHeight - gap - (nextNote.hidden ? 0 : nextNote.offsetHeight + gap)));
+      w = fitWidth(Math.max(0, frame.clientWidth - padX), h);
+    } else {
+      w = Math.round(root.clientWidth);
+    }
+    const key = `${w}|${h}`;
+    if (key === layoutKey) return;
+    layoutKey = key;
     width = w;
+    maxH = h;
+    stage.style.width = isFull ? `${w}px` : '';
     lastKey = '';
     for (const pp of pageParts) for (const p of pp.panels) p.last = '';
     if (w <= 0) return;
@@ -740,27 +851,120 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
       render();
       syncAudio();
       if (action.type === 'tick' || action.type === 'seek') syncStings(before.t, clock.t);
-      if (justFinished(before, clock)) finished();
+      if (justFinished(before, clock)) finished(action.type === 'tick' ? 'played' : action.type === 'skip' ? 'skipped' : 'seek');
     }
   }
 
-  function finished() {
+  /** `how` the comic finished: 'played' (the clock ran to its end), 'skipped', 'reduced' (it started finished) or 'seek'. */
+  function finished(how) {
     doneCalls += 1;
-    status.textContent = 'The comic has finished. The text version is under Read as text.';
+    endedHow = how;
+    status.textContent = 'The comic has finished.';
     try {
-      onDone?.();
+      onDone?.({ how });
     } catch {
       /* a caller's mistake must not stop the comic */
     }
+    if (how === 'played') startContinue();
   }
+
+  // ---- on to the next step -----------------------------------------------
+
+  let continueTimer = 0;
+  let continuePending = false;
+  /**
+   * Only a comic that played to its end (never one skipped, finished from the start for reduced motion, or sought
+   * to its end) moves the flow on by itself, and only when the caller gave somewhere to go (`onContinue`): a short
+   * "Continuing…" with a Stay button first. In test mode the notice shows but waits for `__comicClock.continueNow()`.
+   */
+  function startContinue() {
+    if (typeof onContinue !== 'function' || gone || reduced) return;
+    continuePending = true;
+    nextNote.hidden = false;
+    controls.after(nextNote);
+    root.dataset.continuing = '1';
+    status.textContent = 'The comic has finished. Continuing to the next step; press Stay here to stay on the story.';
+    if (isFull) {
+      layoutKey = '';
+      layout();
+    }
+    if (!testMode) continueTimer = setTimeout(continueNow, CONTINUE_MS);
+  }
+  function cancelContinue() {
+    if (continueTimer) clearTimeout(continueTimer);
+    continueTimer = 0;
+    if (!continuePending) return;
+    continuePending = false;
+    nextNote.hidden = true;
+    nextNote.remove();
+    delete root.dataset.continuing;
+    if (isFull) {
+      layoutKey = '';
+      layout();
+    }
+  }
+  function continueNow() {
+    continueTimer = 0;
+    if (!continuePending || gone) return;
+    cancelContinue();
+    try {
+      onContinue();
+    } catch {
+      /* a caller's mistake must not break the comic */
+    }
+  }
+  stayBtn.addEventListener('click', () => {
+    cancelContinue();
+    status.textContent = 'Staying on the story.';
+    replay.focus();
+  });
+
+  // ---- full screen ---------------------------------------------------------
+
+  function toggleFull() {
+    if (!canFull || gone) return;
+    try {
+      if (fullElement() === frame) {
+        const exit = fsDoc.exitFullscreen ?? fsDoc.webkitExitFullscreen;
+        exit?.call(fsDoc)?.catch?.(() => {});
+      } else {
+        const req = frame.requestFullscreen ?? frame.webkitRequestFullscreen;
+        req.call(frame)?.catch?.(() => {});
+      }
+    } catch {
+      /* the browser said no: the comic stays as it is */
+    }
+  }
+  const onFullChange = () => {
+    const now = fullElement() === frame;
+    if (now === isFull) return;
+    isFull = now;
+    root.toggleAttribute('data-fullscreen', isFull);
+    paintFull();
+    status.textContent = isFull ? 'Full screen.' : 'Full screen closed.';
+    layoutKey = '';
+    layout();
+  };
+  fullBtn.addEventListener('click', toggleFull);
+  // F (with the comic focused: a control, or the frame after a click on it) goes full screen and back; Esc leaves (the browser's own).
+  root.addEventListener('keydown', (e) => {
+    if (!canFull || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || (e.key !== 'f' && e.key !== 'F')) return;
+    e.preventDefault();
+    toggleFull();
+  });
+  stage.addEventListener('click', () => {
+    if (document.activeElement === document.body || !document.activeElement) frame.focus({ preventScroll: true });
+  });
+  fsDoc.addEventListener('fullscreenchange', onFullChange);
+  fsDoc.addEventListener('webkitfullscreenchange', onFullChange);
 
   const running = () => !gone && !paused && !userPaused && visible && width > 0 && !document.hidden && clock.status === 'playing';
 
-  function frame(ts) {
+  function onFrame(ts) {
     raf = 0;
     if (gone) return;
     if (clock.status !== 'playing') return;
-    raf = requestAnimationFrame(frame);
+    raf = requestAnimationFrame(onFrame);
     if (!running()) {
       lastTs = null;
       // The voices wait with the clock (a hidden tab, a comic scrolled away).
@@ -776,10 +980,11 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   function ensureLoop() {
     if (gone || raf || clock.status !== 'playing') return;
     lastTs = null;
-    raf = requestAnimationFrame(frame);
+    raf = requestAnimationFrame(onFrame);
   }
 
   replay.addEventListener('click', () => {
+    cancelContinue();
     status.textContent = '';
     lastKey = '';
     userPaused = false;
@@ -831,6 +1036,8 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
 
   const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => layout()) : null;
   ro?.observe(root);
+  ro?.observe(frame);
+  window.addEventListener('resize', layout);
   const io =
     typeof IntersectionObserver === 'function'
       ? new IntersectionObserver((entries) => {
@@ -843,6 +1050,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     reduced = Boolean(mq?.matches);
     root.toggleAttribute('data-reduced', reduced);
     lastKey = '';
+    if (reduced) cancelContinue();
     if (reduced) dispatch({ type: 'skip' });
     else render();
   };
@@ -876,6 +1084,11 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     clipLog: () => clipLog.slice(),
     userPaused: () => userPaused,
     audioState: () => ({ sound, blocked: ast.blocked, current: ast.current, failed: [...ast.failed] }),
+    /** How the comic last finished, and whether "Continuing…" is waiting (in a test it waits for continueNow). */
+    ended: () => endedHow,
+    continuing: () => continuePending,
+    continueNow: () => continueNow(),
+    fullscreen: () => isFull,
   };
   if (testMode) window.__comicClock = seam;
 
@@ -883,6 +1096,15 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
 
   function destroy() {
     if (gone) return;
+    cancelContinue();
+    // Leaving the comic leaves full screen too.
+    if (fullElement() === frame) {
+      try {
+        (fsDoc.exitFullscreen ?? fsDoc.webkitExitFullscreen)?.call(fsDoc)?.catch?.(() => {});
+      } catch {
+        /* already out */
+      }
+    }
     gone = true;
     syncAudio();
     releaseAudio();
@@ -903,6 +1125,9 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     io?.disconnect();
     mq?.removeEventListener?.('change', onMotionChange);
     document.removeEventListener('visibilitychange', onVisibility);
+    fsDoc.removeEventListener('fullscreenchange', onFullChange);
+    fsDoc.removeEventListener('webkitfullscreenchange', onFullChange);
+    window.removeEventListener('resize', layout);
     if (testMode && window.__comicClock === seam) delete window.__comicClock;
     root.remove();
   }
@@ -920,7 +1145,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   if (clock.status === 'done') {
     // Reduced motion: finished from the start. Say so once the caller has the handle.
     Promise.resolve().then(() => {
-      if (!gone) finished();
+      if (!gone) finished('reduced');
     });
   } else {
     ensureLoop();

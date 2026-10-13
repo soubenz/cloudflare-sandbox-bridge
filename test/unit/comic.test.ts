@@ -3,7 +3,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ComicSchema, checkComic, allPanels } from '../../src/labs/comic';
-import { CAST, SCENES, PAGE, PAGE_W, castId, layoutComic, panelSeconds, comicTranscript, comicPagesTranscript } from '../../src/labs/comic-kit';
+import { CAST, SCENES, PAGE, PAGE_W, castId, layoutComic, panelSeconds, comicTranscript, comicPagesTranscript, diagramSteps } from '../../src/labs/comic-kit';
+import { checkComicDiagrams } from '../../src/labs/learn';
+import { DIAGRAMS } from '../../src/labs/diagram';
 import { compileLearnDir } from '../../cli/src/learn-compile';
 
 const panel = (over: Record<string, unknown> = {}): Record<string, any> => ({ scene: 'portrait', cast: ['maren'], bubbles: [{ who: 'maren', text: 'Hello there.' }], ...over });
@@ -489,6 +491,48 @@ describe('motion comic v2 in the schema and the checks', () => {
       { scene: 'diagram', bubbles: [], diagram: 'unknown' },
     ];
     expect(comicTranscript(panels, lookup)).toEqual(['Panel 1. Look. Diagram: The door. One. Two.', 'Panel 2. Diagram: The door. One. Two. Three.', 'Panel 3. ']);
+  });
+
+  it('walks one diagram over several panels with `from`: each panel shows and reads only its own steps', () => {
+    const lookup = (id: string) => (id === 'd' ? { title: 'The door', steps: [{ caption: 'One.' }, { caption: 'Two.' }, { caption: 'Three.' }, { caption: 'Four.' }] } : undefined);
+    const panels = [
+      { scene: 'diagram', bubbles: [], diagram: 'd', steps: [{}, {}] },
+      { scene: 'diagram', bubbles: [], diagram: 'd', from: 3, steps: [{}] },
+      { scene: 'diagram', bubbles: [], diagram: 'd', from: 4 },
+    ];
+    expect(comicTranscript(panels, lookup)).toEqual(['Panel 1. Diagram: The door. One. Two.', 'Panel 2. Diagram: The door. Three.', 'Panel 3. Diagram: The door. Four.']);
+    // the range, 0-based: from 1 by default, never past the last step
+    expect(diagramSteps(6, undefined, 2)).toEqual({ start: 0, count: 2 });
+    expect(diagramSteps(6, 3, 3)).toEqual({ start: 2, count: 3 });
+    expect(diagramSteps(6, 6, 0)).toEqual({ start: 5, count: 1 });
+    expect(diagramSteps(6, 5, 4)).toEqual({ start: 4, count: 2 });
+    expect(diagramSteps(6, 99, 1)).toEqual({ start: 5, count: 1 });
+  });
+
+  it('checks `from`: only on a diagram scene, within the diagram, and its steps not past the diagram\'s last', () => {
+    const d = DIAGRAMS.find((x) => x.id === 'gateway-what-it-does')!;
+    const n = d.steps.length;
+    const dgm = { scene: 'diagram', cast: [], diagram: d.id, voiceover: 'One front door for every call.' };
+    const check = (over: Record<string, unknown>) => {
+      const c = withPanel(4, { ...dgm, ...over });
+      return [...checkComic(c), ...checkComicDiagrams(c)].join(' | ');
+    };
+    expect(check({ from: 3, steps: [{}, {}] })).toBe('');
+    expect(check({ from: n, steps: [{}] })).toBe('');
+    expect(check({ from: n })).toBe('');
+    expect(check({ from: n + 1 })).toMatch(new RegExp(`starts at step ${n + 1} \\(from\\), but diagram "${d.id}" has ${n}`));
+    expect(check({ from: n - 1, steps: [{}, {}, {}] })).toMatch(new RegExp(`lists 3 steps from step ${n - 1}, so up to step ${n + 1}, but diagram "${d.id}" has ${n}`));
+    expect(check({ steps: Array.from({ length: Math.min(8, n + 1) }, () => ({})) })).toMatch(/lists \d+ steps, but diagram/);
+    expect(checkComic(withPanel(3, { from: 2 })).join()).toMatch(/diagram and steps are only for a diagram scene/);
+    expect(() => withPanel(4, { ...dgm, from: 0 })).toThrow();
+    expect(() => withPanel(4, { ...dgm, from: 1.5 })).toThrow();
+  });
+
+  it('holds a black card to six captions', () => {
+    const card = { scene: 'black', cast: [], bubbles: [], voiceover: undefined };
+    const six = Array.from({ length: 6 }, (_, k) => `Line ${k + 1}.`);
+    expect(checkComic(withPanel(4, { ...card, captions: six }))).toEqual([]);
+    expect(() => withPanel(4, { ...card, captions: [...six, 'Seven.'] })).toThrow();
   });
 });
 

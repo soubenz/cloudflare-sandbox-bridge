@@ -34,6 +34,7 @@ export interface FixturePanel {
   title?: string;
   captions?: FixtureCued[];
   diagram?: string;
+  from?: number;
   steps?: Array<{ cue?: string }>;
   clip?: string;
 }
@@ -156,6 +157,55 @@ export const V2: FixtureComic = {
           lines: [{ text: 'team: search', cue: 'the gateway log' }],
         }),
         panelOf({ scene: 'you', bg: 'navy', caption: 'Your turn.', voiceover: 'Now it is your turn to find out.', lines: ['$ go'] }),
+      ],
+    },
+  ],
+};
+
+/**
+ * A film-like comic (one page, five panels): the clip panels the owner watched, with every overlay a clip can carry
+ * (a clock caption, a sound effect with a sting, a speaker's bubble, two screen lines) and a `shot: close`; a clip
+ * with two speakers and a card; a black card of six captions; and one diagram walked over two panels (`from`).
+ * For the player's unit test (test/unit/console-comic-player.test.ts) and screenshots of the clip layout.
+ */
+export const FILM: FixtureComic = {
+  title: 'Saturday night',
+  pages: [
+    {
+      panels: [
+        panelOf({
+          scene: 'clip',
+          clip: 'phone-alert-night',
+          cast: ['tomasz'],
+          shot: 'close',
+          caption: { text: 'Saturday, 03:12', cue: 'Saturday' },
+          sfx: { text: 'BZZT!', cue: 'stops answering', sound: 'phone' },
+          voiceover: 'Saturday, three twelve in the morning. The support assistant stops answering customers. Its model provider is down.',
+          bubbles: [{ who: 'tomasz', text: 'Search is fine. Support is dark.', cue: 'is down' }],
+          lines: [{ text: 'support assistant: down', cue: 'stops answering' }, { text: 'search assistant: fine', cue: 'is down' }],
+        }),
+        panelOf({
+          scene: 'clip',
+          clip: 'maren-worried-laptop',
+          cast: ['tomasz', 'maren'],
+          shot: 'close',
+          caption: { text: 'Tuesday, 10:05', cue: 'Tuesday' },
+          sfx: { text: 'PING!', cue: 'screenshot', sound: 'ping' },
+          voiceover: 'Tuesday, ten oh five. Someone shares a screenshot in the team chat. In the corner of the picture is a provider key.',
+          bubbles: [
+            { who: 'tomasz', text: 'Look at this answer! Best one yet.', cue: 'screenshot' },
+            { who: 'maren', text: 'Tomasz. Bottom corner. That is our provider key.', cue: 'provider key' },
+          ],
+          lines: [{ text: 'team chat: 11 likes', cue: 'screenshot' }, { text: 'in the corner: key 4f9a-81c2-7d3e', cue: 'In the corner' }],
+        }),
+        panelOf({
+          scene: 'black',
+          title: 'Is this normal?',
+          captions: ['A rewrite at three in the morning.', 'A key in a screenshot.', 'A weekend of retries.', 'A renamed model.', 'One invoice.', 'A model nobody tried.'],
+          voiceover: 'A rewrite at three in the morning. A key in a screenshot. A weekend of retries. A renamed model. One invoice. A model nobody tried.',
+        }),
+        panelOf({ scene: 'diagram', diagram: 'gateway-what-it-does', steps: [{ cue: 'front door' }, { cue: 'checks' }], voiceover: 'Every call goes to one front door, which checks who is asking.' }),
+        panelOf({ scene: 'diagram', diagram: 'gateway-what-it-does', from: 3, steps: [{ cue: 'calls the provider' }], voiceover: 'Then it calls the provider with a key only it holds.' }),
       ],
     },
   ],

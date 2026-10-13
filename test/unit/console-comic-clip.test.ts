@@ -16,6 +16,8 @@ type Rect = { x: number; y: number; w: number; h: number };
 type TClip = { id: string; kind: string; loop: boolean; seconds?: number; start: number; end: number };
 type TPanel = {
   number: number;
+  rect: Rect;
+  push: { start: number; end: number } | null;
   scene: string;
   start: number;
   end: number;
@@ -31,6 +33,8 @@ type TPanel = {
 };
 type Timeline = {
   total: number;
+  shots: Array<{ kind: string }>;
+  reel: { w: number; h: number };
   pages: Array<{ panels: TPanel[] }>;
   audio: Array<{ panel: number; start: number; end: number; seconds: number }>;
   stings: Array<{ panel: number; sound: string; at: number }>;
@@ -43,10 +47,20 @@ const T = (await import('../../dashboard/src/comic-timeline.js' as string)) as {
   cleanComic: (raw: unknown) => { title: string; pages: Array<{ panels: Array<Record<string, any>> }> } | null;
   buildTimeline: (c: unknown, o?: { audio?: unknown }) => Timeline;
   transcriptOf: (c: unknown) => string[];
-  clipFor: (id: unknown) => { id: string; kind: string; src: string; poster?: string; alt: string; seconds?: number; loop: boolean } | undefined;
+  clipFor: (id: unknown) => { id: string; kind: string; src: string; poster?: string; alt: string; seconds?: number; loop: boolean; aspect: number } | undefined;
   clipTimeAt: (clip: Partial<TClip> | null, t: number, duration?: number) => number;
   clipPlaying: (clip: TClip | null, t: number) => boolean;
   clipProgress: (clip: TClip | null, t: number) => number;
+  clipAspect: (c: unknown) => number;
+  clipPanelHeight: (panel: unknown, w: number) => number;
+  CLIP_ASPECT: number;
+  CLOSE_ZOOM: number;
+  pictureZoom: (p: unknown, t: number) => number;
+  viewportAt: (tl: unknown, t: number, w: number, maxH?: number) => { w: number; h: number };
+  cameraAt: (tl: unknown, t: number, vp: { w: number; h: number }) => { cx: number; cy: number; k: number };
+  fitWidth: (w: number, h: number) => number;
+  REEL: { shotPad: number };
+  TIMING: { move: number };
 };
 const A = (await import('../../dashboard/src/comic-art.js' as string)) as {
   ART: { h: number; wide: number; square: number };
@@ -201,13 +215,19 @@ describe('the clip panel on the comic\'s clock', () => {
     expect(tl.total).toBeCloseTo(T.buildTimeline(T.cleanComic(asDesk)!, { audio: withSlug(fixture.narrationOf(asDesk as never)) }).total, 9);
   });
 
-  it('frames its screen card: in a narrow container the camera pushes in on it once what is said has been said', () => {
-    expect(cp.focusAt).not.toBeNull();
-    const box = T.SCREENS.clip!;
-    expect(box.lines.x).toBeGreaterThanOrEqual(box.device.x);
-    expect(box.lines.x + box.lines.w).toBeLessThanOrEqual(box.device.x + box.device.w);
-    expect(box.lines.y + box.lines.h).toBeLessThanOrEqual(box.device.y + box.device.h);
-    expect(box.device.x + box.device.w).toBeLessThanOrEqual(A.ART.wide);
+  it('never moves the camera inside a clip panel: no push-in on its screen card, which is set to be read from the whole panel', () => {
+    expect(cp.focusAt).toBeNull();
+    expect(T.SCREENS.clip).toBeUndefined();
+    for (const w of [380, 1000]) {
+      const vp = T.viewportAt(tl, cp.start, w);
+      for (const t of [cp.start + T.TIMING.move + 0.01, (cp.start + cp.end) / 2, cp.end - 0.01]) {
+        const cam = T.cameraAt(tl, t, vp);
+        // the whole panel is in frame: its centre in the middle, the camera no closer than its framing
+        expect(cam.cx).toBeCloseTo(cp.rect.x + cp.rect.w / 2, 6);
+        expect(cam.k * (cp.rect.w + 2 * T.REEL.shotPad)).toBeLessThanOrEqual(vp.w + 1e-6);
+        expect(cam.k * (cp.rect.h + 2 * T.REEL.shotPad)).toBeLessThanOrEqual(vp.h + 1e-6);
+      }
+    }
   });
 
   it('reads the clip\'s alt first in the transcript', () => {
@@ -242,6 +262,77 @@ describe('the clip panel on the comic\'s clock', () => {
     expect(T.clipPlaying(null, 12)).toBe(false);
     expect([0, 10, 15, 20, 30].map((t) => T.clipProgress(loop, t))).toEqual([0, 0, 0.5, 1, 1]);
     expect(T.clipProgress(null, 15)).toBe(0);
+  });
+});
+
+describe('a clip panel is the clip\'s own shape, and a close shot pushes in the picture, never the camera', () => {
+  const film = T.cleanComic(fixture.FILM)!;
+  const tl = T.buildTimeline(film);
+  const [phone, laptop, card] = panelsOf(tl);
+
+  it('reads a clip\'s shape: its aspect, else its size in pixels, else 16:9', () => {
+    expect(T.CLIP_ASPECT).toBeCloseTo(16 / 9, 9);
+    expect(T.clipAspect({ aspect: '4:3', width: 1, height: 1 })).toBeCloseTo(4 / 3, 9);
+    expect(T.clipAspect({ width: 1344, height: 752 })).toBeCloseTo(1344 / 752, 9);
+    expect(T.clipAspect({ aspect: 2.4 })).toBeCloseTo(2.4, 9);
+    for (const junk of [undefined, null, {}, { aspect: 'wide' }, { aspect: '1:0' }, { aspect: '100:1' }, { width: 0, height: 5 }]) expect(T.clipAspect(junk), JSON.stringify(junk)).toBeCloseTo(16 / 9, 9);
+    expect(T.clipFor('phone-alert-night')!.aspect).toBeCloseTo(1344 / 752, 9);
+    expect(T.clipFor(STILL)!.aspect).toBeCloseTo(960 / 440, 9);
+  });
+
+  it('draws a clip panel as tall as its clip needs (a 16:9 clip whole), the rows under it moved down', () => {
+    expect(phone!.rect.h).toBeCloseTo(phone!.rect.w / (1344 / 752), 6);
+    expect(laptop!.rect.h).toBeCloseTo(laptop!.rect.w / (1344 / 752), 6);
+    expect(laptop!.rect.y).toBeCloseTo(phone!.rect.y + phone!.rect.h + 22, 6);
+    expect(card!.rect.h).toBe(320);
+    expect(card!.rect.y).toBeCloseTo(laptop!.rect.y + laptop!.rect.h + 22, 6);
+    // never shorter than the page's row (the still is wider than the panel) nor taller than 4:3
+    expect(T.clipPanelHeight({ scene: 'clip', clip: STILL }, 696)).toBe(320);
+    expect(T.clipPanelHeight({ scene: 'clip', clip: 'no-such' }, 696)).toBeCloseTo(696 / (16 / 9), 6);
+    // the V2 comic's still panel is laid out as before
+    const v2 = panelsOf(T.buildTimeline(T.cleanComic(fixture.V2)!)).find((p) => p.scene === 'clip')!;
+    expect(v2.rect.h).toBe(320);
+  });
+
+  it('has no camera push-in: a close panel\'s picture is pushed in from the camera\'s arrival to its end, gently, by the clock', () => {
+    expect(tl.shots.filter((s) => s.kind === 'close')).toHaveLength(0);
+    expect(phone!.push).toEqual({ start: phone!.start + T.TIMING.move, end: phone!.end });
+    expect(card!.push).toBeNull();
+    expect(T.CLOSE_ZOOM).toBeCloseTo(1.08, 9);
+    const at = (f: number) => T.pictureZoom(phone, phone!.push!.start + f * (phone!.push!.end - phone!.push!.start));
+    expect(T.pictureZoom(phone, phone!.start)).toBe(1);
+    expect(at(0.25)).toBeGreaterThan(1);
+    expect(at(0.75)).toBeGreaterThan(at(0.25));
+    expect(at(1)).toBeCloseTo(T.CLOSE_ZOOM, 9);
+    expect(T.pictureZoom(phone, tl.total)).toBeCloseTo(T.CLOSE_ZOOM, 9);
+    expect(T.pictureZoom(card, card!.end)).toBe(1);
+    // a still is pushed in slowly over its panel, to the same most
+    const v2 = panelsOf(T.buildTimeline(T.cleanComic(fixture.V2)!)).find((p) => p.scene === 'clip')!;
+    expect(T.pictureZoom(v2, v2.start)).toBe(1);
+    expect(T.pictureZoom(v2, (v2.start + v2.end) / 2)).toBeCloseTo(1 + (T.CLOSE_ZOOM - 1) / 2, 9);
+    expect(T.pictureZoom(v2, v2.end)).toBeCloseTo(T.CLOSE_ZOOM, 9);
+  });
+
+  it('frames the whole panel at every moment of a close shot, in a wide and a narrow container', () => {
+    for (const w of [380, 1000, 1848]) {
+      const vp = T.viewportAt(tl, phone!.start, w);
+      for (const t of [phone!.start + T.TIMING.move, (phone!.start + phone!.end) / 2, phone!.end - 0.01]) {
+        const cam = T.cameraAt(tl, t, vp);
+        expect(cam.k * phone!.rect.w, `${w} at ${t}`).toBeLessThanOrEqual(vp.w + 1e-6);
+        expect(cam.k * phone!.rect.h, `${w} at ${t}`).toBeLessThanOrEqual(vp.h + 1e-6);
+        expect(Math.abs(cam.cx - (phone!.rect.x + phone!.rect.w / 2)) * cam.k).toBeLessThan(1e-6);
+      }
+    }
+  });
+
+  it('fits a full-screen frame to the screen at the shape the width plays at, and holds the viewport under its height', () => {
+    expect(T.fitWidth(1920, 1000)).toBe(1777);
+    expect(T.fitWidth(1280, 650)).toBe(1155);
+    expect(T.fitWidth(700, 1000)).toBe(700);
+    expect(T.fitWidth(0, 500)).toBe(0);
+    const end = T.viewportAt(tl, tl.total, 1777, 1000);
+    expect(end.h).toBe(1000);
+    expect(T.viewportAt(tl, 0, 1777, 1000).h).toBeCloseTo(1777 / (16 / 9), 6);
   });
 });
 
@@ -307,7 +398,7 @@ const media = (root: FakeEl) => walk(root).filter((e) => e.classList.contains('c
 const VIDEO = { id: 'v', kind: 'video', src: '/media/clips/v.mp4', poster: '/media/clips/v.webp', alt: 'A server room, lights blinking.', loop: true, seconds: 4 };
 
 describe('the clip card\'s art', () => {
-  it('is a wide panel that draws nobody and none of a lab\'s words: a shade for the words, and a screen card only with lines', () => {
+  it('is a wide panel that draws nobody and none of a lab\'s words: a shade for the words, no screen (the player sets the card)', () => {
     expect(A.artWidth('clip')).toBe(A.ART.wide);
     const bare = A.sceneArt({ scene: 'clip', cast: ['maren', 'tomasz'], clip: STILL, bubbles: [{ text: 'evil <img>' }], caption: 'x' });
     expect(bare.viewBox).toBe(`0 0 ${A.ART.wide} 320`);
@@ -317,9 +408,8 @@ describe('the clip card\'s art', () => {
     expect(bare.svg).not.toContain(STILL);
     expect(bare.svg).not.toContain('/media/');
     const card = A.sceneArt({ scene: 'clip', cast: [], clip: STILL, bubbles: [], lines: ['team: search'] });
-    expect(card.svg).toContain('class="cm-clip-card"');
-    expect(card.svg).toContain('fill="var(--cm-screen-bg)"');
-    expect(card.lines).toEqual(T.SCREENS.clip!.lines);
+    expect(card.svg).not.toContain('cm-clip-card');
+    expect(card.lines).toBeNull();
     expect(card.svg).not.toContain('team: search');
   });
 
@@ -396,7 +486,25 @@ describe('the clip card\'s art', () => {
     const root = A.clipMedia(doc, { ...VIDEO, alt: '<img src=x onerror=alert(1)>' });
     const alt = walk(root).find((e) => e.classList.contains('cm-clip-alt'))!;
     expect(alt.textContent).toBe('<img src=x onerror=alert(1)>');
-    expect(walk(root).filter((e) => e.tag === 'img')).toHaveLength(0);
+    // the only image is the blurred backdrop, of the library's poster
+    const imgs = walk(root).filter((e) => e.tag === 'img');
+    expect(imgs.map((i) => [i.getAttribute('class'), i.getAttribute('src'), i.getAttribute('alt')])).toEqual([['cm-clip-back', VIDEO.poster, '']]);
+  });
+
+  it('lays a blurred copy of the picture under it (the poster, or the still), which goes if it fails, and with the picture', () => {
+    const v = A.clipMedia(doc, VIDEO);
+    const back = walk(v).find((e) => e.classList.contains('cm-clip-back'))!;
+    expect(back.getAttribute('aria-hidden')).toBe('true');
+    expect(v.children.indexOf(back)).toBeLessThan(v.children.indexOf(A.clipVideo(v)!)); // under the video
+    back.fire('error');
+    expect(walk(v).some((e) => e.classList.contains('cm-clip-back'))).toBe(false);
+    expect(A.clipVideo(v)).not.toBeNull();
+    const still = A.clipMedia(doc, T.clipFor(STILL)!);
+    expect(walk(still).find((e) => e.classList.contains('cm-clip-back'))!.getAttribute('src')).toBe(T.clipFor(STILL)!.src);
+    media(still)[0]!.fire('error');
+    expect(walk(still).some((e) => e.classList.contains('cm-clip-back'))).toBe(false);
+    // a video with no poster has none
+    expect(walk(A.clipMedia(doc, { ...VIDEO, poster: undefined })).some((e) => e.classList.contains('cm-clip-back'))).toBe(false);
   });
 });
 
@@ -414,11 +522,20 @@ describe('the player and its CSS', () => {
     expect(player.match(/v\.play\(\)/g)).toHaveLength(1);
   });
 
-  it('crops the clip to the panel, pushes a still in by --kb, and holds it still under reduced motion', () => {
-    expect(css).toMatch(/\.cm-clip-media \{[^}]*object-fit: cover;/);
-    expect(css).toMatch(/\.cm-clip-kb \{[^}]*var\(--kb, 0\)/);
-    expect(css).toContain('.cm[data-reduced] .cm-clip-kb { transform: none; }');
-    expect(css).toMatch(/prefers-reduced-motion: reduce\) \{[^}]*\}\s*\.cm-clip-kb \{ transform: none !important; \}/);
+  it('shows the whole clip (never cropped), pushes the picture layer in by --zoom, and holds it still under reduced motion', () => {
+    expect(css).toMatch(/\.cm-clip-media \{[^}]*object-fit: contain;/);
+    expect(css).toMatch(/\.cm-clip-back \{[^}]*filter: blur/);
+    expect(css).toMatch(/\.cm-shot \{[^}]*transform: scale\(var\(--zoom, 1\)\)/);
+    expect(css).not.toMatch(/--kb/);
+    expect(css).toContain('.cm[data-reduced] .cm-shot { transform: none; }');
+    expect(css).toMatch(/prefers-reduced-motion: reduce\) \{[^}]*\}\s*\.cm-shot \{ transform: none !important; \}/);
+    // the words of a clip sit in a safe area 5% in, at most 45% of the panel a side, sized in the panel's own units
+    expect(css).toMatch(/\.cm-scene-clip \{ container-type: size; \}/);
+    expect(css).toMatch(/\.cm-over \{[^}]*inset: 5%;/);
+    expect(css).toMatch(/\.cm-over \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/);
+    expect(css).toMatch(/\.cm-over \.cm-bub \{[^}]*max-width: 100%;[^}]*cqw/);
+    expect(css).toMatch(/\.cm-card \{[^}]*max-width: 89%;[^}]*cqw/);
+    expect(css).toMatch(/\.cm-card \.cm-scrline \{ white-space: pre-wrap; overflow-wrap: anywhere; \}/);
     expect(css).toContain('.cm-clip-failed .cm-clip-alt { display: flex; }');
     expect(css).toMatch(/\.cm-scene-clip \{ --cm-pbg: var\(--cm-black\); --cm-pfg: var\(--cm-fg-black\); \}/);
     // the alt on the dark card is a pair the contrast check already holds (fg-black-muted on black)

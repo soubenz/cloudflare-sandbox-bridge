@@ -90,10 +90,15 @@ export const PanelSchema = z.object({
   /** A black card's heading. */
   title: plain(60).optional(),
   /** A black card's lines, stacked one under the other as the voiceover reaches their cues. */
-  captions: z.array(cued(80)).max(5).optional(),
+  captions: z.array(cued(80)).max(6).optional(),
   /** A diagram scene's diagram: an id of packages/catalogue/diagrams.json. */
   diagram: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, 'a diagram id: lowercase letters, digits and hyphens').optional(),
-  /** The diagram's steps to show, in order, one entry each (the first N of the diagram); all of them when absent. */
+  /**
+   * The diagram step a diagram panel starts at, 1-based (default 1): its `steps` are the diagram's steps `from`,
+   * `from + 1`, ..., so several panels can walk through one diagram (one panel steps 1-2, the next `from: 3`).
+   */
+  from: z.number().int().min(1).max(20).optional(),
+  /** The diagram's steps to show, in order, one entry each (N of the diagram from `from`); all the rest when absent. */
   steps: z.array(z.object({ cue: cue.optional() }).strict()).min(1).max(8).optional(),
   /** A clip scene's clip: an id of packages/catalogue/clips.json (a video or a still the panel plays under its words). */
   clip: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, 'a clip id: lowercase letters, digits and hyphens').optional(),
@@ -206,7 +211,7 @@ export function checkComic(comic: Comic): string[] {
     if (p.scene === 'black' && !(p.captions && p.captions.length > 0)) problems.push(`${at}: a black card needs captions to show`);
     if (p.scene !== 'black' && (p.captions || p.title)) problems.push(`${at}: captions and title are only for a black card`);
     if (p.scene === 'diagram' && !p.diagram) problems.push(`${at}: a diagram scene needs a diagram (an id of packages/catalogue/diagrams.json)`);
-    if (p.scene !== 'diagram' && (p.diagram || p.steps)) problems.push(`${at}: diagram and steps are only for a diagram scene`);
+    if (p.scene !== 'diagram' && (p.diagram || p.steps || p.from !== undefined)) problems.push(`${at}: diagram and steps are only for a diagram scene (and from)`);
     if (p.scene === 'clip' && !p.clip) problems.push(`${at}: a clip scene needs a clip (an id of packages/catalogue/clips.json)`);
     if (p.scene !== 'clip' && p.clip) problems.push(`${at}: clip is only for a clip scene`);
     if (p.voiceover && p.voiceover.length > VOICEOVER_MAX) {
