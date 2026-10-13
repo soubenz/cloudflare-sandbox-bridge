@@ -193,7 +193,7 @@
 }
 .cm-stack-line + .cm-stack-line { border-top: 1px solid var(--cm-black-rule); }
 /* Four or five captions: a size smaller, so the stack keeps to its band. */
-.cm-stack:has(> .cm-stack-line:nth-of-type(4)) .cm-stack-line { font-size: calc(15px * var(--ts, 1)); padding: 0.3em 0; }
+.cm-stack:has(> .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line ~ .cm-stack-line) .cm-stack-line { font-size: calc(15px * var(--ts, 1)); padding: 0.3em 0; }
 .cm-stack-title.on, .cm-stack-line.on { opacity: 1; transform: none; }
 
 /* A caption that is a time of day ("23:47"): set like a clock, the digits all one width. */

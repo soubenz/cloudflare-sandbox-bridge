@@ -403,7 +403,7 @@ for (const [theme, tokens] of Object.entries(consoleThemes)) {
     "dark (attr)": { ...cmLight, ...hexTokens(cmAttrBody) },
     "dark (media)": { ...cmLight, ...hexTokens(cmMediaBody) },
   };
-  const grounds = ["ice", "sand", "mint", "navy", "lilac", "cobalt", "rose"];
+  const grounds = ["ice", "sand", "mint", "navy", "lilac", "cobalt", "rose", "night"];
   const comicPairs = [
     ...grounds.map((n) => [`fg-${n}`, `bg-${n}`, 4.5, `words drawn straight on the ${n} panel`]),
     ["ink", "bubble", 4.5, "speech bubble text"],
@@ -416,6 +416,8 @@ for (const [theme, tokens] of Object.entries(consoleThemes)) {
     ["screen-ok", "screen-bg", 4.5, "a screen's success line"],
     ["screen-warn", "screen-bg", 4.5, "a screen's warning line"],
     ["sfx", "ink", 4.5, "a sound effect's fill against its outline"],
+    ["fg-black", "black", 4.5, "a black card's captions on its dark plate"],
+    ["fg-black-muted", "black", 4.5, "a black card's title on its dark plate"],
     ["edge", "paper", 3.0, "a panel's border against the page"],
     ["stage-bar", "stage", 3.0, "the progress bar against the frame"],
   ];

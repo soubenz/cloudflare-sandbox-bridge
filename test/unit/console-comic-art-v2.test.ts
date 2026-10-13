@@ -22,6 +22,7 @@ const A = (await import('../../dashboard/src/comic-art.js' as string)) as {
   diagramFor: (p: unknown) => { id: string; steps: unknown[] } | null;
   applyDiagramStep: (fig: unknown, p: unknown, step: unknown) => number;
   releaseDiagram: (fig: unknown) => void;
+  isClockCaption: (t: unknown) => boolean;
 };
 const library = JSON.parse(readFileSync('packages/catalogue/diagrams.json', 'utf8')) as { diagrams: { id: string; steps: unknown[] }[] };
 const css = readFileSync('dashboard/public/comic.css', 'utf8');
@@ -200,6 +201,27 @@ describe('the motion of the new parts', () => {
     // every loop lives inside the reel, where the still rules reach it
     expect(css).toContain('.cm[data-state="done"] .cm-reel *, .cm[data-reduced] .cm-reel *, .cm[data-test] .cm-reel * { animation: none !important; }');
     expect(css).toMatch(/prefers-reduced-motion: reduce\) \{\s*\.cm-reel \* \{ animation: none !important;/);
+  });
+
+  it('tells a caption that gives the time from one that does not', () => {
+    for (const t of ['23:47', '3:12', 'Saturday 03:12', 'Mon 9:05 pm', '02:14. Still awake.']) expect(A.isClockCaption(t), t).toBe(true);
+    for (const t of ['MEANWHILE', 'Later that night', 'Ratio 3:1', '123:456', '12:5', '', undefined, 5]) expect(A.isClockCaption(t), String(t)).toBe(false);
+    // the player sets the class only on a caption that tells the time; any other caption is built as before
+    const player = readFileSync('dashboard/src/comic.js', 'utf8');
+    expect(player).toContain("el('figcaption', isClockCaption(panel.caption) ? 'cm-cap cm-caption--clock' : 'cm-cap', panel.caption)");
+  });
+
+  it('styles a black card\'s words: a mono small-caps title, captions sliding up with a rule between, from tokens only', () => {
+    const rule = (sel: string) => new RegExp(`(^|\\n)${sel.replace(/[.+]/g, (c) => `\\${c}`)} \\{([^}]*)\\}`).exec(css)?.[2] ?? '';
+    expect(rule('.cm-stack')).toContain('color: var(--cm-fg-black)');
+    expect(rule('.cm-stack-title')).toContain('var(--mono)');
+    expect(rule('.cm-stack-title')).toContain('all-small-caps');
+    expect(rule('.cm-stack-title')).toContain('var(--tt, 1)'); // scales up on a phone like every caption
+    expect(rule('.cm-stack-line')).toContain('var(--ts, 1)');
+    expect(rule('.cm-stack-line')).toMatch(/opacity: 0; transform: translateY\(0\.6em\); transition: opacity/);
+    expect(rule('.cm-stack-line + .cm-stack-line')).toContain('border-top: 1px solid var(--cm-black-rule)');
+    expect(css).toContain('.cm-stack-title.on, .cm-stack-line.on { opacity: 1; transform: none; }');
+    expect(css).toMatch(/^\s*--cm-fg-black-muted: #[0-9a-f]{6};/m);
   });
 
   it('sets a clock caption in tabular mono figures', () => {

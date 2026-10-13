@@ -60,7 +60,9 @@ describe('comic schema and checks', () => {
     expect(() => ComicSchema.parse({ title: 'T', pages: [{ panels: GOOD.panels }], panels: GOOD.panels })).toThrow(/either pages or panels/);
     expect(() => ComicSchema.parse({ title: 'T' })).toThrow(/needs pages/);
     expect(() => ComicSchema.parse({ title: 'T', pages: Array.from({ length: 7 }, () => ({ panels: GOOD.panels })) })).toThrow();
-    expect(() => ComicSchema.parse({ title: 'T', pages: [{ panels: Array.from({ length: 10 }, () => GOOD.panels[1]) }] })).toThrow();
+    expect(() => ComicSchema.parse({ title: 'T', pages: [{ panels: Array.from({ length: 12 }, () => GOOD.panels[1]) }] })).not.toThrow();
+    expect(() => ComicSchema.parse({ title: 'T', pages: [{ panels: Array.from({ length: 13 }, () => GOOD.panels[1]) }] })).toThrow();
+    expect(() => ComicSchema.parse({ title: 'T', panels: Array.from({ length: 13 }, () => GOOD.panels[1]) })).toThrow();
   });
 
   it('names the page in problems once there is more than one', () => {
@@ -100,6 +102,36 @@ describe('page layout', () => {
     expect(placements[0]!.w).toBeCloseTo(2 * PAGE.colW + PAGE.gap, 1);
     expect(placements[1]!.x).toBeCloseTo(2 * (PAGE.colW + PAGE.gap), 1);
     expect(placements[3]!.y).toBeCloseTo(PAGE.rowH + PAGE.gap, 1);
+  });
+
+  it('lays out twelve panels on one page, wide ones included, in rows of three columns that never overlap', () => {
+    const scenes = ['desk', 'message', 'black', 'portrait', 'diagram', 'duo', 'screen', 'you', 'message', 'portrait', 'duo', 'desk'] as const;
+    const l = layoutComic(scenes.map((scene) => ({ scene })));
+    expect(l.problems).toEqual([]);
+    expect(l.placements).toHaveLength(12);
+    expect(l.placements.map((p) => p.span)).toEqual(scenes.map((s) => SCENES[s].span));
+    for (const p of l.placements) {
+      expect(p.x).toBeGreaterThanOrEqual(-1e-9);
+      expect(p.x + p.w).toBeLessThanOrEqual(PAGE_W + 1e-9);
+      expect(p.col + p.span).toBeLessThanOrEqual(PAGE.columns);
+    }
+    for (let i = 0; i < 12; i++) {
+      for (let j = i + 1; j < 12; j++) {
+        const a = l.placements[i]!;
+        const b = l.placements[j]!;
+        const apart = a.x + a.w <= b.x + 1e-9 || b.x + b.w <= a.x + 1e-9 || a.y + a.h <= b.y + 1e-9 || b.y + b.h <= a.y + 1e-9;
+        expect(apart, `${i} and ${j}`).toBe(true);
+      }
+    }
+    // reading order: row by row, left to right
+    for (let i = 1; i < 12; i++) {
+      const a = l.placements[i - 1]!;
+      const b = l.placements[i]!;
+      expect(b.row > a.row || (b.row === a.row && b.x > a.x)).toBe(true);
+    }
+    expect(l.height).toBeCloseTo(l.rows * PAGE.rowH + (l.rows - 1) * PAGE.gap, 6);
+    expect(layoutComic(Array.from({ length: 12 }, () => ({ scene: 'desk' as const }))).rows).toBe(12);
+    expect(layoutComic(Array.from({ length: 12 }, () => ({ scene: 'message' as const }))).rows).toBe(4);
   });
 
   it('works for any number of panels: a wide panel that does not fit starts a new row and short rows are centred', () => {
@@ -273,14 +305,31 @@ describe('voiceover: the story is told by one storyteller', () => {
     const old = ComicSchema.parse(GOOD); // uses jonas
     expect(checkComic(old)).toEqual([]);
     const oldLong = ComicSchema.parse({ title: 'T', pages: [{ panels: GOOD.panels.concat(GOOD.panels).slice(0, 9) }, { panels: GOOD.panels }] });
-    expect(checkComic(oldLong).join()).not.toMatch(/at most 9 panels/);
+    expect(checkComic(oldLong).join()).not.toMatch(/at most 12 panels/);
   });
 
-  it('allows at most 9 panels in all once the comic has a voiceover', () => {
-    const nine = ComicSchema.parse({ title: 'T', pages: [{ panels: VOICED.panels }, { panels: VOICED.panels.slice(0, 3) }] });
-    expect(checkComic(nine)).toEqual([]);
-    const ten = ComicSchema.parse({ title: 'T', pages: [{ panels: VOICED.panels }, { panels: VOICED.panels.slice(0, 4) }] });
-    expect(checkComic(ten).join()).toMatch(/at most 9 panels in all \(has 10\)/);
+  it('allows at most 12 panels in all once the comic has a voiceover, on one page or two', () => {
+    const twelve = ComicSchema.parse({ title: 'T', panels: VOICED.panels.concat(VOICED.panels) });
+    expect(twelve.pages).toHaveLength(1);
+    expect(checkComic(twelve)).toEqual([]);
+    const two = ComicSchema.parse({ title: 'T', pages: [{ panels: VOICED.panels }, { title: 'The call', panels: VOICED.panels }] });
+    expect(checkComic(two)).toEqual([]);
+    const thirteen = ComicSchema.parse({ title: 'T', pages: [{ panels: VOICED.panels.concat(VOICED.panels) }, { panels: VOICED.panels.slice(0, 1) }] });
+    expect(checkComic(thirteen).join()).toMatch(/at most 12 panels in all \(has 13\)/);
+  });
+
+  it('holds a comic with a black card or a diagram panel to 12 panels too, voiced or not; an old comic without either keeps its 36', () => {
+    const silent = GOOD.panels.map(({ ...p }) => p);
+    const card = { scene: 'black', cast: [], bubbles: [], captions: ['Is this normal?'] };
+    const dgm = { scene: 'diagram', cast: [], bubbles: [], diagram: 'gateway-what-it-does', caption: 'One door.' };
+    for (const extra of [card, dgm]) {
+      const ok = ComicSchema.parse({ title: 'T', pages: [{ panels: [...silent, ...silent.slice(0, 5), extra] }] });
+      expect(checkComic(ok), extra.scene).toEqual([]);
+      const over = ComicSchema.parse({ title: 'T', pages: [{ panels: [...silent, ...silent.slice(0, 5), extra] }, { panels: [silent[1]] }] });
+      expect(checkComic(over).join(), extra.scene).toMatch(/at most 12 panels in all \(has 13\)/);
+    }
+    const old = ComicSchema.parse({ title: 'T', pages: [{ panels: silent.concat(silent) }, { panels: silent.slice(0, 1) }] });
+    expect(checkComic(old)).toEqual([]);
   });
 
   it('a panel with only a voiceover says something; narration is optional (no voiceover anywhere is not an error)', () => {
@@ -309,7 +358,7 @@ describe('the Playwright fixtures (test/e2e/comic-fixture.ts)', () => {
       const c = ComicSchema.parse(fx);
       expect(checkComic(c), name).toEqual([]);
       expect(allPanels(c).every(({ panel }) => panel.cast.every((id) => ['maren', 'tomasz', 'you'].includes(castId(id)))), name).toBe(true);
-      expect(allPanels(c).length, name).toBeLessThanOrEqual(9);
+      expect(allPanels(c).length, name).toBeLessThanOrEqual(12);
       // the whole learn bundle, with its narration, as `labs publish` and the Worker would check it
       expect(() => parseLearnBundle(bundleOf(fx, narrationOf(fx)))).not.toThrow();
     }

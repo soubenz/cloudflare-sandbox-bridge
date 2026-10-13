@@ -1,0 +1,40 @@
+# Path 3 (ai-platform), Module 1 "Gateway and access", the warm-up before
+# lab 1 (see-what-a-gateway-does).
+#
+# type: warm-up -- no container, no session, nothing to grade (see
+# docs/lab-authoring.md, "Warm-ups"). It is only a learn/ folder:
+#
+#   story.md + comic.yaml      the opener: six problems, no solution named;
+#                              it ends by asking "normal, or a sign that
+#                              something is missing?"
+#   quiz.yaml                  one question per problem (gateway.why-one-door),
+#                              plus two each on what a gateway is and is not
+#   concepts/                  three lessons: what a gateway is (the same
+#                              foundation lesson as lab 1), why one door,
+#                              what it is not
+#   closing.md + closing.yaml  the closing: the same Saturday night, now quiet;
+#                              one call walked through the gateway
+#   games.yaml                 four short games on the closing
+#
+# order: the schema allows only integers >= 1, and see-what-a-gateway-does
+# is already order 1. The index sorts ties by slug, and "gateway-warm-up"
+# comes before "see-what-a-gateway-does", so order 1 puts this first in the
+# module without renumbering any other lab.
+slug: gateway-warm-up
+version: 1.0.0
+title: "What an AI gateway is, and why teams run one"
+type: warm-up
+path: ai-platform
+module: 1
+order: 1
+tier: free
+difficulty: intro
+estimated_minutes: 12
+summary: >-
+  Six things went wrong at one company last month. Four will happen to yours.
+  You will see what an AI gateway is, what it does with each model call, and
+  what it is not.
+objectives:
+  - Recognise the problems that come from every app calling model providers directly
+  - Follow one model call through a gateway, step by step
+  - Tell a gateway apart from a model, a cache and a firewall

@@ -27,7 +27,7 @@ SHAPE
 - A CLOSING introduces the solution in one panel, then walks one concrete
   example through it step by step, then shows one thing that is now easy
   that was hard before, then says what the viewer does next.
-- 6 to 9 panels. One idea per panel. About 90 to 120 seconds spoken.
+- 6 to 12 panels. One idea per panel. About 90 to 120 seconds spoken.
 
 VOICE (the narrator)
 - Plain, calm teaching sentences. Short. Concrete nouns, real numbers, real

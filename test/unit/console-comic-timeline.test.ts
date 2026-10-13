@@ -567,7 +567,7 @@ describe('cleaning what the API sent', () => {
   it('caps the pages, the panels, the lines and the bubbles at what the checker allows', () => {
     const many = T.cleanComic({ title: 'T', pages: Array.from({ length: 9 }, () => ({ panels: Array.from({ length: 14 }, () => desk({ lines: Array.from({ length: 9 }, (_, i) => `l${i}`), bubbles: [{ text: 'a' }, { text: 'b' }, { text: 'c' }] })) })) })!;
     expect(many.pages).toHaveLength(6);
-    expect(many.pages[0]!.panels).toHaveLength(9);
+    expect(many.pages[0]!.panels).toHaveLength(12);
     expect(many.pages[0]!.panels[0]!.lines).toHaveLength(6);
     expect(many.pages[0]!.panels[0]!.bubbles).toHaveLength(2);
   });
@@ -781,6 +781,45 @@ describe('v2: shots', () => {
     for (let i = 1; i < tl.shots.length; i++) expect(tl.shots[i]!.t).toBeGreaterThanOrEqual(tl.shots[i - 1]!.t);
     expect(desk.focusAt!).toBeGreaterThanOrEqual(desk.start + 2 * T.TIMING.move + 0.2 - 1e-9);
   });
+});
+
+describe('a twelve-panel comic (the most the current contract allows)', () => {
+  const panels = [
+    desk({ cast: ['maren'] }), panel({ scene: 'message', prop: 'envelope' }), panel(), duo(), screen(),
+    { scene: 'black', cast: [], prop: 'none', bubbles: [], captions: ['One.', 'Two.'] } as unknown as Panel,
+    { scene: 'diagram', cast: [], prop: 'none', bubbles: [], diagram: 'gateway-alias-routing' } as unknown as Panel,
+    panel(), duo(), desk(), panel({ scene: 'message', prop: 'key' }), panel({ scene: 'you', cast: [], bubbles: [], caption: 'Your turn.', lines: ['$ go'] }),
+  ];
+  for (const [name, comic] of [
+    ['one page', { title: 'Twelve', pages: [{ panels }] }],
+    ['two pages, the second behind a title card', { title: 'Twelve', pages: [{ panels: panels.slice(0, 7) }, { title: 'The call', panels: panels.slice(7) }] }],
+  ] as const) {
+    it(`${name}: keeps all twelve, plays them back to back, and frames each one on the reel as it pops in`, () => {
+      const clean = T.cleanComic(comic)!;
+      expect(clean.pages.flatMap((p) => p.panels)).toHaveLength(12);
+      const tl = T.buildTimeline(clean);
+      const all = T.panelsOf(tl);
+      expect(all.map((p) => p.number)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+      for (let i = 1; i < tl.shots.length; i++) expect(tl.shots[i]!.t).toBeGreaterThanOrEqual(tl.shots[i - 1]!.t);
+      for (const w of [380, 1000]) {
+        for (const p of all) {
+          expect(p.rect.x).toBeGreaterThanOrEqual(T.REEL.margin + T.REEL.paper - 1e-9);
+          expect(p.rect.x + p.rect.w).toBeLessThanOrEqual(tl.reel.w - T.REEL.margin - T.REEL.paper + 1e-9);
+          expect(p.rect.y + p.rect.h).toBeLessThanOrEqual(tl.reel.h);
+          const vp = T.viewportAt(tl, p.start, w);
+          const cam = T.cameraAt(tl, p.start + T.TIMING.move + 0.01, vp);
+          if (p.focusAt === null || w >= T.NARROW) {
+            expect(cam.cx, `panel ${p.number} at ${w}`).toBeCloseTo(p.rect.x + p.rect.w / 2, 6);
+            expect(cam.cy, `panel ${p.number} at ${w}`).toBeCloseTo(p.rect.y + p.rect.h / 2, 6);
+          }
+        }
+        // and the end pulls back to the whole reel
+        const end = T.cameraAt(tl, tl.total, T.viewportAt(tl, tl.total, w));
+        expect(end.cy).toBeCloseTo(tl.reel.h / 2, 9);
+      }
+      expect(T.panelState(all[11]!, tl.total).on).toBe(true);
+    });
+  }
 });
 
 describe('v2: cast moods and poses, the night background', () => {
