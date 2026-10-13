@@ -170,9 +170,9 @@ A `screen` or `you` scene draws nobody, so it needs no cast. A `message` scene s
 
 ### Writing the voiceover
 
-Write it the way Maren would say it to her team across a desk, so that it sounds right read aloud by a text-to-speech voice.
+Start from the writing prompt in `video-prompt.md`: it fixes the shape (an opener shows problems and ends by asking "is this normal?"; a closing introduces the answer and walks one example through it), the voice (plain, calm teaching sentences, every term explained on first use, no jokes in the voice track), and the picture rule (every panel is an ON SCREEN | VOICE | BUBBLE triple, concept panels are diagrams). The rules below are the format limits the prompt points to.
 
-- **First person and plural.** "I", "we", "our platform", "your team", "you". "We had a problem on Tuesday." not "The team had a problem."
+- **A voice-over for the team.** The narrator is not a character: no "I", no name. "We" and "our" are fine ("our support assistant"); the drawn characters speak only in bubbles, which are never voiced.
 - **Short and natural.** One or two sentences, about 35 words at most (the hard limit is 240 characters). One idea a panel; the next panel carries the next.
 - **Spell numbers and sizes** the way you would say them: "three in the morning", "four teams", "two hundred". No digits for amounts of money, counts or times that you want read out.
 - **No code, symbols or file names.** Say "the gateway log", not `gateway.log`; no slashes, underscores, backticks, `$` or `%`. Put the exact text on a screen `line` instead and let the voiceover say what it means.
