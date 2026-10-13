@@ -318,11 +318,12 @@ describe('voiceover: the story is told by one storyteller', () => {
     expect(checkComic(thirteen).join()).toMatch(/at most 12 panels in all \(has 13\)/);
   });
 
-  it('holds a comic with a black card or a diagram panel to 12 panels too, voiced or not; an old comic without either keeps its 36', () => {
+  it('holds a comic with a black card, a diagram or a clip panel to 12 panels too, voiced or not; an old comic without either keeps its 36', () => {
     const silent = GOOD.panels.map(({ ...p }) => p);
     const card = { scene: 'black', cast: [], bubbles: [], captions: ['Is this normal?'] };
     const dgm = { scene: 'diagram', cast: [], bubbles: [], diagram: 'gateway-what-it-does', caption: 'One door.' };
-    for (const extra of [card, dgm]) {
+    const clip = { scene: 'clip', cast: [], bubbles: [], clip: 'night-office-still', caption: 'Sunday night.' };
+    for (const extra of [card, dgm, clip]) {
       const ok = ComicSchema.parse({ title: 'T', pages: [{ panels: [...silent, ...silent.slice(0, 5), extra] }] });
       expect(checkComic(ok), extra.scene).toEqual([]);
       const over = ComicSchema.parse({ title: 'T', pages: [{ panels: [...silent, ...silent.slice(0, 5), extra] }, { panels: [silent[1]] }] });
@@ -373,6 +374,7 @@ describe('the Playwright fixtures (test/e2e/comic-fixture.ts)', () => {
     const scenes = allPanels(c).map(({ panel }) => panel.scene);
     expect(scenes).toContain('black');
     expect(scenes).toContain('diagram');
+    expect(scenes).toContain('clip');
   });
 
   it('the warm-up bundle (closing comic and one game of each kind) is valid too', async () => {
@@ -473,5 +475,71 @@ describe('motion comic v2 in the schema and the checks', () => {
       { scene: 'diagram', bubbles: [], diagram: 'unknown' },
     ];
     expect(comicTranscript(panels, lookup)).toEqual(['Panel 1. Look. Diagram: The door. One. Two.', 'Panel 2. Diagram: The door. One. Two. Three.', 'Panel 3. ']);
+  });
+});
+
+// ---- the clip scene: a short animation of packages/catalogue/clips.json under the panel's words -------------
+
+describe('the clip scene in the schema and the checks', () => {
+  const withPanel = (i: number, over: Record<string, unknown>) => ComicSchema.parse({ ...VOICED, panels: VOICED.panels.map((p, k) => (k === i ? { ...p, ...over } : p)) });
+  const CLIP = {
+    scene: 'clip',
+    clip: 'night-office-still',
+    cast: [{ who: 'tomasz', mood: 'tired', pose: 'typing' }, 'maren'],
+    voiceover: 'Late on Sunday Tomasz opened the gateway log, and one line told him which team it was.',
+    caption: { text: 'Sunday, 23:47.', cue: 'late on sunday' },
+    bubbles: [{ who: 'tomasz', text: 'There you are.', cue: 'one line' }, { who: 'maren', text: 'Which team?' }],
+    sfx: { text: 'TICK', cue: 'opened', sound: 'tick' },
+    lines: [{ text: 'team: search', cue: 'the gateway log' }, 'spend: x3'],
+    shot: 'close',
+  };
+
+  it('is a wide card that draws nobody: up to two people only name who speaks', () => {
+    expect(SCENES.clip).toEqual({ span: 2, minCast: 0, maxCast: 2 });
+    expect(layoutComic([{ scene: 'clip' }]).placements[0]!.span).toBe(2);
+  });
+
+  it('accepts a clip with a speaking cast (moods and poses allowed), bubbles, a caption, an sfx with a sound, cued screen lines and a shot', () => {
+    const c = withPanel(4, CLIP);
+    expect(checkComic(c)).toEqual([]);
+    const p = c.pages[0]!.panels[4]!;
+    expect(p.clip).toBe('night-office-still');
+    expect(p.cast.map(castId)).toEqual(['tomasz', 'maren']);
+    // and with nobody at all, when nobody speaks
+    expect(checkComic(withPanel(4, { ...CLIP, cast: [], bubbles: [] }))).toEqual([]);
+  });
+
+  it('needs a clip, refuses it on any other scene, and keeps captions, title, diagram and steps to their own scenes', () => {
+    expect(checkComic(withPanel(4, { ...CLIP, clip: undefined })).join()).toMatch(/comic panel 5 \(clip\): a clip scene needs a clip \(an id of packages\/catalogue\/clips\.json\)/);
+    expect(checkComic(withPanel(3, { clip: 'night-office-still' })).join()).toMatch(/comic panel 4 \(portrait\): clip is only for a clip scene/);
+    expect(checkComic(withPanel(4, { ...CLIP, title: 'No', captions: ['No.'] })).join()).toMatch(/captions and title are only for a black card/);
+    expect(checkComic(withPanel(4, { ...CLIP, diagram: 'gateway-what-it-does' })).join()).toMatch(/diagram and steps are only for a diagram scene/);
+    expect(() => withPanel(4, { ...CLIP, clip: 'Not An Id' })).toThrow();
+    expect(() => withPanel(4, { ...CLIP, clip: '../media/x' })).toThrow();
+  });
+
+  it('holds its cast and its speakers to maren, tomasz and you, two at most, even in a comic with no voiceover', () => {
+    expect(() => withPanel(4, { ...CLIP, cast: ['maren', 'tomasz', 'you'] })).toThrow();
+    expect(checkComic(withPanel(4, { ...CLIP, bubbles: [{ who: 'you', text: 'Me?' }] })).join()).toMatch(/you speaks but is not in the panel's cast/);
+    const old = ComicSchema.parse({ ...GOOD, panels: [...GOOD.panels.slice(0, 5), { scene: 'clip', clip: 'night-office-still', cast: ['jonas'], bubbles: [{ who: 'jonas', text: 'Hm.' }] }] });
+    expect(checkComic(old).join()).toMatch(/comic panel 6 \(clip\): jonas is retired/);
+  });
+
+  it('times its parts by cue like any panel: a cue that is not in the voiceover fails, naming the element', () => {
+    const bad = checkComic(withPanel(4, { ...CLIP, lines: [{ text: 'team: search', cue: 'the billing page' }], sfx: { text: 'TICK', cue: 'closed' } }));
+    expect(bad).toContain('comic panel 5 (clip): screen line 1 has the cue "the billing page", which is not in the voiceover');
+    expect(bad).toContain('comic panel 5 (clip): the sfx has the cue "closed", which is not in the voiceover');
+  });
+
+  it('reads what the clip shows first in the transcript (its alt), then the caption, voiceover, bubbles and screen lines as usual', () => {
+    const lookup = (id: string) => (id === 'night-office-still' ? { alt: 'A dark office at night.' } : undefined);
+    const panels = ComicSchema.parse({ ...VOICED, panels: VOICED.panels.map((p, k) => (k === 4 ? { ...p, ...CLIP } : p)) }).pages[0]!.panels;
+    expect(comicTranscript(panels, undefined, lookup)[4]).toBe(
+      'Panel 5. A dark office at night. Sunday, 23:47. Late on Sunday Tomasz opened the gateway log, and one line told him which team it was. Tomasz: There you are. Maren: Which team? On screen: team: search / spend: x3'
+    );
+    // with no lookup, or an id it does not know, the panel reads as any other
+    expect(comicTranscript(panels)[4]).toBe(comicTranscript(panels, undefined, () => undefined)[4]);
+    expect(comicTranscript(panels)[4]).toMatch(/^Panel 5\. Sunday, 23:47\. Late on Sunday/);
+    expect(comicPagesTranscript([{ panels }, { panels: panels.slice(4, 5) }], undefined, lookup)[8]).toMatch(/^Panel 7\. A dark office at night\./);
   });
 });

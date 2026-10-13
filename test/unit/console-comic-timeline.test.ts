@@ -573,7 +573,7 @@ describe('cleaning what the API sent', () => {
   });
 
   it('gives every scene a default background that the kit knows', () => {
-    expect(Object.keys(T.DEFAULT_BG).sort()).toEqual(['black', 'desk', 'diagram', 'duo', 'message', 'portrait', 'screen', 'you']);
+    expect(Object.keys(T.DEFAULT_BG).sort()).toEqual(['black', 'clip', 'desk', 'diagram', 'duo', 'message', 'portrait', 'screen', 'you']);
     for (const bg of Object.values(T.DEFAULT_BG)) expect(['ice', 'sand', 'mint', 'navy', 'lilac', 'cobalt', 'rose', 'night']).toContain(bg);
   });
 });
@@ -595,7 +595,7 @@ const V = T as unknown as {
 const fixture = await import('../e2e/comic-fixture');
 const withSlug = (a: ReturnType<typeof fixture.narrationOf>) => ({ ...a, slug: 'fixture' });
 const v2Panels = (tl: V2Timeline) => tl.pages.flatMap((p) => p.panels) as V2Panel[];
-/** The six panels of the V2 fixture. */
+/** The first six panels of the V2 fixture (the seventh, the clip, is test/unit/console-comic-clip.test.ts). */
 const six = (tl: V2Timeline) => v2Panels(tl) as [V2Panel, V2Panel, V2Panel, V2Panel, V2Panel, V2Panel];
 /** The fields every panel had before v2, so the golden file (made by the code before v2) is compared on what it knows. */
 const V1_PANEL_KEYS = ['index', 'number', 'page', 'scene', 'start', 'end', 'dur', 'words', 'rect', 'popAt', 'captionAt', 'sfxAt', 'bubbles', 'lines', 'focusAt'];

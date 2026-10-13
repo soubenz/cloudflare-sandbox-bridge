@@ -38,8 +38,9 @@ import {
  *
  * Motion comic v2 (docs/learning-content.md): a caption, sfx, bubble or screen line can carry a `cue`, a
  * phrase of the voiceover it appears on; a panel can have a `shot` (close, wide); cast entries can carry a
- * `mood` and `pose`; `bg: night`; an `sfx` can make a `sound`; and two scenes draw no person of their own:
- * `black` (a dark card of stacked `captions`) and `diagram` (a diagram of the catalogue, stepped through).
+ * `mood` and `pose`; `bg: night`; an `sfx` can make a `sound`; and three scenes draw no person of their own:
+ * `black` (a dark card of stacked `captions`), `diagram` (a diagram of the catalogue, stepped through) and
+ * `clip` (a short animation of packages/catalogue/clips.json under the panel's words; its cast only names speakers).
  */
 
 const plain = (max: number) =>
@@ -91,6 +92,8 @@ export const PanelSchema = z.object({
   diagram: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, 'a diagram id: lowercase letters, digits and hyphens').optional(),
   /** The diagram's steps to show, in order, one entry each (the first N of the diagram); all of them when absent. */
   steps: z.array(z.object({ cue: cue.optional() }).strict()).min(1).max(8).optional(),
+  /** A clip scene's clip: an id of packages/catalogue/clips.json (a video or a still the panel plays under its words). */
+  clip: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, 'a clip id: lowercase letters, digits and hyphens').optional(),
 });
 
 /** Most panels on one page (rows of three columns; a 12-panel comic is one page, or two with a title card). */
@@ -153,19 +156,22 @@ export function checkCues(p: ComicPanel): string[] {
 
 /**
  * Most panels in all of a comic written to the current contract: one with a voiceover, or one that uses a
- * card (a `black` card or a `diagram` panel). Narration stays limited to MAX_AUDIO_CLIPS clips (learn.ts).
+ * card (a `black` card, a `diagram` or a `clip` panel). Narration stays limited to MAX_AUDIO_CLIPS clips (learn.ts).
  */
 export const MAX_VOICED_PANELS = 12;
 
-/** Whether a comic uses a card: a black card or a diagram panel (both are part of the current contract). */
-export const usesCards = (comic: Comic): boolean => comic.pages.some((pg) => pg.panels.some((p) => p.scene === 'black' || p.scene === 'diagram'));
+/** The scenes that are cards of the current contract: a black card, a diagram panel, a clip panel. */
+const CARD_SCENES: ReadonlySet<string> = new Set(['black', 'diagram', 'clip']);
+/** Whether a comic uses a card: a black card, a diagram panel or a clip panel (all part of the current contract). */
+export const usesCards = (comic: Comic): boolean => comic.pages.some((pg) => pg.panels.some((p) => CARD_SCENES.has(p.scene)));
 
 /**
  * Cross-checks a schema-valid comic: cast counts, speakers present, length.
  *
  * A comic with at least one `voiceover` is written to the storyteller contract and is held to it: only
  * maren, tomasz and you may be drawn or speak (Priya, Jonas and Anneke are mentioned, never drawn). It, and a
- * comic that uses a black card or a diagram panel, has at most MAX_VOICED_PANELS (12) panels in all. A comic
+ * comic that uses a black card, a diagram or a clip panel, has at most MAX_VOICED_PANELS (12) panels in all. A
+ * clip panel is of the current contract whatever the rest of the comic is: its cast is maren, tomasz or you. A comic
  * with neither keeps the older rules, so the labs that have not been rewritten yet keep working.
  */
 export function checkComic(comic: Comic): string[] {
@@ -176,7 +182,7 @@ export function checkComic(comic: Comic): string[] {
     const at = multi ? `comic page ${page} panel ${indexInPage} (${p.scene})` : `comic panel ${indexInPage} (${p.scene})`;
     const rule = SCENES[p.scene];
     const cast = p.cast.map(castId);
-    if (voiced) {
+    if (voiced || p.scene === 'clip') {
       const retired = new Set<string>();
       for (const id of cast) if (RETIRED_CAST_IDS.includes(id)) retired.add(id);
       for (const b of p.bubbles) if (b.who && RETIRED_CAST_IDS.includes(b.who)) retired.add(b.who);
@@ -197,21 +203,23 @@ export function checkComic(comic: Comic): string[] {
     if (p.scene !== 'black' && (p.captions || p.title)) problems.push(`${at}: captions and title are only for a black card`);
     if (p.scene === 'diagram' && !p.diagram) problems.push(`${at}: a diagram scene needs a diagram (an id of packages/catalogue/diagrams.json)`);
     if (p.scene !== 'diagram' && (p.diagram || p.steps)) problems.push(`${at}: diagram and steps are only for a diagram scene`);
+    if (p.scene === 'clip' && !p.clip) problems.push(`${at}: a clip scene needs a clip (an id of packages/catalogue/clips.json)`);
+    if (p.scene !== 'clip' && p.clip) problems.push(`${at}: clip is only for a clip scene`);
     if (p.voiceover && p.voiceover.length > VOICEOVER_MAX) {
       problems.push(`${at}: the voiceover is ${p.voiceover.length} characters; keep it under ${VOICEOVER_MAX} (about 35 words) so the storyteller says it in one breath`);
     }
     if ((p.scene === 'screen' || p.scene === 'you') && !(p.lines && p.lines.length > 0)) {
       problems.push(`${at}: a ${p.scene} scene needs lines to show`);
     }
-    if (p.sfx && p.scene !== 'message' && p.scene !== 'portrait' && p.scene !== 'desk') {
-      problems.push(`${at}: sfx is only for message, portrait and desk scenes`);
+    if (p.sfx && p.scene !== 'message' && p.scene !== 'portrait' && p.scene !== 'desk' && p.scene !== 'clip') {
+      problems.push(`${at}: sfx is only for message, portrait, desk and clip scenes`);
     }
   }
   const total = allPanels(comic).length;
   if (total < 4) problems.push(`a comic needs at least 4 panels in all (has ${total})`);
   if (total > 36) problems.push(`a comic can have at most 36 panels (has ${total})`);
   if ((voiced || usesCards(comic)) && total > MAX_VOICED_PANELS) {
-    problems.push(`a comic told by a storyteller or with black or diagram cards has at most ${MAX_VOICED_PANELS} panels in all (has ${total}); cut it to the story's turning points`);
+    problems.push(`a comic told by a storyteller or with black, diagram or clip cards has at most ${MAX_VOICED_PANELS} panels in all (has ${total}); cut it to the story's turning points`);
   }
   const words = (pg: ComicPage) => pg.panels.reduce((n, p) => n + p.bubbles.reduce((m, b) => m + b.text.split(/\s+/).length, 0), 0);
   comic.pages.forEach((pg, i) => {

@@ -47,6 +47,9 @@ PICTURES
 - Concept panels show the concept, not a person: use a diagram panel
   (apps → gateway → providers, a tracking page, a token meter, a table).
   Story panels show a character and one prop (a key, an envelope, a screen).
+- A story beat may instead use `scene: clip`, a short animation from the
+  shared clip library (packages/catalogue/clips.json), with its words drawn
+  over it; concept panels stay diagrams.
 - What is on screen must be what the voice is talking about at that moment.
   Mark the word in the voiceover where each picture element should appear
   (a cue), e.g. a screen line appears on "support", a bubble appears after

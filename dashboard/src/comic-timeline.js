@@ -38,6 +38,7 @@ import {
   panelSeconds,
 } from '../../src/labs/comic-kit.ts';
 import library from '../../packages/catalogue/diagrams.json';
+import clipLibrary from '../../packages/catalogue/clips.json';
 
 // ---------------------------------------------------------------------------
 // The beats, in seconds
@@ -111,22 +112,74 @@ function stepsShown(panel) {
   return Array.isArray(panel.steps) && panel.steps.length > 0 ? Math.min(panel.steps.length, d.steps.length) : d.steps.length;
 }
 
+// ---------------------------------------------------------------------------
+// The clip library (packages/catalogue/clips.json): what a clip panel plays
+// ---------------------------------------------------------------------------
+
+/** A clip file as the console serves it (dashboard/public/media/clips/): nothing else is ever put in a src. */
+const CLIP_SRC = /^\/media\/clips\/[a-z0-9][a-z0-9._-]{0,99}\.(mp4|webm|webp|png|jpg|jpeg|avif)$/;
+const CLIP_IMAGE = /\.(webp|png|jpg|jpeg|avif)$/;
+const CLIP_ID = /^[a-z][a-z0-9-]{0,39}$/;
+
+/** A library entry as the player can trust it: `{ id, kind, src, poster?, alt, seconds?, loop }`, or null. */
+function cleanClip(c) {
+  if (!c || typeof c !== 'object' || typeof c.id !== 'string' || !CLIP_ID.test(c.id)) return null;
+  if (c.kind !== 'video' && c.kind !== 'image') return null;
+  if (typeof c.src !== 'string' || !CLIP_SRC.test(c.src) || (c.kind === 'image' && !CLIP_IMAGE.test(c.src))) return null;
+  const out = { id: c.id, kind: c.kind, src: c.src, alt: typeof c.alt === 'string' ? c.alt.slice(0, 240) : '', loop: c.kind === 'video' && c.loop === true };
+  if (typeof c.poster === 'string' && CLIP_SRC.test(c.poster) && CLIP_IMAGE.test(c.poster)) out.poster = c.poster;
+  const seconds = Number(c.seconds);
+  if (seconds > 0 && seconds <= 120) out.seconds = seconds;
+  return out;
+}
+const CLIPS = new Map((Array.isArray(clipLibrary?.clips) ? clipLibrary.clips : []).map(cleanClip).filter(Boolean).map((c) => [c.id, c]));
+/** A clip of the shared library (packages/catalogue/clips.json) by id, cleaned, or undefined: what a clip panel plays. */
+export const clipFor = (id) => (typeof id === 'string' ? CLIPS.get(id) : undefined);
+
+/** How far before its end a clip that does not loop rests (its last frame), in seconds. */
+export const CLIP_LAST_FRAME = 0.05;
+
+/**
+ * The moment of a clip panel's clip (a timeline panel's `clip`, `{ start, end, loop, seconds }`) to show at
+ * clock time `t`, for a video `duration` seconds long (the library's `seconds` until the video knows): its first
+ * frame before the panel starts, then `(t - start) mod duration` while the panel is on (a clip that does not loop
+ * rests on its last frame once it is over), and its last frame from the panel's end on (so Skip shows it too).
+ * A pure function of the clock: a seek, Replay and Skip all land on the same frame as playing there would.
+ */
+export function clipTimeAt(clip, t, duration) {
+  const d = Number(duration) > 0 && Number.isFinite(Number(duration)) ? Number(duration) : Number(clip?.seconds) > 0 ? Number(clip.seconds) : 0;
+  if (!clip || !(d > 0)) return 0;
+  const last = Math.max(0, d - CLIP_LAST_FRAME);
+  if (!(t > clip.start)) return 0;
+  if (t >= clip.end) return last;
+  const run = t - clip.start;
+  return clip.loop ? run % d : Math.min(run, last);
+}
+
+/** Whether a clip panel's clip is playing at clock time t: while its panel is on, from its start to its end. */
+export const clipPlaying = (clip, t) => Boolean(clip) && t >= clip.start && t < clip.end;
+
+/** How far through its panel a clip is at t, 0 to 1: what drives a still's slow push-in (the Ken Burns move). */
+export const clipProgress = (clip, t) => (clip && clip.end > clip.start ? clamp((t - clip.start) / (clip.end - clip.start), 0, 1) : 0);
+
 /**
  * Where a scene's screen is, in the panel's own units: `lines` is the box the typed
  * text fills, `device` the monitor or laptop round it. The art draws to these (comic-art.js)
  * and, in a narrow container, the camera pushes in on `device` so the text can be read.
+ * A clip panel's screen is a small card over the clip, at its top right.
  */
 export const SCREENS = {
   desk: { lines: { x: 352, y: 150, w: 294, h: 84 }, device: { x: 330, y: 132, w: 338, h: 118 } },
   screen: { lines: { x: 78, y: 54, w: 541, h: 170 }, device: { x: 48, y: 26, w: 601, h: 226 } },
   you: { lines: { x: 46, y: 184, w: 372, h: 104 }, device: { x: 20, y: 164, w: 424, h: 140 } },
+  clip: { lines: { x: 436, y: 34, w: 226, h: 92 }, device: { x: 420, y: 20, w: 258, h: 120 } },
 };
 
 /** A container narrower than this gets the push-in on screens (and a squarer frame). */
 export const NARROW = 600;
 
 /** The default background of a scene that names none. */
-export const DEFAULT_BG = { desk: 'ice', message: 'sand', portrait: 'mint', screen: 'navy', duo: 'lilac', you: 'cobalt', black: 'night', diagram: 'ice' };
+export const DEFAULT_BG = { desk: 'ice', message: 'sand', portrait: 'mint', screen: 'navy', duo: 'lilac', you: 'cobalt', black: 'night', diagram: 'ice', clip: 'night' };
 
 /**
  * Every word a panel shows: what is said, the caption and the screen lines, a black card's title and
@@ -180,7 +233,8 @@ function castOf(c) {
  * `text`), exactly as before; a cue goes beside its text: `captionCue`, `sfxCue`, bubble `cue`, `lineCues` and
  * `captionCues` (index for index, null where a line has none; only present when there is a cue). `sound` is the
  * sfx's sting, `shot` the framing. A diagram panel's `diagram` must be in the library (else it cannot be drawn)
- * and its `steps` are normalised to one `{ cue? }` per step shown.
+ * and its `steps` are normalised to one `{ cue? }` per step shown. A clip panel keeps its `clip` id when the
+ * library has it; one it does not have still plays, its words over a plain dark panel (never a broken comic).
  */
 function cleanPanel(p) {
   if (!p || typeof p !== 'object' || !Object.hasOwn(SCENES, p.scene)) return null;
@@ -252,6 +306,7 @@ function cleanPanel(p) {
       return cue ? { cue } : {};
     });
   }
+  if (p.scene === 'clip' && clipFor(p.clip)) out.clip = p.clip;
   // A scene that needs people it does not have cannot be drawn.
   if (cast.length < rule.minCast) return null;
   return out;
@@ -280,8 +335,11 @@ export function cleanComic(raw) {
   return pages.length ? { title: raw.title.slice(0, 80), pages } : null;
 }
 
-/** The transcript lines (the accessible equivalent of the stage), numbered across pages; a diagram panel reads its diagram's title and steps. */
-export const transcriptOf = (comic) => comicPagesTranscript(comic.pages, diagramFor);
+/**
+ * The transcript lines (the accessible equivalent of the stage), numbered across pages; a diagram panel reads its
+ * diagram's title and steps, a clip panel first what its clip shows (the library's `alt`).
+ */
+export const transcriptOf = (comic) => comicPagesTranscript(comic.pages, diagramFor, clipFor);
 
 // ---------------------------------------------------------------------------
 // The schedule
@@ -430,11 +488,14 @@ function voicedPanel(panel, voiced, pStart) {
  *   outro     { start, end } the pull-back at the end
  *   audio     the voiceover clips in start order: { key, kind: 'voiceover', bubble: null, panel (number), start, end, seconds } (empty without narration); one per voiced panel, so never two at once
  *   stings    the sound effects that make a sound, in time order: { panel (number), sound, at } (at is the sfx's sfxAt)
+ *   clips     the clip panels' clips (packages/catalogue/clips.json), in time order: { panel (number), id, start, end },
+ *             the panel's own start and end (a clip plays while its panel is on; it never changes the panel's length)
  *
  * and for each panel: start, end, dur, words, rect (its place on the reel),
  * popAt, captionAt, sfxAt, focusAt (when a narrow container's camera pushes in on its screen, or null),
  * bubbles [{ who, pos, start, end, step, wordTimes }], lines [{ start, end }], shot ('close', 'wide' or null),
- * stack (when each caption of a black card appears) and stepTimes (when each shown step of a diagram starts).
+ * stack (when each caption of a black card appears), stepTimes (when each shown step of a diagram starts) and clip
+ * ({ id, kind, loop, seconds?, start, end } for a clip panel whose clip the library has, else null; see clipTimeAt).
  * Every rectangle is in page units.
  *
  * Cues (a voiced panel's caption, sfx, bubbles, screen lines, black-card captions and diagram steps) move a
@@ -444,8 +505,9 @@ function voicedPanel(panel, voiced, pStart) {
  */
 export function buildTimeline(comic, { audio } = {}) {
   const narration = resolveNarration(comic, audio);
-  const clips = [];
+  const voices = [];
   const stings = [];
+  const media = [];
   const pages = [];
   const shots = [];
   const parts = { lead: 0, turns: 0, titles: 0, panels: 0, outro: TIMING.outro };
@@ -507,7 +569,7 @@ export function buildTimeline(comic, { audio } = {}) {
             cursor = bEnd + TIMING.bubbleGap;
             return { who: b.who, pos: b.pos, start: bStart, end: bEnd, step, wordTimes };
           });
-      if (said) clips.push({ ...said.clip, panel: number });
+      if (said) voices.push({ ...said.clip, panel: number });
 
       // Screen lines type one after the other, as quickly as the panel's time allows; a cued line starts on its
       // phrase, and a line never starts before the one above it is typed (a later one is pushed).
@@ -550,6 +612,10 @@ export function buildTimeline(comic, { audio } = {}) {
       }
       const sfxAt = panel.sfx ? (cueAt(panel.sfxCue) ?? pStart + TIMING.sfx) : null;
       if (sfxAt !== null && panel.sound) stings.push({ panel: number, sound: panel.sound, at: sfxAt });
+      // A clip plays while its panel is on: from the panel's first moment to its last (the panel is timed as ever).
+      const lib = panel.clip ? clipFor(panel.clip) : undefined;
+      const clip = lib ? { id: lib.id, kind: lib.kind, loop: lib.loop, ...(lib.seconds ? { seconds: lib.seconds } : {}), start: pStart, end: pStart + dur } : null;
+      if (clip) media.push({ panel: number, id: clip.id, start: clip.start, end: clip.end });
       t += dur;
       parts.panels += dur;
       return {
@@ -571,6 +637,7 @@ export function buildTimeline(comic, { audio } = {}) {
         shot: panel.shot ?? null,
         stack,
         stepTimes,
+        clip,
       };
     });
 
@@ -581,9 +648,9 @@ export function buildTimeline(comic, { audio } = {}) {
   const reel = { w: sheetW + 2 * M, h: y - REEL.gap + M };
   const outro = { start: t, end: t + TIMING.outro };
   shots.push({ t: outro.start, dur: TIMING.outro, rect: { x: 0, y: 0, w: reel.w, h: reel.h }, kind: 'outro' });
-  clips.sort((a, b) => a.start - b.start);
+  voices.sort((a, b) => a.start - b.start);
   stings.sort((a, b) => a.at - b.at);
-  return { total: outro.end, parts, reel, pages, shots, outro, audio: clips, stings };
+  return { total: outro.end, parts, reel, pages, shots, outro, audio: voices, stings, clips: media };
 }
 
 /** Every panel of a timeline in reading order. */

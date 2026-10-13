@@ -229,6 +229,30 @@ describe('closing and games', () => {
     expect(checkLearnBundle(tooMany, known).join()).toMatch(/comic panel 3 \(diagram\): lists 5 steps, but diagram "gateway-alias-routing" has 4/);
   });
 
+  it('fails a clip panel whose clip is not in the library, naming the panel and the id, in the opener and the closing', () => {
+    const withClip = (clip: string) => {
+      const c = parseYaml(CLOSING_YAML);
+      c.panels[2] = { scene: 'clip', clip, cast: ['tomasz'], voiceover: 'Here is the line that told us.', bubbles: [{ who: 'tomasz', text: 'There.', cue: 'the line' }], lines: ['alias: fast'] };
+      return c;
+    };
+    const ok = LearnBundleSchema.parse(raw({ comic: withClip('night-office-still'), closing: { ...closing, comic: withClip('night-office-still') } }));
+    expect(checkLearnBundle(ok, known)).toEqual([]);
+    const unknown = LearnBundleSchema.parse(raw({ comic: withClip('no-such-clip'), closing: { ...closing, comic: withClip('nor-this-clip') } }));
+    const problems = checkLearnBundle(unknown, known);
+    expect(problems).toContain('comic panel 3 (clip): clip "no-such-clip" is not in packages/catalogue/clips.json');
+    expect(problems).toContain('closing: comic panel 3 (clip): clip "nor-this-clip" is not in packages/catalogue/clips.json');
+    // the set of known clips can be passed in, as diagrams can
+    expect(checkLearnBundle(unknown, known, undefined, new Set(['no-such-clip', 'nor-this-clip']))).toEqual([]);
+    expect(() => parseLearnBundle(unknown, known)).toThrow(/clip "no-such-clip" is not in packages\/catalogue\/clips\.json/);
+    // a clip on another scene, and a clip scene without one
+    const misplaced = parseYaml(CLOSING_YAML);
+    misplaced.panels[1].clip = 'night-office-still';
+    misplaced.panels[2] = { scene: 'clip', voiceover: 'Here is the line that told us.' };
+    const p2 = checkLearnBundle(LearnBundleSchema.parse(raw({ comic: misplaced })), known);
+    expect(p2).toContain('comic panel 2 (portrait): clip is only for a clip scene');
+    expect(p2).toContain('comic panel 3 (clip): a clip scene needs a clip (an id of packages/catalogue/clips.json)');
+  });
+
   it('fails a cue that is not in the voiceover (checkComic, run by learn-check)', () => {
     const c = parseYaml(CLOSING_YAML);
     c.panels[0].bubbles[0].cue = 'on monday';

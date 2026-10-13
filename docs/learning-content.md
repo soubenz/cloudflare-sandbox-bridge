@@ -122,7 +122,7 @@ The story is a team's, and Maren tells it.
 ```yaml
 title: Which provider answered?
 panels:                         # one page; for several pages write `pages:` (below)
-  - scene: desk                 # desk, message, portrait, screen, duo, you, black or diagram
+  - scene: desk                 # desk, message, portrait, screen, duo, you, black, diagram or clip
     cast: [tomasz]              # who is drawn: maren, tomasz or you (none for screen and you scenes)
     caption: Tuesday, a little after ten.
     voiceover: On Tuesday morning Jonas in Finance asked us a question that nobody on the team could answer.
@@ -167,6 +167,7 @@ pages:
 | `you` | wide | none | `lines`; the last panel shows the call to action |
 | `black` | wide | none | `captions` (see [Black cards](#black-cards)) |
 | `diagram` | wide | 0 or 1 | `diagram` (see [The diagram scene](#the-diagram-scene)) |
+| `clip` | wide | 0 to 2, not drawn (they name who speaks) | `clip` (see [The clip scene](#the-clip-scene)) |
 
 A `screen` or `you` scene draws nobody, so it needs no cast. A `message` scene still has one of the three in the room with the envelope: the person who wrote the note is spoken about in the voiceover (bubbles need a speaker who is in the cast).
 
@@ -182,13 +183,13 @@ Start from the writing prompt in `video-prompt.md`: it fixes the shape (an opene
 - **Do not repeat the caption or the bubble.** The caption is the label, the bubble is a quote, the voiceover is the telling. A bubble is a line someone says out loud in the picture ("Which provider answered?"); the voiceover is Maren saying what is going on.
 - **No answers to a graded question** and the story bible: Larkfield, second person for "you".
 
-A comic is **5 to 12 panels** and **one page**, unless the story really turns (a page with a title card for "The call", say), in which case two. A comic with a voiceover, or with a black card or a diagram panel, may have at most 12 panels in all (black cards and diagram panels count as panels: they are cards in the story's flow).
+A comic is **5 to 12 panels** and **one page**, unless the story really turns (a page with a title card for "The call", say), in which case two. A comic with a voiceover, or with a black card, a diagram or a clip panel, may have at most 12 panels in all (black cards, diagram and clip panels count as panels: they are cards in the story's flow).
 
 ### Rules `labs learn-check` enforces
 
-- 1 to 6 pages, 1 to 12 panels on a page, at least 4 panels in all, and **at most 12 in all once any panel has a `voiceover` or the comic uses a `black` or `diagram` card**. Panels flow in reading order into rows of three columns (wide counts 2, square 1). Any count works: a wide panel that does not fit the rest of a row starts the next row, and a row that is not full sits in the middle of the page, so there is nothing to balance by hand.
+- 1 to 6 pages, 1 to 12 panels on a page, at least 4 panels in all, and **at most 12 in all once any panel has a `voiceover` or the comic uses a `black`, `diagram` or `clip` card**. Panels flow in reading order into rows of three columns (wide counts 2, square 1). Any count works: a wide panel that does not fit the rest of a row starts the next row, and a row that is not full sits in the middle of the page, so there is nothing to balance by hand.
 - A voiceover is at most 240 characters. Speakers must be in the panel's cast, and cast and speakers are only `maren`, `tomasz` and `you` (see above). At most two bubbles per panel, 150 characters each, plain text. Under 130 bubble words on a page and under 520 in all.
-- Every panel says something (a voiceover, a caption, a bubble or screen lines). `sfx` is for `message`, `portrait` and `desk` panels. A `screen` or `you` panel needs `lines`.
+- Every panel says something (a voiceover, a caption, a bubble or screen lines). `sfx` is for `message`, `portrait`, `desk` and `clip` panels. A `screen` or `you` panel needs `lines`.
 - Narration is optional: a comic with no `voiceover` anywhere is valid and plays without sound.
 
 Lines on a screen are coloured by how they start: `$` is a command, `200` or `ok` is green, `4xx`, `5xx` or `error` is orange or red. Use `?` where the lab wants the learner to find the value.
@@ -251,6 +252,29 @@ A cast entry is an id (`maren`) or `{ who, mood, pose }`: `mood` is `tired`, `wo
     voiceover: With one front door, every team sends its calls to a gateway, which checks the key and then calls the provider.
 ```
 
+### The clip scene
+
+`scene: clip` (wide) fills the panel with a short generated animation from the shared **clip library**, `packages/catalogue/clips.json`: a few seconds of video, or a still image, made once with an AI video tool and reused by any lab. The player is the editor: every word on a clip panel is the console's own overlay, drawn and timed exactly like on any other panel, so one clip can carry different words in different labs.
+
+```yaml
+  - scene: clip
+    clip: night-office-still                 # an id of packages/catalogue/clips.json (required)
+    cast: [{ who: tomasz, mood: tired }]     # optional, 0 to 2 of maren, tomasz, you; NOT drawn, only bubble speakers
+    voiceover: Late on Sunday Tomasz opened the gateway log, and one line told him which team it was.
+    caption: { text: "Sunday, 23:47.", cue: "late on sunday" }
+    bubbles: [{ who: tomasz, text: "There you are.", cue: "one line" }]
+    sfx: { text: TICK, cue: opened, sound: tick }
+    lines: [{ text: "team: search", cue: "the gateway log" }]   # a small screen card over the clip, typed like a screen
+    shot: close
+```
+
+- **Fields.** `clip` is required on a clip scene and refused on every other scene. `cast` (up to two of `maren`, `tomasz`, `you`, with `mood` and `pose` allowed) is never drawn: it is there so bubbles have speakers, and the retired people are refused even in a comic with no voiceover. `bubbles`, `caption`, `sfx` (with `sound` and `cue`), `lines` (a small screen card at the top right, typed like screen lines, coloured by how they start) and `shot: close | wide` all work and are timed by their cues as on any panel; a clip never changes a panel's length. `captions` and `title` stay black-card only, `diagram` and `steps` diagram only.
+- **The library.** `{ "clips": [ { "id", "kind": "video" | "image", "src", "poster"?, "alt", "seconds"?, "loop"?: true } ] }`. `id` is like a diagram's (lowercase letters, digits, hyphens, up to 40). `src` and `poster` are paths the console serves: `/media/clips/<file>` (a video `.mp4` or `.webm`; an image or poster `.webp`, `.png`, `.jpg`, `.jpeg` or `.avif`). `alt` (240 characters, plain) says what the clip shows; it is the clip's text in **Read as text**, read before the panel's caption, voiceover, bubbles and screen lines. `seconds` is the clip's length until the video knows its own. `loop: true` (videos only) loops it while its panel is on; without it the clip rests on its last frame when it ends. The library is checked by `src/labs/clip.ts`; `labs learn-check` fails an id that is not in it: `comic panel 3 (clip): clip "no-such-clip" is not in packages/catalogue/clips.json`.
+- **The files** live in `dashboard/public/media/clips/`, which the console Worker serves as static assets (`dashboard/wrangler.jsonc` `assets.directory` is `./public`) at `/media/clips/<file>`, behind the sign-in like every page. Keep a clip small: a few seconds, 720p or less, a few MB (Workers serves no single asset over 25 MiB; `test/unit/console-comic-clip.test.ts` checks every file exists, is tracked, is the type its name says and is under that limit). The CSP needs nothing more: `default-src 'self'` covers a video of the console's own origin, `img-src 'self'` a still.
+- **To add a clip:** generate it (a short, silent, loopable shot is best), export it small (an `.mp4` plus a `.webp` poster of its first frame, or a still `.webp`), put the files in `dashboard/public/media/clips/`, add an entry to `clips.json` with an `alt` that says what is seen, and reference its `id` from a panel. **Keep text out of the generated picture**: no captions, signs, screen text or logos. All words are overlaid by the player (they stay sharp, translatable, accessible and correct), and the picture is cropped to the panel (`object-fit: cover`), so keep what matters near the middle.
+- **How it plays.** A video is muted and inline (`playsinline`, `preload="metadata"`), and plays only while the comic's clock runs and its panel is on (from the panel's start to its end); the comic's Pause, a hidden tab and a scrolled-away comic pause it. Whenever it is not playing, and when it drifts, it is set to the frame the clock says: `(clock time - panel start) mod length` during the panel, its last frame from the panel's end on (and so on Skip); so a seek, Replay and Skip land on the same frame as playing there would (`clipTimeAt` in `comic-timeline.js`). A still is pushed in slowly (a Ken Burns move) by the panel's progress, a CSS transform set from the clock, so it is the same picture at the same second. Under reduced motion a clip shows its poster (or a still frame) and nothing moves. A clip that fails to load shows its poster, and failing that a plain dark panel that reads its `alt`; a console whose library lacks the id plays the panel's words over a plain dark panel. The comic is never broken by a clip.
+- **Tests.** With `?comicTest=1` no video is ever played: `window.__comicClock.clips` lists the clips (`{ panel, id, start, end }`) and `clipLog()` what the player would have played and paused (`{ type: 'play' | 'pause', panel, id, at, offset }`).
+
 ### Moving an old comic over
 
 The comic used to be read by several voices (a narrator for captions, each person for their bubbles). That contract is retired for new work but still validates, so a lab keeps working until it is rewritten: a comic with **no `voiceover`** keeps the old rules (any of the five people may be in it, up to 36 panels) and its old `learn/audio.json` is still accepted by `labs learn-check` and `labs publish`. The console does not play that old narration (it plays such a comic silent, with no Sound toggle). To move a lab over: write a `voiceover` on each panel in Maren's voice, drop the retired people from `cast` and the bubbles (mention them in the voiceover instead), then run `labs narrate`. As soon as one panel has a `voiceover`, the comic is held to the new rules and the old-shape `audio.json` is refused ("out of date ... run `labs narrate`"); `labs narrate` writes the new one and deletes the old clips.
@@ -289,7 +313,7 @@ git add labs/<slug>/learn/audio.json labs/<slug>/learn/audio
 - **Autoplay.** The comic tries to start sound by itself. If the browser refuses (it wants a tap first), a small non-modal **Tap to turn the sound on** button appears in the frame; tapping it, or Replay, or the toggle, starts the clip where the clock is. With `prefers-reduced-motion: reduce` no audio plays by itself (the comic starts finished); Replay plays it hard-cut, with its audio.
 - **Always text too.** Captions, bubbles and "Read as text" (which includes the voiceovers) are all still there, so nothing depends on hearing.
 
-Tests drive the voice without sound: with `?comicTest=1` the player never calls `play()`, and `window.__comicClock.audio` lists the scheduled clips (key, start, end), `audioLog()` what it decided to play and stop, and `?comicAudio=blocked` makes play() refuse as a browser does (`test/e2e/19-comic-audio.spec.ts`, which carries its own small comic and narration in `test/e2e/comic-fixture.ts`). Stings are not synthesised in a test either: `__comicClock.stings` lists them (`{ panel, sound, at }`) and `audioLog()` has a `{ type: 'sting', sound, at }` entry for each one the player would have played. `comic-fixture.ts` `V2` is a comic with one panel of each v2 feature.
+Tests drive the voice without sound: with `?comicTest=1` the player never calls `play()`, and `window.__comicClock.audio` lists the scheduled clips (key, start, end), `audioLog()` what it decided to play and stop, and `?comicAudio=blocked` makes play() refuse as a browser does (`test/e2e/19-comic-audio.spec.ts`, which carries its own small comic and narration in `test/e2e/comic-fixture.ts`). Stings are not synthesised in a test either: `__comicClock.stings` lists them (`{ panel, sound, at }`) and `audioLog()` has a `{ type: 'sting', sound, at }` entry for each one the player would have played. Clip videos are never played in a test (`__comicClock.clips`, `clipLog()`; see [The clip scene](#the-clip-scene)). `comic-fixture.ts` `V2` is a comic with one panel of each v2 feature, a clip panel among them.
 
 ## Closing comic (optional): `learn/closing.md` and `learn/closing.yaml`
 

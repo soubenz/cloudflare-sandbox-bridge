@@ -1,0 +1,11 @@
+{
+  "clips": [
+    {
+      "id": "night-office-still",
+      "kind": "image",
+      "src": "/media/clips/night-office-still.png",
+      "alt": "A dark office at night: a moon in the window, and one monitor glowing on an empty desk.",
+      "seconds": 6
+    }
+  ]
+}

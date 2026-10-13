@@ -296,6 +296,34 @@
 @keyframes cm-grain { 0% { translate: 0 0; } 25% { translate: -5px 3px; } 50% { translate: 4px -4px; } 75% { translate: -3px -5px; } }
 @keyframes cm-pop { 0% { scale: 0.6; } 60% { scale: 1.08; } 100% { scale: 1; } }
 
+/* ---------- the clip card ---------- */
+/*
+ * A clip of the library (comic.js clipMedia) fills the panel, cropped to it (object-fit: cover), under the art and
+ * the words. A still is pushed in slowly by --kb, the panel's progress from 0 to 1, which comic.js sets from the clock
+ * (so it is the same picture at the same second, and holds still when the comic is paused). A clip that cannot be
+ * shown leaves a plain dark panel with what the clip shows, in words.
+ */
+.cm-scene-clip { --cm-pbg: var(--cm-black); --cm-pfg: var(--cm-fg-black); }
+.cm-scene-clip .cm-halftone { display: none; }
+.cm-clip { position: absolute; inset: 0; overflow: hidden; background: var(--cm-black); }
+.cm-clip-media { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
+.cm-clip-kb {
+  transform-origin: 60% 40%;
+  transform: scale(calc(1 + 0.12 * var(--kb, 0))) translate(calc(-1.5% * var(--kb, 0)), calc(-1% * var(--kb, 0)));
+}
+.cm-clip-alt {
+  display: none; position: absolute; inset: 0; margin: 0; padding: 12% 14%;
+  align-items: center; justify-content: center; text-align: center;
+  color: var(--cm-fg-black-muted); font: 600 calc(15px * var(--ts, 1))/1.4 var(--sans); overflow-wrap: anywhere;
+}
+.cm-clip-failed .cm-clip-alt { display: flex; }
+.cm-clip-failed .cm-clip-media { display: none; }
+.cm-scene-clip .cm-cap { max-width: 56%; }
+.cm-scene-clip .cm-bub { --bw: 50%; }
+.cm-scene-clip .cm-sfx { right: 24px; top: 47%; }
+/* Reduced motion: a still stays where it is. */
+.cm[data-reduced] .cm-clip-kb { transform: none; }
+
 /* ---------- the diagram card ---------- */
 /* The frame carries diagram.css's class, so the diagram's own tokens apply; the plate is the diagram's ground. */
 .cm-dgm { --cm-dgm-plate: var(--dg-surface-2); }
@@ -329,6 +357,7 @@
 .cm[data-state="done"] .cm-pane, .cm[data-state="done"] .cm-banner { transition: none; }
 @media (prefers-reduced-motion: reduce) {
   .cm-reel * { animation: none !important; transition: none !important; }
+  .cm-clip-kb { transform: none !important; }
 }
 
 /* ---------- Replay and Skip, the timecode, the text version ---------- */

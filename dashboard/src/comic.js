@@ -12,6 +12,9 @@
  *                                         no step yet (the diagram alone). Called once each time the step changes,
  *                                         backwards too (Replay, a seek), and must not throw.
  *   releaseDiagram(figEl)                 lets a diagram panel's picture go: called for each diagram panel on destroy.
+ *   clipMedia(document, clip, { still })  a clip panel's picture (`div.cm-clip`: a muted <video>, or an <img> pushed in by
+ *                                         `--kb`), set under the art; clipVideo(el) finds its <video>. The player plays,
+ *                                         pauses and seeks that video on the comic's clock (see Clips below).
  * A black card's art may return `stack`, the box (art units) its captions are set in.
  * The player draws every word as HTML over the art (textContent only), and the art styles it (comic.css):
  *   .cm-stack > .cm-stack-title, .cm-stack-line   a black card's title and its captions, each `.on` once shown.
@@ -66,6 +69,15 @@
  * The stings (`stings`: `{ panel, sound, at }`) are logged as `{ type: 'sting', sound, at }` when the
  * player would have played one (comic-sfx.js; nothing is synthesised in test mode).
  *
+ * Clips: a `clip` panel fills with a short animation of packages/catalogue/clips.json, its words drawn over it as on any
+ * panel. A video plays only while the clock runs and its panel is on (from its start to its end; muted, so a browser
+ * allows it without a tap); Pause, a hidden tab, a scrolled-away comic and the end pause it, and whenever it is not
+ * playing (and when it drifts) it is set to the frame the clock says (clipTimeAt in comic-timeline.js: the time
+ * into the panel, round the clip's length; its last frame after the panel and on Skip). A still is pushed in slowly
+ * by the panel's progress (the Ken Burns move), so it too is a function of the clock. Under reduced motion a clip
+ * shows its poster or a still frame, nothing moves. In test mode no video is ever played: `__comicClock.clips` lists
+ * them (`{ panel, id, start, end }`) and `clipLog()` what the player would have played and paused.
+ *
  * Stings: an sfx with a `sound` makes a short synthesised sound at its moment (comic-sfx.js), on the same
  * clock, about 14 dB under the storyteller. A comic with stings has the Sound toggle too, and plays none while
  * it is off, under reduced motion, or while the comic is paused or finished. The page's one AudioContext is
@@ -73,7 +85,7 @@
  */
 
 import { CAST } from '../../src/labs/comic-kit.ts';
-import { applyDiagramStep, captionIsDisplay, isClockCaption, releaseDiagram, sceneArt } from './comic-art.js';
+import { applyDiagramStep, captionIsDisplay, clipMedia, clipOf, clipVideo, isClockCaption, releaseDiagram, sceneArt } from './comic-art.js';
 import { audioReduce, audioWanted, clipUrl, initialAudio } from './comic-audio.js';
 import { playSting, stingsDue, unlockStings } from './comic-sfx.js';
 import {
@@ -85,6 +97,10 @@ import {
   cameraTransform,
   cleanAudio,
   cleanComic,
+  clipPlaying,
+  clipProgress,
+  clipTimeAt,
+  CLIP_LAST_FRAME,
   clockReduce,
   initialClock,
   justFinished,
@@ -152,8 +168,8 @@ function displayLines(text) {
   return [words.slice(0, best).join(' '), words.slice(best).join(' ')];
 }
 
-/** Everything one panel is made of, built once; `parts` is what the frame loop flips. */
-function buildPanel(panel, tp, placement) {
+/** Everything one panel is made of, built once; `parts` is what the frame loop flips. `still`: reduced motion at mount. */
+function buildPanel(panel, tp, placement, { still = false } = {}) {
   const fig = el('figure', `cm-pane cm-bg-${panel.bg ?? DEFAULT_BG[panel.scene]} cm-scene-${panel.scene} cm-enter-${ENTER[(tp.number - 1) % ENTER.length]}`);
   fig.style.left = `${placement.x}px`;
   fig.style.top = `${placement.y}px`;
@@ -162,6 +178,15 @@ function buildPanel(panel, tp, placement) {
   fig.dataset.panel = String(tp.number);
   fig.dataset.scene = panel.scene;
   fig.append(el('div', 'cm-halftone'));
+
+  // A clip panel's picture lies under the art and the words: a video, or a still (comic-art.js clipMedia).
+  let clip = null;
+  if (panel.scene === 'clip') {
+    const lib = clipOf(panel);
+    const media = clipMedia(document, lib, { still });
+    fig.append(media);
+    clip = { el: media, tc: tp.clip, kind: lib?.kind ?? null, id: lib?.id ?? null, panel: tp.number, playing: false, kb: -1 };
+  }
 
   const art = sceneArt(panel);
   const svg = document.createElementNS(SVG_NS, 'svg');
@@ -173,7 +198,7 @@ function buildPanel(panel, tp, placement) {
   svg.innerHTML = art.svg;
   fig.append(svg);
 
-  const parts = { fig, panel, cap: null, sfx: null, bubbles: [], lines: [], stack: [], stackTitle: null, step: null, chars: [...svg.querySelectorAll('.cm-char')], last: '' };
+  const parts = { fig, panel, clip, cap: null, sfx: null, bubbles: [], lines: [], stack: [], stackTitle: null, step: null, chars: [...svg.querySelectorAll('.cm-char')], last: '' };
 
   if (panel.caption) {
     if (captionIsDisplay(panel.scene)) {
@@ -332,7 +357,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
       reel.append(banner);
     }
     const panels = page.panels.map((tp, i) => {
-      const parts = buildPanel(clean.pages[pi].panels[i], tp, tp.rect);
+      const parts = buildPanel(clean.pages[pi].panels[i], tp, tp.rect, { still: reduced });
       reel.append(parts.fig);
       return parts;
     });
@@ -411,9 +436,15 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     const focus = !calm && width < NARROW && tp.focusAt !== null && t >= tp.focusAt && t < tp.end;
     const bubbleKey = s.bubbles.map((b) => `${b.on ? 1 : 0}${calm && b.on ? 99 : b.words}${b.speaking ? 's' : ''}`).join(',');
     const lineKey = s.lines.map((p) => (calm ? (p > 0 ? 1 : 0) : (p >= 1 ? 1 : Math.ceil(p * 100) / 100))).join(',');
-    const key = `${s.on}|${s.caption}|${s.sfx}|${s.shake}|${focus}|${bubbleKey}|${lineKey}|${s.stack.map((on) => (on ? 1 : 0)).join('')}|${s.step}`;
+    // A still clip is pushed in by the panel's progress (none when calm): a function of the clock, like everything else.
+    const kb = parts.clip?.kind === 'image' && tp.clip ? (calm ? 0 : Math.round(clipProgress(tp.clip, t) * 1000) / 1000) : -1;
+    const key = `${s.on}|${s.caption}|${s.sfx}|${s.shake}|${focus}|${bubbleKey}|${lineKey}|${s.stack.map((on) => (on ? 1 : 0)).join('')}|${s.step}|${kb}`;
     if (key === parts.last) return;
     parts.last = key;
+    if (kb >= 0 && kb !== parts.clip.kb) {
+      parts.clip.kb = kb;
+      parts.clip.el.style.setProperty('--kb', String(kb));
+    }
     parts.fig.classList.toggle('on', s.on);
     parts.fig.classList.toggle('shake', s.shake);
     parts.fig.classList.toggle('focus', focus);
@@ -588,8 +619,9 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   /** Whether the clock is advancing, as far as the voices are concerned (a test steps it by hand, so only Skip and the end stop it). */
   const audioRunning = () => !gone && clock.status === 'playing' && (testMode || running());
 
-  /** Asks the clock which clip should be sounding now and lets the state machine act on the answer. */
+  /** Asks the clock which clip should be sounding now and lets the state machine act on the answer (and keeps the clip panels' videos in step). */
   function syncAudio() {
+    syncClips();
     if (!hasAudio) return;
     const wanted = audioWanted(tl.audio, clock.t, { running: audioRunning(), sound });
     if (clock.status === 'playing' && !gone) {
@@ -615,6 +647,74 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
       else playSting(st.sound);
     }
   }
+
+  // ---- the clips ---------------------------------------------------------
+
+  const clipParts = pageParts.flatMap((pp) => pp.panels.map((p) => p.clip)).filter((c) => c && c.tc);
+  /** In test mode: what the player decided for the clips' videos, instead of playing them. */
+  const clipLog = [];
+  /** How far a playing video may wander from the clock before it is set back, in seconds. */
+  const CLIP_DRIFT = 0.35;
+
+  /**
+   * Plays each clip panel's video while the clock runs and its panel is on, and otherwise holds it on the frame the
+   * clock says (clipTimeAt): so Pause, a hidden tab, a seek, Replay and Skip all leave it where it should be. Never
+   * plays under reduced motion (a still) or in a test (logged instead). Called with the voices, on every change.
+   */
+  function syncClips() {
+    for (const c of clipParts) {
+      const v = clipVideo(c.el);
+      const dur = v && Number.isFinite(v.duration) && v.duration > 0 ? v.duration : undefined;
+      const at = clipTimeAt(c.tc, clock.t, dur);
+      const length = dur ?? c.tc.seconds;
+      // A clip that does not loop and has run its course rests on its last frame: playing it again would start it over.
+      const over = c.kind === 'video' && !c.tc.loop && length > 0 && at >= length - CLIP_LAST_FRAME - 1e-3;
+      const want = !gone && !reduced && !userPaused && clock.status === 'playing' && (testMode || running()) && clipPlaying(c.tc, clock.t) && !over;
+      if (want !== c.playing) {
+        c.playing = want;
+        if (testMode) clipLog.push({ type: want ? 'play' : 'pause', panel: c.panel, id: c.id, at: clock.t, offset: at });
+      }
+      if (!v || c.kind !== 'video') continue;
+      try {
+        if (want && !testMode) {
+          const off = Math.abs(v.currentTime - at);
+          const drift = c.tc.loop && length > 0 ? Math.min(off, length - off) : off;
+          if (v.paused && !c.refused) {
+            if (off > 0.04) v.currentTime = at;
+            v.play()?.catch?.(() => {
+              // Refused (a browser that wants a tap even for a muted video): the clip holds its frame until the next tap.
+              c.refused = true;
+            });
+          } else if (drift > CLIP_DRIFT) {
+            v.currentTime = at;
+          }
+        } else {
+          if (!v.paused) v.pause();
+          // A still under reduced motion stays as it is; otherwise the frame follows the clock.
+          if (!reduced && !gone && Math.abs(v.currentTime - at) > 0.04) v.currentTime = at;
+        }
+      } catch {
+        /* a video that cannot seek or play keeps its frame; the comic plays on */
+      }
+    }
+  }
+
+  function releaseClips() {
+    for (const c of clipParts) {
+      const v = clipVideo(c.el);
+      if (!v) continue;
+      try {
+        v.pause();
+        v.removeAttribute('src');
+        v.load();
+      } catch {
+        /* nothing left to release */
+      }
+    }
+  }
+
+  // Once a video knows its length, it is put on the frame the clock says.
+  for (const c of clipParts) clipVideo(c.el)?.addEventListener('loadedmetadata', () => syncClips());
 
   function releaseAudio() {
     for (const a of elements.values()) {
@@ -709,6 +809,10 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
   // inside the tap (this covers the "Tap to turn the sound on" button, Replay and the toggle).
   root.addEventListener('click', () => {
     unlocked = true;
+    if (clipParts.some((c) => c.refused)) {
+      for (const c of clipParts) c.refused = false;
+      syncClips();
+    }
     // The stings' one AudioContext is made inside a tap too (never in a test, which plays no sound).
     if (hasStings && !testMode) unlockStings();
     if (!ast.blocked) return;
@@ -766,6 +870,8 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     audio: tl.audio.map((c) => ({ ...c, url: hasAudio ? clipUrl(voices.slug, c.key) : null })),
     audioLog: () => audioLog.slice(),
     stings: tl.stings.map((st) => ({ ...st })),
+    clips: tl.clips.map((c) => ({ ...c })),
+    clipLog: () => clipLog.slice(),
     userPaused: () => userPaused,
     audioState: () => ({ sound, blocked: ast.blocked, current: ast.current, failed: [...ast.failed] }),
   };
@@ -778,6 +884,7 @@ export function mountComic(container, comic, { onDone, audio } = {}) {
     gone = true;
     syncAudio();
     releaseAudio();
+    releaseClips();
     for (const pp of pageParts) {
       for (const p of pp.panels) {
         if (p.panel.scene !== 'diagram') continue;

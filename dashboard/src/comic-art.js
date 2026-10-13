@@ -1,8 +1,8 @@
 /**
  * The motion comic's art, drawn from code: the cast as simple geometric busts,
  * a handful of props, and one SVG scene per template (desk, message, portrait,
- * screen, duo, you, and the two cards: black and diagram). Nothing here is an
- * image and nothing here knows about time; comic.js lays the art in a panel
+ * screen, duo, you, and the three cards: black, diagram and clip). Nothing here is
+ * an image and nothing here knows about time; comic.js lays the art in a panel
  * and the timeline decides when what shows. The look is the design's
  * StoryComic: thick navy outlines, flat fills, a few ambient loops (bob,
  * blink, twinkle, a key press, a glowing phone, film grain) that comic.css
@@ -18,14 +18,17 @@
  * assigning these strings to innerHTML never puts content someone wrote into
  * markup. The diagram card is the one scene with words in its picture: they
  * come from the diagram library through diagram.js, which builds every node
- * with createElement and textContent (applyDiagramStep, below). Colours that
+ * with createElement and textContent (applyDiagramStep, below). The clip card is the
+ * one scene with a picture that is not drawn here: a video or a still of the clip
+ * library (packages/catalogue/clips.json) that clipMedia, below, puts under the
+ * art with createElement and attributes, never markup. Colours that
  * belong to the interface are variables (--cm-*, from comic.css, light and
  * dark); the people's own colours, the moon and the lamp are drawn here.
  */
 
 import * as kitDefs from '../../src/labs/comic-kit.ts';
 import library from '../../packages/catalogue/diagrams.json';
-import { SCREENS } from './comic-timeline.js';
+import { SCREENS, clipFor } from './comic-timeline.js';
 import { renderDiagram } from './diagram.js';
 
 const { SCENES } = kitDefs;
@@ -43,7 +46,7 @@ const BLUSH = '#ff8fa3';
 /** Panel art sizes in art units: the height is fixed, a wide panel is twice the width of a square one plus a gutter. */
 export const ART = { h: 320, wide: 697, square: 337 };
 /** The span of a card scene comic-kit does not (yet) list, so the art can be drawn either way. */
-const CARD_SPAN = { black: 2, diagram: 2 };
+const CARD_SPAN = { black: 2, diagram: 2, clip: 2 };
 export const artWidth = (scene) => ((SCENES[scene]?.span ?? CARD_SPAN[scene] ?? 1) === 2 ? ART.wide : ART.square);
 
 // ---------------------------------------------------------------------------
@@ -476,6 +479,29 @@ const SCENE_ART = {
       lines: null,
     };
   },
+
+  /**
+   * The clip card: the clip itself is HTML under this art (clipMedia), so the art only darkens the top and the
+   * foot a little, where the bubbles and the caption sit, and draws a small screen card at the top right for the
+   * panel's screen lines, if it has any. Nobody is drawn: the cast of a clip panel only names who speaks.
+   */
+  clip: (p, { w }) => {
+    const d = SCREENS.clip.device;
+    const card = Array.isArray(p.lines) && p.lines.length > 0;
+    return {
+      svg:
+        `<defs><linearGradient id="cm-clip-shade" x1="0" y1="0" x2="0" y2="1">` +
+        `<stop offset="0" stop-color="#000" stop-opacity=".38"/><stop offset=".3" stop-color="#000" stop-opacity="0"/>` +
+        `<stop offset=".7" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".45"/>` +
+        `</linearGradient></defs>` +
+        `<rect class="cm-clip-shade" width="${w}" height="${ART.h}" fill="url(#cm-clip-shade)"/>` +
+        (card
+          ? `<g class="cm-clip-card"><rect x="${d.x + 5}" y="${d.y + 5}" width="${d.w}" height="${d.h}" rx="12" fill="${INK}" opacity=".5"/>` +
+            `<rect x="${d.x}" y="${d.y}" width="${d.w}" height="${d.h}" rx="12" fill="${SCREEN_BG}" ${line(3)}/></g>`
+          : ''),
+      lines: SCREENS.clip.lines,
+    };
+  },
 };
 
 /** Film grain: specks scattered by a fixed seed, so the same card always draws the same. */
@@ -510,6 +536,94 @@ export function sceneArt(panel) {
   if (out.stack) art.stack = out.stack;
   return art;
 }
+
+// ---------------------------------------------------------------------------
+// The clip card's picture: a video or a still of the clip library
+// ---------------------------------------------------------------------------
+
+/**
+ * The picture of a clip panel, `div.cm-clip`, to sit under the panel's art and words (object-fit: cover):
+ *   a video clip     a muted, inline <video class="cm-clip-media cm-clip-video"> (preload metadata, `loop` as the
+ *                    library says, its poster if it has one) that comic.js plays on the comic's clock: never here
+ *   a still          an <img class="cm-clip-media cm-clip-kb">, which comic.css pushes in slowly by `--kb`, the
+ *                    panel's progress (comic.js sets it from the clock, so a seek lands on the same picture)
+ *   `still: true`    reduced motion: a video shows its poster (an <img>, no push-in), or with none the video,
+ *                    never played
+ * A picture that fails to load gives way to the poster, and with no poster (or a poster that fails too) to a
+ * plain dark panel that reads the clip's `alt` (`.cm-clip-failed`): never a broken comic. `clip` is a library
+ * entry (clipFor in comic-timeline.js), or anything else for a plain dark panel. Only library paths are put in a
+ * src (the timeline cleans them); the alt goes in with textContent. Built with `doc` (the page's document).
+ */
+export function clipMedia(doc, clip, { still = false } = {}) {
+  const wrap = doc.createElement('div');
+  const known = clip && typeof clip === 'object' && (clip.kind === 'video' || clip.kind === 'image') && typeof clip.src === 'string';
+  wrap.setAttribute('class', known ? `cm-clip cm-clip--${clip.kind}` : 'cm-clip cm-clip-failed');
+  if (!known) return wrap;
+  wrap.setAttribute('data-clip', clip.id);
+  const alt = doc.createElement('p');
+  alt.setAttribute('class', 'cm-clip-alt');
+  alt.textContent = typeof clip.alt === 'string' ? clip.alt : '';
+  wrap.appendChild(alt);
+
+  let media = null;
+  const failed = () => {
+    if (media && media.parentNode === wrap) wrap.removeChild(media);
+    media = null;
+    wrap.classList.add('cm-clip-failed');
+  };
+  const image = (src, kb) => {
+    const img = doc.createElement('img');
+    img.setAttribute('class', kb ? 'cm-clip-media cm-clip-kb' : 'cm-clip-media cm-clip-poster');
+    img.setAttribute('alt', '');
+    img.setAttribute('decoding', 'async');
+    img.setAttribute('draggable', 'false');
+    img.setAttribute('src', src);
+    return img;
+  };
+  /** The poster, when there is one and it is not what just failed; else the plain dark panel. */
+  const toPoster = () => {
+    if (!clip.poster || (media && media.getAttribute('src') === clip.poster)) return failed();
+    const img = image(clip.poster, false);
+    img.addEventListener('error', failed, { once: true });
+    if (media && media.parentNode === wrap) wrap.removeChild(media);
+    media = img;
+    wrap.appendChild(img);
+  };
+
+  if (clip.kind === 'image') {
+    media = image(clip.src, !still);
+  } else if (still && clip.poster) {
+    media = image(clip.poster, false);
+  } else {
+    const v = doc.createElement('video');
+    v.setAttribute('class', 'cm-clip-media cm-clip-video');
+    // Muted and inline, so a browser lets it play without a tap; no controls: the comic's clock is its control.
+    v.muted = true;
+    v.defaultMuted = true;
+    v.playsInline = true;
+    v.setAttribute('muted', '');
+    v.setAttribute('playsinline', '');
+    v.setAttribute('preload', 'metadata');
+    v.setAttribute('disablepictureinpicture', '');
+    v.setAttribute('disableremoteplayback', '');
+    if (clip.loop) {
+      v.loop = true;
+      v.setAttribute('loop', '');
+    }
+    if (clip.poster) v.setAttribute('poster', clip.poster);
+    v.setAttribute('src', clip.src);
+    media = v;
+  }
+  media.addEventListener('error', toPoster, { once: true });
+  wrap.appendChild(media);
+  return wrap;
+}
+
+/** The <video> of a clip panel's picture (clipMedia), or null: a still, a poster, a failed clip. */
+export const clipVideo = (root) => findByClass(root, 'cm-clip-video');
+
+/** The library clip a panel names, or null (comic-timeline.js's clipFor, for comic.js). */
+export const clipOf = (panel) => (panel && typeof panel === 'object' ? clipFor(panel.clip) ?? null : null);
 
 /** Whether a scene shows its caption as the big display words (the closing panel), not a small box. */
 export const captionIsDisplay = (scene) => scene === 'you';

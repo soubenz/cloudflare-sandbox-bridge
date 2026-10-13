@@ -27,6 +27,7 @@ export interface FixturePanel {
   captions?: FixtureCued[];
   diagram?: string;
   steps?: Array<{ cue?: string }>;
+  clip?: string;
 }
 export interface FixtureComic {
   title: string;
@@ -109,11 +110,12 @@ export const MULTI: FixtureComic = {
 };
 
 /**
- * Motion comic v2 (one page, six panels, every one voiced): one panel with each new feature. Cues on a caption,
+ * Motion comic v2 (one page, seven panels, every one voiced): one panel with each new feature. Cues on a caption,
  * a bubble, a screen line and an sfx with a sound (panel 1, also a cast mood and pose, the night background and
  * `shot: close`); an sfx sting with no cue (panel 2, a worried mood); `shot: wide` (panel 3); a diagram scene
  * with cued steps (panel 4, the first three steps of gateway-what-it-does); a black card with a title and
- * captions, two cued (panel 5); and the call to action (panel 6).
+ * captions, two cued (panel 5); a clip scene (panel 6: the still of packages/catalogue/clips.json, with a speaker who
+ * is not drawn, a cued clock caption, bubble, sfx with no sound and screen line); and the call to action (panel 7).
  */
 export const V2: FixtureComic = {
   title: 'Who paid for the weekend?',
@@ -135,6 +137,16 @@ export const V2: FixtureComic = {
         panelOf({ scene: 'portrait', cast: ['you'], bg: 'mint', shot: 'wide', voiceover: 'Nobody could say, because every team called the providers in its own way.', bubbles: [{ who: 'you', text: 'Where would I even look?' }] }),
         panelOf({ scene: 'diagram', diagram: 'gateway-what-it-does', steps: [{ cue: 'every team' }, { cue: 'checks the key' }, {}], voiceover: 'With one front door, every team sends its calls to a gateway, which checks the key and then calls the provider.' }),
         panelOf({ scene: 'black', title: 'Is this normal?', captions: [{ text: 'The bill tripled.', cue: 'tripled' }, { text: 'Nobody was told.', cue: 'nobody' }, 'Nobody could say who.'], voiceover: 'The bill tripled, nobody was told, and nobody could say who spent it.' }),
+        panelOf({
+          scene: 'clip',
+          clip: 'night-office-still',
+          cast: ['tomasz'],
+          caption: { text: 'Sunday, 23:47.', cue: 'late on sunday' },
+          voiceover: 'Late on Sunday Tomasz opened the gateway log, and one line told him which team it was.',
+          bubbles: [{ who: 'tomasz', text: 'There you are.', cue: 'one line' }],
+          sfx: { text: 'TICK', cue: 'opened' },
+          lines: [{ text: 'team: search', cue: 'the gateway log' }],
+        }),
         panelOf({ scene: 'you', bg: 'navy', caption: 'Your turn.', voiceover: 'Now it is your turn to find out.', lines: ['$ go'] }),
       ],
     },

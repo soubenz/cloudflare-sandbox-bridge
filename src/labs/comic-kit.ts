@@ -60,6 +60,8 @@ export const CAST_IDS = CAST.map((c) => c.id) as [string, ...string[]];
  *   you       the learner at a laptop, then the call to action
  *   black     a dark card: `captions` stacked one by one, an optional `title` (nobody drawn)
  *   diagram   a diagram of packages/catalogue/diagrams.json stepped through (`diagram`, optional `steps`)
+ *   clip      a short animation (a video or a still) of packages/catalogue/clips.json fills the panel (`clip`);
+ *             its `cast` (up to two) is not drawn, it only names who speaks the bubbles
  */
 export const SCENES = {
   desk: { span: 2, minCast: 1, maxCast: 1 },
@@ -70,6 +72,7 @@ export const SCENES = {
   you: { span: 2, minCast: 0, maxCast: 0 },
   black: { span: 2, minCast: 0, maxCast: 0 },
   diagram: { span: 2, minCast: 0, maxCast: 1 },
+  clip: { span: 2, minCast: 0, maxCast: 2 },
 } as const;
 export type SceneId = keyof typeof SCENES;
 export const SCENE_IDS = Object.keys(SCENES) as [SceneId, ...SceneId[]];
@@ -193,6 +196,8 @@ export interface TranscriptPanel {
   /** A diagram panel's diagram id, and the steps it shows (the first `steps.length` of the diagram; all when absent). */
   diagram?: string;
   steps?: readonly unknown[];
+  /** A clip panel's clip id: the transcript reads what the clip shows (its `alt`) when `clipOf` finds it. */
+  clip?: string;
 }
 
 /** What the transcript needs of a diagram: its title and the caption of each step. */
@@ -202,6 +207,8 @@ export interface TranscriptDiagram {
 }
 /** Looks a diagram up by id (packages/catalogue/diagrams.json); passed in so this file keeps no dependency. */
 export type DiagramLookup = (id: string) => TranscriptDiagram | undefined;
+/** Looks a clip up by id (packages/catalogue/clips.json): what the transcript needs of it is its `alt`. */
+export type ClipLookup = (id: string) => { alt: string } | undefined;
 
 export interface TranscriptPage {
   title?: string;
@@ -210,15 +217,16 @@ export interface TranscriptPage {
 
 /**
  * Plain text of a multi-page comic: panels are numbered across pages, pages get a heading line.
- * `diagramOf` finds a diagram panel's diagram, whose title and step captions are then read out too.
+ * `diagramOf` finds a diagram panel's diagram, whose title and step captions are then read out too;
+ * `clipOf` finds a clip panel's clip, whose `alt` (what it shows) is read first.
  */
-export function comicPagesTranscript(pages: readonly TranscriptPage[], diagramOf?: DiagramLookup): string[] {
-  if (pages.length === 1) return comicTranscript(pages[0]!.panels, diagramOf);
+export function comicPagesTranscript(pages: readonly TranscriptPage[], diagramOf?: DiagramLookup, clipOf?: ClipLookup): string[] {
+  if (pages.length === 1) return comicTranscript(pages[0]!.panels, diagramOf, clipOf);
   const out: string[] = [];
   let n = 0;
   pages.forEach((pg, pi) => {
     out.push(`Page ${pi + 1}${pg.title ? `: ${pg.title}` : ''}.`);
-    comicTranscript(pg.panels, diagramOf).forEach((line) => {
+    comicTranscript(pg.panels, diagramOf, clipOf).forEach((line) => {
       n += 1;
       out.push(line.replace(/^Panel \d+\./, `Panel ${n}.`));
     });
@@ -227,15 +235,18 @@ export function comicPagesTranscript(pages: readonly TranscriptPage[], diagramOf
 }
 
 /**
- * Plain text of one page, for screen readers and the 'read as text' view: per panel the caption, a black
- * card's title and captions in order, the voiceover, a diagram's title and the captions of the steps it
- * shows (when `diagramOf` finds it), the bubbles and the screen lines.
+ * Plain text of one page, for screen readers and the 'read as text' view: per panel what a clip shows (its
+ * `alt`, when `clipOf` finds it), the caption, a black card's title and captions in order, the voiceover, a
+ * diagram's title and the captions of the steps it shows (when `diagramOf` finds it), the bubbles and the
+ * screen lines.
  */
-export function comicTranscript(panels: readonly TranscriptPanel[], diagramOf?: DiagramLookup): string[] {
+export function comicTranscript(panels: readonly TranscriptPanel[], diagramOf?: DiagramLookup, clipOf?: ClipLookup): string[] {
   const nameOf = new Map(CAST.map((c) => [c.id, c.name]));
   const out: string[] = [];
   panels.forEach((p, i) => {
     const parts: string[] = [];
+    const clip = p.clip ? clipOf?.(p.clip) : undefined;
+    if (clip) parts.push(clip.alt);
     if (p.caption) parts.push(cuedText(p.caption));
     if (p.title) parts.push(p.title);
     for (const c of p.captions ?? []) parts.push(cuedText(c));

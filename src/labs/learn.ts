@@ -2,6 +2,7 @@ import { z } from 'zod';
 import registry from '../../packages/catalogue/concepts.json';
 import { QUIZ_SKILLS } from '../skills';
 import { DIAGRAMS, KNOWN_DIAGRAMS, diagramRefs } from './diagram';
+import { KNOWN_CLIPS } from './clip';
 import { ComicSchema, allPanels, checkComic, type Comic } from './comic';
 import { NARRATOR_VOICE, TTS_MODEL, VOICEOVER_MAX, legacyNarrationLines, narrationLines, usesVoiceover } from './comic-kit';
 
@@ -459,6 +460,21 @@ export function checkComicDiagrams(comic: Comic, diagrams: ReadonlySet<string> =
   return problems;
 }
 
+/**
+ * A comic's clip panels must name a clip of packages/catalogue/clips.json (`clips`). Messages are worded like
+ * checkComic's: `comic panel 3 (clip): clip "no-such" is not in packages/catalogue/clips.json`.
+ */
+export function checkComicClips(comic: Comic, clips: ReadonlySet<string> = KNOWN_CLIPS): string[] {
+  const problems: string[] = [];
+  const multi = comic.pages.length > 1;
+  for (const { panel: p, page, indexInPage } of allPanels(comic)) {
+    if (!p.clip) continue;
+    const at = multi ? `comic page ${page} panel ${indexInPage} (${p.scene})` : `comic panel ${indexInPage} (${p.scene})`;
+    if (!clips.has(p.clip)) problems.push(`${at}: clip "${p.clip}" is not in packages/catalogue/clips.json`);
+  }
+  return problems;
+}
+
 /** Every clip the bundle's narration names, opener and closing together (they share learn/audio/). */
 export function learnAudioClips(bundle: Pick<LearnBundle, 'audio' | 'closing'>): LearnAudio['clips'] {
   return { ...(bundle.audio?.clips ?? {}), ...(bundle.closing?.audio?.clips ?? {}) };
@@ -472,7 +488,8 @@ export function learnAudioClips(bundle: Pick<LearnBundle, 'audio' | 'closing'>):
 export function checkLearnBundle(
   bundle: LearnBundle,
   known: ReadonlySet<string> = KNOWN_CONCEPTS,
-  diagrams: ReadonlySet<string> = KNOWN_DIAGRAMS
+  diagrams: ReadonlySet<string> = KNOWN_DIAGRAMS,
+  clipIds: ReadonlySet<string> = KNOWN_CLIPS
 ): string[] {
   const problems: string[] = [];
 
@@ -505,7 +522,7 @@ export function checkLearnBundle(
   }
 
   if (bundle.comic) {
-    problems.push(...checkComic(bundle.comic), ...checkComicDiagrams(bundle.comic, diagrams));
+    problems.push(...checkComic(bundle.comic), ...checkComicDiagrams(bundle.comic, diagrams), ...checkComicClips(bundle.comic, clipIds));
     if (!bundle.story) problems.push('a comic needs learn/story.md too: the text story is what screen readers, skipped comics and old consoles show');
   }
 
@@ -515,7 +532,9 @@ export function checkLearnBundle(
   }
 
   if (bundle.closing) {
-    problems.push(...[...checkComic(bundle.closing.comic), ...checkComicDiagrams(bundle.closing.comic, diagrams)].map((p) => `closing: ${p}`));
+    problems.push(
+      ...[...checkComic(bundle.closing.comic), ...checkComicDiagrams(bundle.closing.comic, diagrams), ...checkComicClips(bundle.closing.comic, clipIds)].map((p) => `closing: ${p}`)
+    );
     if (bundle.closing.audio) problems.push(...checkNarration(bundle.closing.comic, bundle.closing.audio, { audio: 'learn/closing-audio.json', comic: 'closing.yaml' }));
   }
   const clips = new Set(Object.keys(learnAudioClips(bundle)));
@@ -540,7 +559,8 @@ export function checkLearnBundle(
 export function parseLearnBundle(
   raw: unknown,
   known: ReadonlySet<string> = KNOWN_CONCEPTS,
-  diagrams: ReadonlySet<string> = KNOWN_DIAGRAMS
+  diagrams: ReadonlySet<string> = KNOWN_DIAGRAMS,
+  clipIds: ReadonlySet<string> = KNOWN_CLIPS
 ): LearnBundle {
   const parsed = LearnBundleSchema.safeParse(raw);
   if (!parsed.success) {
@@ -548,7 +568,7 @@ export function parseLearnBundle(
       'Invalid learn bundle: ' + parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')
     );
   }
-  const problems = checkLearnBundle(parsed.data, known, diagrams);
+  const problems = checkLearnBundle(parsed.data, known, diagrams, clipIds);
   if (problems.length > 0) throw new Error('Invalid learn bundle: ' + problems.join('; '));
   return parsed.data;
 }
