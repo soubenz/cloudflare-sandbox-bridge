@@ -378,10 +378,12 @@ async function toTheEnd(page: Page, right: (q: Question) => boolean = () => true
       if ((await next.innerText()).trim() === 'Start the lab') return asked;
       await next.click();
     } else if (await page.locator('#btnNextStep').count()) {
+      await finishLessons(page);
       await page.locator('#btnNextStep').click();
     } else if (await page.locator('#btnStoryNext').count()) {
       await page.locator('#btnStoryNext').click();
     } else {
+      await finishLessons(page);
       return asked;
     }
   }
@@ -389,6 +391,38 @@ async function toTheEnd(page: Page, right: (q: Question) => boolean = () => true
 }
 /** The Start the lab of the last step: the lessons' button, or the answered last question's. */
 const startButton = (page: Page) => page.locator('[data-start="primary"]');
+
+/**
+ * The lessons step shows one lesson at a time, in short pages: turns them with Next until the step's own
+ * button (Continue, Start the lab) is on screen, calling `onLesson` on the first page of each lesson.
+ * Returns the concept ids met, in order. Does nothing off the lessons step.
+ */
+async function finishLessons(page: Page, onLesson?: (id: string) => Promise<void>): Promise<string[]> {
+  const seen: string[] = [];
+  const card = host(page).locator('.lesson');
+  const next = page.locator('#btnLessonNext');
+  for (let guard = 0; guard < 150; guard++) {
+    if (!(await card.count())) return seen;
+    const id = (await card.getAttribute('data-concept'))!;
+    if (seen.at(-1) !== id) {
+      seen.push(id);
+      await onLesson?.(id);
+    }
+    if (!(await next.isVisible())) return seen;
+    await next.click();
+  }
+  throw new Error('the lessons did not end');
+}
+
+/** Turns the lesson pages until lesson `id` is on screen (its first page). */
+async function goToLesson(page: Page, id: string) {
+  const next = page.locator('#btnLessonNext');
+  for (let guard = 0; guard < 150; guard++) {
+    if ((await host(page).locator('.lesson').getAttribute('data-concept')) === id) return;
+    await next.click();
+  }
+  throw new Error(`no lesson ${id} on this step`);
+}
 
 async function enterSession(page: Page) {
   await expect(page.locator('#workspace')).toBeVisible();
@@ -448,13 +482,21 @@ test.describe('the flow before the lab', () => {
     await expect(heading(page)).toHaveText(LESSONS);
     await expect(heading(page)).toBeFocused();
     await expect(host(page).locator('.cm')).toHaveCount(0);
-    await expect(host(page).locator('.lesson')).toHaveCount(full.concepts.length);
-    await expect(host(page).locator('.lesson[data-state="expanded"]')).toHaveCount(full.concepts.length);
+    // One lesson at a time, never stacked: the first, open, on its first page.
+    await expect(host(page).locator('.lesson')).toHaveCount(1);
+    await expect(host(page).locator('.lesson')).toHaveAttribute('data-concept', full.concepts[0]!.id);
+    await expect(host(page).locator('.lesson')).toHaveAttribute('data-state', 'expanded');
     await expect(host(page).locator('.plan-summary')).toHaveText(`${full.concepts.length} lessons to read.`);
     await expect(page.locator('#workspace')).toBeHidden();
+    // Start the lab waits on the last page of the last lesson; every lesson comes in turn, open.
+    await expect(page.locator('#btnStartLab')).toBeHidden();
+    const states: string[] = [];
+    expect(await finishLessons(page, async () => void states.push((await host(page).locator('.lesson').getAttribute('data-state'))!))).toEqual(full.concepts.map((c) => c.id));
+    expect(states).toEqual(full.concepts.map(() => 'expanded'));
     expect(s.starts).toEqual([]);
 
     // 3. Start the lab: the session boots.
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await enterSession(page);
     expect(s.starts).toEqual([BUILD]);
@@ -469,6 +511,7 @@ test.describe('the flow before the lab', () => {
     // Round 1 is five questions, one about each concept; the aliases ones are all answered right.
     expect(await runQuiz(page, (q) => q.concept === ALIASES)).toHaveLength(5);
     await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await goToLesson(page, ALIASES);
     await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
     await expect(host(page).locator('.plan-summary')).toContainText('1 folded to a recap');
     expect(s.starts).toEqual([]);
@@ -534,6 +577,7 @@ test.describe('the flow before the lab', () => {
     await expect(page.getByRole('button', { name: 'Continue' })).toHaveCount(0);
     await expect(host(page).locator('.steps-dots i')).toHaveCount(2);
     expect(s.starts).toEqual([]);
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await enterSession(page);
     expect(s.starts).toEqual([STORY_ONLY]);
@@ -544,11 +588,12 @@ test.describe('the flow before the lab', () => {
     const s = await begin(page, LESSONS_ONLY);
     await expect(heading(page)).toHaveText(LESSONS);
     await expect(heading(page)).toBeFocused();
-    await expect(host(page).locator('.lesson')).toHaveCount(full.concepts.length);
+    await expect(host(page).locator('.lesson')).toHaveCount(1);
     await expect(host(page).locator('.steps-dots i')).toHaveCount(2);
     // No story to go back to.
     await expect(page.getByRole('button', { name: '← Back to the story' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: '← Back to labs' })).toBeVisible();
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await enterSession(page);
     expect(s.starts).toEqual([LESSONS_ONLY]);
@@ -721,42 +766,141 @@ test.describe('the lessons screen', () => {
 
   test('each lesson shows its text and its diagram player, and a long line of code does not widen the page', async ({ page }) => {
     await toLessons(page, BUILD);
-    for (const card of await host(page).locator('.lesson').all()) {
-      await card.scrollIntoViewIfNeeded();
+    // Every lesson of this lab opens on its picture and the paragraph that introduces it.
+    const met = await finishLessons(page, async () => {
+      const card = host(page).locator('.lesson');
       await expect(card.locator('.lesson-body p').first()).toBeVisible();
       await expect(card.locator('.diagram').first()).toHaveAttribute('role', 'group');
-    }
-    await noHorizontalScroll(page);
+      await noHorizontalScroll(page);
+    });
+    expect(met).toHaveLength(full.concepts.length);
   });
 
-  test('counts the lessons read as they come into view, and a folded one counts from the start', async ({ page }) => {
+  test('counts a lesson read when its last page is reached', async ({ page }) => {
     await toLessons(page, BUILD, { width: 1440, height: 800 });
     const tally = host(page).locator('.lessons-tally');
     const total = full.concepts.length;
-    await expect(tally).toHaveText(new RegExp(`^[0-9] of ${total} lessons read$`));
-    // Scroll through them: the count reaches the total.
-    for (const card of await host(page).locator('.lesson').all()) {
-      await card.scrollIntoViewIfNeeded();
-      await card.locator('.lesson-body').evaluate((el) => el.scrollIntoView({ block: 'center' }));
-    }
+    await expect(tally).toHaveText(`0 of ${total} lessons read`);
+    // The pages of the first lesson: read once its last page is on screen.
+    const card = host(page).locator('.lesson');
+    const pages = Number(await card.getAttribute('data-pages'));
+    expect(pages).toBeGreaterThan(1);
+    for (let n = 1; n < pages; n++) await page.locator('#btnLessonNext').click();
+    await expect(card).toHaveAttribute('data-page', String(pages));
+    await expect(tally).toHaveText(`1 of ${total} lessons read`);
+    // Page through the rest: the count reaches the total.
+    await finishLessons(page);
     await expect(tally).toHaveText(`${total} of ${total} lessons read`);
+  });
+
+  test('one lesson, one short page at a time: Page n of m, dots, Previous and Next, keys, focus and the live region', async ({ page }) => {
+    await toLessons(page, BUILD, { width: 1440, height: 900 });
+    const card = host(page).locator('.lesson');
+    const pages = Number(await card.getAttribute('data-pages'));
+    await expect(card.locator('.lesson-title')).toHaveText(full.concepts[0]!.title);
+    await expect(card.locator('.lesson-page-label')).toHaveText(`Page 1 of ${pages}`);
+    await expect(card.locator('.lesson-dots i')).toHaveCount(pages);
+    await expect(card.locator('.lesson-dots')).toHaveAttribute('aria-hidden', 'true');
+    await expect(card.locator('.lesson-position')).toHaveText(`Lesson 1 of ${full.concepts.length}`);
+    // A page is short: no page of the real lesson is much over 120 words of text.
+    const words = async () => (await card.locator('.lesson-body > p, .lesson-body li').allInnerTexts()).join(' ').split(/\s+/).filter(Boolean).length;
+    expect(await words()).toBeLessThanOrEqual(140);
+    // No Previous on the very first page; the step's own button waits for the last.
+    await expect(page.locator('#btnLessonPrev')).toBeHidden();
+    await expect(page.locator('#btnNextStep, #btnStartLab')).toBeHidden();
+
+    // Next: page 2, the title still there, the focus on the page's heading, "Page 2 of m" said.
+    await page.locator('#btnLessonNext').click();
+    await expect(card.locator('.lesson-page-label')).toHaveText(`Page 2 of ${pages}`);
+    await expect(card.locator('.lesson-title')).toHaveText(full.concepts[0]!.title);
+    expect(await page.evaluate(() => document.activeElement?.closest('.lesson') !== null && /^H[1-6]$/.test(document.activeElement!.tagName))).toBe(true);
+    await expect(host(page).locator('.learn-lessons p.sr-only[role="status"]')).toHaveText(`Page 2 of ${pages}`);
+    expect(await words()).toBeLessThanOrEqual(140);
+    await expect(page.locator('#btnLessonPrev')).toBeVisible();
+
+    // The keys: ← back to page 1, → on to page 2 again.
+    await page.keyboard.press('ArrowLeft');
+    await expect(card.locator('.lesson-page-label')).toHaveText(`Page 1 of ${pages}`);
+    await page.keyboard.press('ArrowRight');
+    await expect(card.locator('.lesson-page-label')).toHaveText(`Page 2 of ${pages}`);
+
+    // The last page of a lesson: Next runs on into the next lesson, Previous comes back to it.
+    while ((await card.getAttribute('data-page')) !== String(pages)) await page.keyboard.press('ArrowRight');
+    await expect(page.locator('#btnLessonNext')).toHaveText('Next lesson');
+    await page.locator('#btnLessonNext').click();
+    await expect(card).toHaveAttribute('data-concept', full.concepts[1]!.id);
+    await expect(card).toHaveAttribute('data-page', '1');
+    await expect(card.locator('.lesson-position')).toHaveText(`Lesson 2 of ${full.concepts.length}`);
+    await expect(host(page).locator('.learn-lessons p.sr-only[role="status"]')).toContainText(`Lesson 2 of ${full.concepts.length}: ${full.concepts[1]!.title}`);
+    await expect(page.locator('#btnLessonPrev')).toHaveText('Previous lesson');
+    await page.locator('#btnLessonPrev').click();
+    await expect(card).toHaveAttribute('data-concept', full.concepts[0]!.id);
+    await expect(card).toHaveAttribute('data-page', String(pages));
+
+    // On the last page of the last lesson, Next is the step's own button; → never starts the lab.
+    await finishLessons(page);
+    await expect(page.locator('#btnLessonNext')).toBeHidden();
+    await expect(page.locator('#btnStartLab')).toBeVisible();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('#workspace')).toBeHidden();
+  });
+
+  test('a swipe on a touch screen turns the page', async ({ page }) => {
+    await toLessons(page, BUILD, { width: 1440, height: 900 });
+    const card = host(page).locator('.lesson');
+    const swipe = (from: number, to: number) =>
+      host(page).locator('.lesson-list').evaluate(
+        (el, [a, b]) => {
+          const touch = (x: number) => new Touch({ identifier: 1, target: el, clientX: x, clientY: 300 });
+          el.dispatchEvent(new TouchEvent('touchstart', { touches: [touch(a!)], changedTouches: [touch(a!)], bubbles: true }));
+          el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [touch(b!)], bubbles: true }));
+        },
+        [from, to]
+      );
+    await swipe(600, 300);
+    await expect(card).toHaveAttribute('data-page', '2');
+    await swipe(300, 600);
+    await expect(card).toHaveAttribute('data-page', '1');
+    // A short drag is not a swipe.
+    await swipe(600, 580);
+    await expect(card).toHaveAttribute('data-page', '1');
+  });
+
+  test('comes back to the page it was on after leaving the step', async ({ page }) => {
+    await toLessons(page, BUILD, { width: 1440, height: 900 });
+    const card = host(page).locator('.lesson');
+    await page.locator('#btnLessonNext').click();
+    await page.locator('#btnLessonNext').click();
+    const where = [await card.getAttribute('data-concept'), await card.getAttribute('data-page')];
+    await page.getByRole('button', { name: '← Back to the story' }).click();
+    await expect(heading(page)).toHaveText(full.story!.title);
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(heading(page)).toHaveText(LESSONS);
+    expect([await card.getAttribute('data-concept'), await card.getAttribute('data-page')]).toEqual(where);
   });
 
   test('a folded lesson counts as read from the start, and opening it makes it unread until it is seen', async ({ page }) => {
     await toLessons(page, BUILD, { width: 1440, height: 800 }, { mastery: { ...SKIPPED, overrides: { [ALIASES]: 'skipped' } } });
     const tally = host(page).locator('.lessons-tally');
     const total = full.concepts.length;
+    // The folded one is counted from the start, before it is even on screen.
+    await expect(tally).toHaveText(`1 of ${total} lessons read`);
+    await goToLesson(page, ALIASES);
     await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
-    // The folded one is counted, whatever else has been seen.
     const read = Number((await tally.innerText()).split(' ')[0]);
     expect(read).toBeGreaterThanOrEqual(1);
     await page.locator(`.lesson[data-concept="${ALIASES}"]`).getByRole('button', { name: 'Show me the lesson anyway' }).click();
     await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'expanded');
-    await expect(tally).toHaveText(new RegExp(`of ${total} lessons read$`));
+    // Open, it is unread until its last page has been on screen.
+    await expect(tally).toHaveText(`${read - 1} of ${total} lessons read`);
+    const pages = Number(await page.locator('.lesson').getAttribute('data-pages'));
+    for (let n = 1; n < pages; n++) await page.locator('#btnLessonNext').click();
+    await expect(tally).toHaveText(`${read} of ${total} lessons read`);
   });
 
   test('"I know this, skip" and "Show me the lesson anyway" work on this screen and are remembered', async ({ page }) => {
     await toLessons(page, BUILD);
+    await goToLesson(page, ALIASES);
     const aliases = page.locator(`.lesson[data-concept="${ALIASES}"]`);
     await aliases.getByRole('button', { name: 'I know this, skip' }).click();
     await expect(aliases).toHaveAttribute('data-state', 'collapsed');
@@ -802,6 +946,7 @@ test.describe('the quick questions still record and report', () => {
     const s = await begin(page, EXPLORE);
     await page.getByRole('button', { name: 'Continue' }).click();
     await toTheEnd(page, () => true);
+    await finishLessons(page);
     await startButton(page).click();
     await enterSession(page);
     expect(s.starts).toEqual([EXPLORE]);
@@ -821,6 +966,7 @@ test.describe('the session screen', () => {
     const s = await begin(page, EXPLORE, { width: 1440, height: 900 });
     await page.getByRole('button', { name: 'Continue' }).click();
     await toTheEnd(page, () => false);
+    await finishLessons(page);
     await startButton(page).click();
     await enterSession(page);
     expect(await tabIds(page)).toEqual(['brief', 'questions', 'hints']);
@@ -834,6 +980,7 @@ test.describe('the session screen', () => {
 
   test('a build lab with lessons at 1440px: Brief, Checks, Hints, and no folded story or lessons either', async ({ page }) => {
     const s = await toLessons(page, BUILD);
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await enterSession(page);
     expect(await tabIds(page)).toEqual(['brief', 'checks', 'hints']);
@@ -902,10 +1049,7 @@ test.describe('no horizontal scroll', () => {
       await noHorizontalScroll(page);
       await page.getByRole('button', { name: 'Continue' }).click();
       await expect(heading(page)).toHaveText(LESSONS);
-      for (const card of await host(page).locator('.lesson').all()) {
-        await card.scrollIntoViewIfNeeded();
-        await noHorizontalScroll(page);
-      }
+      await finishLessons(page, () => noHorizontalScroll(page));
       await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
       await enterSession(page);
       await noHorizontalScroll(page);
@@ -937,6 +1081,30 @@ const VARIANTS = [
 test.describe('screenshots', () => {
   test.skip(process.env.FLOW_SHOTS === '0', 'FLOW_SHOTS=0');
 
+  // One lesson, one short page at a time: its first page (the picture and its introduction), a text
+  // page, and the last page of the last lesson (Start the lab in Next's place), wide and on a phone.
+  for (const v of [
+    { name: 'light-1440', theme: 'light' as const, width: 1440, height: 900 },
+    { name: 'dark-1440', theme: 'dark' as const, width: 1440, height: 900 },
+    { name: 'light-375', theme: 'light' as const, width: 375, height: 812 },
+  ]) {
+    test(`a paged lesson, ${v.name}`, async ({ page }) => {
+      mkdirSync(SHOTS, { recursive: true });
+      await page.emulateMedia({ colorScheme: v.theme, reducedMotion: 'reduce' });
+      await toLessons(page, BUILD, { width: Math.max(v.width, 1280), height: v.height }, { theme: v.theme });
+      if (v.width < 1280) await page.setViewportSize({ width: v.width, height: v.height });
+      const shot = async (name: string) => {
+        await noHorizontalScroll(page);
+        await page.screenshot({ path: join(SHOTS, `lesson-${name}-${v.name}.png`), fullPage: v.width < 760 });
+      };
+      await shot('page-1');
+      await page.locator('#btnLessonNext').click();
+      await shot('page-2');
+      await finishLessons(page);
+      await shot('last-page');
+    });
+  }
+
   for (const v of VARIANTS) {
     test(`the flow, ${v.name}`, async ({ page }) => {
       mkdirSync(SHOTS, { recursive: true });
@@ -962,13 +1130,14 @@ test.describe('screenshots', () => {
       // The lessons, part 1, full screen: the top, then a lesson with its diagram, then the foot.
       await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
       await shot('lessons-a-top');
-      const open = host(page).locator('.lesson[data-state="expanded"]').last();
-      await open.scrollIntoViewIfNeeded();
+      // One lesson at a time: on to the first one that is open (its first page has the diagram).
+      for (let guard = 0; guard < 40 && (await host(page).locator('.lesson').getAttribute('data-state')) !== 'expanded'; guard++) await page.locator('#btnLessonNext').click();
       await shot('lessons-a-diagram');
       await host(page).locator('.learn-actions-sticky').scrollIntoViewIfNeeded();
       await shot('lessons-a-foot');
 
       // Round 2, a wrong answer for its feedback, then on to the session through Skip all.
+      await finishLessons(page);
       await page.getByRole('button', { name: 'Continue to the questions' }).click();
       await expect(heading(page)).toHaveText('Round 2 of 3 · question 1 of 5');
       await answerOnly(page, () => false);
@@ -1015,6 +1184,7 @@ async function toRound(page: Page, r: number, right: (q: Question) => boolean = 
   const asked: Question[] = [];
   for (let i = 1; i < r; i++) {
     asked.push(...(await runRound(page, right)));
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Continue to the questions' }).click();
   }
   return asked;
@@ -1066,7 +1236,8 @@ test.describe('rounds of questions and lessons', () => {
       await expect(heading(page)).toBeFocused();
       await expect(live(page)).toHaveText(`Step ${step + 1} of 6: Lessons, part ${part} of 2`);
       expect(here_(page)).toBe(`/labs/${EXPLORE}${address[2 * r - 1]}`);
-      titlesIn.push(await host(page).locator('.lesson-title').allInnerTexts());
+      titlesIn.push((await finishLessons(page)).map((id) => full.concepts.find((c) => c.id === id)!.title));
+      await finishLessons(page);
       await page.getByRole('button', { name: 'Continue to the questions' }).click();
     }
 
@@ -1095,6 +1266,7 @@ test.describe('rounds of questions and lessons', () => {
     expect(s.starts).toEqual([]);
 
     // The session starts only when the last question's Start the lab is pressed.
+    await finishLessons(page);
     await startButton(page).click();
     await enterSession(page);
     expect(s.starts).toEqual([EXPLORE]);
@@ -1112,7 +1284,9 @@ test.describe('rounds of questions and lessons', () => {
     await runRound(page, () => true);
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('opalixLearn')!).concepts)).toEqual(before);
     await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
-    await expect(host(page).locator('.lesson[data-state="expanded"]')).toHaveCount(CHUNK_B.length);
+    const states: string[] = [];
+    expect(await finishLessons(page, async () => void states.push((await host(page).locator('.lesson').getAttribute('data-state'))!))).toEqual(CHUNK_B);
+    expect(states).toEqual(CHUNK_B.map(() => 'expanded'));
   });
 
   test('the lessons of a later chunk are numbered on from the first', async ({ page }) => {
@@ -1123,6 +1297,7 @@ test.describe('rounds of questions and lessons', () => {
     // The list's counter starts after the lessons before it: none, then the three of part 1 (the circles read 4 and 5).
     const startsAfter = () => host(page).locator('.lesson-list').evaluate((el) => getComputedStyle(el).counterReset);
     expect(await startsAfter()).toBe('lesson 0');
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Continue to the questions' }).click();
     await runRound(page, () => false);
     await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
@@ -1139,10 +1314,12 @@ test.describe('rounds of questions and lessons', () => {
     expect(await runRound(page, () => true)).toHaveLength(4);
     await expect(heading(page)).toHaveText(LESSONS);
     await expect(live(page)).toHaveText('Step 3 of 3: Lessons');
-    await expect(host(page).locator('.lesson')).toHaveCount(full.concepts.length);
+    await expect(host(page).locator('.lesson')).toHaveCount(1);
+    expect(await finishLessons(page)).toEqual(full.concepts.map((c) => c.id));
     await expect(host(page).locator('.steps-dots i')).toHaveCount(4);
     await expect(page.getByRole('button', { name: 'Continue to the questions' })).toHaveCount(0);
     expect(s.posted).toHaveLength(4);
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await enterSession(page);
     expect(s.starts).toEqual([FEW_QUESTIONS]);
@@ -1159,6 +1336,7 @@ test.describe('rounds of questions and lessons', () => {
     expect(m[foundation]).toEqual({ known: false });
     expect(m[ALIASES]).toEqual({ known: true });
     await expect(page.locator(`.lesson[data-concept="${foundation}"]`)).toHaveAttribute('data-state', 'expanded');
+    await goToLesson(page, ALIASES);
     await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
   });
 
@@ -1230,6 +1408,8 @@ test.describe('rounds of questions and lessons', () => {
       await page.keyboard.press('Enter');
     }
     await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    // The lesson pages turn with →, up to the last, where the step's own button comes on.
+    for (let guard = 0; guard < 60 && !(await page.locator('#btnNextStep').isVisible()); guard++) await page.keyboard.press('ArrowRight');
     await page.locator('#btnNextStep').focus();
     await page.keyboard.press('Enter');
     await expect(heading(page)).toHaveText(roundHeading(2, 3, 1));
@@ -1339,9 +1519,10 @@ test.describe('a refresh and a link come back to the step', () => {
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
-    await expect(host(page).locator('.lesson-title')).toHaveText(full.concepts.slice(3).map((c) => c.title));
+    expect(await finishLessons(page)).toEqual(full.concepts.slice(3).map((c) => c.id));
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons?step=5`);
     await expect(live(page)).toHaveText('Step 5 of 6: Lessons, part 2 of 2');
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Continue to the questions' }).click();
     await expect(heading(page)).toHaveText(roundHeading(3, 3, 1));
     expect(s.posted).toHaveLength(10);
@@ -1422,6 +1603,7 @@ test.describe('rounds and lessons: no horizontal scroll', () => {
       }
       const available = await contentWidth(page);
       for (const card of await host(page).locator('.lesson').all()) expect((await box(card)).width).toBeGreaterThanOrEqual(available * 0.95);
+      await finishLessons(page);
       await page.getByRole('button', { name: 'Continue to the questions' }).click();
       await noHorizontalScroll(page);
     });
@@ -1495,6 +1677,7 @@ test.describe('warming the lab up (POST /api/prepare)', () => {
         await next.click();
         if (!wasLast || wasLast[1] === wasLast[2]) shown++;
       } else if (await page.locator('#btnNextStep').count()) {
+        await finishLessons(page);
         await page.locator('#btnNextStep').click();
         shown++;
       } else if (await page.locator('#btnStoryNext').count()) {
@@ -1522,6 +1705,7 @@ test.describe('warming the lab up (POST /api/prepare)', () => {
     await runRound(page, () => true);
     await expect(heading(page)).toHaveText(LESSONS);
     await expect.poll(() => s.prepares).toEqual([FEW_QUESTIONS]);
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await enterSession(page);
     // Pressing Start (and a page that closes after it) must never cancel what the start is using.
@@ -1542,6 +1726,7 @@ test.describe('warming the lab up (POST /api/prepare)', () => {
       await expect(heading(page)).toBeVisible();
       await page.getByRole('button', { name: 'Continue' }).click();
       await expect(heading(page)).toHaveText(LESSONS);
+      await finishLessons(page);
       await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
       await enterSession(page);
       expect(s.starts).toEqual([TEXT_STORY]);
@@ -1557,6 +1742,7 @@ test.describe('warming the lab up (POST /api/prepare)', () => {
     await startCard(page, TEXT_STORY);
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(heading(page)).toHaveText(LESSONS);
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await enterSession(page);
     expect(s.starts).toEqual([TEXT_STORY]);

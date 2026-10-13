@@ -324,6 +324,48 @@
 .lessons-tally { margin: 0 0 0 auto; font: 400 12.5px/1.4 var(--mono); color: var(--ink-muted); }
 .lessons-tally:empty { display: none; }
 
+/*
+ * One lesson at a time, in short pages (learn-lessons.js). Previous and Next sit in the action bar,
+ * where the step's own button takes Next's place on the last page; under the lesson's head,
+ * "Page 2 of 4", a dot a page and the lesson's place in the step.
+ */
+.lesson-nav-slot { display: contents; }
+.lesson-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.lesson-nav .btn svg { flex: none; }
+.lesson-nav-next { min-width: 140px; }
+.lesson-where {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  font: 400 12.5px/1.4 var(--mono); color: var(--ink-muted);
+}
+.lesson-page-label { color: var(--ink-2); }
+.lesson-dots { display: inline-flex; align-items: center; gap: 6px; }
+.lesson-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); }
+.lesson-dots i.done { background: var(--accent); }
+.lesson-dots i.now { width: 18px; border-radius: 999px; background: var(--accent); }
+.lesson-position { margin-left: auto; }
+.lesson .lesson-title:focus, .lesson-page :is(h3, h4):focus { outline: none; }
+.lesson .lesson-title:focus-visible, .lesson-page :is(h3, h4):focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+/* A page turn slides the new page in from the side it came from; none at all for reduced motion. */
+.lesson-page[data-enter="next"] { animation: lesson-in-next 220ms ease-out; }
+.lesson-page[data-enter="prev"] { animation: lesson-in-prev 220ms ease-out; }
+@keyframes lesson-in-next { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes lesson-in-prev { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .lesson-page[data-enter] { animation: none; }
+}
+/* A short page should not leave the action bar jumping up and down from one page to the next. */
+.learn-wrap-lessons .lesson[data-state="expanded"] { min-height: min(440px, 52vh); }
+/* A page turn brings the lesson's top into view below the console's floating header. */
+.learn-wrap-lessons .lesson { scroll-margin-top: 104px; }
+@media (max-width: 760px) {
+  .lesson-nav { flex: 1 1 100%; }
+  .lesson-nav .btn { flex: 1 1 0; min-width: 0; }
+  .lesson-position { margin-left: 0; }
+  .learn-wrap-lessons .lesson[data-state="expanded"] { min-height: 0; }
+  /* On a phone the bar, with its quiet buttons stacked, would cover half the page: it follows the page instead. */
+  .learn-wrap-lessons .learn-actions-sticky { position: static; }
+}
+
 /* ---------- the desktop notice ---------- */
 .notice-screen { display: flex; flex-direction: column; }
 .notice-wrap { width: 100%; max-width: 520px; margin-inline: auto; display: flex; flex-direction: column; gap: 22px; flex: 1; }

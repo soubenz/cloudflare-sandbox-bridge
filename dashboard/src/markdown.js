@@ -17,7 +17,8 @@
  * `code`, fenced code blocks, `- ` lists, `1. ` lists, `[text](https://...)`
  * links (http and https only, opened with rel="noopener noreferrer"), and a
  * line `::diagram[id]` that mounts the diagram player from the shared
- * library (packages/catalogue/diagrams.json).
+ * library (packages/catalogue/diagrams.json). A line `::page` is a page break
+ * for the lesson pager (lesson-pages.js) and draws nothing.
  */
 
 import { renderDiagram as defaultRenderDiagram } from './diagram.js';
@@ -124,6 +125,7 @@ export function parseInline(src, depth = 0) {
 // ---------------------------------------------------------------------------
 
 const DIAGRAM_LINE = /^::diagram\[([^\]\s]*)\]\s*$/;
+const PAGE_LINE = /^::page\s*$/;
 const FENCE = /^\s*```\s*([\w+-]*)\s*$/;
 const HEADING = /^(#{1,6})\s+(.*\S)\s*$/;
 const BULLET = /^\s*-\s+(.*)$/;
@@ -133,7 +135,7 @@ const NUMBERED = /^\s*\d+\.\s+(.*)$/;
  * Markdown to blocks:
  *   { type: 'heading', level: 2 | 3, inline } | { type: 'paragraph', inline }
  *   | { type: 'code', text, lang } | { type: 'list', ordered, items: inline[] }
- *   | { type: 'diagram', id }
+ *   | { type: 'diagram', id } | { type: 'break' }
  * `level` is relative: 2 is a `##` (or `#`), 3 is a `###` or deeper.
  */
 export function parseMarkdown(src) {
@@ -177,6 +179,13 @@ export function parseMarkdown(src) {
       flushPara();
       closeList();
       blocks.push({ type: 'diagram', id: diagram[1] });
+      continue;
+    }
+
+    if (PAGE_LINE.test(line)) {
+      flushPara();
+      closeList();
+      blocks.push({ type: 'break' });
       continue;
     }
 
@@ -249,7 +258,7 @@ function inlineInto(doc, parent, nodes) {
 export const DIAGRAMS = new Map((library.diagrams || []).map((d) => [d.id, d]));
 
 /**
- * Renders `src` into DOM nodes.
+ * Renders `src` (Markdown, or blocks parseMarkdown returned, such as one page of a lesson) into DOM nodes.
  *
  *   document       the document to build in (default: the page's)
  *   headingLevel   the tag level of a `##` (default 3, so a lesson under an
@@ -277,7 +286,7 @@ export function renderMarkdownNodes(src, opts = {}) {
   };
   const nodes = [];
   const players = [];
-  for (const block of parseMarkdown(src)) {
+  for (const block of Array.isArray(src) ? src : parseMarkdown(src)) {
     if (block.type === 'heading') {
       const h = el(`h${Math.min(6, base + (block.level - 2))}`);
       inlineInto(doc, h, block.inline);

@@ -197,6 +197,13 @@ describe('block markdown', () => {
     expect(parseMarkdown('see ::diagram[x] here')[0]!.type).toBe('paragraph');
   });
 
+  it('reads ::page alone on a line as a page break (the lesson pager\'s), and only there', () => {
+    expect(parseMarkdown('one\n\n::page\n\ntwo').map((b) => b.type)).toEqual(['paragraph', 'break', 'paragraph']);
+    expect(parseMarkdown('- a\n::page\n- b').map((b) => b.type)).toEqual(['list', 'break', 'list']);
+    expect(parseMarkdown('see ::page here')[0]!.type).toBe('paragraph');
+    expect(parseMarkdown('```\n::page\n```')).toEqual([{ type: 'code', text: '::page', lang: '' }]);
+  });
+
   it('does not read a diagram line inside a fence', () => {
     expect(parseMarkdown('```\n::diagram[x]\n```')).toEqual([{ type: 'code', text: '::diagram[x]', lang: '' }]);
   });
@@ -219,6 +226,12 @@ describe('rendering to DOM nodes', () => {
     expect(p.textContent).toBe('Text with bold, em and code.');
     expect(find(nodes[2]!, 'li')).toHaveLength(2);
     expect(nodes[4]!.textContent).toBe('let x = 1 < 2');
+  });
+
+  it('draws nothing for a page break, and takes parsed blocks as well as Markdown', () => {
+    expect(render('one\n\n::page\n\ntwo').nodes.map(tagOf)).toEqual(['p', 'p']);
+    const blocks = parseMarkdown('## Title\n\nText.');
+    expect(render(blocks as unknown as string, { headingLevel: 3 }).nodes.map(tagOf)).toEqual(['h3', 'p']);
   });
 
   it('defaults to h3 for a ##', () => {

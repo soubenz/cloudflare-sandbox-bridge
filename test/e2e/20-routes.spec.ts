@@ -320,6 +320,15 @@ const here_ = (page: Page) => new URL(page.url()).pathname + new URL(page.url())
 const historyLength = (page: Page) => page.evaluate(() => history.length);
 const host = (page: Page) => page.locator('#learnHost');
 const heading = (page: Page) => host(page).locator('[data-learn-heading]');
+
+/**
+ * The lessons step shows one lesson at a time, in short pages: turns them with Next until the step's own
+ * button (Continue, Start the lab) is on screen. Does nothing off the lessons step.
+ */
+async function finishLessons(page: Page) {
+  const next = page.locator('#btnLessonNext');
+  for (let guard = 0; guard < 150 && (await next.isVisible()); guard++) await next.click();
+}
 const LESSONS = 'Lessons for this lab';
 const MODULE_1 = '/paths/ai-platform/modules/1';
 
@@ -507,6 +516,7 @@ test.describe('the steps before a lab have addresses', () => {
     expect(await historyLength(page)).toBe(length + 1);
     await expect(page).toHaveTitle(`Lessons · ${EXPLORE_TITLE} · Opalix labs`);
     // On to Round 2 (the fourth step of six) and the second lessons (the fifth).
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Continue to the questions' }).click();
     expect(here_(page)).toBe(`/labs/${EXPLORE}/questions?step=4`);
     await answerRound();
@@ -565,6 +575,7 @@ test.describe('Back and Forward', () => {
     await expect(heading(page)).toHaveText(LESSONS);
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
 
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await inSession(page);
     expect(here_(page)).toBe(sessionUrl(EXPLORE));
@@ -1591,6 +1602,7 @@ test.describe('on a phone', () => {
     await visit(page, `/labs/${EXPLORE}/lessons`);
     await expect(heading(page)).toHaveText(LESSONS);
     await noHorizontalScroll(page);
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await expect(page.locator('#desktopNotice')).toBeVisible();
     expect(await page.locator('#dnEmail').getAttribute('href')).toContain(encodeURIComponent(`/labs/${EXPLORE}`));
@@ -1650,6 +1662,7 @@ test.describe('the tab title and the screen reader', () => {
     await expect(page).toHaveTitle(`${EXPLORE_TITLE} · Opalix labs`);
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page).toHaveTitle(`Lessons · ${EXPLORE_TITLE} · Opalix labs`);
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await inSession(page);
     await expect(page).toHaveTitle(`Session · ${EXPLORE_TITLE} · Opalix labs`);

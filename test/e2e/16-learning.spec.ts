@@ -399,12 +399,58 @@ async function toTheEnd(page: Page, questions: Question[], right: (q: Question) 
       if (label === 'Start the lab') return;
       await next(page);
     } else if (await page.locator('#btnNextStep').count()) {
+      await finishLessons(page);
       await page.locator('#btnNextStep').click();
     } else {
+      await finishLessons(page);
       return;
     }
   }
   throw new Error('the flow did not end');
+}
+
+/**
+ * The lessons step shows one lesson at a time, in short pages: turns them with Next until the step's own
+ * button (Continue, Start the lab) is on screen, calling `onLesson` on the first page of each lesson.
+ * Returns the concept ids met, in order. Does nothing off the lessons step.
+ */
+async function finishLessons(page: Page, onLesson?: (id: string) => Promise<void>): Promise<string[]> {
+  const seen: string[] = [];
+  const card = page.locator('#learnHost .lesson');
+  const next = page.locator('#btnLessonNext');
+  for (let guard = 0; guard < 150; guard++) {
+    if (!(await card.count())) return seen;
+    const id = (await card.getAttribute('data-concept'))!;
+    if (seen.at(-1) !== id) {
+      seen.push(id);
+      await onLesson?.(id);
+    }
+    if (!(await next.isVisible())) return seen;
+    await next.click();
+  }
+  throw new Error('the lessons did not end');
+}
+
+/** Turns the lesson pages (on, then back) until lesson `id` is on screen. */
+async function goToLesson(page: Page, id: string) {
+  const card = page.locator('#learnHost .lesson');
+  for (const button of ['#btnLessonNext', '#btnLessonPrev']) {
+    for (let guard = 0; guard < 150; guard++) {
+      if ((await card.getAttribute('data-concept')) === id) return;
+      if (!(await page.locator(button).isVisible())) break;
+      await page.locator(button).click();
+    }
+  }
+  throw new Error(`no lesson ${id} on this step`);
+}
+
+/** Every lesson of the step on screen, { id: state }, in order (it pages through them). */
+async function lessonStates(page: Page): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  await finishLessons(page, async (id) => {
+    out[id] = (await page.locator('#learnHost .lesson').getAttribute('data-state'))!;
+  });
+  return out;
 }
 
 async function currentQuestion(page: Page, questions: Question[]): Promise<Question> {
@@ -1083,6 +1129,9 @@ test.describe('Before you begin', () => {
 
     await expect(heading(page)).toHaveText(LESSONS_A);
     await expect(heading(page)).toBeFocused();
+    // One lesson at a time: page on to the aliases one.
+    await expect(page.locator('.lesson')).toHaveCount(1);
+    await goToLesson(page, ALIASES);
     const aliases = page.locator(`.lesson[data-concept="${ALIASES}"]`);
     await expect(aliases).toHaveAttribute('data-state', 'collapsed');
     await expect(aliases.locator('.lesson-recap')).toHaveText(lessonOf(ALIASES).recap);
@@ -1090,13 +1139,15 @@ test.describe('Before you begin', () => {
     await expect(aliases.locator('.lesson-chip')).toHaveText('You know this');
     await expect(aliases.getByRole('button', { name: 'Show me the lesson anyway' })).toBeVisible();
     // The first chunk holds three of the five lessons: the rest are for after Round 2.
-    await expect(page.locator('.lesson')).toHaveCount(CHUNK_A.length);
-    for (const id of CHUNK_A.filter((id) => id !== ALIASES)) {
+    await goToLesson(page, CHUNK_A[0]!);
+    const met = await finishLessons(page, async (id) => {
+      if (id === ALIASES) return;
       const card = page.locator(`.lesson[data-concept="${id}"]`);
       await expect(card).toHaveAttribute('data-state', 'expanded');
       await expect(card.locator('.lesson-body')).toBeVisible();
       await expect(card.getByRole('button', { name: 'I know this, skip' })).toBeVisible();
-    }
+    });
+    expect(met).toEqual(CHUNK_A);
     await expect(page.locator('.plan-summary')).toContainText('1 folded to a recap');
 
     // The outcome is stored per concept, and each answer is posted anonymously as a diagnostic of this lab, once.
@@ -1122,8 +1173,9 @@ test.describe('Before you begin', () => {
     await page.getByRole('button', { name: 'Continue' }).click();
     // Everything right except the aliases question.
     await runQuiz(page, bundle.questions, (q) => q.concept !== ALIASES);
-    await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'expanded');
-    await expect(page.locator(`.lesson[data-concept="${SPEND}"]`)).toHaveAttribute('data-state', 'collapsed');
+    const states = await lessonStates(page);
+    expect(states[ALIASES]).toBe('expanded');
+    expect(states[SPEND]).toBe('collapsed');
     expect((await stored(page)).concepts[ALIASES]).toEqual({ known: false });
     expect((await stored(page)).concepts[SPEND]).toEqual({ known: true });
   });
@@ -1139,9 +1191,10 @@ test.describe('Before you begin', () => {
     expect(asked.some((q) => q.concept === ALIASES)).toBe(false);
     expect(asked).toHaveLength(6);
     await expect(heading(page)).toHaveText('Lessons for this lab');
-    await expect(page.locator('.lesson')).toHaveCount(bundle.concepts.length);
+    const states = await lessonStates(page);
+    expect(Object.keys(states)).toEqual(bundle.concepts.map((c) => c.id));
     // Still known, so still folded.
-    await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
+    expect(states[ALIASES]).toBe('collapsed');
   });
 
   test('goes straight to the lessons when every concept is already known', async ({ page }) => {
@@ -1151,8 +1204,8 @@ test.describe('Before you begin', () => {
     await startCard(page);
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(heading(page)).toHaveText('Lessons for this lab');
-    await expect(page.locator('.lesson[data-state="collapsed"]')).toHaveCount(bundle.concepts.length);
     await expect(page.locator('.plan-summary')).toContainText('You already know what this lab needs');
+    expect(Object.values(await lessonStates(page))).toEqual(bundle.concepts.map(() => 'collapsed'));
   });
 
   test('the learner overrides: "Show me the lesson anyway" and "I know this, skip", remembered', async ({ page }) => {
@@ -1166,6 +1219,7 @@ test.describe('Before you begin', () => {
     const spend = page.locator(`.lesson[data-concept="${SPEND}"]`);
 
     // Open a folded lesson; its diagram and text appear, the button flips, focus stays on it.
+    await goToLesson(page, ALIASES);
     await aliases.getByRole('button', { name: 'Show me the lesson anyway' }).click();
     await expect(aliases).toHaveAttribute('data-state', 'expanded');
     await expect(aliases.locator('.lesson-body')).toBeVisible();
@@ -1173,6 +1227,7 @@ test.describe('Before you begin', () => {
     await expect(aliases.getByRole('button', { name: 'I know this, skip' })).toBeFocused();
 
     // Fold an open one.
+    await goToLesson(page, SPEND);
     await spend.getByRole('button', { name: 'I know this, skip' }).click();
     await expect(spend).toHaveAttribute('data-state', 'collapsed');
     await expect(spend.locator('.lesson-recap')).toHaveText(lessonOf(SPEND).recap);
@@ -1189,8 +1244,9 @@ test.describe('Before you begin', () => {
     await page.getByRole('button', { name: 'Continue' }).click();
     // Aliases is known (nothing asked about it); the rest are asked again.
     await runQuiz(page, bundle.questions, () => false);
-    await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'expanded');
-    await expect(page.locator(`.lesson[data-concept="${SPEND}"]`)).toHaveAttribute('data-state', 'collapsed');
+    const states = await lessonStates(page);
+    expect(states[ALIASES]).toBe('expanded');
+    expect(states[SPEND]).toBe('collapsed');
     expect(s.starts).toEqual([]);
   });
 
@@ -1200,6 +1256,7 @@ test.describe('Before you begin', () => {
     await startCard(page);
     await page.getByRole('button', { name: 'Continue' }).click();
     await runQuiz(page, bundle.questions, () => false);
+    await goToLesson(page, ALIASES);
     const card = page.locator(`.lesson[data-concept="${ALIASES}"]`);
     await expect(card.locator('.lesson-body p').first()).toBeVisible();
     const diagram = card.locator('.diagram');
@@ -1216,7 +1273,7 @@ test.describe('Before you begin', () => {
     await page.getByRole('button', { name: 'Continue' }).click();
     await runQuiz(page, bundle.questions, () => true);
     await expect(heading(page)).toHaveText(LESSONS_A);
-    await expect(page.locator('.lesson[data-state="collapsed"]')).toHaveCount(CHUNK_A.length);
+    expect(Object.values(await lessonStates(page))).toEqual(CHUNK_A.map(() => 'collapsed'));
     expect(s.starts).toEqual([]);
     // Nothing starts the session on the way: it is the last step's Start the lab that does.
     await toTheEnd(page, bundle.questions, () => true);
@@ -1263,6 +1320,7 @@ test.describe('Before you begin', () => {
     await open(page, { mastery: { ...SKIPPED, concepts: Object.fromEntries(bundle.concepts.map((c) => [c.id, { known: true }])) } });
     await startCard(page);
     await page.getByRole('button', { name: 'Continue' }).click();
+    await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await expect(page.locator('#toast')).toContainText('Could not start this lab');
     await expect(heading(page)).toHaveText('Lessons for this lab');
@@ -1279,6 +1337,7 @@ test.describe('Before you begin', () => {
     // No question to ask: the lessons are next, folded because the quiz said this area is strong.
     await expect(heading(page)).toHaveText('Lessons for this lab');
     for (const c of bundle.concepts) {
+      await goToLesson(page, c.id);
       const card = page.locator(`.lesson[data-concept="${c.id}"]`);
       await expect(card).toHaveAttribute('data-state', 'collapsed');
       await expect(card.locator('.lesson-chip')).toHaveText('Know it well, from your quiz');
@@ -1294,8 +1353,9 @@ test.describe('Before you begin', () => {
     await page.getByRole('button', { name: 'Continue' }).click();
     await runQuiz(page, bundle.questions, (q) => q.concept !== SPEND);
     await expect(heading(page)).toHaveText(LESSONS_A);
-    await expect(page.locator(`.lesson[data-concept="${SPEND}"]`)).toHaveAttribute('data-state', 'expanded');
-    await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
+    const states = await lessonStates(page);
+    expect(states[SPEND]).toBe('expanded');
+    expect(states[ALIASES]).toBe('collapsed');
   });
 
   test('keeps to the screen width at 390px', async ({ page }) => {
@@ -1882,6 +1942,7 @@ test.describe('screenshots', () => {
       await runQuiz(page, bundle.questions, (x) => x.concept === ALIASES);
       await expect(heading(page)).toHaveText(LESSONS_A);
       await shot('before-lessons');
+      await goToLesson(page, SPEND);
       await page.locator(`.lesson[data-concept="${SPEND}"] .diagram`).first().scrollIntoViewIfNeeded();
       await shot('before-lessons-diagram');
 

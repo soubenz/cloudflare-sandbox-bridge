@@ -357,7 +357,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
 
   // --- lessons --------------------------------------------------------------
 
-  /** One chunk of the lessons, full screen: the whole width of the console, then on to the next step or Start the lab. */
+  /** One chunk of the lessons, full screen and one lesson at a time in short pages, then on to the next step or Start the lab. */
   function lessonsStep(i) {
     cleanup();
     host.classList.add('learn-wrap-lessons');
@@ -372,19 +372,8 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     const tally = make('p', 'lessons-tally');
     const list = make('section', 'learn-lessons');
     list.setAttribute('aria-label', step.parts > 1 ? `Lessons, part ${step.part} of ${step.parts}` : 'Lessons');
-    lessons = buildLessons(list, {
-      learn,
-      store,
-      only: step.concepts,
-      offset,
-      onPlan: (plan) => {
-        summary.textContent = planSummary(plan);
-      },
-      onProgress: ({ read, total }) => {
-        tally.textContent = total ? `${read} of ${total} ${total === 1 ? 'lesson' : 'lessons'} read` : '';
-      },
-    });
 
+    // The step's own button: Next on the last page of the last lesson (the pager shows it there, in its place).
     const go = after
       ? button(after.kind === 'round' ? 'Continue to the questions' : 'Continue', { kind: 'accent', onClick: () => enterStep(i + 1, 'forward'), id: 'btnNextStep' })
       : button(lastLabel, { kind: 'accent', onClick: primaryAction, id: 'btnStartLab' });
@@ -392,6 +381,23 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     go.classList.add('learn-start', 'btn-lg');
     go.append(uiIcon('arrow', 16));
     const back = backStep();
+    // One lesson at a time, in short pages: Previous and Next go in the action bar.
+    const pager = make('div', 'lesson-nav-slot');
+    lessons = buildLessons(list, {
+      learn,
+      store,
+      only: step.concepts,
+      offset,
+      nav: pager,
+      finish: go,
+      memoryKey: lab.slug,
+      onPlan: (plan) => {
+        summary.textContent = planSummary(plan);
+      },
+      onProgress: ({ read, total }) => {
+        tally.textContent = total ? `${read} of ${total} ${total === 1 ? 'lesson' : 'lessons'} read` : '';
+      },
+    });
 
     const several = step.parts > 1;
     show(
@@ -405,7 +411,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       }),
       summary,
       list,
-      bar([go, back, skipAll(), backToLabs(), tally], { sticky: true, label: after ? 'Next' : warmUp ? 'Finish' : 'Start' })
+      bar([pager, back, skipAll(), backToLabs(), tally], { sticky: true, label: after ? 'Next' : warmUp ? 'Finish' : 'Start' })
     );
     arrived(i);
     focusHeading(host);
