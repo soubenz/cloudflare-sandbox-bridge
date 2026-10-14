@@ -1,33 +1,40 @@
 # See what a gateway actually does
 
-## What is running
+You have a small gateway running, the same idea as in the warm-up. An app
+asks for a name such as `support`, and the gateway decides which model
+answers, adds the key, and writes the call in its log. The two models here
+are pretend ones, **a** and **b**, so nothing costs money.
 
-| Service | What it is doing |
-|---|---|
-| `postgres` | Backs LiteLLM's spend tracking |
-| `provider` | A scripted fake model with two deployments (`a`, `b`), each keeping its own record of what it was asked |
-| `litellm` | The gateway, with two aliases: `support` and `fast` |
-| **view** tab | The provider's record of every call, next to LiteLLM's own |
+## What you have
 
-LiteLLM's admin UI needs a login, so it is not a tab. Talk to the gateway
-with `send_calls.py`.
+- **Terminal**: send calls with `send_calls.py`.
+- **view** tab: two records side by side: what the model received, and what
+  the gateway wrote in its log.
+- **Questions** tab: three questions you answer from what you see.
 
-## Start here
+## 1. Send your first calls
+
+Press **Run**:
 
 ```bash
 python3 -B send_calls.py support "hello gateway"
 python3 -B send_calls.py fast "hello gateway"
 ```
 
-Each run prints the HTTP status, the deployment that answered and the
-token usage both sides recorded. Watch the rows arrive in the **view** tab.
+Each call shows whether it worked, which model answered, and how many
+tokens it used. Find the same calls in the **view** tab.
 
-## Try this (not graded)
+## 2. Answer the questions
 
-`gateway/config.yaml` maps each alias to a deployment. Point `fast` at the
-deployment `support` uses, save, restart `litellm` from the **Services**
-panel (about 30 seconds), then send `fast` a call again.
+Each question in the **Questions** tab tells you what to try.
 
-## Answer these
+## 3. Press Check
 
-The questions are in the **Questions** tab, next to this brief. Answer them there; your answers are saved for you.
+Check makes sure the gateway is still running, then compares your answers
+with what it does right now.
+
+## Extra, not graded: change the table
+
+`gateway/config.yaml` is the gateway's table: each name points at a model.
+Point `fast` at the model `support` uses and save. Restart `litellm` from
+the **Services** panel (about 30 seconds), then send `fast` a call again.
