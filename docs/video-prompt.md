@@ -32,10 +32,10 @@ SHAPE
 
 STORY
 - The narrator tells ONE story that runs through every panel, not a list of
-  separate facts. Open by putting the viewer inside the moment ("Imagine
-  waking up at three in the morning to a phone that won't stop buzzing.")
-  and link each panel to the last with a time or a cause ("Then, on Friday
-  evening...", "The trouble started long before that night.").
+  separate facts. Open inside a concrete moment the viewer can picture (a
+  time, a place, one person, one thing going wrong), written fresh for each
+  video; never reuse an example line from this prompt. Then link each panel
+  to the last with a time or a cause ("Then, on Friday evening...").
 - Use real names where a real thing exists: OpenAI, Anthropic, Google, an
   OpenAI key. Larkfield and its people are fictional; the providers are not.
 

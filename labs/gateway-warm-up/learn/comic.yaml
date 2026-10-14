@@ -2,16 +2,16 @@ title: Six things went wrong
 panels:
   - scene: black
     captions:
-      - { text: "Six things went wrong.", cue: "Six things go wrong" }
+      - { text: "Six things went wrong.", cue: "six things go wrong" }
       - { text: "Four will happen to you.", cue: "Four of them" }
-    voiceover: This is the story of one bad month at a company called Larkfield. Six things go wrong. Four of them will happen to you.
+    voiceover: Last month, a company called Larkfield had six things go wrong. Four of them will happen to you.
   - scene: clip
     clip: phone-alert-night
     cast: [tomasz]
     shot: close
-    caption: { text: "Saturday, 03:12", cue: "three in the morning" }
-    sfx: { text: "BZZT!", cue: "stop buzzing", sound: phone }
-    voiceover: Imagine waking up at three in the morning to a phone that won't stop buzzing. That's Tomasz, an engineer on Larkfield's platform team. The support assistant has stopped answering customers.
+    caption: { text: "Saturday, 03:12", cue: "three twelve" }
+    sfx: { text: "BZZT!", cue: "lights up", sound: phone }
+    voiceover: It starts on a Saturday. At three twelve in the morning, the phone of Tomasz, an engineer on Larkfield's platform team, lights up the dark bedroom. The support assistant has stopped answering customers.
     bubbles:
       - { who: tomasz, text: "Search is fine. Support is dark.", cue: "stopped answering customers" }
     lines:
@@ -22,18 +22,18 @@ panels:
     bg: night
     caption: { text: "03:40", cue: "three forty" }
     sfx: { text: "TICK", cue: "three forty", sound: tick }
-    voiceover: OpenAI, the company that runs the assistant's model, is down. Anthropic is working fine, but OpenAI's name is written into the app's code. So at three forty, half asleep, Tomasz is rewriting that code by hand.
+    voiceover: He finds the cause fast. OpenAI, the company that runs the assistant's model, is down. Anthropic is up, but OpenAI's name is written into the app's code. So at three forty, Tomasz is still rewriting it by hand.
     bubbles:
       - { who: tomasz, text: "I've done good work at three a.m. This isn't it.", cue: "by hand" }
     lines:
       - { text: "provider: openai", cue: "written into the app" }
-      - { text: "provider: anthropic   (edit this)", cue: "rewriting" }
+      - { text: "provider: anthropic   (edit this)", cue: "rewriting it" }
   - scene: diagram
     diagram: gateway-no-door
     steps:
       - { cue: "talks to its own provider" }
       - { cue: "A key is" }
-    voiceover: The trouble started long before that night. Every app at Larkfield talks to its own provider, OpenAI, Anthropic or Google, and holds its own key. A key is the secret that proves who is paying.
+    voiceover: That night did not come out of nowhere. Every app at Larkfield talks to its own provider, OpenAI, Anthropic or Google, and holds its own key. A key is the secret that proves who is paying.
   - scene: clip
     clip: maren-worried-laptop
     cast: [ollie, maren]

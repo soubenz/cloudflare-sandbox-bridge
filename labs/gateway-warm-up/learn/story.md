@@ -2,13 +2,13 @@
 title: Six things went wrong
 minutes: 2
 ---
-This is the story of one bad month at a company called Larkfield. Six things go wrong. Four of them will happen to you.
+Last month, a company called Larkfield had six things go wrong. Four of them will happen to you.
 
-Imagine waking up at three in the morning to a phone that won't stop buzzing. That's Tomasz, an engineer on Larkfield's platform team. The support assistant has stopped answering customers. Tomasz: "Search is fine. Support is dark."
+It starts on a Saturday. At three twelve in the morning, the phone of Tomasz, an engineer on Larkfield's platform team, lights up the dark bedroom. The support assistant has stopped answering customers. Tomasz: "Search is fine. Support is dark."
 
-OpenAI, the company that runs the assistant's model, is down. Anthropic is working fine, but OpenAI's name is written into the app's code. So at three forty, half asleep, Tomasz is rewriting that code by hand. Tomasz: "I've done good work at three a.m. This isn't it."
+He finds the cause fast. OpenAI, the company that runs the assistant's model, is down. Anthropic is up, but OpenAI's name is written into the app's code. So at three forty, Tomasz is still rewriting it by hand. Tomasz: "I've done good work at three a.m. This isn't it."
 
-The trouble started long before that night. Every app at Larkfield talks to its own provider, OpenAI, Anthropic or Google, and holds its own key. A key is the secret that proves who is paying.
+That night did not come out of nowhere. Every app at Larkfield talks to its own provider, OpenAI, Anthropic or Google, and holds its own key. A key is the secret that proves who is paying.
 
 On Tuesday, Ollie, a developer, is proud of an answer from the assistant and shares a screenshot in the team chat. Ollie: "Look at this answer! Best one yet." In the corner of the picture sits the team's OpenAI key. Maren, who leads the platform team: "Ollie. Bottom corner. That's our OpenAI key."
 
