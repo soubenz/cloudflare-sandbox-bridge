@@ -307,8 +307,8 @@ export function questionScreen({ question, index, total, onNext, lastLabel = 'Fi
  *   concept    { id, title, minutes, recap, body }
  *   state      'expanded' | 'collapsed'
  *   chip       optional short text about why it starts this way ("You know this")
- *   onAction   called with 'forced' (Show me the lesson anyway) or 'skipped'
- *              (I know this, skip); the caller records it and calls update()
+ *   onAction   called with 'forced' (Read the full lesson) or 'skipped'
+ *              (Skip, I know this); the caller records it and calls update()
  *   headingTag the tag of the lesson title (default h2)
  *
  * The body, with its diagrams, is built the first time the lesson opens and
@@ -345,8 +345,8 @@ export function lessonCard({ concept, state, chip, onAction, headingTag = 'h2' }
 
     const toggle =
       current === 'collapsed'
-        ? button('Show me the lesson anyway', { kind: 'quiet', onClick: () => onAction?.('forced') })
-        : button('I know this, skip', { kind: 'ghost', onClick: () => onAction?.('skipped') });
+        ? button('Read the full lesson', { kind: 'ghost', onClick: () => onAction?.('forced') })
+        : button('Skip, I know this', { kind: 'quiet', onClick: () => onAction?.('skipped') });
     toggle.classList.add('lesson-toggle');
     head.append(toggle);
     if (focusAfter) toggle.focus();

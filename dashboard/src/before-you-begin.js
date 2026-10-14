@@ -12,7 +12,7 @@
  *
  * The check decides, the learner overrides: Round 1's diagnostic answers only set the default
  * (a concept answered fully right folds its lesson to a recap, a miss leaves it open). A folded
- * lesson has "Show me the lesson anyway", an open one "I know this, skip", and both are
+ * lesson says why it is folded and has "Read the full lesson", an open one "Skip, I know this", and both are
  * remembered. The session starts only when the lab is started on purpose (a container costs
  * money): "Start the lab" at the end, or "Skip all, just start the lab", which is on every step.
  *
@@ -27,9 +27,9 @@
  */
 
 import { answersBody, readingTime, recordDiagnostic, isDiagnostic } from './learn-model.js';
-import { buildLessons, planSummary } from './learn-lessons.js';
+import { buildLessons } from './learn-lessons.js';
 import { createFlowStore, planLearningFlow, planWarmUpFlow, questionHeading, restoreSteps, shouldPrefetch, stepIndexFor, stepKindWord, stepLabel, stepNumberFor } from './learn-flow.js';
-import { actionBar, button, focusHeading, make, questionScreen, screenHead, show, storyContent } from './learn-ui.js';
+import { actionBar, button, focusHeading, make, questionScreen, screenHead, show, stepDots, storyContent } from './learn-ui.js';
 import { mountGame } from './games.js';
 import { uiIcon } from './icons.js';
 
@@ -374,9 +374,6 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     // The numbering of the lessons carries on from the chunks before this one.
     const offset = steps.slice(0, i).reduce((n, s) => n + (s.kind === 'lessons' ? s.concepts.length : 0), 0);
 
-    const summary = make('p', 'learn-lede plan-summary');
-    summary.setAttribute('role', 'status');
-    summary.setAttribute('aria-live', 'polite');
     const tally = make('p', 'lessons-tally');
     const list = make('section', 'learn-lessons');
     list.setAttribute('aria-label', step.parts > 1 ? `Lessons, part ${step.part} of ${step.parts}` : 'Lessons');
@@ -388,8 +385,7 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
     if (!after) go.dataset.start = 'primary';
     go.classList.add('learn-start', 'btn-lg');
     go.append(uiIcon('arrow', 16));
-    const back = backStep();
-    // One lesson at a time, in short pages: Previous and Next go in the action bar.
+    // One lesson at a time, in short pages: Previous and Next go in the action bar, the tally between them.
     const pager = make('div', 'lesson-nav-slot');
     lessons = buildLessons(list, {
       learn,
@@ -398,29 +394,25 @@ export function runBeforeYouBegin({ host, lab, entry, store, post, onStart, onBa
       offset,
       nav: pager,
       finish: go,
+      status: tally,
+      part: step.parts > 1 ? `Part ${step.part} of ${step.parts}` : undefined,
       memoryKey: lab.slug,
-      onPlan: (plan) => {
-        summary.textContent = planSummary(plan);
-      },
       onProgress: ({ read, total }) => {
         tally.textContent = total ? `${read} of ${total} ${total === 1 ? 'lesson' : 'lessons'} read` : '';
       },
     });
 
-    const several = step.parts > 1;
-    show(
-      host,
-      screenHead({
-        eyebrow: eyebrow(),
-        title: several ? `Lessons, part ${step.part} of ${step.parts}` : 'Lessons for this lab',
-        mark: several ? undefined : 'this lab',
-        meta: several ? 'A few lessons, then a few more questions. You decide what to read.' : 'The questions set where each lesson starts. You decide what to read.',
-        steps: dots(i),
-      }),
-      summary,
-      list,
-      bar([pager, back, skipAll(), backToLabs(), tally], { sticky: true, label: after ? 'Next' : warmUp ? 'Finish' : 'Start' })
-    );
+    // The way out of the step, quieter than the pager: small links under the bar.
+    const more = make('nav', 'lessons-more');
+    more.setAttribute('aria-label', 'More ways out of the lessons');
+    for (const b of [backStep(), skipAll(), backToLabs()]) if (b) more.append(b);
+
+    // The lesson's own title is the screen's heading (the pager draws it): the head above it is only where the
+    // learner is in the flow, the dots and "Before you begin · the lab".
+    const head = make('header', 'learn-head lessons-head');
+    const flowDots = dots(i);
+    head.append(stepDots(flowDots.kinds, flowDots.current), make('p', 'learn-eyebrow', eyebrow()));
+    show(host, head, list, bar([pager], { sticky: true, label: after ? 'Next' : warmUp ? 'Finish' : 'Start' }), more);
     arrived(i);
     focusHeading(host);
   }

@@ -5,9 +5,11 @@
  *
  * One lesson at a time, and a lesson in short pages (lesson-pages.js cuts them:
  * at `##` headings, `::page` lines and about every 120 words, a diagram or a
- * code block on a page of its own). Each page shows the lesson's title and
- * "Page 2 of 4" with a row of dots. Previous and Next (in the step's action
- * bar), the ← and → keys and a swipe on a touch screen turn the pages, and run
+ * code block on a page of its own), in one centred reading column. The lesson's
+ * title is the screen's heading (an h1, `data-learn-heading`), under one quiet
+ * line "Lesson 1 of 3 · 3 min · Page 2 of 4" with a row of dots.
+ * Previous and Next (in the step's action bar, with the "n of m lessons read"
+ * tally between them), the ← and → keys and a swipe on a touch screen turn the pages, and run
  * on from one lesson to the next; on the last page of the last lesson Next is
  * the step's own button (Continue, Start the lab). The keys and the swipe never
  * leave the step: only that button does. A page turn moves the focus to the
@@ -15,9 +17,11 @@
  *
  * A lesson is open in full or folded to its recap the way the plan sets it (the
  * diagnostic answers, the platform quiz's levels, and what the learner decided
- * before). "I know this, skip" and "Show me the lesson anyway" are the
- * learner's call on a lesson: it is saved in the mastery record and so is
- * remembered for the next time the lab is started. A folded lesson is one page.
+ * before). A folded lesson says in a sentence why it is folded (foldReason),
+ * then gives its one-line recap and "Read the full lesson"; an open one has
+ * "Skip, I know this". Either is the learner's call on a lesson: it is saved in
+ * the mastery record and so is remembered for the next time the lab is started.
+ * A folded lesson is one page.
  *
  * Where the learner was (the lesson, its page, the lessons read) is kept in
  * localStorage per lab (`memoryKey`), best effort, so leaving the step and
@@ -32,28 +36,19 @@ import { button, make } from './learn-ui.js';
 import { renderMarkdownNodes } from './markdown.js';
 import { clampPage, paginateLesson } from './lesson-pages.js';
 import { uiIcon } from './icons.js';
-import { QUIZ_LEVELS } from './words.js';
 
 /** Whether a bundle has any lessons. */
 export const hasLessons = (learn) => (learn?.concepts || []).length > 0;
 
-/** The short tag on a lesson that says why it starts the way it does. */
-export function reasonChip(reason) {
-  if (reason === 'known') return 'You know this';
-  if (reason === 'skipped') return 'Skipped';
-  if (reason === 'forced') return 'Opened by you';
-  if (reason === 'strong') return `${QUIZ_LEVELS.strong}, from your quiz`;
-  return '';
-}
-
-/** "2 lessons open, 1 folded to a recap". */
-export function planSummary(plan) {
-  const open = plan.filter((p) => p.state === 'expanded').length;
-  const folded = plan.length - open;
-  if (plan.length === 0) return 'This lab has no lessons.';
-  if (open === 0) return 'You already know what this lab needs. Every lesson is a one-line recap.';
-  const lessons = (n) => `${n} ${n === 1 ? 'lesson' : 'lessons'}`;
-  return folded ? `${lessons(open)} open, ${folded} folded to a recap.` : `${lessons(open)} to read.`;
+/**
+ * Why a lesson is folded to its one-line summary, in a sentence the folded card opens with
+ * (`reason` is lessonReason's: 'known', 'skipped' or 'strong' fold a lesson).
+ */
+export function foldReason(reason) {
+  if (reason === 'known') return 'You answered the questions on this correctly, so here is the one-line summary.';
+  if (reason === 'skipped') return 'You chose to skip this lesson, so here is the one-line summary.';
+  if (reason === 'strong') return 'Your quiz says you know this area well, so here is the one-line summary.';
+  return 'Here is the one-line summary of this lesson.';
 }
 
 /** localStorage key of the pager's memory. */
@@ -106,8 +101,12 @@ const typingIn = (target) =>
  *   store       the mastery store: it sets how each lesson starts, and takes
  *               the learner's overrides
  *   onPlan      called with [{ concept, state }] now and whenever a lesson is
- *               opened or folded (the screen's summary line is built from it)
+ *               opened or folded
  *   onProgress  called with { read, total } now and whenever the count changes
+ *   status      a node shown in the action bar between Previous and Next (the step's
+ *               "n of m lessons read"); omitted, nothing is
+ *   part        a few words before "Lesson 1 of 3" when the step is one of several
+ *               chunks ("Part 1 of 2"); omitted, nothing
  *   only        the concept ids this screen shows (one chunk of the lessons: the flow
  *               alternates lessons and questions), in the bundle's order; omitted, all
  *   offset      how many lessons came before (the numbering carries on from it)
@@ -119,7 +118,7 @@ const typingIn = (target) =>
  * A lesson counts as read once its last page has been on screen (a one-page lesson
  * as soon as it is shown); one that is folded (they know it, or skipped it) counts as read.
  */
-export function buildLessons(host, { learn, store, onPlan, onProgress, only, offset = 0, nav, finish, memoryKey, storage } = {}) {
+export function buildLessons(host, { learn, store, onPlan, onProgress, only, offset = 0, nav, finish, status, part, memoryKey, storage } = {}) {
   const shown = only ? new Set(only) : null;
   const chunk = (plan) => (shown ? plan.filter((p) => shown.has(p.concept)) : plan);
   const byConcept = new Map((learn.concepts || []).map((c) => [c.id, c]));
@@ -135,7 +134,7 @@ export function buildLessons(host, { learn, store, onPlan, onProgress, only, off
     const plan = chunk(planLessons(learn, m)).filter((p) => byConcept.has(p.concept));
     for (const p of plan) {
       states.set(p.concept, p.state);
-      reasons.set(p.concept, reasonChip(lessonReason(p.concept, m)));
+      reasons.set(p.concept, lessonReason(p.concept, m));
     }
     return plan;
   };
@@ -169,7 +168,9 @@ export function buildLessons(host, { learn, store, onPlan, onProgress, only, off
   const navBox = make('div', 'lesson-nav');
   navBox.setAttribute('role', 'group');
   navBox.setAttribute('aria-label', 'Lesson pages');
-  navBox.append(prevBtn, nextBtn);
+  navBox.append(prevBtn);
+  if (status) navBox.append(status);
+  navBox.append(nextBtn);
   if (finish) navBox.append(finish);
   (nav ?? host).append(navBox);
 
@@ -245,38 +246,50 @@ export function buildLessons(host, { learn, store, onPlan, onProgress, only, off
     root.dataset.pages = String(count);
     root.setAttribute('aria-roledescription', 'lesson');
 
-    const head = make('div', 'lesson-head');
-    const title = make('h2', 'lesson-title', concept.title);
-    title.tabIndex = -1;
-    head.append(title, make('span', 'lesson-meta', `${concept.minutes} min`));
-    const chip = reasons.get(id);
-    if (chip) head.append(make('span', 'chip lesson-chip', chip));
-    const toggle =
-      state === 'collapsed'
-        ? button('Show me the lesson anyway', { kind: 'quiet', onClick: () => decide(id, 'forced') })
-        : button('I know this, skip', { kind: 'ghost', onClick: () => decide(id, 'skipped') });
-    toggle.classList.add('lesson-toggle');
-    head.append(toggle);
-    root.append(head);
-
-    // Where the learner is: "Page 2 of 4", a dot a page, and the lesson's place in this step.
-    const where = make('div', 'lesson-where');
+    // The head: one quiet line, "Lesson 1 of 3 · 3 min · Page 2 of 4" with a dot a page (and "Skip, I know this"
+    // at its end on an open lesson), then the lesson's title as the screen's heading.
+    const head = make('header', 'lesson-head');
+    const top = make('div', 'lesson-top');
+    const facts = make('p', 'lesson-facts');
+    if (part) facts.append(make('span', 'lesson-part', part));
+    if (order.length > 1) facts.append(make('span', 'lesson-position', `Lesson ${at + 1} of ${order.length}`));
+    facts.append(make('span', 'lesson-meta', `${concept.minutes} min`));
     if (count > 1) {
-      where.append(make('span', 'lesson-page-label', `Page ${page + 1} of ${count}`));
+      const pagesNow = make('span', 'lesson-pages');
       const dots = make('span', 'lesson-dots');
       dots.setAttribute('aria-hidden', 'true');
       for (let k = 0; k < count; k++) dots.append(make('i', k < page ? 'done' : k === page ? 'now' : ''));
-      where.append(dots);
+      pagesNow.append(make('span', 'lesson-page-label', `Page ${page + 1} of ${count}`), dots);
+      facts.append(pagesNow);
     }
-    if (order.length > 1) where.append(make('span', 'lesson-position', `Lesson ${at + 1} of ${order.length}`));
-    if (where.childNodes.length) root.append(where);
+    top.append(facts);
+    const title = make('h1', 'lesson-title', concept.title);
+    title.tabIndex = -1;
+    title.setAttribute('data-learn-heading', '');
+    let toggle;
+    if (state === 'collapsed') {
+      toggle = button('Read the full lesson', { kind: 'ghost', onClick: () => decide(id, 'forced') });
+    } else {
+      toggle = button('Skip, I know this', { kind: 'quiet', onClick: () => decide(id, 'skipped') });
+      toggle.classList.add('btn-tiny');
+      top.append(toggle);
+    }
+    toggle.classList.add('lesson-toggle');
+    head.append(top, title);
+    root.append(head);
 
     let pageHeading = null;
     if (state === 'collapsed') {
-      root.append(make('p', 'lesson-recap', concept.recap));
+      // Folded: why, in a sentence, then the one-line summary and the way into the full lesson.
+      const why = make('p', 'lesson-why');
+      why.append(uiIcon('check', 16), make('span', '', foldReason(reasons.get(id))));
+      const recap = make('p', 'lesson-recap', concept.recap);
+      const more = make('div', 'lesson-more');
+      more.append(toggle);
+      root.append(why, recap, more);
     } else {
       const body = make('div', 'lesson-body lesson-page');
-      const r = renderMarkdownNodes(pages(id)[page]?.blocks ?? [], { headingLevel: 3, diagramOptions: { controls: false } });
+      const r = renderMarkdownNodes(pages(id)[page]?.blocks ?? [], { headingLevel: 2, diagramOptions: { controls: false } });
       for (const n of r.nodes) body.appendChild(n);
       markdown = r;
       if (dir) body.dataset.enter = dir;

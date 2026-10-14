@@ -4,8 +4,8 @@
  * the lesson cards, and the Questions tab's cards.
  *
  * Drawn as the design's centred step cards: one card on the dotted page with a
- * progress-steps bar across its top; the lessons step is the one exception, it
- * takes the whole width of the console. Only the console's own tokens (styles.css):
+ * progress-steps bar across its top; the lessons step is the one exception, a
+ * centred reading column with no card around it. Only the console's own tokens (styles.css):
  * surfaces, ink, the status colours for a result (good for correct, warn for not
  * quite, never as the only signal: the words say it too), and the accent families
  * for level chips. Light and dark come with the tokens; no colour is named here.
@@ -249,102 +249,96 @@
 .steps-done-label { display: inline-flex; align-items: center; gap: 4px; flex: none; margin-left: var(--s2); font-size: var(--fs-sm); font-weight: 700; color: var(--good); }
 
 /* ---------- lessons ---------- */
-.lesson-list { display: flex; flex-direction: column; gap: 10px; counter-reset: lesson; }
+.lesson-list { display: flex; flex-direction: column; gap: 10px; }
 .lesson {
   display: flex; flex-direction: column; gap: 10px; min-width: 0;
   padding: 20px 22px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
 }
-.lesson[data-state="collapsed"] { background: var(--surface-2); }
-.lesson-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
+.lesson-head { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .lesson .lesson-title { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; min-width: 0; overflow-wrap: anywhere; }
-.lesson-meta { margin-left: auto; font: 400 11.5px/1.4 var(--mono); color: var(--ink-muted); }
-.lesson-head .lesson-toggle { margin-left: auto; }
-.lesson-meta + .lesson-toggle, .lesson-chip + .lesson-meta { margin-left: 0; }
-.lesson-head .lesson-meta ~ .lesson-toggle { margin-left: 0; }
-.lesson-chip { background: var(--accent-green-soft); color: var(--accent-green-ink); border: 0; padding: 4px 10px; font: 700 11px/1.3 var(--sans); }
-.lesson-recap { margin: 0; color: var(--ink-2); font-size: 14.5px; line-height: 1.55; }
+/* "Lesson 1 of 3 · 3 min · Page 2 of 4" and a dot a page, and on an open lesson "Skip, I know this" at the end of the line. */
+.lesson-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s1) var(--s3); min-height: 36px; }
+.lesson-facts { display: flex; flex-wrap: wrap; align-items: center; margin: 0; font: 400 12.5px/1.4 var(--mono); color: var(--ink-muted); }
+.lesson-facts > * + *::before { content: '·'; margin: 0 8px; }
+.lesson-pages { display: inline-flex; align-items: center; white-space: nowrap; }
+.lesson-pages .lesson-dots { margin-left: 10px; }
+.lesson-position { color: var(--ink-2); }
+.learn-screen .lesson-top .lesson-toggle { min-height: 36px; padding: 0 12px; margin-right: -12px; font-size: 14px; color: var(--ink-2); }
+/* Folded: why, in a sentence, the one-line summary, and the way into the full lesson. */
+.lesson-why {
+  display: flex; align-items: flex-start; gap: 10px; margin: 0;
+  padding: 12px 16px; border-radius: var(--radius);
+  background: var(--accent-green-soft); color: var(--accent-green-ink);
+  font-size: 15px; line-height: 1.5; font-weight: 600;
+}
+.lesson-why svg { flex: none; margin-top: 3px; }
+.lesson-recap { margin: 0; color: var(--ink); font-size: 17px; line-height: 1.6; }
+.lesson-more { display: flex; flex-wrap: wrap; gap: 10px; }
 .lesson-body { margin-top: var(--s1); min-width: 0; }
-/* The numbered circle of the design: the lesson's place in the plan, or a check when it is folded. */
-.learn-screen .lesson { counter-increment: lesson; }
-.learn-screen .lesson-head::before {
-  content: counter(lesson);
-  display: inline-flex; align-items: center; justify-content: center; flex: none;
-  width: 30px; height: 30px; border-radius: 50%;
-  border: 1.5px solid var(--border-strong); color: var(--ink-muted); font: 600 12px/1 var(--mono);
-}
-.learn-screen .lesson[data-state="expanded"] .lesson-head::before { border-color: var(--accent); color: var(--accent); }
-.learn-screen .lesson[data-state="collapsed"] .lesson-head::before {
-  content: ''; background: var(--done-bg); border-color: var(--done-bg);
-  background-image: none;
-}
-.learn-screen .lesson[data-state="collapsed"] .lesson-head { position: relative; }
-.learn-screen .lesson[data-state="collapsed"] .lesson-head::after {
-  content: ''; position: absolute; left: 11px; top: 50%; width: 5px; height: 10px; margin-top: -7px;
-  border: solid var(--done-fg); border-width: 0 2px 2px 0; transform: rotate(45deg);
-}
 
-.plan-summary { margin: 0; }
-
-/* ---------- the lessons step: the whole width of the console ---------- */
-/* No card around it: the head and the action bar sit on the page, each lesson is a card as wide as the screen. */
+/* ---------- the lessons step: one reading column, centred in the console ---------- */
+/*
+ * No card around the step: its head (the flow's dots and "Before you begin · the lab"), the lesson card,
+ * the action bar and the quiet links under it share one centred column of 780px, on every width
+ * (a phone's is the whole width). The lesson's title is the screen's heading.
+ */
 .learn-wrap.learn-wrap-lessons {
-  max-width: none; width: 100%; padding: 0; gap: 28px;
+  max-width: 780px; width: 100%; padding: 0; gap: 20px;
   background: none; border: 0; border-radius: 0; box-shadow: none;
 }
+.lessons-head { gap: 10px; }
+.lessons-head > .steps { margin-bottom: 4px; }
 .learn-wrap-lessons .lesson-list { gap: 16px; }
-.learn-wrap-lessons .lesson { padding: 24px 32px 28px; gap: 14px; border-radius: var(--radius-xl); }
-.learn-wrap-lessons .lesson .lesson-title { font-size: clamp(20px, 1.2vw + 8px, 28px); }
-.learn-wrap-lessons .lesson-recap { max-width: 72ch; font-size: var(--fs-lg); }
-/* The reading size grows with the window, so the 72ch line (and the diagram beside it) fills a big screen well. */
-.learn-wrap-lessons .lesson-body {
-  display: flow-root; margin-top: var(--s2);
-  max-width: calc(72ch + 56px + 1100px);
-  font-size: clamp(16px, calc(0.45vw + 11px), 20px);
-}
-.learn-wrap-lessons .lesson-body > :not(.md-diagram) { max-width: 72ch; }
-.learn-wrap-lessons .lesson-body .diagram { max-width: min(100%, 52rem); }
+.learn-wrap-lessons .lesson { padding: 24px 44px 32px; gap: 18px; border-radius: var(--radius-xl); box-shadow: var(--shadow-sm); }
+.learn-wrap-lessons .lesson .lesson-title { font-size: clamp(26px, 1vw + 18px, 34px); line-height: 1.15; letter-spacing: -0.035em; }
 /*
- * Wide: the text on the left, its diagram large on the right, level with the top of the lesson and
- * following the reader down it. (One diagram is the case; a second one runs on in the text.)
+ * The page's text, then its diagram under it, the same width as the column and no taller than the room
+ * above the action bar, so a page reads top to bottom.
  */
-@media (min-width: 1280px) {
-  .learn-wrap-lessons .lesson-body {
-    display: grid; align-items: start; column-gap: 56px;
-    grid-template-columns: minmax(0, 72ch) clamp(400px, 44%, 1100px);
-  }
-  .learn-wrap-lessons .lesson-body > * { grid-column: 1; }
-  .learn-wrap-lessons .lesson-body > .md-diagram {
-    grid-column: 2; grid-row: 1 / span 40; margin: 0;
-    position: sticky; top: var(--s4);
-  }
-  .learn-wrap-lessons .lesson-body > .md-diagram ~ .md-diagram { grid-column: 1; grid-row: auto; position: static; margin: var(--s3) 0 var(--s4); }
-  .learn-wrap-lessons .lesson-body .diagram { max-width: none; margin: 0; }
+.learn-wrap-lessons .lesson-body {
+  display: flow-root; margin-top: 0; max-width: 72ch;
+  font-size: 18px; line-height: 1.6;
 }
-.learn-wrap-lessons .learn-actions-sticky { margin-inline: 0; padding: 12px 18px; }
-.lessons-tally { margin: 0 0 0 auto; font: 400 12.5px/1.4 var(--mono); color: var(--ink-muted); }
-.lessons-tally:empty { display: none; }
+.learn-wrap-lessons .lesson-body p, .learn-wrap-lessons .lesson-body ul, .learn-wrap-lessons .lesson-body ol { margin-bottom: 1em; }
+.learn-wrap-lessons .lesson-body li { margin-bottom: 0.5em; padding-left: 2px; }
+.learn-wrap-lessons .lesson-body li::marker { color: var(--ink-muted); }
+.learn-wrap-lessons .lesson-body li strong { font-weight: 650; }
+.learn-wrap-lessons .lesson-body code { font-size: 0.86em; padding: 0.1em 0.4em; border-radius: 5px; }
+.learn-wrap-lessons .lesson-body h2 { margin: 0 0 0.5em; font-size: 22px; letter-spacing: -0.025em; line-height: 1.25; }
+.learn-wrap-lessons .lesson-body h3 { margin: 1.2em 0 0.4em; font-size: 18px; color: var(--ink); }
+.learn-wrap-lessons .lesson-body > .md-diagram { margin: var(--s4) 0 var(--s1); }
+.learn-wrap-lessons .lesson-body .diagram { max-width: 100%; margin: 0; }
+.learn-wrap-lessons .lesson-recap { font-size: 18px; }
+.learn-wrap-lessons .learn-actions-sticky { margin-inline: 0; padding: 10px 12px; }
 
 /*
- * One lesson at a time, in short pages (learn-lessons.js). Previous and Next sit in the action bar,
- * where the step's own button takes Next's place on the last page; under the lesson's head,
- * "Page 2 of 4", a dot a page and the lesson's place in the step.
+ * One lesson at a time, in short pages (learn-lessons.js). The action bar: Previous on the left, Next (or the
+ * step's own button, on the last page) on the right, "n of m lessons read" between them. Explicit columns, so
+ * Next stays on the right when there is no Previous.
  */
 .lesson-nav-slot { display: contents; }
-.lesson-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.lesson-nav { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; }
 .lesson-nav .btn svg { flex: none; }
+.lesson-nav-prev { grid-column: 1; justify-self: start; }
+.lesson-nav .lessons-tally { grid-column: 2; grid-row: 1; }
+.lesson-nav-next, .lesson-nav .learn-start { grid-column: 3; grid-row: 1; justify-self: end; }
 .lesson-nav-next { min-width: 140px; }
-.lesson-where {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
-  font: 400 12.5px/1.4 var(--mono); color: var(--ink-muted);
+.lessons-tally { margin: 0; font: 400 12.5px/1.4 var(--mono); color: var(--ink-muted); text-align: center; }
+.lessons-tally:empty { display: none; }
+/* The ways out of the step: small links under the bar, never competing with Next. */
+.lessons-more { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0 var(--s2); margin-top: -8px; }
+.learn-screen .lessons-more .btn {
+  min-height: 36px; padding: 0 10px; font-size: 13.5px; color: var(--ink-muted);
+  text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px;
 }
+.learn-screen .lessons-more .btn:hover:not(:disabled) { color: var(--ink); background: transparent; text-decoration-color: currentColor; }
 .lesson-page-label { color: var(--ink-2); }
 .lesson-dots { display: inline-flex; align-items: center; gap: 6px; }
 .lesson-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); }
 .lesson-dots i.done { background: var(--accent); }
 .lesson-dots i.now { width: 18px; border-radius: 999px; background: var(--accent); }
-.lesson-position { margin-left: auto; }
-.lesson .lesson-title:focus, .lesson-page :is(h3, h4):focus { outline: none; }
-.lesson .lesson-title:focus-visible, .lesson-page :is(h3, h4):focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.lesson .lesson-title:focus, .lesson-page :is(h2, h3, h4):focus { outline: none; }
+.lesson .lesson-title:focus-visible, .lesson-page :is(h2, h3, h4):focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 /* A page turn slides the new page in from the side it came from; none at all for reduced motion. */
 .lesson-page[data-enter="next"] { animation: lesson-in-next 220ms ease-out; }
 .lesson-page[data-enter="prev"] { animation: lesson-in-prev 220ms ease-out; }
@@ -359,21 +353,29 @@
 .learn-wrap-lessons .lesson { scroll-margin-top: 16px; }
 /*
  * Nothing of a page sits under the action bar. The bar floats 16px above the foot of the screen, so the
- * screen keeps no padding of its own below it (the bar is the last thing in the page, in flow, at its end),
+ * screen keeps no padding of its own below it (only the quiet links follow the bar, at the page's end),
  * and what the bar floats over is only ever the page scrolling past. A diagram is drawn to fit the room
  * above the bar (the console's header, the card's head, the bar and the diagram's own caption take the
  * rest of the screen), and the screen's scroll keeps clear of the bar for anything that scrolls into view.
  */
 .learn-screen:has(.learn-wrap-lessons) { padding-bottom: 16px; scroll-padding-bottom: 112px; }
 @media (min-width: 761px) {
-  .learn-wrap-lessons .lesson-body .diagram-svg { max-height: max(12rem, calc(100dvh - 32rem)); }
+  .learn-wrap-lessons .lesson-body .diagram-svg { max-height: min(22rem, max(12rem, calc(100dvh - 40rem))); }
 }
 @media (max-width: 760px) {
-  .lesson-nav { flex: 1 1 100%; }
-  .lesson-nav .btn { flex: 1 1 0; min-width: 0; }
-  .lesson-position { margin-left: 0; }
+  .learn-wrap-lessons .lesson { padding: 20px 20px 24px; gap: 16px; }
+  .learn-wrap-lessons .lesson-body { font-size: 17px; }
+  /* On a phone the page count has a line of its own, and "Skip, I know this" starts the next one. */
+  .lesson-facts > .lesson-pages { flex-basis: 100%; margin-top: 4px; }
+  .lesson-facts > .lesson-pages::before { content: none; }
+  .learn-screen .lesson-top .lesson-toggle { flex: none; width: auto; margin: 0 0 0 -12px; }
+  .lesson-nav { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .lesson-nav .lessons-tally { grid-column: 1 / -1; grid-row: 1; }
+  .lesson-nav-prev { grid-column: 1; grid-row: 2; justify-self: stretch; }
+  .lesson-nav-next, .lesson-nav .learn-start { grid-column: 2; grid-row: 2; justify-self: stretch; min-width: 0; }
+  .lesson-nav-prev[hidden] ~ .lesson-nav-next, .lesson-nav-prev[hidden] ~ .learn-start { grid-column: 1 / -1; }
   .learn-wrap-lessons .lesson[data-state="expanded"] { min-height: 0; }
-  /* On a phone the bar, with its quiet buttons stacked, would cover half the page: it follows the page instead. */
+  /* On a phone the bar would cover half the page: it follows the page instead. */
   .learn-wrap-lessons .learn-actions-sticky { position: static; }
   .learn-wrap-lessons .lesson { scroll-margin-top: 104px; }
   .learn-screen:has(.learn-wrap-lessons) { padding-bottom: 40px; scroll-padding-bottom: 0; }

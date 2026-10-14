@@ -251,7 +251,10 @@ async function toTheGames(page: Page) {
   await expect(page.locator('#btnSkipAll')).toHaveCount(0);
   await page.locator('.quiz-form .learn-actions button', { hasText: 'See the lessons' }).click();
 
-  await expect(heading(page)).toHaveText('Lessons for this lab');
+  // The lessons step has no title of its own: the heading is the first lesson's title.
+  await expect(host(page).locator('.learn-lessons')).toHaveAttribute('aria-label', 'Lessons');
+  await expect(host(page).locator('[data-learn-heading]')).toHaveText(BUNDLE.concepts[0]!.title);
+  await expect(host(page).locator('[data-learn-heading]')).toBeFocused();
   await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/lessons$`));
   await expect(page.locator('#btnNextStep')).toHaveText('Continue');
   await page.locator('#btnNextStep').click();

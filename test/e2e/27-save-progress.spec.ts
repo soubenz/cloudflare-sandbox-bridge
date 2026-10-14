@@ -116,6 +116,11 @@ async function go(page: Page, url: string) {
 }
 
 const heading = (page: Page) => page.locator('#learnHost .learn-head [data-learn-heading]').first();
+/** The lessons step is on screen: it has no title of its own, its heading is the title of the lesson on screen. */
+async function onLessons(page: Page) {
+  await expect(page.locator('#learnHost .learn-lessons')).toHaveAttribute('aria-label', 'Lessons');
+  await expect(page.locator('#learnHost [data-learn-heading]')).toHaveClass(/lesson-title/);
+}
 
 test.describe('saving progress', () => {
   test('a warm-up left on its lessons is offered again in a fresh browser, and Continue lands on them', async ({ browser, baseURL }) => {
@@ -133,7 +138,7 @@ test.describe('saving progress', () => {
     for (const id of QUESTION.answer) await one.page.locator(`.quiz-option[data-option="${id}"] input`).check();
     await one.page.getByRole('button', { name: 'Check', exact: true }).click();
     await one.page.locator('.quiz-form .learn-actions button', { hasText: 'See the lessons' }).click();
-    await expect(heading(one.page)).toHaveText('Lessons for this lab');
+    await onLessons(one.page);
     await expect.poll(() => server.saved?.state.at).toBe(2);
     expect(server.saved!.version).toBe('1.0.0');
     expect(Object.keys(server.saved!.state.answers)).toEqual([QUESTION.id]);
@@ -146,7 +151,7 @@ test.describe('saving progress', () => {
     await expect(side).toBeVisible();
     await expect(side).toContainText(`You left off at Step 3 of ${TOTAL}: Lessons.`);
     await two.page.locator('#btnLabContinue').click();
-    await expect(heading(two.page)).toHaveText('Lessons for this lab');
+    await onLessons(two.page);
     await expect(two.page).toHaveURL(new RegExp(`/labs/${WARM}/lessons$`));
     // The answer came along: Back to the questions shows it answered, nothing asked again.
     await two.page.locator('#btnBackQuestions').click();

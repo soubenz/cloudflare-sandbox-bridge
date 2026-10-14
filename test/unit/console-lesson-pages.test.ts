@@ -193,12 +193,40 @@ describe('the pager and its action bar (learn-lessons.js, learn.css)', () => {
   });
 
   it('keeps the page clear of the sticky bar: a diagram fits above it, the screen scrolls clear of it, a phone un-sticks it', () => {
-    // The diagram is drawn within the height left above the bar, from 761px up.
-    expect(css).toMatch(/@media \(min-width: 761px\) \{\s*\.learn-wrap-lessons \.lesson-body \.diagram-svg \{ max-height: max\(12rem, calc\(100dvh - 32rem\)\); \}/);
+    // The diagram sits under the text and is drawn within the height left above the bar (at most 22rem; the column, the card's head and the bar take 40rem), from 761px up.
+    expect(css).toMatch(/@media \(min-width: 761px\) \{\s*\.learn-wrap-lessons \.lesson-body \.diagram-svg \{ max-height: min\(22rem, max\(12rem, calc\(100dvh - 40rem\)\)\); \}/);
+    expect(css).not.toMatch(/\.learn-wrap-lessons \.lesson-body > \.md-diagram \{\s*grid-column: 2/);
     // The screen keeps no dead padding under the bar and scrolls clear of it.
     expect(css).toMatch(/\.learn-screen:has\(\.learn-wrap-lessons\) \{ padding-bottom: 16px; scroll-padding-bottom: 112px; \}/);
     // On a phone the bar is in the page.
     expect(css).toMatch(/@media \(max-width: 760px\) \{[^@]*\.learn-wrap-lessons \.learn-actions-sticky \{ position: static; \}/);
+  });
+
+  it('is one centred reading column: the step head, the lesson card and the bar share it, 780px wide', () => {
+    expect(css).toMatch(/\.learn-wrap\.learn-wrap-lessons \{\s*max-width: 780px; width: 100%;/);
+    // Next keeps the right-hand end of the bar, Previous the left, the tally between them.
+    expect(css).toMatch(/\.lesson-nav-prev \{ grid-column: 1; justify-self: start; \}/);
+    expect(css).toMatch(/\.lesson-nav-next, \.lesson-nav \.learn-start \{ grid-column: 3; grid-row: 1; justify-self: end; \}/);
+  });
+
+  it('makes the lesson title the screen heading, with no step title, no plan summary line and no subtitle', () => {
+    const js = src('src/learn-lessons.js');
+    expect(js).toMatch(/make\('h1', 'lesson-title', concept\.title\)/);
+    expect(js).toContain("title.setAttribute('data-learn-heading', '')");
+    const flow = src('src/before-you-begin.js');
+    for (const gone of ['Lessons for this lab', 'You decide what to read', 'plan-summary', 'planSummary']) expect(flow).not.toContain(gone);
+  });
+
+  it('says why a lesson is folded, and words the two calls on a lesson the same way', async () => {
+    const m = (await import('../../dashboard/src/learn-lessons.js' as string)) as { foldReason: (r: string | null) => string };
+    expect(m.foldReason('known')).toBe('You answered the questions on this correctly, so here is the one-line summary.');
+    expect(m.foldReason('skipped')).toBe('You chose to skip this lesson, so here is the one-line summary.');
+    expect(m.foldReason('strong')).toBe('Your quiz says you know this area well, so here is the one-line summary.');
+    expect(m.foldReason(null)).toBe('Here is the one-line summary of this lesson.');
+    const js = src('src/learn-lessons.js');
+    expect(js).toContain("button('Read the full lesson'");
+    expect(js).toContain("button('Skip, I know this'");
+    for (const old of ['Show me the lesson anyway', 'I know this, skip', 'folded to a recap']) expect(js).not.toContain(old);
   });
 
   it('scrolls the card on past the bar when its body would end under it (a no-op where the bar is not sticky)', () => {

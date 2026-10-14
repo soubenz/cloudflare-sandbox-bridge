@@ -329,7 +329,16 @@ async function finishLessons(page: Page) {
   const next = page.locator('#btnLessonNext');
   for (let guard = 0; guard < 150 && (await next.isVisible()); guard++) await next.click();
 }
-const LESSONS = 'Lessons for this lab';
+/**
+ * The lessons step is on screen: its section is named for it ("Lessons", or "Lessons, part 1 of 2"), and the
+ * heading is the title of the lesson on screen (the step has no title of its own).
+ */
+async function onLessons(page: Page, label = 'Lessons') {
+  await expect(host(page).locator('.learn-lessons')).toHaveAttribute('aria-label', label);
+  await expect(heading(page)).toHaveClass(/lesson-title/);
+  const id = await host(page).locator('.lesson').getAttribute('data-concept');
+  await expect(heading(page)).toHaveText(full.concepts.find((c) => c.id === id)!.title);
+}
 const MODULE_1 = '/paths/ai-platform/modules/1';
 
 /** Clicks through the pages to the module that holds the labs: home, its path, its module. */
@@ -389,14 +398,14 @@ test.describe('the steps before a lab have addresses', () => {
     const s = await stub(page);
     await wide(page);
     await visit(page, `/labs/${EXPLORE}/lessons`);
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await expect(page.locator('#launcher')).toBeHidden();
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
     await expect(page).toHaveTitle(`Lessons · ${EXPLORE_TITLE} · Opalix labs`);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('body[data-booted="1"]');
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
     // Reading starts nothing.
     expect(s.starts).toEqual([]);
@@ -444,7 +453,7 @@ test.describe('the steps before a lab have addresses', () => {
     await wide(page);
     await visit(page, `/labs/${LESSONS_ONLY}`);
     await page.locator('.lab-detail .lab-start').click();
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     expect(here_(page)).toBe(`/labs/${LESSONS_ONLY}/lessons`);
 
     const asking = await page.context().newPage();
@@ -467,12 +476,12 @@ test.describe('the steps before a lab have addresses', () => {
 
     await page.goto(`/labs/${LESSONS_ONLY}/story`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('body[data-booted="1"]');
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     expect(here_(page)).toBe(`/labs/${LESSONS_ONLY}/lessons`);
     // Questions that are not due are skipped the same way.
     await page.goto(`/labs/${EXPLORE}/questions`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('body[data-booted="1"]');
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
   });
 
@@ -511,7 +520,7 @@ test.describe('the steps before a lab have addresses', () => {
     };
     await answerRound();
     // Round 1 -> lessons, part 1: one more entry, and the first lessons keep the plain /lessons.
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
     expect(await historyLength(page)).toBe(length + 1);
     await expect(page).toHaveTitle(`Lessons · ${EXPLORE_TITLE} · Opalix labs`);
@@ -520,7 +529,7 @@ test.describe('the steps before a lab have addresses', () => {
     await page.getByRole('button', { name: 'Continue to the questions' }).click();
     expect(here_(page)).toBe(`/labs/${EXPLORE}/questions?step=4`);
     await answerRound();
-    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    await onLessons(page, 'Lessons, part 2 of 2');
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons?step=5`);
     await expect(page).toHaveTitle(`Lessons · ${EXPLORE_TITLE} · Opalix labs`);
     expect(await historyLength(page)).toBe(length + 3);
@@ -530,7 +539,7 @@ test.describe('the steps before a lab have addresses', () => {
     await expect(heading(page)).toHaveText('Round 2 of 3 · question 5 of 5');
     expect(here_(page)).toBe(`/labs/${EXPLORE}/questions?step=4`);
     await page.goBack();
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
     await page.goBack();
     await expect(heading(page)).toHaveText('Round 1 of 3 · question 5 of 5');
@@ -548,7 +557,7 @@ test.describe('the steps before a lab have addresses', () => {
     await stub(page);
     await wide(page);
     await visit(page, `/labs/${EXPLORE}/lessons?step=5&keep=1`, { mastery: SKIPPED });
-    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    await onLessons(page, 'Lessons, part 2 of 2');
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons?keep=1&step=5`);
     await page.getByRole('button', { name: '← Back to labs' }).click();
     await expect(page.locator('.lab-detail')).toBeVisible();
@@ -572,7 +581,7 @@ test.describe('Back and Forward', () => {
     expect(here_(page)).toBe(`/labs/${EXPLORE}/story`);
 
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
 
     await finishLessons(page);
@@ -585,7 +594,7 @@ test.describe('Back and Forward', () => {
 
     // Back out of the lab: the lessons it began with (the lab keeps running).
     await page.goBack();
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await expect(page.locator('#workspace')).toBeHidden();
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
     await page.goBack();
@@ -1187,7 +1196,7 @@ test.describe('not found', () => {
     await stub(page);
     await wide(page);
     await visit(page, `/labs/${EXPLORE}/lessons/`);
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
   });
 });
 
@@ -1600,7 +1609,7 @@ test.describe('on a phone', () => {
     const s = await stub(page);
     await page.setViewportSize(PHONE);
     await visit(page, `/labs/${EXPLORE}/lessons`);
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await noHorizontalScroll(page);
     await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
@@ -1740,7 +1749,7 @@ gated.describe('the password gate', () => {
     await page.fill('#pw', 'pw');
     await page.getByRole('button', { name: 'Sign in' }).click();
     // Nothing is known here, so the lab's first lessons are part 1 of 2 (the questions come between).
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     expect(new URL(page.url()).pathname).toBe(`/labs/${EXPLORE}/lessons`);
     await expect(page).toHaveTitle(`Lessons · ${EXPLORE_TITLE} · Opalix labs`);
   });
@@ -1827,7 +1836,7 @@ test.describe('no horizontal scroll at the new addresses', () => {
       await noHorizontalScroll(page);
       await page.goto(`/labs/${EXPLORE}/lessons`, { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('body[data-booted="1"]');
-      await expect(heading(page)).toHaveText(LESSONS);
+      await onLessons(page);
       await noHorizontalScroll(page);
       await page.goto('/labs/no-such-lab', { waitUntil: 'domcontentloaded' });
       await page.waitForSelector('body[data-booted="1"]');

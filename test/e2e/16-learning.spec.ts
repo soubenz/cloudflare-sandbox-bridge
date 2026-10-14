@@ -358,6 +358,17 @@ const SKIPPED: Mastery = { onboarding: { status: 'skipped', at: 1, levels: {} } 
 const screen = (page: Page) => page.locator('#learnScreen');
 const heading = (page: Page) => screen(page).locator('[data-learn-heading]');
 
+/**
+ * The lessons step is on screen: its section is named for it ("Lessons", or "Lessons, part 1 of 2"), and the
+ * heading is the title of the lesson on screen (the step has no title of its own).
+ */
+async function onLessons(page: Page, label = 'Lessons') {
+  await expect(screen(page).locator('.learn-lessons')).toHaveAttribute('aria-label', label);
+  await expect(heading(page)).toHaveClass(/lesson-title/);
+  const id = await screen(page).locator('.lesson').getAttribute('data-concept');
+  await expect(heading(page)).toHaveText(bundle.concepts.find((c) => c.id === id)!.title);
+}
+
 /** Picks options for a question (right or deliberately wrong), checks, and reads the verdict. */
 async function answer(page: Page, questions: Question[], right: boolean): Promise<{ question: Question; correct: boolean }> {
   const prompt = (await page.locator('.quiz-prompt').innerText()).trim();
@@ -1127,7 +1138,7 @@ test.describe('Before you begin', () => {
     expect(asked.map((q) => q.concept)).toEqual(bundle.concepts.map((c) => c.id));
     expect(asked.every((q) => q.diagnostic !== false)).toBe(true);
 
-    await expect(heading(page)).toHaveText(LESSONS_A);
+    await onLessons(page, LESSONS_A);
     await expect(heading(page)).toBeFocused();
     // One lesson at a time: page on to the aliases one.
     await expect(page.locator('.lesson')).toHaveCount(1);
@@ -1136,8 +1147,9 @@ test.describe('Before you begin', () => {
     await expect(aliases).toHaveAttribute('data-state', 'collapsed');
     await expect(aliases.locator('.lesson-recap')).toHaveText(lessonOf(ALIASES).recap);
     await expect(aliases.locator('.lesson-body')).toHaveCount(0);
-    await expect(aliases.locator('.lesson-chip')).toHaveText('You know this');
-    await expect(aliases.getByRole('button', { name: 'Show me the lesson anyway' })).toBeVisible();
+    // It says why it is folded, in a sentence, and offers the full lesson.
+    await expect(aliases.locator('.lesson-why')).toHaveText('You answered the questions on this correctly, so here is the one-line summary.');
+    await expect(aliases.getByRole('button', { name: 'Read the full lesson' })).toBeVisible();
     // The first chunk holds three of the five lessons: the rest are for after Round 2.
     await goToLesson(page, CHUNK_A[0]!);
     const met = await finishLessons(page, async (id) => {
@@ -1145,10 +1157,11 @@ test.describe('Before you begin', () => {
       const card = page.locator(`.lesson[data-concept="${id}"]`);
       await expect(card).toHaveAttribute('data-state', 'expanded');
       await expect(card.locator('.lesson-body')).toBeVisible();
-      await expect(card.getByRole('button', { name: 'I know this, skip' })).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Skip, I know this' })).toBeVisible();
+      await expect(card.locator('.lesson-why')).toHaveCount(0);
     });
     expect(met).toEqual(CHUNK_A);
-    await expect(page.locator('.plan-summary')).toContainText('1 folded to a recap');
+    await expect(screen(page)).not.toContainText('folded to a recap');
 
     // The outcome is stored per concept, and each answer is posted anonymously as a diagnostic of this lab, once.
     const m = await stored(page);
@@ -1190,7 +1203,7 @@ test.describe('Before you begin', () => {
     const asked = await runQuiz(page, bundle.questions, () => false);
     expect(asked.some((q) => q.concept === ALIASES)).toBe(false);
     expect(asked).toHaveLength(6);
-    await expect(heading(page)).toHaveText('Lessons for this lab');
+    await onLessons(page);
     const states = await lessonStates(page);
     expect(Object.keys(states)).toEqual(bundle.concepts.map((c) => c.id));
     // Still known, so still folded.
@@ -1203,12 +1216,12 @@ test.describe('Before you begin', () => {
     await open(page, { mastery: { ...SKIPPED, concepts: known } });
     await startCard(page);
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(page)).toHaveText('Lessons for this lab');
-    await expect(page.locator('.plan-summary')).toContainText('You already know what this lab needs');
+    await onLessons(page);
+    await expect(page.locator('.lesson-why')).toHaveText('You answered the questions on this correctly, so here is the one-line summary.');
     expect(Object.values(await lessonStates(page))).toEqual(bundle.concepts.map(() => 'collapsed'));
   });
 
-  test('the learner overrides: "Show me the lesson anyway" and "I know this, skip", remembered', async ({ page }) => {
+  test('the learner overrides: "Read the full lesson" and "Skip, I know this", remembered', async ({ page }) => {
     const s = await stub(page);
     await open(page, { mastery: SKIPPED });
     await startCard(page);
@@ -1220,19 +1233,19 @@ test.describe('Before you begin', () => {
 
     // Open a folded lesson; its diagram and text appear, the button flips, focus stays on it.
     await goToLesson(page, ALIASES);
-    await aliases.getByRole('button', { name: 'Show me the lesson anyway' }).click();
+    await aliases.getByRole('button', { name: 'Read the full lesson' }).click();
     await expect(aliases).toHaveAttribute('data-state', 'expanded');
     await expect(aliases.locator('.lesson-body')).toBeVisible();
-    await expect(aliases.locator('.lesson-chip')).toHaveText('Opened by you');
-    await expect(aliases.getByRole('button', { name: 'I know this, skip' })).toBeFocused();
+    await expect(aliases.locator('.lesson-why')).toHaveCount(0);
+    await expect(aliases.getByRole('button', { name: 'Skip, I know this' })).toBeFocused();
 
     // Fold an open one.
     await goToLesson(page, SPEND);
-    await spend.getByRole('button', { name: 'I know this, skip' }).click();
+    await spend.getByRole('button', { name: 'Skip, I know this' }).click();
     await expect(spend).toHaveAttribute('data-state', 'collapsed');
     await expect(spend.locator('.lesson-recap')).toHaveText(lessonOf(SPEND).recap);
-    await expect(spend.locator('.lesson-chip')).toHaveText('Skipped');
-    await expect(spend.getByRole('button', { name: 'Show me the lesson anyway' })).toBeFocused();
+    await expect(spend.locator('.lesson-why')).toHaveText('You chose to skip this lesson, so here is the one-line summary.');
+    await expect(spend.getByRole('button', { name: 'Read the full lesson' })).toBeFocused();
 
     const m = await stored(page);
     expect(m.overrides).toEqual({ [ALIASES]: 'forced', [SPEND]: 'skipped' });
@@ -1272,7 +1285,7 @@ test.describe('Before you begin', () => {
     await startCard(page);
     await page.getByRole('button', { name: 'Continue' }).click();
     await runQuiz(page, bundle.questions, () => true);
-    await expect(heading(page)).toHaveText(LESSONS_A);
+    await onLessons(page, LESSONS_A);
     expect(Object.values(await lessonStates(page))).toEqual(CHUNK_A.map(() => 'collapsed'));
     expect(s.starts).toEqual([]);
     // Nothing starts the session on the way: it is the last step's Start the lab that does.
@@ -1323,7 +1336,7 @@ test.describe('Before you begin', () => {
     await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await expect(page.locator('#toast')).toContainText('Could not start this lab');
-    await expect(heading(page)).toHaveText('Lessons for this lab');
+    await onLessons(page);
     await expect(page.getByRole('button', { name: 'Start the lab', exact: true })).toBeEnabled();
     await expect(page.locator('#workspace')).toBeHidden();
     expect(s.starts).toEqual([]);
@@ -1335,12 +1348,12 @@ test.describe('Before you begin', () => {
     await startLab(page, NOQUIZ);
     await page.getByRole('button', { name: 'Continue' }).click();
     // No question to ask: the lessons are next, folded because the quiz said this area is strong.
-    await expect(heading(page)).toHaveText('Lessons for this lab');
+    await onLessons(page);
     for (const c of bundle.concepts) {
       await goToLesson(page, c.id);
       const card = page.locator(`.lesson[data-concept="${c.id}"]`);
       await expect(card).toHaveAttribute('data-state', 'collapsed');
-      await expect(card.locator('.lesson-chip')).toHaveText('Know it well, from your quiz');
+      await expect(card.locator('.lesson-why')).toHaveText('Your quiz says you know this area well, so here is the one-line summary.');
     }
     expect(s.posted).toEqual([]);
     expect(s.starts).toEqual([]);
@@ -1352,7 +1365,7 @@ test.describe('Before you begin', () => {
     await startCard(page);
     await page.getByRole('button', { name: 'Continue' }).click();
     await runQuiz(page, bundle.questions, (q) => q.concept !== SPEND);
-    await expect(heading(page)).toHaveText(LESSONS_A);
+    await onLessons(page, LESSONS_A);
     const states = await lessonStates(page);
     expect(states[SPEND]).toBe('expanded');
     expect(states[ALIASES]).toBe('collapsed');
@@ -1370,7 +1383,7 @@ test.describe('Before you begin', () => {
     await page.getByRole('button', { name: 'Continue' }).click();
     await noHorizontalScroll(page);
     await runQuiz(page, bundle.questions, () => false);
-    await expect(heading(page)).toHaveText(LESSONS_A);
+    await onLessons(page, LESSONS_A);
     await noHorizontalScroll(page);
     for (const box of await page.locator('#learnScreen .lesson, #learnScreen .quiz-option, #learnScreen .diagram').all()) {
       const r = await box.boundingBox();
@@ -1940,7 +1953,7 @@ test.describe('screenshots', () => {
       await page.getByRole('button', { name: 'Continue' }).click();
       await shot('before-question');
       await runQuiz(page, bundle.questions, (x) => x.concept === ALIASES);
-      await expect(heading(page)).toHaveText(LESSONS_A);
+      await onLessons(page, LESSONS_A);
       await shot('before-lessons');
       await goToLesson(page, SPEND);
       await page.locator(`.lesson[data-concept="${SPEND}"] .diagram`).first().scrollIntoViewIfNeeded();

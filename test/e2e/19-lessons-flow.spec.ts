@@ -14,8 +14,9 @@ import { MODULE_PAGE, pressStart } from './browse';
  * (The order and its rules are unit tested in test/unit/console-learn-flow.test.ts; here they are
  * seen in a browser: the alternation, "Round n of m", the feedback, Back, refresh, deep links.)
  *
- * The lessons take the whole content area of the console (not the 360 to 520px guide pane),
- * with the text on the left and its diagram large on the right from 1280px; a lab with a story
+ * The lessons are one centred reading column of about 800px in the console's content area (not the
+ * 360 to 520px guide pane), the text then its diagram under it, the lesson's title the screen's
+ * heading; a lab with a story
  * but no lessons goes from the story to Start, one with lessons but no story begins at them.
  * In the session neither the Story nor the Lessons is a tab or a pane any more, for an explore
  * lab and for a build lab alike; a learner who rejoins a running lab goes straight in.
@@ -311,7 +312,15 @@ const startCard = (page: Page, slug: string) => pressStart(page, slug);
 const screen = (page: Page) => page.locator('#learnScreen');
 const host = (page: Page) => page.locator('#learnHost');
 const heading = (page: Page) => host(page).locator('[data-learn-heading]');
-const LESSONS = 'Lessons for this lab';
+/**
+ * The lessons step is on screen: its section is named for it ("Lessons", or "Lessons, part 1 of 2" when the
+ * lessons come in parts), and its heading is the title of the lesson on screen (there is no step title).
+ */
+async function onLessons(page: Page, label = 'Lessons') {
+  await expect(host(page).locator('.learn-lessons')).toHaveAttribute('aria-label', label);
+  await expect(heading(page)).toHaveClass(/lesson-title/);
+  await expect(heading(page)).toHaveText(await host(page).locator('.lesson').getAttribute('data-concept').then((id) => full.concepts.find((c) => c.id === id)!.title));
+}
 
 /** Opens the console wide, and presses Start on a lab. */
 async function begin(page: Page, slug: string, size = { width: 1440, height: 900 }, opts: OpenOptions = {}) {
@@ -327,7 +336,7 @@ async function begin(page: Page, slug: string, size = { width: 1440, height: 900
 async function toLessons(page: Page, slug: string, size?: { width: number; height: number }, opts: OpenOptions = {}) {
   const s = await begin(page, slug, size, opts);
   await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(heading(page)).toHaveText(LESSONS);
+  await onLessons(page);
   return s;
 }
 
@@ -479,14 +488,19 @@ test.describe('the flow before the lab', () => {
     await page.getByRole('button', { name: 'Continue' }).click();
 
     // 2. The lessons, in a screen of their own: the story is gone from it, the comic is down.
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await expect(heading(page)).toBeFocused();
     await expect(host(page).locator('.cm')).toHaveCount(0);
     // One lesson at a time, never stacked: the first, open, on its first page.
     await expect(host(page).locator('.lesson')).toHaveCount(1);
     await expect(host(page).locator('.lesson')).toHaveAttribute('data-concept', full.concepts[0]!.id);
     await expect(host(page).locator('.lesson')).toHaveAttribute('data-state', 'expanded');
-    await expect(host(page).locator('.plan-summary')).toHaveText(`${full.concepts.length} lessons to read.`);
+    // No step title, no subtitle and no summary line: the lesson's own title is the heading.
+    await expect(heading(page)).toHaveText(full.concepts[0]!.title);
+    await expect(heading(page)).toHaveJSProperty('tagName', 'H1');
+    await expect(host(page)).not.toContainText('Lessons for this lab');
+    await expect(host(page)).not.toContainText('You decide what to read');
+    await expect(host(page)).not.toContainText('to read.');
     await expect(page.locator('#workspace')).toBeHidden();
     // Start the lab waits on the last page of the last lesson; every lesson comes in turn, open.
     await expect(page.locator('#btnStartLab')).toBeHidden();
@@ -510,10 +524,12 @@ test.describe('the flow before the lab', () => {
     await expect(heading(page)).toHaveText('Round 1 of 3 · question 1 of 5');
     // Round 1 is five questions, one about each concept; the aliases ones are all answered right.
     expect(await runQuiz(page, (q) => q.concept === ALIASES)).toHaveLength(5);
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     await goToLesson(page, ALIASES);
     await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
-    await expect(host(page).locator('.plan-summary')).toContainText('1 folded to a recap');
+    // It says why it is folded: the questions on it were answered right.
+    await expect(page.locator(`.lesson[data-concept="${ALIASES}"] .lesson-why`)).toHaveText('You answered the questions on this correctly, so here is the one-line summary.');
+    await expect(host(page)).not.toContainText('folded to a recap');
     expect(s.starts).toEqual([]);
   });
 
@@ -545,7 +561,7 @@ test.describe('the flow before the lab', () => {
     // Nothing is taken away from the learner: the story stays until they say so.
     await expect(heading(page)).toHaveText(full.story!.title);
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await expect(host(page).locator('.cm')).toHaveCount(0);
   });
 
@@ -556,7 +572,7 @@ test.describe('the flow before the lab', () => {
     await page.waitForTimeout(400);
     await expect(heading(page)).toHaveText(full.story!.title);
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     // The lessons step itself animates nothing.
     const animated = await page.evaluate(() => [...document.querySelectorAll('#learnScreen *')].filter((el) => getComputedStyle(el).animationName !== 'none').length);
     expect(animated).toBe(0);
@@ -568,7 +584,7 @@ test.describe('the flow before the lab', () => {
     await expect(host(page).locator('.learn-prose p').first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Continue' })).toBeVisible();
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
   });
 
   test('a lab with a story and no lessons goes from the story straight to Start', async ({ page }) => {
@@ -586,7 +602,7 @@ test.describe('the flow before the lab', () => {
 
   test('a lab with lessons and no story begins at the lessons', async ({ page }) => {
     const s = await begin(page, LESSONS_ONLY);
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await expect(heading(page)).toBeFocused();
     await expect(host(page).locator('.lesson')).toHaveCount(1);
     await expect(host(page).locator('.steps-dots i')).toHaveCount(2);
@@ -606,7 +622,7 @@ test.describe('the flow before the lab', () => {
     await expect(page.getByRole('button', { name: '← Back to the story' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^← (Back to the questions|Previous question)$/ })).toHaveCount(0);
     await runQuiz(page, () => false);
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
   });
 
   test('a lab with nothing to read starts as it always did', async ({ page }) => {
@@ -665,7 +681,7 @@ test.describe('going back', () => {
 
     // Finish the round: five answers, five posts, one each.
     await runRound(page, () => false);
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     await expect.poll(() => s.posted.length).toBe(5);
 
     // Back from the lessons: the round's last question, answered. Its Next goes to the lessons again.
@@ -674,7 +690,7 @@ test.describe('going back', () => {
     await expect(page.locator('.quiz-feedback')).not.toBeEmpty();
     await expect(page.getByRole('button', { name: 'Check', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'See the lessons' }).click();
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     expect(s.posted).toHaveLength(5);
     expect(s.posted.flatMap((b) => b.answers)).toHaveLength(5);
     expect(new Set(s.posted.flatMap((b) => b.answers.map((a: any) => a.question_id))).size).toBe(5);
@@ -700,43 +716,59 @@ test.describe('going back', () => {
 // =========================================================================
 
 test.describe('the lessons screen', () => {
-  for (const width of [1440, 2000]) {
-    test(`takes the whole content width at ${width}px, not the 520px guide pane or an 880px card`, async ({ page }) => {
+  for (const width of [1440, 1920, 2000]) {
+    test(`at ${width}px it is one centred reading column: the head, the card and the bar, about 800px wide`, async ({ page }) => {
       await toLessons(page, BUILD, { width, height: 1000 });
-      const vw = width;
-      const available = await contentWidth(page);
-      expect(available).toBeGreaterThan(vw * 0.9);
-      const h = await box(host(page));
-      // The screen's content spans the window minus its gutters.
-      expect(h.width).toBeGreaterThanOrEqual(available * 0.95);
-      expect(h.width).toBeGreaterThanOrEqual((vw - 2 * 48) * 0.9);
-      expect(h.width).toBeGreaterThan(880);
-      // Every lesson card is as wide as the screen.
-      for (const card of await host(page).locator('.lesson').all()) {
-        const c = await box(card);
-        expect(c.width).toBeGreaterThanOrEqual(available * 0.95);
+      const screenBox = await box(screen(page));
+      const centre = screenBox.x + screenBox.width / 2;
+      const card = await box(host(page).locator('.lesson'));
+      const bar = await box(host(page).locator('.learn-actions-sticky'));
+      const head = await box(host(page).locator('.lessons-head'));
+      for (const b of [card, bar]) {
+        expect(b.width).toBeGreaterThanOrEqual(760);
+        expect(b.width).toBeLessThanOrEqual(820);
+        // Centred in the content area (a scrollbar may take a few pixels).
+        expect(Math.abs(b.x + b.width / 2 - centre)).toBeLessThanOrEqual(12);
       }
-      // The bar with Start the lab is as wide too, and the head is on the page, not in a narrow card.
-      expect((await box(host(page).locator('.learn-actions-sticky'))).width).toBeGreaterThanOrEqual(available * 0.95);
-      expect(await host(page).evaluate((el) => getComputedStyle(el).boxShadow)).toBe('none');
+      // The card, the bar and the head line up on the same column.
+      expect(Math.abs(bar.x - card.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(head.x - card.x)).toBeLessThanOrEqual(1);
+      // Nothing of the card's head is flung beyond the column: the title, its line of facts and Skip are in it.
+      for (const sel of ['.lesson-title', '.lesson-facts', '.lesson-toggle']) {
+        const r = await box(host(page).locator(`.lesson ${sel}`));
+        expect(r.x).toBeGreaterThanOrEqual(card.x);
+        expect(r.x + r.width).toBeLessThanOrEqual(card.x + card.width + 0.5);
+      }
+      // Previous (when there is one) on the left of the bar, Next on its right, the tally between them.
+      await page.locator('#btnLessonNext').click();
+      await expect(page.locator('#btnLessonPrev')).toBeVisible();
+      const [prev, tally, next] = [await box(page.locator('#btnLessonPrev')), await box(host(page).locator('.lessons-tally')), await box(page.locator('#btnLessonNext'))];
+      expect(prev.x).toBeLessThan(tally.x);
+      expect(tally.x + tally.width).toBeLessThan(next.x);
+      expect(bar.x + bar.width - (next.x + next.width)).toBeLessThanOrEqual(24);
+      // The ways out are small links after the bar in the page (under it once the page is scrolled to its end), in the column.
+      await screen(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
+      const [more, barNow] = [await box(host(page).locator('.lessons-more')), await box(host(page).locator('.learn-actions-sticky'))];
+      expect(more.y).toBeGreaterThanOrEqual(barNow.y + barNow.height - 1);
+      expect(more.x).toBeGreaterThanOrEqual(card.x - 1);
+      expect(more.x + more.width).toBeLessThanOrEqual(card.x + card.width + 1);
       await noHorizontalScroll(page);
     });
   }
 
   for (const width of [1280, 1440, 2000]) {
-    test(`at ${width}px the text is on the left and its diagram, large, on the right`, async ({ page }) => {
+    test(`at ${width}px it is one column: the text, then its diagram under it, no wider than the reading line`, async ({ page }) => {
       await toLessons(page, BUILD, { width, height: 1000 });
       const lesson = host(page).locator('.lesson[data-state="expanded"]').first();
       const body = lesson.locator('.lesson-body');
       const p = body.locator('p').first();
       const d = body.locator('.md-diagram').first();
       await expect(d.locator('.diagram svg')).toBeVisible();
-      const [pb, db, bb] = [await box(p), await box(d), await box(body)];
-      // Side by side: the diagram starts after the text ends, and both are inside the lesson.
-      expect(db.x).toBeGreaterThanOrEqual(pb.x + pb.width - 1);
-      expect(db.x + db.width).toBeLessThanOrEqual(bb.x + bb.width + 1);
-      expect(db.width).toBeGreaterThanOrEqual(400);
-      // The reading line is at most 72 characters wide.
+      const [pb, db] = [await box(p), await box(d)];
+      // Stacked: the diagram starts below the paragraph and lines up with it on the left.
+      expect(db.y).toBeGreaterThanOrEqual(pb.y + pb.height - 1);
+      expect(Math.abs(db.x - pb.x)).toBeLessThanOrEqual(1);
+      // The reading line, and the diagram with it, is at most 72 characters wide.
       const ch72 = await body.evaluate((el) => {
         const probe = document.createElement('div');
         probe.style.cssText = 'position:absolute;visibility:hidden;width:72ch;height:1px';
@@ -746,6 +778,8 @@ test.describe('the lessons screen', () => {
         return w;
       });
       for (const para of await body.locator(':scope > p').all()) expect((await box(para)).width).toBeLessThanOrEqual(ch72 + 1);
+      expect(db.width).toBeLessThanOrEqual(ch72 + 1);
+      expect(db.width).toBeGreaterThan(300);
       await noHorizontalScroll(page);
     });
   }
@@ -875,7 +909,7 @@ test.describe('the lessons screen', () => {
     await page.getByRole('button', { name: '← Back to the story' }).click();
     await expect(heading(page)).toHaveText(full.story!.title);
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     expect([await card.getAttribute('data-concept'), await card.getAttribute('data-page')]).toEqual(where);
   });
 
@@ -889,7 +923,8 @@ test.describe('the lessons screen', () => {
     await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'collapsed');
     const read = Number((await tally.innerText()).split(' ')[0]);
     expect(read).toBeGreaterThanOrEqual(1);
-    await page.locator(`.lesson[data-concept="${ALIASES}"]`).getByRole('button', { name: 'Show me the lesson anyway' }).click();
+    await expect(page.locator(`.lesson[data-concept="${ALIASES}"] .lesson-why`)).toHaveText('You chose to skip this lesson, so here is the one-line summary.');
+    await page.locator(`.lesson[data-concept="${ALIASES}"]`).getByRole('button', { name: 'Read the full lesson' }).click();
     await expect(page.locator(`.lesson[data-concept="${ALIASES}"]`)).toHaveAttribute('data-state', 'expanded');
     // Open, it is unread until its last page has been on screen.
     await expect(tally).toHaveText(`${read - 1} of ${total} lessons read`);
@@ -898,19 +933,22 @@ test.describe('the lessons screen', () => {
     await expect(tally).toHaveText(`${read} of ${total} lessons read`);
   });
 
-  test('"I know this, skip" and "Show me the lesson anyway" work on this screen and are remembered', async ({ page }) => {
+  test('"Skip, I know this" and "Read the full lesson" work on this screen and are remembered', async ({ page }) => {
     await toLessons(page, BUILD);
     await goToLesson(page, ALIASES);
     const aliases = page.locator(`.lesson[data-concept="${ALIASES}"]`);
-    await aliases.getByRole('button', { name: 'I know this, skip' }).click();
+    await aliases.getByRole('button', { name: 'Skip, I know this' }).click();
     await expect(aliases).toHaveAttribute('data-state', 'collapsed');
+    // Folded, it says why, gives the one-line summary and the way back into the full lesson.
+    await expect(aliases.locator('.lesson-why')).toHaveText('You chose to skip this lesson, so here is the one-line summary.');
     await expect(aliases.locator('.lesson-recap')).toHaveText(full.concepts.find((c) => c.id === ALIASES)!.recap);
-    await expect(aliases.getByRole('button', { name: 'Show me the lesson anyway' })).toBeFocused();
-    await expect(host(page).locator('.plan-summary')).toContainText('1 folded to a recap');
+    await expect(aliases.getByRole('button', { name: 'Read the full lesson' })).toBeFocused();
+    await expect(aliases.getByRole('button', { name: 'Skip, I know this' })).toHaveCount(0);
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('opalixLearn')!).overrides)).toEqual({ [ALIASES]: 'skipped' });
-    await aliases.getByRole('button', { name: 'Show me the lesson anyway' }).click();
+    await aliases.getByRole('button', { name: 'Read the full lesson' }).click();
     await expect(aliases).toHaveAttribute('data-state', 'expanded');
     await expect(aliases.locator('.diagram').first()).toBeVisible();
+    await expect(aliases.getByRole('button', { name: 'Skip, I know this' })).toBeFocused();
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('opalixLearn')!).overrides)).toEqual({ [ALIASES]: 'forced' });
   });
 });
@@ -924,7 +962,7 @@ test.describe('the quick questions still record and report', () => {
     const s = await begin(page, EXPLORE);
     await page.getByRole('button', { name: 'Continue' }).click();
     await runQuiz(page, (q) => q.concept === ALIASES);
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     const m = await page.evaluate(() => JSON.parse(localStorage.getItem('opalixLearn')!));
     expect(m.concepts[ALIASES]).toEqual({ known: true });
     expect(Object.values(m.concepts).filter((c: any) => c.known === false).length).toBe(full.concepts.length - 1);
@@ -1048,7 +1086,7 @@ test.describe('no horizontal scroll', () => {
       await begin(page, BUILD, { width, height: 900 });
       await noHorizontalScroll(page);
       await page.getByRole('button', { name: 'Continue' }).click();
-      await expect(heading(page)).toHaveText(LESSONS);
+      await onLessons(page);
       await finishLessons(page, () => noHorizontalScroll(page));
       await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
       await enterSession(page);
@@ -1164,6 +1202,32 @@ test.describe('screenshots', () => {
     });
   }
 
+  // The reading column, wide and on a phone, light and dark: two pages of an open lesson, and a folded one
+  // (the routing-aliases lesson, known from the questions).
+  for (const theme of ['light', 'dark'] as const) {
+    for (const [w, h] of [[1440, 900], [1920, 1080], [390, 844]] as const) {
+      test(`the reading column, an open lesson and a folded one, ${theme} ${w}x${h}`, async ({ page }) => {
+        mkdirSync(SHOTS, { recursive: true });
+        await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+        await toLessons(page, BUILD, { width: Math.max(w, 1280), height: h }, { theme, mastery: { ...SKIPPED, concepts: { [ALIASES]: { known: true } } } });
+        if (w < 1280) await page.setViewportSize({ width: w, height: h });
+        const shot = async (name: string) => {
+          await noHorizontalScroll(page);
+          // A phone's whole page, from its top (a page turn may have scrolled it).
+          if (w < 760) await page.evaluate(() => window.scrollTo(0, 0));
+          await page.waitForTimeout(300);
+          await page.screenshot({ path: join(SHOTS, `column-${name}-${theme}-${w}x${h}.png`), fullPage: w < 760 });
+        };
+        await shot('open-page-1');
+        await page.locator('#btnLessonNext').click();
+        await shot('open-page-2');
+        await goToLesson(page, ALIASES);
+        await expect(host(page).locator('.lesson')).toHaveAttribute('data-state', 'collapsed');
+        await shot('folded');
+      });
+    }
+  }
+
   // The first page with a diagram, above the action bar: the diagram plays by itself (no buttons), or rests with the steps listed.
   for (const v of [
     { width: 1440, height: 900, motion: 'no-preference' as const },
@@ -1208,7 +1272,7 @@ test.describe('screenshots', () => {
       await runRound(page, (q) => q.concept === ALIASES);
 
       // The lessons, part 1, full screen: the top, then a lesson with its diagram, then the foot.
-      await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+      await onLessons(page, 'Lessons, part 1 of 2');
       await shot('lessons-a-top');
       // One lesson at a time: on to the first one that is open (its first page has the diagram).
       for (let guard = 0; guard < 40 && (await host(page).locator('.lesson').getAttribute('data-state')) !== 'expanded'; guard++) await page.locator('#btnLessonNext').click();
@@ -1312,7 +1376,7 @@ test.describe('rounds of questions and lessons', () => {
       askedIn.push(asked);
       if (r === 3) break;
       const part = r;
-      await expect(heading(page)).toHaveText(`Lessons, part ${part} of 2`);
+      await onLessons(page, `Lessons, part ${part} of 2`);
       await expect(heading(page)).toBeFocused();
       await expect(live(page)).toHaveText(`Step ${step + 1} of 6: Lessons, part ${part} of 2`);
       expect(here_(page)).toBe(`/labs/${EXPLORE}${address[2 * r - 1]}`);
@@ -1363,7 +1427,7 @@ test.describe('rounds of questions and lessons', () => {
     // Round 2 all right changes nothing in the record.
     await runRound(page, () => true);
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('opalixLearn')!).concepts)).toEqual(before);
-    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    await onLessons(page, 'Lessons, part 2 of 2');
     const states: string[] = [];
     expect(await finishLessons(page, async () => void states.push((await host(page).locator('.lesson').getAttribute('data-state'))!))).toEqual(CHUNK_B);
     expect(states).toEqual(CHUNK_B.map(() => 'expanded'));
@@ -1373,14 +1437,14 @@ test.describe('rounds of questions and lessons', () => {
     await begin(page, EXPLORE);
     await page.getByRole('button', { name: 'Continue' }).click();
     await runRound(page, () => false);
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     // The list's counter starts after the lessons before it: none, then the three of part 1 (the circles read 4 and 5).
     const startsAfter = () => host(page).locator('.lesson-list').evaluate((el) => getComputedStyle(el).counterReset);
     expect(await startsAfter()).toBe('lesson 0');
     await finishLessons(page);
     await page.getByRole('button', { name: 'Continue to the questions' }).click();
     await runRound(page, () => false);
-    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    await onLessons(page, 'Lessons, part 2 of 2');
     expect(await startsAfter()).toBe('lesson 3');
   });
 
@@ -1392,7 +1456,7 @@ test.describe('rounds of questions and lessons', () => {
     await expect(heading(page)).toHaveText('Question 1 of 4');
     await expect(live(page)).toHaveText('Step 2 of 3: Questions');
     expect(await runRound(page, () => true)).toHaveLength(4);
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await expect(live(page)).toHaveText('Step 3 of 3: Lessons');
     await expect(host(page).locator('.lesson')).toHaveCount(1);
     expect(await finishLessons(page)).toEqual(full.concepts.map((c) => c.id));
@@ -1423,7 +1487,7 @@ test.describe('rounds of questions and lessons', () => {
   test('a lab with no questions goes story, lessons, Start, with no round anywhere', async ({ page }) => {
     const s = await begin(page, BUILD);
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await expect(host(page).locator('.quiz, .quiz-option')).toHaveCount(0);
     await expect(live(page)).toHaveText('Step 2 of 2: Lessons');
     expect(s.posted).toEqual([]);
@@ -1445,9 +1509,11 @@ test.describe('rounds of questions and lessons', () => {
     expect(animated).toBe(0);
     await nextButton(page).click();
     await runRound(page, () => true);
-    // The lessons that follow are as wide as the screen.
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
-    expect((await box(host(page))).width).toBeGreaterThan(1100);
+    // The lessons that follow are a centred reading column, a little wider than the round.
+    await onLessons(page, 'Lessons, part 1 of 2');
+    const lw = (await box(host(page))).width;
+    expect(lw).toBeGreaterThan(h.width);
+    expect(lw).toBeLessThanOrEqual(820);
   });
 
   test('can be done with the keyboard alone: options, Check (Enter), Next, and the lessons buttons', async ({ page }) => {
@@ -1487,7 +1553,7 @@ test.describe('rounds of questions and lessons', () => {
       await nextButton(page).focus();
       await page.keyboard.press('Enter');
     }
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     // The lesson pages turn with →, up to the last, where the step's own button comes on.
     for (let guard = 0; guard < 60 && !(await page.locator('#btnNextStep').isVisible()); guard++) await page.keyboard.press('ArrowRight');
     await page.locator('#btnNextStep').focus();
@@ -1506,7 +1572,7 @@ test.describe('going back and forward through the flow', () => {
     expect(s.posted).toHaveLength(6);
 
     await page.goBack();
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons`);
     await page.goBack();
     // Round 1, every question answered: it opens on the last, answered; nothing to Check.
@@ -1518,7 +1584,7 @@ test.describe('going back and forward through the flow', () => {
     await page.goForward();
     await expect(heading(page)).toHaveText(roundHeading(1, 3, 5));
     await page.goForward();
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     await page.goForward();
     // Round 2 on its first question not yet answered: the second.
     await expect(heading(page)).toHaveText(roundHeading(2, 3, 2));
@@ -1531,7 +1597,7 @@ test.describe('going back and forward through the flow', () => {
     await toRound(page, 2, () => true);
     await expect(page.getByRole('button', { name: '← Back to the lessons' })).toBeVisible();
     await page.getByRole('button', { name: '← Back to the lessons' }).click();
-    await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+    await onLessons(page, 'Lessons, part 1 of 2');
     await expect(page.getByRole('button', { name: '← Back to the questions' })).toBeVisible();
     await page.getByRole('button', { name: '← Back to the questions' }).click();
     await expect(heading(page)).toHaveText(roundHeading(1, 3, 5));
@@ -1555,7 +1621,7 @@ test.describe('Skip all, just start the lab, at every step', () => {
     const s = await begin(page, EXPLORE);
     await toRound(page, 3, () => true);
     await page.getByRole('button', { name: '← Back to the lessons' }).click();
-    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    await onLessons(page, 'Lessons, part 2 of 2');
     await page.getByRole('button', { name: 'Skip all, just start the lab' }).click();
     await enterSession(page);
     expect(s.starts).toEqual([EXPLORE]);
@@ -1593,12 +1659,12 @@ test.describe('a refresh and a link come back to the step', () => {
     // Round 1's results are in the record too: the plan was not made again, so the same rounds follow.
     await nextButton(page).click();
     await runRound(page, () => true);
-    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    await onLessons(page, 'Lessons, part 2 of 2');
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons?step=5`);
     expect(s.posted).toHaveLength(10);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    await onLessons(page, 'Lessons, part 2 of 2');
     expect(await finishLessons(page)).toEqual(full.concepts.slice(3).map((c) => c.id));
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons?step=5`);
     await expect(live(page)).toHaveText('Step 5 of 6: Lessons, part 2 of 2');
@@ -1621,7 +1687,7 @@ test.describe('a refresh and a link come back to the step', () => {
 
   test('a deep link to a later step opens it, one with a step number out of range opens the first step', async ({ page }) => {
     await deepLink(page, `/labs/${EXPLORE}/lessons?step=5`);
-    await expect(heading(page)).toHaveText('Lessons, part 2 of 2');
+    await onLessons(page, 'Lessons, part 2 of 2');
     expect(here_(page)).toBe(`/labs/${EXPLORE}/lessons?step=5`);
     await expect(live(page)).toHaveText('Step 5 of 6: Lessons, part 2 of 2');
   });
@@ -1639,7 +1705,8 @@ test.describe('a refresh and a link come back to the step', () => {
       const expected: Record<string, [string, string]> = {
         story: [full.story!.title, 'story'],
         'round 1': [roundHeading(1, 3, 1), 'questions'],
-        'lessons 1': ['Lessons, part 1 of 2', 'lessons'],
+        // The lessons step's heading is the title of its first lesson.
+        'lessons 1': [full.concepts[0]!.title, 'lessons'],
       };
       await expect(heading(page)).toHaveText(expected[startsAt]![0]);
       await expect.poll(() => here_(page)).toBe(`/labs/${EXPLORE}/${expected[startsAt]![1]}`);
@@ -1656,7 +1723,7 @@ test.describe('a refresh and a link come back to the step', () => {
   for (const [word, text] of [
     ['story', full.story!.title],
     ['questions', roundHeading(1, 3, 1)],
-    ['lessons', 'Lessons, part 1 of 2'],
+    ['lessons', full.concepts[0]!.title],
   ] as const) {
     test(`the old address /labs/<slug>/${word} is still valid`, async ({ page }) => {
       await deepLink(page, `/labs/${EXPLORE}/${word}`);
@@ -1676,13 +1743,18 @@ test.describe('rounds and lessons: no horizontal scroll', () => {
       await noHorizontalScroll(page);
       await nextButton(page).click();
       await runRound(page, () => false);
-      await expect(heading(page)).toHaveText('Lessons, part 1 of 2');
+      await onLessons(page, 'Lessons, part 1 of 2');
       for (const card of await host(page).locator('.lesson').all()) {
         await card.scrollIntoViewIfNeeded();
         await noHorizontalScroll(page);
       }
       const available = await contentWidth(page);
-      for (const card of await host(page).locator('.lesson').all()) expect((await box(card)).width).toBeGreaterThanOrEqual(available * 0.95);
+      // The lesson is the reading column: about 800px, or the whole width when there is less.
+      for (const card of await host(page).locator('.lesson').all()) {
+        const w = (await box(card)).width;
+        expect(w).toBeGreaterThanOrEqual(Math.min(760, available * 0.95));
+        expect(w).toBeLessThanOrEqual(820);
+      }
       await finishLessons(page);
       await page.getByRole('button', { name: 'Continue to the questions' }).click();
       await noHorizontalScroll(page);
@@ -1722,7 +1794,7 @@ test.describe('warming the lab up (POST /api/prepare)', () => {
     await expect.poll(() => s.prepares).toEqual([FEW_QUESTIONS]);
 
     await runRound(page, () => true);
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await page.getByRole('button', { name: '← Back to the questions' }).click();
     await settle(page);
     expect(s.prepares, 'once per visit').toEqual([FEW_QUESTIONS]);
@@ -1733,7 +1805,7 @@ test.describe('warming the lab up (POST /api/prepare)', () => {
     const s = await begin(page, TEXT_STORY);
     await expect.poll(() => s.prepares).toEqual([TEXT_STORY]);
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await settle(page);
     expect(s.prepares).toEqual([TEXT_STORY]);
 
@@ -1783,7 +1855,7 @@ test.describe('warming the lab up (POST /api/prepare)', () => {
     const s = await begin(page, FEW_QUESTIONS);
     await page.getByRole('button', { name: 'Continue' }).click();
     await runRound(page, () => true);
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await expect.poll(() => s.prepares).toEqual([FEW_QUESTIONS]);
     await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
@@ -1805,7 +1877,7 @@ test.describe('warming the lab up (POST /api/prepare)', () => {
       await expect.poll(() => s.prepares).toEqual([TEXT_STORY]);
       await expect(heading(page)).toBeVisible();
       await page.getByRole('button', { name: 'Continue' }).click();
-      await expect(heading(page)).toHaveText(LESSONS);
+      await onLessons(page);
       await finishLessons(page);
       await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
       await enterSession(page);
@@ -1821,7 +1893,7 @@ test.describe('warming the lab up (POST /api/prepare)', () => {
     await open(page);
     await startCard(page, TEXT_STORY);
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(heading(page)).toHaveText(LESSONS);
+    await onLessons(page);
     await finishLessons(page);
     await page.getByRole('button', { name: 'Start the lab', exact: true }).click();
     await enterSession(page);
