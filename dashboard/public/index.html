@@ -289,47 +289,13 @@
               <button id="btnChecksInline" class="btn btn-accent btn-sm" title="Grade your work so far">Run checks</button>
             </div>
 
-            <!-- Shown once, when every check has passed; stays for the rest of the session. -->
-            <section class="result-card" id="resultCard" role="status" aria-labelledby="resultTitle" hidden>
-              <div class="confetti" id="confetti" aria-hidden="true"></div>
-              <div class="result-head">
-                <div class="result-title">
-                  <h2 id="resultTitle">Lab complete</h2>
-                  <p class="result-lab" id="resultLab"></p>
-                </div>
-                <span class="banner-actions">
-                  <button id="btnCopySummary" class="btn btn-sm">Copy summary</button>
-                  <button id="btnResultBack" class="btn btn-sm btn-strong">Back to labs</button>
-                </span>
-              </div>
-              <dl class="result-stats">
-                <div><dt>Checks</dt><dd id="resultChecks"></dd></div>
-                <div><dt>Time</dt><dd id="resultTime"></dd></div>
-                <div><dt>Hints used</dt><dd id="resultHints"></dd></div>
-              </dl>
-              <!-- Filled from the profile once the lab is done: what it earned, and the lab to do next. -->
-              <p class="result-gain" id="resultGain" hidden></p>
-              <!-- Filled when the lab earns an award (progress-hub.js). -->
-              <div class="result-awards" id="resultAwards" hidden></div>
-              <p class="result-next" id="resultNext" hidden></p>
-              <form class="result-feedback" id="feedbackForm">
-                <fieldset>
-                  <legend>How was this lab?</legend>
-                  <span class="rating">
-                    <label><input type="radio" name="rating" value="1"> 1</label>
-                    <label><input type="radio" name="rating" value="2"> 2</label>
-                    <label><input type="radio" name="rating" value="3"> 3</label>
-                    <label><input type="radio" name="rating" value="4"> 4</label>
-                    <label><input type="radio" name="rating" value="5"> 5</label>
-                  </span>
-                </fieldset>
-                <label class="sr-only" for="feedbackText">Anything to add? (optional)</label>
-                <textarea id="feedbackText" maxlength="2000" rows="2" placeholder="Anything to add? (optional)"></textarea>
-                <button type="submit" id="btnFeedback" class="btn btn-sm btn-accent" disabled>Send</button>
-                <p class="notice notice-bad small" id="feedbackError" role="alert" hidden></p>
-              </form>
-              <p class="small result-thanks" id="feedbackThanks" hidden>Thanks — noted.</p>
-            </section>
+            <!-- Once the lab is complete (and its result dialog has been seen): a way back to the result. -->
+            <p class="result-line" id="resultLine" hidden>
+              <svg class="result-line-mark" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Lab complete</span>
+              <span aria-hidden="true">·</span>
+              <button type="button" id="btnResultShow" class="btn btn-tiny btn-link">Show result</button>
+            </p>
 
             <div id="checksPanel" class="checks-list" aria-live="polite"><p class="muted small">Not run yet. Run checks to grade your work so far.</p></div>
           </section>
@@ -581,6 +547,50 @@
       <button type="button" id="btnEndCancel" class="btn btn-ghost" value="cancel">Cancel</button>
     </div>
   </form>
+</dialog>
+
+<!-- The lab's result: shown over the whole lab once, when every check first passes; "Show result" in Checks opens it again. -->
+<dialog class="dialog result-dialog" id="resultCard" aria-labelledby="resultTitle" aria-describedby="resultLab">
+  <div class="confetti" id="confetti" aria-hidden="true"></div>
+  <div class="result-body">
+    <div class="result-head">
+      <span class="result-badge" aria-hidden="true"><svg width="28" height="28" viewBox="0 0 24 24" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <div class="result-title">
+        <h2 id="resultTitle" tabindex="-1">Lab complete</h2>
+        <p class="result-lab" id="resultLab"></p>
+      </div>
+    </div>
+    <dl class="result-stats">
+      <div><dt>Checks</dt><dd id="resultChecks"></dd></div>
+      <div><dt>Time</dt><dd id="resultTime"></dd></div>
+      <div><dt>Hints used</dt><dd id="resultHints"></dd></div>
+    </dl>
+    <!-- Filled from the profile once the lab is done: what it earned, and the lab to do next. -->
+    <p class="result-gain" id="resultGain" hidden></p>
+    <!-- Filled when the lab earns an award (progress-hub.js). -->
+    <div class="result-awards" id="resultAwards" hidden></div>
+    <form class="result-feedback" id="feedbackForm">
+      <fieldset>
+        <legend>How was this lab?</legend>
+        <span class="rating stars">
+          <label><input type="radio" name="rating" value="1"><svg class="star" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2.8l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.36l-5.7 3 1.09-6.35-4.62-4.5 6.38-.93z"/></svg><span class="sr-only">1 star</span></label>
+          <label><input type="radio" name="rating" value="2"><svg class="star" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2.8l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.36l-5.7 3 1.09-6.35-4.62-4.5 6.38-.93z"/></svg><span class="sr-only">2 stars</span></label>
+          <label><input type="radio" name="rating" value="3"><svg class="star" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2.8l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.36l-5.7 3 1.09-6.35-4.62-4.5 6.38-.93z"/></svg><span class="sr-only">3 stars</span></label>
+          <label><input type="radio" name="rating" value="4"><svg class="star" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2.8l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.36l-5.7 3 1.09-6.35-4.62-4.5 6.38-.93z"/></svg><span class="sr-only">4 stars</span></label>
+          <label><input type="radio" name="rating" value="5"><svg class="star" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2.8l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.36l-5.7 3 1.09-6.35-4.62-4.5 6.38-.93z"/></svg><span class="sr-only">5 stars</span></label>
+        </span>
+      </fieldset>
+      <label class="sr-only" for="feedbackText">Anything to add? (optional)</label>
+      <textarea id="feedbackText" maxlength="2000" rows="2" placeholder="Anything to add? (optional)"></textarea>
+      <button type="submit" id="btnFeedback" class="btn btn-sm btn-accent" disabled>Send</button>
+      <p class="notice notice-bad small" id="feedbackError" role="alert" hidden></p>
+    </form>
+    <p class="small result-thanks" id="feedbackThanks" hidden>Thanks — noted.</p>
+    <div class="result-actions">
+      <button type="button" id="btnResultClose" class="btn btn-quiet">Stay in the lab</button>
+      <p class="result-next" id="resultNext" hidden></p>
+    </div>
+  </div>
 </dialog>
 
 <!-- Solution: a read-only line diff of the learner's files against the lab's. -->

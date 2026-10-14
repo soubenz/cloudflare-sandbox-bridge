@@ -126,3 +126,60 @@ describe('the header links and Home', () => {
     expect(html).not.toContain('Start with an explore lab');
   });
 });
+
+/** The lab's result is a modal over the whole lab, with a star rating, and nothing the owner took out. */
+describe('the lab\'s result', () => {
+  const css = readFileSync('dashboard/public/session.css', 'utf8');
+  const dialog = html.slice(html.indexOf('<dialog class="dialog result-dialog" id="resultCard"'), html.indexOf('</dialog>', html.indexOf('id="resultCard"')));
+  const checks = html.slice(html.indexOf('id="checksBlock"'), html.indexOf('id="checksPanel"'));
+
+  it('is a <dialog> named by its title, opened with showModal, outside the Checks tab', () => {
+    expect(dialog.length).toBeGreaterThan(0);
+    expect(dialog).toContain('aria-labelledby="resultTitle"');
+    expect(dialog).not.toContain('role="status"');
+    expect(checks).not.toContain('id="resultCard"');
+    expect(app).toContain('dialog.showModal()');
+    expect(app).not.toMatch(/\$\('resultCard'\)\.hidden\s*=/);
+  });
+
+  it('holds the stats, what was earned, Next, the rating and Stay in the lab; the Checks tab keeps a way back to it', () => {
+    for (const id of ['resultTitle', 'resultLab', 'resultChecks', 'resultTime', 'resultHints', 'resultGain', 'resultAwards', 'resultNext', 'feedbackForm', 'btnFeedback', 'btnResultClose', 'confetti']) {
+      expect(dialog.includes(`id="${id}"`), `#${id} is not in the result dialog`).toBe(true);
+    }
+    expect(dialog).toContain('>Stay in the lab<');
+    expect(checks).toContain('id="resultLine"');
+    expect(checks).toContain('>Show result<');
+  });
+
+  it('has no Copy summary or Back to labs of its own, anywhere in the console', () => {
+    const files = ['dashboard/public/index.html', ...readdirSync('dashboard/src').map((f) => `dashboard/src/${f}`)];
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8');
+      for (const word of ['btnCopySummary', 'btnResultBack', 'copySummary', 'summaryPlainText', 'Copy summary']) {
+        expect(text.includes(word), `${file} still mentions ${word}`).toBe(false);
+      }
+    }
+  });
+
+  it('rates with five star radios, each named "N star(s)", that stay focusable under their stars', () => {
+    const radios = [...dialog.matchAll(/<label><input type="radio" name="rating" value="(\d)">.*?<span class="sr-only">([^<]+)<\/span><\/label>/g)];
+    expect(radios.map((m) => [m[1], m[2]])).toEqual([
+      ['1', '1 star'],
+      ['2', '2 stars'],
+      ['3', '3 stars'],
+      ['4', '4 stars'],
+      ['5', '5 stars'],
+    ]);
+    // Invisible (opacity) rather than display:none or visibility:hidden, so they keep the focus and the arrow keys.
+    expect(css).toMatch(/\.stars input \{[^}]*opacity: 0/);
+    expect(css).not.toMatch(/\.stars input \{[^}]*(display: none|visibility: hidden)/);
+    expect(css).toMatch(/\.stars input:focus-visible \+ \.star \{[^}]*outline: 2px solid var\(--accent\)/);
+  });
+
+  it('has a dimmed, blurred backdrop, a full-width sheet on a phone, and no motion for those who ask for none', () => {
+    expect(css).toMatch(/\.result-dialog::backdrop \{[^}]*background: var\(--scrim\)[^}]*backdrop-filter: blur/);
+    expect(css).toMatch(/@media \(max-width: 760px\) \{\s*\.result-dialog \{[^}]*width: 100vw/);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: no-preference\) \{\s*\.result-dialog\[open\] \{ animation/);
+    expect(app).toMatch(/if \(!matchMedia\('\(prefers-reduced-motion: reduce\)'\)\.matches\) confettiBurst\(\)/);
+  });
+});

@@ -458,7 +458,10 @@ test.describe('a lab session', () => {
     s.pass.value = true;
     await page.locator('#btnChecksInline').click();
     await expect(page.locator('#resultCard')).toBeVisible();
-    await saysNothingOfThePlatform(page, 'the result card');
+    await saysNothingOfThePlatform(page, 'the result dialog');
+    // The result is a modal over the lab: the learner stays in it to go on.
+    await page.getByRole('button', { name: 'Stay in the lab' }).click();
+    await expect(page.locator('#resultCard')).toBeHidden();
 
     await page.getByRole('tab', { name: 'Brief' }).click();
     await page.getByRole('tab', { name: 'Editor' }).click();

@@ -3,7 +3,8 @@ import { test, expect, API, SERVICE_KEY, patchStatus, sessionIdOf } from './fixt
 /**
  * The learner's view of grading: the Checks block (weights, full messages,
  * points, earlier runs), the Hints block with its locked slots, and the
- * result card that appears once every check has passed.
+ * result that appears once every check has passed: a modal dialog over the
+ * whole lab, opened again from "Show result" in the Checks tab.
  *
  * The session is shared with the other specs, so nothing here assumes a
  * fresh workspace. The graded file is written through the files API — the
@@ -70,13 +71,22 @@ test.describe('checks, hints and the result card', () => {
     await session.locator('#btnChecksInline').click();
     await expect(session.locator('.check-pass').first()).toBeVisible({ timeout: 60_000 });
 
-    const card = session.locator('#resultCard');
-    await expect(card).toBeVisible({ timeout: 60_000 });
-    await expect(card).toHaveAttribute('role', 'status');
-    await expect(card.getByRole('heading')).toBeVisible();
+    // The shared session may have finished this lab in an earlier run, in which case the result does not pop up
+    // again and the Checks tab offers it instead.
+    const card = session.getByRole('dialog', { name: 'Lab complete' });
+    await expect(session.locator('#resultLine')).toBeAttached();
+    await expect(session.locator('#resultLine')).not.toHaveAttribute('hidden', '', { timeout: 60_000 });
+    if (!(await card.isVisible())) await session.getByRole('button', { name: 'Show result' }).click();
+    await expect(card).toBeVisible();
+    expect(await card.evaluate((d) => d.matches(':modal'))).toBe(true);
+    await expect(card.getByRole('heading', { name: 'Lab complete' })).toBeVisible();
     await expect(card).toContainText(/\d+\/\d+ checks/);
     await expect(card.locator('#resultTime')).toHaveText(/^\d+:\d\d$/);
     await expect(card.locator('#resultHints')).toHaveText(/^\d+ of \d+$/);
+    await expect(card.getByRole('button', { name: /Copy summary|Back to labs/ })).toHaveCount(0);
+    // Escape closes it; the lab is there again behind it.
+    await session.keyboard.press('Escape');
+    await expect(card).toBeHidden();
 
     // Every run before the one on screen, newest first.
     await expect(session.locator('details.check-history')).toBeVisible({ timeout: 30_000 });
@@ -85,27 +95,36 @@ test.describe('checks, hints and the result card', () => {
     await expect(history.first()).toBeVisible();
     expect(await history.count()).toBeGreaterThanOrEqual(1);
 
-    // A second passing run does not bring the card back or add another.
+    // A second passing run does not bring the result back or add another.
     await session.locator('#btnChecks').click();
     await expect(session.locator('.check-pass').first()).toBeVisible({ timeout: 60_000 });
     await expect(session.locator('#resultCard')).toHaveCount(1);
+    await expect(card).toBeHidden();
     await expect(session.locator('#confetti i')).toHaveCount(0);
   });
 
   test('takes a rating and says thanks', async ({ session }) => {
     const sessionId = await sessionIdOf(session);
     await writeGreeting(sessionId, 'hello from opalix');
-    // The console reads a lab finished earlier as done, so the card is
-    // there without another run.
-    const card = session.locator('#resultCard');
-    if (!(await card.isVisible())) {
+    // The console reads a lab finished earlier as done, so the result is
+    // there without another run: "Show result" in the Checks tab opens it.
+    const card = session.getByRole('dialog', { name: 'Lab complete' });
+    const line = session.locator('#resultLine');
+    if (!(await line.isVisible())) {
       await session.locator('#btnChecks').click();
-      await expect(card).toBeVisible({ timeout: 60_000 });
+      await expect(line).toBeVisible({ timeout: 60_000 });
     }
+    if (!(await card.isVisible())) await session.getByRole('button', { name: 'Show result' }).click();
+    await expect(card).toBeVisible();
 
-    await expect(card.getByRole('group', { name: /How was this lab/ })).toBeVisible();
+    const stars = card.getByRole('group', { name: /How was this lab/ });
+    await expect(stars).toBeVisible();
     await expect(card.locator('#btnFeedback')).toBeDisabled();
-    await card.locator('input[name="rating"][value="5"]').check();
+    // Five stars, chosen with the arrow keys from the first one.
+    await stars.getByRole('radio', { name: '1 star' }).focus();
+    for (let i = 0; i < 4; i++) await session.keyboard.press('ArrowRight');
+    await expect(stars.getByRole('radio', { name: '5 stars' })).toBeChecked();
+    await expect(card.locator('input[name="rating"][value="5"]')).toBeChecked();
     await card.locator('#feedbackText').fill('Clear and quick.');
     const sent = session.waitForRequest((r) => r.method() === 'POST' && /\/sessions\/[^/]+\/feedback$/.test(r.url()));
     await card.locator('#btnFeedback').click();

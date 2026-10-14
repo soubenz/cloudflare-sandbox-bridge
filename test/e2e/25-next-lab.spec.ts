@@ -10,8 +10,9 @@ import { serveConsole } from './console-server';
  * What is pinned here:
  *   - the profile's `next_lab` is the one answer: Home's "Your path" band, the "Suggested start" badge on the
  *     path card and on the module, and the card at the end of a finished lab all name the same lab;
- *   - a finished lab's result card says what it earned ("+120 XP", "Skill: Gateway and access 12 → 31") from the
- *     profile read again, and offers "Next: <title> →" as a link (the same way on as a finished lab's page);
+ *   - a finished lab's result (a dialog, opened again from "Show result" in Checks) says what it earned ("+120 XP",
+ *     "Skill: Gateway and access 12 → 31") from the profile read again, and offers "Next: <title> →" as a link
+ *     (the same way on as a finished lab's page);
  *   - "Back to labs" in a lab goes to the lab's module page, not to the lab's own page;
  *   - Home keeps all its blocks in one order: the hero, "Your path", "Your progress", the search and filters, then
  *     the path cards; "No labs match" sits just above the cards; there is no lone "Home" crumb;
@@ -226,22 +227,34 @@ test.describe('a finished lab', () => {
     const s = await stub(page);
     await visit(page, '/', { running: true });
     await expect(page.locator('#workspace')).toBeVisible();
-    // Every check passes in the stub, so the result card is up (in the guide's Checks tab); the profile is read
-    // again for what it earned.
-    await expect(page.locator('#resultCard')).not.toHaveAttribute('hidden', '');
+    // Every check passes in the stub, but the lab was finished before this visit: its result does not pop up
+    // again, the Checks tab says "Lab complete · Show result"; the profile is read again for what it earned.
     await page.locator('#tabChecks').click();
-    await expect(page.locator('#resultCard')).toBeVisible();
+    await expect(page.locator('#resultLine')).toBeVisible();
+    await expect(page.locator('#resultLine')).toContainText('Lab complete');
+    await expect(page.locator('#resultCard')).toBeHidden();
+    await page.getByRole('button', { name: 'Show result' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Lab complete' });
+    await expect(dialog).toBeVisible();
+    expect(await dialog.evaluate((d) => d.matches(':modal'))).toBe(true);
     const gain = page.locator('#resultGain');
     await expect(gain).toContainText('+120 XP');
     await expect(gain).toContainText(`Skill: ${moduleTitle(1)} 12 → 31`);
-    const next = page.locator('#resultNextLink');
+    // "Next: <title> →" is the dialog's main action; the old "Copy summary" and "Back to labs" are gone.
+    const next = dialog.locator('#resultNextLink');
     await expect(next).toHaveText('Next: Hard budget');
     await expect(next).toHaveAttribute('href', '/labs/hard-budget');
+    await expect(next).toHaveClass(/btn-accent/);
+    await expect(dialog.getByRole('button', { name: /Copy summary|Back to labs/ })).toHaveCount(0);
     expect(s.fullProfileReads).toBeGreaterThanOrEqual(2);
 
+    // Following it leaves the lab as any way out of the session screen does: the lab keeps running, the dialog
+    // and the workspace go, and the next lab's page opens.
     await next.click();
     await expect(page.locator('.lab-detail-title')).toHaveText('Hard budget');
     expect(here_(page)).toBe('/labs/hard-budget');
+    await expect(page.locator('#resultCard')).toBeHidden();
+    await expect(page.locator('#workspace')).toBeHidden();
     expect(s.errors).toEqual([]);
   });
 

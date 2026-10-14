@@ -176,8 +176,10 @@ const state = {
   clockSkew: 0,
   /** The result card has been shown for this session; a later passing run must not show it again. */
   resultShown: false,
-  /** What the card says, kept for "Copy summary". */
+  /** What the result says (title, checks, time), once the lab is complete. */
   result: null,
+  /** What had the focus when the result dialog opened, to hand it back when the dialog closes. */
+  resultOpener: null,
   timer: 0,
   /** Highest event seq handled, so a stream reopened by hand does not replay what was already shown. */
   lastSeq: 0,
@@ -3865,7 +3867,8 @@ function leaveSessionScreen(forget) {
   state.dirty = false;
   pendingTab = null;
   teardownSession();
-  $('resultCard').hidden = true;
+  closeResultDialog();
+  $('resultLine').hidden = true;
   $('btnBackToLabs').hidden = true;
   $('sessionBar').hidden = true;
   $('sessionActions').hidden = true;
@@ -4822,14 +4825,44 @@ function showResultCard(run, celebrate) {
   $('resultChecks').textContent = `${state.result.checks} · ${state.result.pts}`;
   $('resultTime').textContent = state.result.time;
   updateResultHints();
-  $('resultCard').hidden = false;
+  // The Checks tab keeps a way back to the result for the rest of the session.
+  $('resultLine').hidden = false;
   showResultEarnings(state.session.lab);
+  // Shown over the lab once, when the learner watched every check pass; a lab opened after it was finished
+  // only has the line in Checks.
   if (celebrate) {
     announce('Lab complete. Every check passed.');
-    // The result card is in the guide: if the guide is hidden, say where it is.
-    if (!guide.open) toast('Lab complete. Every check passed. Open the guide to see your result.', 'good');
+    openResultDialog();
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) confettiBurst();
   }
-  if (celebrate && !matchMedia('(prefers-reduced-motion: reduce)').matches) confettiBurst();
+}
+
+/**
+ * The result as a modal over the whole lab (`showModal`: the lab behind it is inert, Escape closes it). Focus
+ * starts on its title, so a screen reader reads it from the top, and goes back where it was when it closes.
+ */
+function openResultDialog() {
+  const dialog = $('resultCard');
+  if (dialog.open || !state.result) return;
+  const active = document.activeElement;
+  state.resultOpener = active && active !== document.body && !dialog.contains(active) ? active : null;
+  dialog.showModal();
+  $('resultTitle').focus();
+}
+
+function closeResultDialog() {
+  const dialog = $('resultCard');
+  if (dialog.open) dialog.close();
+}
+
+/** Back to what had the focus (if it can still take it), else to "Show result", else nowhere in particular. */
+function restoreResultFocus() {
+  const opener = state.resultOpener;
+  state.resultOpener = null;
+  if (!state.session) return;
+  const usable = (el) => el?.isConnected && !el.disabled && !el.closest('[hidden], [inert]') && el.getClientRects().length > 0;
+  if (usable(opener)) opener.focus();
+  else if (usable($('btnResultShow'))) $('btnResultShow').focus();
 }
 
 /**
@@ -4850,8 +4883,9 @@ function showResultEarnings(slug) {
       if (gain?.xp > 0) earned.append(node('span', 'result-xp', xpGainText(gain.xp)));
       if (gain?.skill) earned.append(node('span', 'result-skill', skillChangeText(gain.skill.title, gain.skill.from, gain.skill.to)));
       earned.hidden = earned.childElementCount === 0;
-      // The way on, as on the lab's page and a warm-up's last screen: "Next: <title> →". With no next lab there is
-      // only the card's own Back to labs (which ends the session first).
+      // The way on, as on the lab's page and a warm-up's last screen: "Next: <title> →", the dialog's main action.
+      // Following it leaves the lab running, as any way out of the session screen does (its page says Resume).
+      // With no next lab the dialog has only "Stay in the lab"; the header's End & save ends it.
       const way = wayOn(lab ?? { slug }, [...labsBySlug.values()], next ?? null);
       $('resultNext').replaceChildren(...(way.kind === 'next' ? [wayOnLink(way, 'btn btn-accent', 'resultNextLink')] : []));
       $('resultNext').hidden = way.kind !== 'next';
@@ -4901,7 +4935,8 @@ function resetSessionFeedback() {
   state.clockSkew = 0;
   state.resultShown = false;
   state.result = null;
-  $('resultCard').hidden = true;
+  closeResultDialog();
+  $('resultLine').hidden = true;
   $('resultGain').hidden = true;
   $('resultGain').replaceChildren();
   $('resultNext').hidden = true;
@@ -4912,26 +4947,6 @@ function resetSessionFeedback() {
   $('btnFeedback').disabled = true;
   $('feedbackError').hidden = true;
   $('feedbackThanks').hidden = true;
-}
-
-function summaryPlainText() {
-  const r = state.result;
-  return [
-    `Opalix lab complete: ${r.title} (${r.slug})`,
-    `Checks: ${r.checks} · ${r.pts}`,
-    `Time: ${r.time}`,
-    `Hints used: ${hintsUsedText()}`,
-  ].join('\n');
-}
-
-async function copySummary() {
-  if (!state.result) return;
-  try {
-    await navigator.clipboard.writeText(summaryPlainText());
-    toast('Summary copied.', 'good');
-  } catch {
-    toast('Could not copy — your browser blocked clipboard access.', 'bad');
-  }
 }
 
 async function sendFeedback(event) {
@@ -5683,14 +5698,9 @@ $('btnClearFilters').addEventListener('click', clearFilters);
 $('btnChecks').addEventListener('click', runChecks);
 $('btnChecksInline').addEventListener('click', runChecks);
 
-$('btnCopySummary').addEventListener('click', copySummary);
-// The lab is done, but its container is still up (and a learner may have one
-// live session), so "back to labs" goes through the end dialog rather than
-// abandoning it.
-$('btnResultBack').addEventListener('click', () => {
-  if ($('statePill').dataset.state === 'ended') backToLabs();
-  else $('btnEnd').click();
-});
+$('btnResultShow').addEventListener('click', openResultDialog);
+$('btnResultClose').addEventListener('click', closeResultDialog);
+$('resultCard').addEventListener('close', restoreResultFocus);
 $('feedbackForm').addEventListener('change', () => {
   $('btnFeedback').disabled = !$('feedbackForm').querySelector('input[name="rating"]:checked');
 });

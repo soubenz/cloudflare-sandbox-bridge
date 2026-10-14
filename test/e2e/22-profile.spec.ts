@@ -901,8 +901,8 @@ test.describe('the award toast', () => {
     await expect(page.locator('#awardToasts .award-toast')).toHaveCount(2);
     await expect(page.locator('#awardToasts .award-toast').first()).toContainText('First steps');
     await expect(page.locator('#awardToasts .award-toast').nth(1)).toContainText('On a roll');
-    // The lab is complete in the stub, so its result card is up (in the guide's Checks tab), and shows what the lab earned.
-    await expect(page.locator('#resultCard')).not.toHaveAttribute('hidden', '');
+    // The lab is complete in the stub, so its result is there (the Checks tab says so, and opens it), and shows what the lab earned.
+    await expect(page.locator('#resultLine')).not.toHaveAttribute('hidden', '');
     const awards = page.locator('#resultAwards');
     await expect(awards).not.toHaveAttribute('hidden', '');
     await expect(awards.locator('.result-awards-label')).toHaveText('New awards');

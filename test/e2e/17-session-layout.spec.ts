@@ -709,16 +709,139 @@ test.describe('running the checks', () => {
     await expect(page.locator('#checksPanel .check')).toHaveCount(2);
   });
 
-  test('shows the result card in the guide once every check passes, and says so', async ({ page }) => {
+  test('shows the result as a modal over the whole lab once every check passes, and says so', async ({ page }) => {
     const s = await session(page, BUILD);
     s.pass.value = true;
     await page.locator('#btnChecks').click();
-    await expect(page.locator('#resultCard')).toBeVisible();
-    await expect(page.locator('#resultCard')).toHaveAttribute('role', 'status');
+    const dialog = page.getByRole('dialog', { name: 'Lab complete' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute('id', 'resultCard');
     await expect(page.locator('#resultChecks')).toContainText('2/2 checks');
+    await expect(page.locator('#resultTime')).toHaveText(/^\d+:\d\d$/);
+    await expect(page.locator('#resultHints')).toHaveText('1 of 3');
     await expect(page.locator('#dockProgress')).toHaveText('2 of 2 checks passing');
     await expect(page.locator('#dockDots i.f')).toHaveCount(0);
     await expect(page.locator('#sessionLive')).toHaveText(/Lab complete|Checks:/);
+    // Confetti, for a learner who has not asked for less motion.
+    expect(await page.locator('#confetti i').count()).toBeGreaterThan(0);
+
+    // Modal: in the top layer over a dimmed, blurred backdrop, and the lab behind it inert (no focus, no pointer).
+    const modal = await dialog.evaluate((d) => {
+      const backdrop = getComputedStyle(d, '::backdrop');
+      const guideBtn = document.getElementById('btnChecksInline')!;
+      guideBtn.focus();
+      const r = document.getElementById('workspace')!.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + 8, r.top + 8);
+      return {
+        modal: d.matches(':modal'),
+        backdrop: backdrop.backgroundColor,
+        blur: backdrop.backdropFilter,
+        backgroundTakesFocus: document.activeElement === guideBtn,
+        hitInWorkspace: !!hit && document.getElementById('workspace')!.contains(hit),
+      };
+    });
+    expect(modal.modal).toBe(true);
+    expect(modal.backdrop).not.toBe('rgba(0, 0, 0, 0)');
+    expect(modal.blur).toMatch(/blur/);
+    expect(modal.backgroundTakesFocus).toBe(false);
+    expect(modal.hitInWorkspace).toBe(false);
+    // Copy summary and the card's own Back to labs are gone; Stay in the lab is the quiet way back.
+    await expect(dialog.getByRole('button', { name: /Copy summary|Back to labs/ })).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'Stay in the lab' })).toBeVisible();
+
+    // Tab stays inside the dialog.
+    await page.locator('#resultTitle').focus();
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press('Tab');
+      expect(await page.evaluate(() => document.activeElement === document.body || !!document.activeElement?.closest('#resultCard'))).toBe(true);
+    }
+
+    // Escape closes it, and the focus goes back to the Checks tab's way back to it.
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    const line = page.locator('#resultLine');
+    await expect(line).toBeVisible();
+    await expect(line).toContainText('Lab complete');
+    await expect(page.getByRole('button', { name: 'Show result' })).toBeFocused();
+
+    // "Show result" opens it again (no second burst of confetti), and Stay in the lab closes it.
+    await page.locator('#confetti i').first().waitFor({ state: 'detached' }).catch(() => {});
+    await page.getByRole('button', { name: 'Show result' }).click();
+    await expect(dialog).toBeVisible();
+    await expect(page.locator('#resultTitle')).toBeFocused();
+    await expect(page.locator('#confetti i')).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Stay in the lab' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Show result' })).toBeFocused();
+
+    // A second passing run does not bring it back.
+    await page.locator('#btnChecksInline').click();
+    await expect.poll(() => s.checkRuns).toBe(2);
+    await expect(page.locator('#checksPanel .check')).toHaveCount(2);
+    await page.waitForTimeout(300);
+    await expect(dialog).toBeHidden();
+  });
+
+  test('the result\'s star rating works from the keyboard and by pointer, and is sent with the note', async ({ page }) => {
+    const s = await session(page, BUILD);
+    s.pass.value = true;
+    await page.locator('#btnChecks').click();
+    const dialog = page.getByRole('dialog', { name: 'Lab complete' });
+    await expect(dialog).toBeVisible();
+    const group = dialog.getByRole('group', { name: 'How was this lab?' });
+    await expect(group.getByRole('radio')).toHaveCount(5);
+    await expect(group.getByRole('radio', { name: '5 stars' })).toBeVisible();
+    await expect(page.locator('#btnFeedback')).toBeDisabled();
+    const filled = () =>
+      group.locator('.star').evaluateAll((stars) => stars.map((st) => getComputedStyle(st).fill !== 'rgba(0, 0, 0, 0)' && getComputedStyle(st).fill !== 'none'));
+
+    // From the title, Tab reaches the first star; the arrow keys move along the stars, choosing as they go.
+    await expect(page.locator('#resultTitle')).toBeFocused();
+    for (let i = 0; i < 6 && !(await group.getByRole('radio', { name: '1 star' }).evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab');
+    await expect(group.getByRole('radio', { name: '1 star' })).toBeFocused();
+    // The focus ring is drawn round the star the radio sits over.
+    const ring = await group.getByRole('radio', { name: '1 star' }).evaluate((el) => getComputedStyle(el.nextElementSibling!).outlineStyle);
+    expect(ring).toBe('solid');
+    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
+    await expect(group.getByRole('radio', { name: '5 stars' })).toBeFocused();
+    await expect(group.getByRole('radio', { name: '5 stars' })).toBeChecked();
+    await expect.poll(filled).toEqual([true, true, true, true, true]);
+    await page.keyboard.press('ArrowLeft');
+    await expect(group.getByRole('radio', { name: '4 stars' })).toBeChecked();
+    await expect.poll(filled).toEqual([true, true, true, true, false]);
+    await expect(page.locator('#btnFeedback')).toBeEnabled();
+
+    // A click on a star chooses it too.
+    await group.getByRole('radio', { name: '2 stars' }).click();
+    await expect(group.getByRole('radio', { name: '2 stars' })).toBeChecked();
+    await page.mouse.move(0, 0);
+    await expect.poll(filled).toEqual([true, true, false, false, false]);
+
+    await page.locator('#feedbackText').fill('Clear and quick.');
+    const sent = page.waitForRequest((r) => r.method() === 'POST' && /\/sessions\/[^/]+\/feedback$/.test(r.url()));
+    await page.locator('#btnFeedback').click();
+    expect(JSON.parse((await sent).postData() ?? '{}')).toEqual({ rating: 2, text: 'Clear and quick.' });
+    await expect(dialog.getByText('Thanks')).toBeVisible();
+    await expect(page.locator('#feedbackForm')).toBeHidden();
+  });
+
+  test('on a phone the result is a sheet the width of the screen, and with reduced motion it simply appears', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const s = await session(page, BUILD);
+    // A phone cannot start a lab; a window narrowed after the start can finish one.
+    await page.setViewportSize({ width: 390, height: 844 });
+    s.pass.value = true;
+    await page.locator('#btnChecks').click();
+    const dialog = page.getByRole('dialog', { name: 'Lab complete' });
+    await expect(dialog).toBeVisible();
+    const box = (await dialog.boundingBox())!;
+    expect(Math.round(box.x)).toBe(0);
+    expect(Math.round(box.width)).toBe(390);
+    expect(Math.round(box.y + box.height)).toBe(844);
+    expect(await dialog.evaluate((d) => getComputedStyle(d).animationName)).toBe('none');
+    await expect(page.locator('#confetti i')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    await expect(dialog.getByRole('button', { name: 'Stay in the lab' })).toBeInViewport();
   });
 
   test('with the guide hidden, the run is still seen in the dock, and a finished lab is announced', async ({ page }) => {
@@ -729,7 +852,11 @@ test.describe('running the checks', () => {
     await expect(page.locator('#dockProgress')).toHaveText('2 of 2 checks passing');
     // The rail's Checks icon carries the count.
     await expect(page.getByRole('button', { name: 'Checks, 2 of 2 passing' })).toBeVisible();
-    await expect(page.locator('#toast')).toContainText('Lab complete');
+    // The result is over the whole lab, so it is seen with the guide hidden too.
+    await expect(page.getByRole('dialog', { name: 'Lab complete' })).toBeVisible();
+    await expect(page.locator('#sessionLive')).toHaveText(/Lab complete|Checks:/);
+    await page.getByRole('button', { name: 'Stay in the lab' }).click();
+    await expect(page.locator('#resultCard')).toBeHidden();
     // The guide stayed as the learner left it.
     await expect(guide(page)).toBeHidden();
   });
@@ -1373,7 +1500,9 @@ test.describe('keyboard and accessibility', () => {
     await expect(page.locator('#checksPanel')).toHaveAttribute('aria-live', 'polite');
     await expect(page.locator('#checksSummary')).toHaveAttribute('aria-live', 'polite');
     await expect(page.locator('#hintsPanel')).toHaveAttribute('aria-live', 'polite');
-    await expect(page.locator('#resultCard')).toHaveAttribute('role', 'status');
+    // The result is a dialog named by its title (opened with showModal); #sessionLive announces it.
+    expect(await page.locator('#resultCard').evaluate((d) => d.tagName)).toBe('DIALOG');
+    await expect(page.locator('#resultCard')).toHaveAttribute('aria-labelledby', 'resultTitle');
     await expect(page.locator('#noticeList')).toHaveAttribute('role', 'log');
   });
 
@@ -1491,6 +1620,8 @@ test.describe('screenshots', () => {
       await page.locator('#btnChecks').click();
       await expect(page.locator('#resultCard')).toBeVisible();
       await shot('build-complete');
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#resultCard')).toBeHidden();
       await page.getByRole('tab', { name: 'Terminal' }).click();
       await expect(page.locator('.xterm-screen')).toBeVisible();
       await page.getByRole('tab', { name: 'Brief' }).click();
