@@ -186,6 +186,17 @@ describe('sort, played from the keyboard', () => {
     expect(calls).toEqual(['continue']);
   });
 
+  it('← and → still answer when the focus has left the game (it is on the page itself)', () => {
+    const { root, results } = mount(sortGame);
+    start(root);
+    for (let i = 0; i < 3; i++) {
+      doc.activeElement = doc.body;
+      press(doc, keyFor(sortGame, answerOf(sortGame, currentCard(root)!)));
+    }
+    expect(root.dataset.phase).toBe('end');
+    expect(results).toEqual([{ id: 'whose-key', solved: true, tries: 1 }]);
+  });
+
   it('tapping a bucket answers too', () => {
     const { root, results } = mount(sortGame);
     start(root);

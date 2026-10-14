@@ -791,14 +791,24 @@ function mountCards(game, sh, env, report) {
   }
 
   // --- keys and dragging -------------------------------------------------------
-  sh.root.addEventListener('keydown', (e) => {
+  // Listened for on the whole page while this game is on screen: after Start the focus is often
+  // nowhere in the game (the Start button is gone), and ← / → must still play.
+  const onChoiceKey = (e) => {
+    if (!sh.root.isConnected) {
+      document.removeEventListener('keydown', onChoiceKey);
+      return;
+    }
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
     if (sh.root.dataset.phase !== 'play' || waiting || locked) return;
-    if (e.target?.closest?.('.game-toggles, .game-skipbar')) return;
+    const t = e.target;
+    if (t?.closest?.('.game-toggles, .game-skipbar')) return;
+    if (t && t !== document.body && !sh.root.contains(t) && t.closest?.('input, textarea, select, [contenteditable="true"], button, a')) return;
     const act = E.choiceKey(e.key, choices);
     if (!act) return;
     e.preventDefault();
     choose(act.choose, 'key');
-  });
+  };
+  document.addEventListener('keydown', onChoiceKey);
 
   function dragCard(el) {
     let drag = null;

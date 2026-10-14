@@ -285,11 +285,15 @@ export class FakeElement {
   }
   dispatchEvent(e: FakeEvent) {
     e.target ??= this;
+    let top: FakeElement = this;
     for (let n: FakeElement | null = this; n; n = n.parentNode) {
+      top = n;
       e.currentTarget = n;
       for (const fn of [...(n.listeners.get(e.type) ?? [])]) fn.call(n, e);
-      if (e.stopped || !e.bubbles) break;
+      if (e.stopped || !e.bubbles) return !e.defaultPrevented;
     }
+    // A connected element's event goes on to the document, as in a browser.
+    if (top === this.owner.documentElement) this.owner.dispatchToDocument(e);
     return !e.defaultPrevented;
   }
   click() {
@@ -392,6 +396,19 @@ export class FakeDocument {
   }
   querySelectorAll(sel: string) {
     return this.documentElement.querySelectorAll(sel);
+  }
+  listeners = new Map<string, Listener[]>();
+  addEventListener(type: string, fn: Listener) {
+    if (!this.listeners.has(type)) this.listeners.set(type, []);
+    this.listeners.get(type)!.push(fn);
+  }
+  removeEventListener(type: string, fn: Listener) {
+    const l = this.listeners.get(type);
+    if (l) this.listeners.set(type, l.filter((x) => x !== fn));
+  }
+  dispatchToDocument(e: FakeEvent) {
+    e.currentTarget = this as any;
+    for (const fn of [...(this.listeners.get(e.type) ?? [])]) fn.call(this as any, e);
   }
 }
 
