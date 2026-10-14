@@ -3,15 +3,15 @@ panels:
   - scene: black
     captions:
       - { text: "Larkfield. One month. Six problems.", cue: "six things went wrong" }
-      - { text: "Have you seen these at work?", cue: "probably seen" }
-    voiceover: This is Larkfield, a company whose apps all use AI models. Last month, six things went wrong there. If your team builds with AI, you have probably seen some of them already.
+      - { text: "Have you seen these at work?", cue: "probably met" }
+    voiceover: "Larkfield is a company whose apps all run on AI models, and last month six things went wrong there, one after another, the kind of problems you have probably met already if your team builds with AI."
   - scene: clip
     clip: phone-alert-night
     cast: [tomasz]
     shot: close
-    caption: { text: "Saturday, 03:12", cue: "three twelve" }
-    sfx: { text: "BZZT!", cue: "lights up", sound: phone }
-    voiceover: It starts on a Saturday. At three twelve in the morning, the phone of Tomasz, an engineer on Larkfield's platform team, lights up the dark bedroom. The support assistant has stopped answering customers.
+    caption: { text: "Saturday, 03:12", cue: "past three" }
+    sfx: { text: "BZZT!", cue: "lit up", sound: phone }
+    voiceover: "It started on a Saturday, at twelve minutes past three in the morning, when the phone of Tomasz, an engineer on Larkfield's platform team, lit up the dark bedroom because the support assistant had stopped answering customers."
     bubbles:
       - { who: tomasz, text: "Two hundred customers waiting. I'm getting up.", cue: "stopped answering customers" }
     lines:
@@ -22,7 +22,7 @@ panels:
     bg: night
     caption: { text: "03:40", cue: "three forty" }
     sfx: { text: "TICK", cue: "three forty", sound: tick }
-    voiceover: He finds the cause fast. OpenAI, the company that runs the assistant's model, is down. Anthropic is up, but OpenAI's name is written into the app's code. So at three forty, Tomasz is still rewriting it by hand.
+    voiceover: "He found the cause within minutes: OpenAI, the company that runs the assistant's model, was down, and although Anthropic was working fine, OpenAI's name was written into the app's code, so at three forty he was still rewriting it by hand."
     bubbles:
       - { who: tomasz, text: "I've done good work at three a.m. This isn't it.", cue: "by hand" }
     lines:
@@ -31,30 +31,30 @@ panels:
   - scene: diagram
     diagram: gateway-no-door
     steps:
-      - { cue: "talks to its own provider" }
-      - { cue: "A key is" }
-    voiceover: That night did not come out of nowhere. Every app at Larkfield talks to its own provider, OpenAI, Anthropic or Google, and holds its own key. A key is the secret that proves who is paying.
+      - { cue: "talked to its own provider" }
+      - { cue: "kept its own key" }
+    voiceover: "That night had been building for a long time, because every app at Larkfield talked to its own provider, whether OpenAI, Anthropic or Google, and kept its own key, the secret that proves who is paying."
   - scene: clip
     clip: maren-worried-laptop
     cast: [ollie, maren]
     shot: close
     caption: { text: "Tuesday, 10:05", cue: "Tuesday" }
     sfx: { text: "PING!", cue: "screenshot", sound: ping }
-    voiceover: On Tuesday, Ollie, a developer, is proud of an answer from the assistant and shares a screenshot in the team chat. In the corner of the picture sits the team's OpenAI key.
+    voiceover: "On Tuesday, Ollie, one of the developers, was so proud of an answer from the assistant that he shared a screenshot in the team chat, without noticing the team's OpenAI key in the corner of the picture."
     bubbles:
       - { who: maren, text: "Ollie. Bottom corner. That's our OpenAI key.", cue: "OpenAI key" }
       - { who: ollie, text: "Deleting it now. Eleven people have already seen it, though.", cue: "OpenAI key" }
     lines:
-      - { text: "team chat: 11 likes", cue: "shares a screenshot" }
+      - { text: "team chat: 11 likes", cue: "shared a screenshot" }
       - { text: "in the corner: sk-proj-4f9a...7d3e", cue: "In the corner" }
   - scene: desk
     cast: [{ who: ollie, pose: typing }]
     bg: sand
-    voiceover: Then, on Friday evening, Ollie's research script hits an error and simply tries again. It keeps trying all weekend. By Monday morning it has spent the whole month's budget.
+    voiceover: "Then on Friday evening his research script hit an error and kept trying again, all weekend long, until by Monday morning it had spent the whole month's budget."
     lines:
-      - { text: "$ retry", cue: "hits an error" }
-      - { text: "error: try again", cue: "tries again" }
-      - { text: "$ retry", cue: "keeps trying" }
+      - { text: "$ retry", cue: "hit an error" }
+      - { text: "error: try again", cue: "trying again" }
+      - { text: "$ retry", cue: "all weekend" }
       - { text: "error: try again", cue: "all weekend" }
       - { text: "budget left: 0", cue: "whole month's budget" }
     bubbles:
@@ -62,21 +62,21 @@ panels:
   - scene: duo
     cast: [tomasz, maren]
     bg: lilac
-    voiceover: That Sunday, while the team is still cleaning up, Google renames one of its models. Three apps have the old name typed into their code, and all three stop working at once.
+    voiceover: "That Sunday, while the team was still cleaning up, Google renamed one of its models, and the three apps that had the old name typed into their code all stopped working at once."
     bubbles:
-      - { who: tomasz, text: "They renamed it. On a Sunday.", cue: "stop working" }
+      - { who: tomasz, text: "They renamed it. On a Sunday.", cue: "stopped working at once" }
   - scene: duo
     cast: [graham, { who: maren, mood: worried }]
     bg: mint
-    voiceover: At the end of the month, one invoice arrives with one number on it. Graham, the head of engineering, has a simple question for the team, and nobody can answer it.
+    voiceover: "When the invoice arrived at the end of the month, it showed a single number, and Graham, the head of engineering, asked the one question nobody in the room could answer."
     bubbles:
-      - { who: graham, text: "Which team spent this? And with whom?", cue: "simple question" }
+      - { who: graham, text: "Which team spent this? And with whom?", cue: "nobody in the room" }
   - scene: duo
     cast: [jess, { who: tomasz, mood: tired }]
     bg: sand
-    voiceover: The month ends on a missed chance. A new model comes out, faster and cheaper. Jess, the product manager, wants to try it today, but trying it means changing every app by hand.
+    voiceover: "And the month ended on a missed chance, because a new model came out, faster and cheaper, and Jess, the product manager, wanted to try it at once, even though that meant changing every app by hand."
     bubbles:
-      - { who: jess, text: "It's faster AND cheaper! Can we try it today?", cue: "wants to try it" }
+      - { who: jess, text: "It's faster AND cheaper! Can we try it today?", cue: "wanted to try it" }
       - { who: tomasz, text: "Sure. In every app. By hand.", cue: "every app by hand" }
   - scene: black
     title: Normal, or a sign that something is missing?
@@ -87,4 +87,4 @@ panels:
       - "Google renames a model, and three apps break at once."
       - "One invoice, and nobody can say which team spent what."
       - "A faster, cheaper model nobody can try without changing every app."
-    voiceover: One month, six problems. Read each one on the screen, and ask yourself whether it is normal, or a sign that something is missing.
+    voiceover: "So here are the six problems from that month, and as each one appears, ask yourself whether it is normal, or a sign that something is missing."

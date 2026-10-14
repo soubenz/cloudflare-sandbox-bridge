@@ -36,6 +36,10 @@ STORY
   time, a place, one person, one thing going wrong), written fresh for each
   video; never reuse an example line from this prompt. Then link each panel
   to the last with a time or a cause ("Then, on Friday evening...").
+- Write it as told prose, not a list of short facts: past tense for the
+  story, sentences joined with because, so, while, when, until, and each
+  panel's voiceover one or two flowing sentences. Avoid runs of three-word
+  sentences ("OpenAI is down. The customer gets an answer.").
 - Use real names where a real thing exists: OpenAI, Anthropic, Google, an
   OpenAI key. Larkfield and its people are fictional; the providers are not.
 
