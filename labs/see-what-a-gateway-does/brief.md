@@ -31,12 +31,3 @@ panel (about 30 seconds), then send `fast` a call again.
 ## Answer these
 
 The questions are in the **Questions** tab, next to this brief. Answer them there; your answers are saved for you.
-
-## Checking your work
-
-| Check | Passes when |
-|---|---|
-| `gateway-is-up` | LiteLLM is ready and a `support` call succeeds |
-| `answers-match-the-gateway` | Your answers match what the gateway does right now, checked live |
-
-Nothing in the "try this" section can change a right answer.
