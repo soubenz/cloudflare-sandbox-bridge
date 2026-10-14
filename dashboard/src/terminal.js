@@ -186,6 +186,16 @@ export function attachTerminal({ container, sessionId, token, onNotice, onStatus
     term,
     refit: safeFit,
     focus: () => term.focus(),
+    /**
+     * Types `text` into the shell as if it were keyed in (a Run button in the brief). Only while the
+     * socket is open: returns false, and sends nothing, when it is not.
+     */
+    send(text) {
+      if (!open || disposed || ws?.readyState !== WebSocket.OPEN) return false;
+      onInput?.();
+      ws.send(encoder.encode(String(text)));
+      return true;
+    },
     dispose() {
       disposed = true;
       clearTimeout(retryTimer);

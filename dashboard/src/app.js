@@ -118,6 +118,9 @@ function rememberedSession() {
   }
 }
 
+/** The code blocks' Copy and Run buttons (code-copy.js); refresh() when the terminal comes or goes. */
+let codeBlocks = null;
+
 const state = {
   /** The signed-in learner's opaque id (GET /api/me), the `<user>` of a session's address; null until it is known. */
   userId: null,
@@ -3342,6 +3345,7 @@ async function onRunning(status) {
   bootStep('services', 'Opening your terminal…');
   if (!state.terminal) {
     state.terminal = attachSessionTerminal();
+    codeBlocks?.refresh();
   }
 
   if (!status) {
@@ -3471,8 +3475,10 @@ export function renderMarkdown(src) {
   const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const blocks = [];
   // Fenced code first, so nothing inside a fence is treated as markup.
-  const fenced = esc(src).replace(/```[\w-]*\n([\s\S]*?)```/g, (_m, code) => {
-    blocks.push(`<pre><code>${code.replace(/\n$/, '')}</code></pre>`);
+  // The fence's language is kept (data-lang), so a ```bash block can be run (code-copy.js); it is only word characters.
+  const fenced = esc(src).replace(/```([\w-]*)\n([\s\S]*?)```/g, (_m, lang, code) => {
+    const attr = lang ? ` data-lang="${lang.toLowerCase()}"` : '';
+    blocks.push(`<pre${attr}><code>${code.replace(/\n$/, '')}</code></pre>`);
     return `\u0000${blocks.length - 1}\u0000`;
   });
 
@@ -3716,6 +3722,8 @@ function onEnded(reason) {
   for (const id of ['btnChecks', 'btnChecksInline', 'btnDockAction', 'btnSnapshot', 'btnEnd']) $(id).disabled = true;
   state.terminal?.dispose();
   state.terminal = null;
+  // Nothing left to run the brief's commands in.
+  codeBlocks?.refresh();
   state.events?.close();
   $('btnBackToLabs').hidden = false;
   $('sessionActions').hidden = true;
@@ -3794,6 +3802,7 @@ async function restartLab() {
 function teardownSession() {
   state.terminal?.dispose();
   state.terminal = null;
+  codeBlocks?.refresh();
   state.events?.close();
   stopExpiryTimer();
   stopStreamFallback();
@@ -5496,6 +5505,20 @@ function activateWorkspaceTab(tab, { focus }) {
 }
 
 /**
+ * A brief's Run button: the Terminal tab, as if it were pressed (the address follows). Where the window is
+ * stacked under the guide (a narrow screen) and out of sight, it is brought into view as well.
+ */
+function showTerminalForRun() {
+  activateWorkspaceTab($('tabTerminal'), { focus: true });
+  const win = $('window');
+  const box = win.getBoundingClientRect();
+  if (box.top >= window.innerHeight || box.bottom <= 0) {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    win.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  }
+}
+
+/**
  * Arrow keys walk a tablist (Left/Right, Home, End), and the tab under the keyboard is the one
  * shown. `tabs()` are the tabs in order; a tab reached this way keeps the focus.
  */
@@ -5867,7 +5890,11 @@ meReady = loadIdentity();
 $('saveShortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘S' : 'Ctrl+S';
 router.onRoute((route) => applyRoute(route));
 router.start();
-installCodeCopy();
+// Copy on every code block; Run on the brief's shell blocks while the lab's terminal is open.
+codeBlocks = installCodeCopy(document.body, {
+  terminal: () => (state.session ? state.terminal : null),
+  showTerminal: showTerminalForRun,
+});
 boot();
 
 /**

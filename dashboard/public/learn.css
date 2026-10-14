@@ -516,8 +516,31 @@ pre.has-copy:hover .code-copy, .code-copy:focus-visible, .code-copy[data-state] 
 /* A touch screen has no hover: keep the button visible there. */
 @media (hover: none) { .code-copy { opacity: 1; } }
 /* Leave room so the button never covers the first line of a short block. */
-pre.has-copy code { padding-right: 84px; }
+pre.has-copy code, .brief pre.has-copy code { padding-right: 84px; }
 @media (prefers-reduced-motion: reduce) { .code-copy { transition: none; } }
+
+/* A shell block in a running lab's brief: Run (the main action) beside Copy, both always shown,
+   on a strip of their own above the code so they never cover a command however long it is. */
+pre.has-run, .brief pre.has-run { padding-top: 46px; }
+pre.has-run code, .brief pre.has-run code { padding-right: 0; }
+.code-actions {
+  position: absolute; top: 9px; right: 9px; z-index: 1;
+  display: flex; align-items: center; gap: 6px;
+}
+.code-actions .code-copy { position: static; opacity: 1; }
+.code-run {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 28px; padding: 0 12px 0 10px;
+  font-size: 12px; font-weight: 700; line-height: 1; letter-spacing: 0;
+  color: var(--on-accent); background: var(--accent-fill);
+  border: 1px solid var(--accent-fill); border-radius: 999px;
+  cursor: pointer; transition: background 120ms ease, border-color 120ms ease;
+}
+.code-run:hover { background: var(--accent-fill-hover); border-color: var(--accent-fill-hover); }
+.code-run:focus-visible { outline: 2px solid var(--accent-on-dark); outline-offset: 2px; }
+.code-run[data-state="running"] { color: var(--win-ok); background: var(--win-chip); border-color: currentColor; }
+.code-run[data-state="not-ready"] { color: var(--win-warn); background: var(--win-chip); border-color: currentColor; }
+@media (prefers-reduced-motion: reduce) { .code-run { transition: none; } }
 
 /* ---------- the pre-lab flow: alternating rounds of questions and lessons ---------- */
 /* A round is a centred column, narrower than the card of the story. */

@@ -32,7 +32,8 @@ describe('brief rendering', () => {
     expect(html).toContain('<li>one</li>');
     expect(html).toContain('<th>a</th>');
     expect(html).toContain('<td>1</td>');
-    expect(html).toContain('<pre><code>echo hi</code></pre>');
+    // The fence's language stays on the block, so a shell block can carry a Run button (code-copy.js).
+    expect(html).toContain('<pre data-lang="bash"><code>echo hi</code></pre>');
     // The alignment row is structure, not content.
     expect(html).not.toContain('---');
   });
@@ -47,6 +48,13 @@ describe('brief rendering', () => {
     const html = render('# <img src=x onerror=alert(1)>\n\n`<script>bad()</script>`\n\n| <b>x</b> | y |');
     expect(html).not.toMatch(/<img|<script|<b>/);
     expect(html).toContain('&lt;img');
+  });
+
+  it('keeps a fence\'s language, lower case, and nothing else from the fence line', () => {
+    expect(render('```Console\n$ ls\n```')).toContain('<pre data-lang="console"><code>$ ls</code></pre>');
+    expect(render('```\nplain\n```')).toContain('<pre><code>plain</code></pre>');
+    // Only word characters are a language: anything else is not a fence line at all, so no attribute can be smuggled in.
+    expect(render('```bash" onclick="x\nls\n```')).not.toMatch(/onclick="/);
   });
 
   it('does not treat markup inside a code fence as markup', () => {

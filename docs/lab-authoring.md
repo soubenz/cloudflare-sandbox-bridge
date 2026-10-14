@@ -298,6 +298,13 @@ for a lab-local tool holding made-up data.
   must be present or the line is ignored and treated as plain text. When
   the line is present its `pass` overrides the exit code.
 - **No stated path.** `brief.md` says what the system should do, never how.
+- **Shell blocks in a brief can be run.** A ```` ```bash ```` block (or
+  `sh`, `shell`, `console`) in `brief.md` gets a **Run** button beside
+  **Copy** while the lab is running: it opens the terminal and types each
+  line, pressing Enter after each. So write each line as a complete,
+  runnable command from the workspace folder (`/workspace`, where the
+  terminal starts). Blank lines and `#` comments are skipped and a leading
+  `$ ` is dropped; output or placeholders go in a plain ```` ``` ```` block.
 - **Break-fix labs are titled by symptom** ("Customers are getting
   duplicate emails"), never by the concept being taught.
 - **`type: explore` is a guided tour, not a puzzle.** Nothing is broken and

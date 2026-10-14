@@ -8,7 +8,8 @@
  *
  * Nothing here ever writes markup. Elements come from createElement, every
  * string from the content goes in as a text node or an attribute value, and
- * the only attribute taken from the content is an http(s) link's href. The
+ * the only attributes taken from the content are an http(s) link's href and a
+ * fence's language (data-lang on its <pre>, word characters only). The
  * bundle schema already refuses `<` followed by a letter (src/labs/learn.ts),
  * but this renderer does not rely on that: text that looks like a tag is just
  * text here.
@@ -297,6 +298,8 @@ export function renderMarkdownNodes(src, opts = {}) {
       nodes.push(p);
     } else if (block.type === 'code') {
       const pre = el('pre');
+      // The fence's language (letters, digits, `+` and `-` only, FENCE), so code-copy.js knows a shell block.
+      if (block.lang) pre.setAttribute('data-lang', block.lang.toLowerCase());
       const code = el('code', '', block.text);
       pre.appendChild(code);
       nodes.push(pre);
