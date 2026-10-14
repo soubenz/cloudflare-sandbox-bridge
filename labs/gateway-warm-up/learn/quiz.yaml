@@ -78,28 +78,6 @@ questions:
       - { id: d, text: "A prompt being too long for the model to read" }
     answer: [a, b]
     explanation: "A gateway is plumbing and bookkeeping. It keeps keys in one place and sees every call, but it does not make a model more accurate or change what a model can read."
-  - id: q-not-a-model
-    concept: gateway.what-it-is-not
-    type: single
-    prompt: "An app sends a question through a gateway and gets a wrong answer back. What wrote that answer?"
-    options:
-      - { id: a, text: "The provider's model; the gateway only carried the call" }
-      - { id: b, text: "The gateway's own model, which sits in front of the providers" }
-      - { id: c, text: "The gateway, from a copy of an earlier answer" }
-      - { id: d, text: "The app, before the call left it" }
-    answer: [a]
-    explanation: "A gateway runs no model. It forwards the call to a provider, and the provider's model writes every answer, right or wrong."
-  - id: q-not-a-cache
-    concept: gateway.what-it-is-not
-    type: single
-    prompt: "Two apps send the same question through a gateway one minute apart, and no extra features are switched on. What happens?"
-    options:
-      - { id: a, text: "Both calls go on to a provider, and both are counted and paid for" }
-      - { id: b, text: "The second app gets the first answer back for free" }
-      - { id: c, text: "The gateway refuses the second call as a duplicate" }
-      - { id: d, text: "The gateway answers both from its own model" }
-    answer: [a]
-    explanation: "A gateway is not a cache. Unless a team adds a cache on purpose, every call goes on to a real provider and costs tokens."
   - id: q-what-moves-to-the-door
     concept: gateway.why-one-door
     type: single

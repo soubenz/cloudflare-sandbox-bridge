@@ -36,4 +36,4 @@ Five terms that come back in every gateway lab:
 - **Spend log:** the gateway's table of calls, one row each.
 - **Upstream provider:** the service behind the gateway that actually runs the model.
 
-The next two lessons look closer at why one door helps, and at what a gateway is not. In the first lab you then send calls to a real gateway and compare what it says happened with what the provider recorded.
+The next lesson looks closer at why one door helps. In the first lab you then send calls to a real gateway and compare what it says happened with what the provider recorded.

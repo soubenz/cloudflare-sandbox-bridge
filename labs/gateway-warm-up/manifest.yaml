@@ -8,10 +8,9 @@
 #                              it ends by asking "normal, or a sign that
 #                              something is missing?"
 #   quiz.yaml                  one question per problem (gateway.why-one-door),
-#                              plus two each on what a gateway is and is not
-#   concepts/                  three lessons: what a gateway is (the same
-#                              foundation lesson as lab 1), why one door,
-#                              what it is not
+#                              plus two on what a gateway is and one on the door
+#   concepts/                  two lessons: what a gateway is (the same
+#                              foundation lesson as lab 1) and why one door
 #   closing.md + closing.yaml  the closing: the same Saturday night, now quiet;
 #                              one call walked through the gateway
 #   games.yaml                 four short games on the closing
@@ -33,9 +32,7 @@ estimated_minutes: 12
 summary: >-
   One month at a company whose apps all use AI: six things go wrong, from a
   3 a.m. outage to a leaked OpenAI key.
-  You will see what an AI gateway is, what it does with each model call, and
-  what it is not.
+  You will see what an AI gateway is and what it does with each model call.
 objectives:
   - Recognise the problems that come from every app calling model providers directly
   - Follow one model call through a gateway, step by step
-  - Tell a gateway apart from a model, a cache and a firewall

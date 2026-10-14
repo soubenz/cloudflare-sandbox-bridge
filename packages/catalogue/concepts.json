@@ -4,7 +4,6 @@
   "concepts": [
     { "id": "gateway.what-is-a-gateway", "title": "What an LLM gateway is and why teams run one" },
     { "id": "gateway.why-one-door", "title": "Why every call goes through one door" },
-    { "id": "gateway.what-it-is-not", "title": "What a gateway is not" },
     { "id": "gateway.routing-aliases", "title": "Model aliases and routing" },
     { "id": "gateway.usage-and-spend", "title": "Tokens, cost and the spend log" },
     { "id": "gateway.error-semantics", "title": "What a gateway returns when it cannot serve a call" },

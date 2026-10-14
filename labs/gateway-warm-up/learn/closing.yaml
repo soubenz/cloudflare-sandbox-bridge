@@ -41,7 +41,7 @@ panels:
   - scene: desk
     cast: [{ who: graham, mood: pleased }]
     bg: mint
-    sfx: { text: "CHA-CHING", cue: "opens that log", sound: register }
+    sfx: { text: "$ $ $", cue: "opens that log", sound: register }
     voiceover: "At the end of the month Graham opens that log, and because every row carries a team's name, the single number on the invoice finally breaks down, team by team."
     lines:
       - { text: "team        tokens      cost", cue: "opens that log" }

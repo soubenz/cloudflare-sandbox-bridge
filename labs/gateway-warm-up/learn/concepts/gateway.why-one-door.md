@@ -19,4 +19,4 @@ Put one door in the middle, a gateway, and three things move out of the apps and
 
 **Every call is written down once.** Because every call passes through the gateway, it can record each one: which team, which alias, which provider, how many tokens. That record answers Finance's question about the invoice, and it is where a limit can stop a script that retries all weekend.
 
-Next: what a gateway is not, so you do not expect it to do things it does not do.
+After this lesson come a few more questions, then the closing story and four short games.
