@@ -71,12 +71,12 @@
       "seconds": 3,
       "bytes": 48527
     },
-    "77fe517e24061e38": {
+    "931ddf13cdb2ab1f": {
       "who": "narrator",
       "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
-      "text": "Next come four short games about what you have just seen, and after them the first lab, where you send calls to a real gateway and watch what it does with them.",
-      "seconds": 8.67,
-      "bytes": 139224
+      "text": "Next come two short games about what you have just seen, and after them the first lab, where you send calls to a real gateway and watch what it does with them.",
+      "seconds": 8.75,
+      "bytes": 140478
     }
   },
   "lines": [
@@ -136,7 +136,7 @@
     {
       "panel": 7,
       "kind": "voiceover",
-      "clip": "77fe517e24061e38"
+      "clip": "931ddf13cdb2ab1f"
     }
   ]
 }

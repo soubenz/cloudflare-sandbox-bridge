@@ -16,4 +16,4 @@ At the end of the month Graham opens that log, and because every row carries a t
 
 And when the next new model comes out, the platform team changes one line in that table, so every app that asks for support moves to the new model without a single change of its own. Jess: "So I can try the new model today? Today today?"
 
-Next come four short games about what you have just seen, and after them the first lab, where you send calls to a real gateway and watch what it does with them.
+Next come two short games about what you have just seen, and after them the first lab, where you send calls to a real gateway and watch what it does with them.

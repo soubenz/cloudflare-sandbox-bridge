@@ -62,7 +62,7 @@ panels:
   - scene: you
     bg: cobalt
     caption: Your turn.
-    voiceover: "Next come four short games about what you have just seen, and after them the first lab, where you send calls to a real gateway and watch what it does with them."
+    voiceover: "Next come two short games about what you have just seen, and after them the first lab, where you send calls to a real gateway and watch what it does with them."
     lines:
       - "$ send_calls.py support \"hello gateway\""
       - "answered by: ?"

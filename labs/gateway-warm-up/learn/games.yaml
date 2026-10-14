@@ -1,6 +1,5 @@
-# Four short games, played after the closing. Each tests one thing the
-# closing showed: who holds the keys, what keeps an app answering when a
-# provider fails, alias versus model, and the steps of one call.
+# Two short games, played after the closing. Each tests one thing the
+# closing showed: who holds the keys, and the steps of one call.
 games:
   - kind: sort
     id: whose-key
@@ -19,43 +18,6 @@ games:
       - { id: alias-call, text: "The support app sends the alias support to the gateway, which calls the provider", bucket: gateway, why: "The app sends only an alias. The gateway adds the key when it calls the provider." }
       - { id: one-swap, text: "A leaked provider key is replaced in one place, and no app changes", bucket: gateway, why: "One place to change it is the gateway: no app ever had the key." }
       - { id: new-team, text: "A new team starts calling models without ever seeing a provider key", bucket: gateway, why: "The team calls the gateway, and only the gateway holds provider keys." }
-
-  - kind: flag
-    id: provider-down
-    title: Provider down
-    prompt: "OpenAI has just stopped answering. Flag each setup that keeps the support assistant answering."
-    host: maren
-    timer: 12
-    choices: { flag: Keeps answering, leave: Goes dark }
-    board:
-      - { name: OpenAI, status: down }
-      - { name: Anthropic, status: up }
-    explanation: "What keeps an app answering is a second provider it can reach. A gateway with two providers behind one alias makes that switch for every app at once. An app that holds two keys can make it too, but then every app must carry that code and those keys."
-    items:
-      - { id: direct-a, text: "The app calls OpenAI directly", flag: false, why: "Its only provider is down, and nothing else is set up." }
-      - { id: gw-a-only, text: "The app calls a gateway that has only OpenAI behind support", flag: false, why: "The gateway has nowhere else to send the call." }
-      - { id: gw-a-and-b, text: "The app calls a gateway that has OpenAI and Anthropic behind support", flag: true, why: "The gateway sends the call to Anthropic, and the app changes nothing." }
-      - { id: direct-a-and-b, text: "The app calls providers directly and holds keys for both OpenAI and Anthropic", flag: true, why: "It keeps answering, but the app does the work: its own code must notice the failure, hold both keys and switch." }
-      - { id: gw-a-retry, text: "The app calls a gateway that has only OpenAI behind support, with a retry on OpenAI", flag: false, why: "A retry asks the same provider again. OpenAI is down, so every retry fails too." }
-      - { id: gw-b-only, text: "The app calls a gateway that has only Anthropic behind support", flag: true, why: "Anthropic never went down." }
-
-  - kind: sort
-    id: name-or-model
-    title: Name or model?
-    prompt: "Sort each name: is it an alias the app sends to the gateway, or a real model the gateway sends the call to?"
-    host: jess
-    timer: 6
-    explanation: "An alias is Larkfield's own name for a job, such as support. The gateway's table maps each alias to a real provider model. Apps send only aliases, so the model behind one can change without any app changing."
-    buckets:
-      - { id: alias, label: Alias the app sends }
-      - { id: model, label: Real model the gateway picks }
-    cards:
-      - { id: support, text: support, bucket: alias, why: "support names a job, not a model: Larkfield's own alias." }
-      - { id: fast, text: fast, bucket: alias, why: "fast is a name for a job. The gateway's table says which model answers it." }
-      - { id: research, text: research, bucket: alias, why: "research is an alias: apps send it, the gateway looks it up." }
-      - { id: gpt-4o, text: gpt-4o, bucket: model, why: "gpt-4o is OpenAI's model: the gateway sends calls to it." }
-      - { id: claude-sonnet, text: claude-sonnet, bucket: model, why: "claude-sonnet is Anthropic's model, behind an alias in the table." }
-      - { id: llama-3-70b, text: llama-3-70b, bucket: model, why: "llama-3-70b is a real model a provider serves." }
 
   - kind: order-and-nest
     id: through-the-door

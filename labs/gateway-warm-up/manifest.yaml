@@ -13,7 +13,7 @@
 #                              foundation lesson as lab 1) and why one door
 #   closing.md + closing.yaml  the closing: the same Saturday night, now quiet;
 #                              one call walked through the gateway
-#   games.yaml                 four short games on the closing
+#   games.yaml                 two short games on the closing
 #
 # order: the schema allows only integers >= 1, and see-what-a-gateway-does
 # is already order 1. The index sorts ties by slug, and "gateway-warm-up"
