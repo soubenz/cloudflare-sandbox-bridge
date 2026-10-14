@@ -4,7 +4,7 @@ import { installFakeDom, press, fakeClock, type FakeDocument, type FakeElement }
 /**
  * The warm-up games mounted (dashboard/src/games.js) on a small fake DOM (test/fakes/fake-dom.ts) and
  * played from the keyboard: Start, the cards with ← and →, a wrong card's heart and Next, the clock running
- * out on a hand-moved clock, the pipeline with Space and the arrows, the sliders' answer, the end screen's
+ * out on a hand-moved clock, "what happens next" with taps and the number keys, the sliders' answer, the end screen's
  * stars, recap, best score, Play again and Continue, and Skip.
  */
 type Game = Record<string, any>;
@@ -48,14 +48,17 @@ const pipeGame: Game = {
   id: 'through-the-door',
   kind: 'order-and-nest',
   title: 'Through the door',
-  prompt: 'Order the steps.',
+  prompt: 'What happens to one call?',
   explanation: 'The call holds every step.',
+  // Depth first: gw, alias, cache (under alias), provider.
   steps: [
-    { id: 'gw', text: 'Gateway', parent: null, order: 0 },
-    { id: 'alias', text: 'Alias', parent: 'gw', order: 0 },
-    { id: 'provider', text: 'Provider', parent: 'gw', order: 1 },
+    { id: 'provider', text: 'The gateway calls the provider', parent: 'gw', order: 1, why: 'The provider is called last.' },
+    { id: 'alias', text: 'The gateway looks the alias up', parent: 'gw', order: 0 },
+    { id: 'gw', text: 'The app sends a call', parent: null, order: 0 },
+    { id: 'cache', text: 'The gateway checks its cache', parent: 'alias', order: 0 },
   ],
 };
+const ROUTE = ['gw', 'alias', 'cache', 'provider'];
 const sliderGame: Game = {
   id: 'cost',
   kind: 'sliders',
@@ -330,70 +333,145 @@ describe('flag', () => {
   });
 });
 
-describe('order-and-nest, played from the keyboard', () => {
-  const order = (root: FakeElement) => root.querySelectorAll('.game-tile').map((t) => `${t.dataset.id}:${t.dataset.depth}`);
-  /** Moves the tile `id` to row `to` at `depth` with Space, the arrows and Space. */
-  function place(root: FakeElement, id: string, to: number, depth: number) {
-    const tile = q(root, `.game-tile[data-id="${id}"]`);
-    tile.focus();
-    press(doc, ' ');
-    expect(tile.dataset.grabbed).toBe('true');
-    for (let guard = 0; guard < 6; guard++) {
-      const at = order(root).findIndex((s) => s.startsWith(`${id}:`));
-      if (at === to) break;
-      press(doc, at > to ? 'ArrowUp' : 'ArrowDown');
-    }
-    for (let guard = 0; guard < 4 && Number(tile.dataset.depth) !== depth; guard++) press(doc, Number(tile.dataset.depth) < depth ? 'ArrowRight' : 'ArrowLeft');
-    press(doc, ' ');
-    expect(tile.dataset.grabbed).toBeUndefined();
-  }
+describe('order-and-nest: what happens next', () => {
+  const pool = (root: FakeElement) => root.querySelectorAll('.game-route-card').map((c) => c.dataset.id);
+  const card = (root: FakeElement, id: string) => q(root, `.game-route-card[data-id="${id}"]`);
+  const filled = (root: FakeElement) => root.querySelectorAll('.game-route-slot[data-filled="true"]').map((s) => s.textContent);
+  const status = (root: FakeElement) => q(root, '.game-status').textContent;
+  const hearts = (root: FakeElement) => q(root, '.game-lives').getAttribute('aria-label');
 
-  it('a wrong send bounces at the first wrong step; then Space and the arrows put it right and it goes through', () => {
+  it('asks what happens first, with every step a numbered card, the route strip empty and three hearts', () => {
+    const { root } = mount(pipeGame);
+    expect(root.querySelectorAll('.game-rules li').map((l) => l.textContent).join(' ')).toMatch(/happens first/);
+    start(root);
+    expect(q(root, '.game-route-ask').textContent).toBe('What happens first?');
+    expect([...pool(root)].sort()).toEqual([...ROUTE].sort());
+    expect(pool(root)).not.toEqual(ROUTE);
+    expect(root.querySelectorAll('.game-route-card').map((c) => q(c, '.game-route-key').textContent)).toEqual(['1', '2', '3', '4']);
+    expect(root.querySelectorAll('.game-route-card').every((c) => c.tagName === 'BUTTON')).toBe(true);
+    expect(root.querySelectorAll('.game-route-slot')).toHaveLength(4);
+    expect(filled(root)).toEqual([]);
+    expect(hearts(root)).toBe('3 of 3 hearts left');
+    expect(q(root, '.game-streak').hidden).toBe(false);
+    // The focus is on the first card of the pool. None of the old pipeline is drawn.
+    expect(doc.activeElement).toBe(root.querySelectorAll('.game-route-card')[0]);
+    expect(root.querySelectorAll('.game-tile, .game-send, .game-pipeline')).toHaveLength(0);
+  });
+
+  it('tapping each step in turn fills the route, moves the packet, scores with a combo, and wins with 3 stars', () => {
+    const { root, results, calls } = mount(pipeGame);
+    start(root);
+    for (const [i, id] of ROUTE.entries()) {
+      card(root, id).click();
+      if (i < ROUTE.length - 1) {
+        expect(status(root)).toContain(`Right: step ${i + 1} of 4`);
+        expect(q(root, '.game-route-ask').textContent).toBe('What happens next?');
+        expect(pool(root)).not.toContain(id);
+        // The packet rides on the newest slot; the focus stays in the pool.
+        expect(q(root, `.game-route-slot[data-n="${i + 1}"] .game-route-packet`)).not.toBeNull();
+        expect(doc.activeElement).toBe(root.querySelectorAll('.game-route-card')[0]);
+      }
+    }
+    expect(q(root, '.game-combo').textContent).toBe('×1.75');
+    expect(root.dataset.phase).toBe('end');
+    expect(q(root, '.game-end-title').textContent).toBe('Straight through!');
+    expect(q(root, '.game-stars').getAttribute('aria-label')).toBe('3 of 3 stars');
+    // 100, 125, 150, 175: the card games' combo, no clock in test mode.
+    expect(Number(q(root, '.game-end-points').textContent)).toBe(550);
+    // The answer: the whole route, 1 to N, and the explanation.
+    expect(root.querySelectorAll('.game-route-answer-step').map((s) => s.textContent)).toEqual([
+      'The app sends a call',
+      'The gateway looks the alias up',
+      'The gateway checks its cache',
+      'The gateway calls the provider',
+    ]);
+    expect(q(root, '.game-explain-body').textContent).toBe('The call holds every step.');
+    expect(results).toEqual([{ id: 'through-the-door', solved: true, tries: 1 }]);
+    q(root, '.game-continue').click();
+    expect(calls).toEqual(['continue']);
+  });
+
+  it('a wrong tap costs a heart, the host says what comes first, and the card stays in the pool', () => {
     const { root, results } = mount(pipeGame);
     start(root);
-    expect(order(root)).toHaveLength(3);
-    expect(q(root, '.game-lives').hidden).toBe(true);
-    // Sent as shuffled (never already right): it stops at a wrong step.
-    q(root, '.game-send').click();
-    const wrong = root.querySelectorAll('.game-tile[data-state="wrong"]');
-    expect(wrong).toHaveLength(1);
-    expect(q(root, '.game-status').textContent).toContain('Bounced');
-    expect(results).toEqual([]);
-    place(root, 'gw', 0, 0);
-    place(root, 'alias', 1, 1);
-    place(root, 'provider', 2, 1);
-    expect(order(root)).toEqual(['gw:0', 'alias:1', 'provider:1']);
-    q(root, '.game-send').click();
-    expect(root.dataset.phase).toBe('end');
-    expect(q(root, '.game-stars').getAttribute('aria-label')).toBe('2 of 3 stars');
-    expect(Number(q(root, '.game-end-points').textContent)).toBe(750);
-    expect(root.querySelectorAll('.game-recap-step').map((s) => s.textContent)).toEqual(['Gateway', 'Alias', 'Provider']);
+    card(root, 'gw').click();
+    card(root, 'cache').click();
+    expect(hearts(root)).toBe('2 of 3 hearts left');
+    expect(q(root, '.game-host').dataset.mood).toBe('worried');
+    expect(q(root, '.game-bubble').textContent).toBe('Not yet. First: The gateway looks the alias up.');
+    expect(status(root)).toBe('Not yet. First: The gateway looks the alias up. 2 hearts left.');
+    expect(card(root, 'cache').dataset.result).toBe('wrong');
+    expect(pool(root)).toContain('cache');
+    expect(filled(root)).toHaveLength(1);
+    expect(q(root, '.game-combo').textContent).toBe('×1');
+    expect(doc.activeElement).toBe(root.querySelectorAll('.game-route-card')[0]);
+    // A step with its own `why` says that instead.
+    card(root, 'provider').click();
+    expect(q(root, '.game-bubble').textContent).toBe('Not yet. The provider is called last.');
+    // Then the rest in order: won with two mistakes, 1 star, the missed step marked in the route.
+    for (const id of ROUTE.slice(1)) card(root, id).click();
+    expect(q(root, '.game-stars').getAttribute('aria-label')).toBe('1 of 3 stars');
+    expect(q(root, '.game-end-title').textContent).toBe('Route complete!');
+    expect(root.querySelectorAll('.game-route-answer-step').map((s) => s.dataset.ok)).toEqual(['true', 'false', 'true', 'true']);
     expect(results).toEqual([{ id: 'through-the-door', solved: true, tries: 1 }]);
   });
 
-  it('Escape puts a picked-up step back where it was; ↑ and ↓ move the focus when nothing is held', () => {
+  it('keys 1 to 9 pick the card with that number', () => {
     const { root } = mount(pipeGame);
     start(root);
-    const before = order(root);
-    const first = q(root, '.game-tile');
-    first.focus();
-    press(doc, ' ');
-    press(doc, 'ArrowDown');
-    expect(order(root)).not.toEqual(before);
-    press(doc, 'Escape');
-    expect(order(root)).toEqual(before);
-    press(doc, 'ArrowDown');
-    expect(doc.activeElement).toBe(root.querySelectorAll('.game-tile')[1]);
+    const numberOf = (id: string) => String(pool(root).indexOf(id) + 1);
+    for (const id of ROUTE) press(doc, numberOf(id));
+    expect(root.dataset.phase).toBe('end');
+    expect(q(root, '.game-stars').getAttribute('aria-label')).toBe('3 of 3 stars');
   });
 
-  it("a tile's buttons move it too", () => {
+  it('a number with no card does nothing; the keys work with the focus on the page', () => {
     const { root } = mount(pipeGame);
     start(root);
-    const second = root.querySelectorAll('.game-tile')[1]!;
-    const id = second.dataset.id;
-    q(second, '[data-action="up"]').click();
-    expect(root.querySelectorAll('.game-tile')[0]!.dataset.id).toBe(id);
-    expect(q(root.querySelectorAll('.game-tile')[0]!, '[data-action="up"]').disabled).toBe(true);
+    press(doc, '9');
+    expect(hearts(root)).toBe('3 of 3 hearts left');
+    press(doc, String(pool(root).indexOf('gw') + 1), doc.body);
+    expect(filled(root)).toHaveLength(1);
+  });
+
+  it('three wrong taps end the round: the whole route shown, Try again plays a new round', () => {
+    const { root, results } = mount(pipeGame);
+    start(root);
+    for (let i = 0; i < 3; i++) card(root, 'provider').click();
+    expect(root.dataset.phase).toBe('end');
+    expect(q(root, '.game-end-title').textContent).toBe('Out of hearts');
+    expect(q(root, '.game-stars').getAttribute('aria-label')).toBe('0 of 3 stars');
+    expect(root.querySelectorAll('.game-route-answer-step')).toHaveLength(4);
+    expect(root.querySelectorAll('.game-route-answer-step').map((s) => s.textContent.replace(/^.*\(/, '('))).toEqual(['(missed 3 times)', '(not reached)', '(not reached)', '(not reached)']);
+    expect(q(root, '.game-continue')).toBeNull();
+    expect(results).toEqual([]);
+    const again = q(root, '.game-again');
+    expect(again.textContent).toBe('Try again');
+    again.click();
+    expect(root.dataset.phase).toBe('play');
+    expect(hearts(root)).toBe('3 of 3 hearts left');
+    expect(filled(root)).toEqual([]);
+    for (const id of ROUTE) card(root, id).click();
+    expect(results).toEqual([{ id: 'through-the-door', solved: true, tries: 2 }]);
+  });
+
+  it('with the clock on, each step has its timer; running out costs a heart and names the step', () => {
+    const clock = fakeClock();
+    const { root } = mount({ ...pipeGame, timer: 5 }, { testMode: false, reducedMotion: true, clock, storage: memory() });
+    start(root);
+    clock.tick(COUNT_IN);
+    expect(q(root, '.game-route-clock').hidden).toBe(false);
+    expect(q(root, '.game-clock-num').textContent).toBe('5');
+    clock.tick(5100);
+    expect(hearts(root)).toBe('2 of 3 hearts left');
+    expect(q(root, '.game-bubble').textContent).toBe('Time is up. First: The app sends a call.');
+    // A fresh clock for the same step; a right tap under reduced motion places it after a short pop.
+    expect(q(root, '.game-clock-num').textContent).toBe('5');
+    card(root, 'gw').click();
+    expect(filled(root)).toHaveLength(1);
+    clock.tick(300);
+    expect(q(root, '.game-route-ask').textContent).toBe('What happens next?');
+    expect(pool(root)).not.toContain('gw');
   });
 });
 

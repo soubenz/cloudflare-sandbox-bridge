@@ -460,7 +460,7 @@ function cleanSort(g) {
   return { buckets, cards, ...cleanTimer(g) };
 }
 
-/** A sort's or flag's optional `timer`: whole seconds 0 to 60 (0 is no clock); anything else is left out (the default). */
+/** A sort's, flag's or order-and-nest's optional `timer`: whole seconds 0 to 60 (0 is no clock); anything else is left out (the default). */
 function cleanTimer(g) {
   return Number.isInteger(g.timer) && g.timer >= 0 && g.timer <= 60 ? { timer: g.timer } : {};
 }
@@ -505,7 +505,9 @@ function cleanSliders(g) {
 
 function cleanOutline(g) {
   const steps = cleanList(g.steps, (s) =>
-    s && isLocalId(s.id) && isStr(s.text) && (s.parent === null || isLocalId(s.parent)) && Number.isInteger(s.order) ? { id: s.id, text: s.text, parent: s.parent, order: s.order } : null
+    s && isLocalId(s.id) && isStr(s.text) && (s.parent === null || isLocalId(s.parent)) && Number.isInteger(s.order)
+      ? { id: s.id, text: s.text, parent: s.parent, order: s.order, ...(isStr(s.why) ? { why: s.why } : {}) }
+      : null
   );
   if (steps.length < 2 || steps.length !== (Array.isArray(g.steps) ? g.steps.length : 0)) return null;
   // One root, and every step reachable from it (no missing parent, no cycle): otherwise it cannot be solved.
@@ -520,7 +522,7 @@ function cleanOutline(g) {
     }
   };
   walk(null);
-  return reached.size === steps.length ? { steps } : null;
+  return reached.size === steps.length ? { steps, ...cleanTimer(g) } : null;
 }
 
 const GAME_KINDS = { sort: cleanSort, flag: cleanFlag, sliders: cleanSliders, 'order-and-nest': cleanOutline };

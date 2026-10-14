@@ -180,7 +180,7 @@ const GameBase = {
     .refine((id) => SPEAKING_CAST_IDS.includes(id), { message: `host must be one of ${SPEAKING_CAST_IDS.join(', ')}` })
     .optional(),
 };
-/** Optional, sort and flag only: seconds each card stays on the clock (default 8 for sort, 10 for flag; 0 turns the clock off). */
+/** Optional: seconds each card (or step) stays on the clock (default 8 for sort, 10 for flag, 15 for order-and-nest; 0 turns the clock off). */
 const GameTimer = z.number().int().min(0).max(60).optional();
 
 /** Drag each card into the bucket it belongs to. */
@@ -233,11 +233,20 @@ const SlidersGameShape = z.object({
   target: z.object({ value: z.number().finite(), tolerance: z.number().finite().min(0).optional() }).optional(),
 });
 
-/** Put the steps in order and nest each under its parent: one root, every parent a step of the game, no cycles. */
+/**
+ * The steps of one thing in the order they happen: one root, every parent a step of the game, no cycles. The
+ * console plays it as "what happens next": the tree flattened depth first (siblings by `order`) is the order the
+ * learner taps the steps in; the nesting is how the steps are written, not asked of the learner. `why`
+ * (optional) is what the host says when the step is tapped out of turn (default: "First: <the next step>").
+ */
 const OrderAndNestGameShape = z.object({
   kind: z.literal('order-and-nest'),
   ...GameBase,
-  steps: z.array(z.object({ id: localId, text: plain(160), parent: localId.nullable(), order: z.number().int().min(0).max(99) })).min(3).max(10),
+  steps: z
+    .array(z.object({ id: localId, text: plain(160), parent: localId.nullable(), order: z.number().int().min(0).max(99), why: plain(300).optional() }))
+    .min(3)
+    .max(10),
+  timer: GameTimer,
 });
 
 const GameUnion = z.discriminatedUnion('kind', [SortGameShape, FlagGameShape, SlidersGameShape, OrderAndNestGameShape]);
@@ -304,6 +313,8 @@ function refineGame(g: z.infer<typeof GameUnion>, ctx: z.RefinementCtx): void {
 }
 
 export const GameSchema = GameUnion.superRefine(refineGame);
+/** The most games one lab may have (the owner's rule: two short games, no more). */
+export const MAX_GAMES = 2;
 export type LearnGame = z.infer<typeof GameSchema>;
 
 /** Most distinct narration clips one lab may carry, and the largest one, in bytes (about 70 s of speech at 48 kbps is 400 KB). */
@@ -391,8 +402,8 @@ export const LearnBundleSchema = z.object({
    * story and comic shown after the lab, narrated like the opener. Its clips share learn/audio/.
    */
   closing: z.object({ story: StorySchema, comic: ComicSchema, audio: AudioSchema.optional() }).optional(),
-  /** Games played after the closing (learn/games.yaml); a lab with games has a closing and no fields. */
-  games: z.array(GameSchema).max(6).default([]),
+  /** Games played after the closing (learn/games.yaml); a lab with games has a closing and no fields. At most MAX_GAMES. */
+  games: z.array(GameSchema).max(MAX_GAMES, { message: `a lab may have at most ${MAX_GAMES} games` }).default([]),
 });
 
 export type LearnBundle = z.infer<typeof LearnBundleSchema>;

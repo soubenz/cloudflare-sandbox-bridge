@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 
 /**
  * The rules of the warm-up games (dashboard/src/game-engine.js), pure: points, combo, hearts, stars, the
- * clock running out, the deck, the pipeline's first wrong step, closeness, keys and the best score.
+ * clock running out, the deck, what happens next (the order of the steps and the next-step check),
+ * closeness, keys and the best score.
  */
 type Game = Record<string, any>;
 const E = (await import('../../dashboard/src/game-engine.js' as string)) as Record<string, any>;
@@ -82,7 +83,9 @@ describe('scoring', () => {
     expect(E.timerFor({ ...sortGame, timer: 0 })).toBe(0);
     expect(E.timerFor({ ...sortGame, timer: 500 })).toBe(E.MAX_TIMER);
     expect(E.timerFor(sortGame, { enabled: false })).toBe(0);
-    expect(E.timerFor(outlineGame)).toBe(0);
+    expect(E.timerFor(outlineGame)).toBe(15);
+    expect(E.timerFor({ ...outlineGame, timer: 0 })).toBe(0);
+    expect(E.timerFor({ kind: 'sliders' })).toBe(0);
   });
 });
 
@@ -171,54 +174,123 @@ describe('a round of cards', () => {
   });
 });
 
-describe('the pipeline (order-and-nest)', () => {
-  const solved = [
-    { id: 'r', depth: 0 },
-    { id: 'a', depth: 1 },
-    { id: 'b', depth: 1 },
-  ];
-  it('finds the first step out of place or at the wrong level', () => {
-    expect(E.firstWrong(outlineGame, solved)).toBe(-1);
-    expect(E.firstWrong(outlineGame, [solved[0], solved[2], solved[1]])).toBe(1);
-    expect(E.firstWrong(outlineGame, [solved[0], { id: 'a', depth: 0 }, solved[2]])).toBe(1);
-    expect(E.firstWrong(outlineGame, [{ id: 'a', depth: 0 }, solved[0], solved[2]])).toBe(0);
-    expect(E.firstWrong(outlineGame, solved.slice(0, 2))).toBe(2);
-  });
-  it('a send goes through when every step is right, and stops at the first wrong one', () => {
-    expect(E.sendPipeline(outlineGame, solved)).toEqual({ correct: true, stop: -1, passed: 3 });
-    expect(E.sendPipeline(outlineGame, [solved[0], { id: 'b', depth: 1 }, { id: 'a', depth: 1 }])).toEqual({ correct: false, stop: 1, passed: 1 });
-  });
-  it('stars and points by the sends', () => {
-    expect([1, 2, 3, 9].map(E.orderStars)).toEqual([3, 2, 1, 1]);
-    expect([1, 2, 3, 4, 9].map(E.orderScore)).toEqual([1000, 750, 500, 250, 250]);
-  });
-  it('moves rows and keeps the outline drawable', () => {
-    const rows = [
-      { id: 'a', depth: 0 },
-      { id: 'r', depth: 0 },
-      { id: 'b', depth: 0 },
+describe('what happens next (order-and-nest)', () => {
+  // The game in games.yaml: one root (the app's call) holding five gateway steps.
+  const door: Game = {
+    id: 'through-the-door',
+    kind: 'order-and-nest',
+    title: 'Through the door',
+    steps: [
+      { id: 'write-usage', text: 'The gateway writes the usage', parent: 'app-sends', order: 4 },
+      { id: 'look-up', text: 'The gateway looks support up in its table', parent: 'app-sends', order: 0 },
+      { id: 'answer-back', text: 'The answer comes back', parent: 'app-sends', order: 3 },
+      { id: 'app-sends', text: 'The app sends a call', parent: null, order: 0 },
+      { id: 'call-provider', text: 'The gateway calls the provider', parent: 'app-sends', order: 2 },
+      { id: 'add-key', text: 'The gateway adds the key', parent: 'app-sends', order: 1, why: 'The key comes after the look-up.' },
+    ],
+  };
+  const DOOR = ['app-sends', 'look-up', 'add-key', 'call-provider', 'answer-back', 'write-usage'];
+  /** Taps every step in `taps` in turn. */
+  const tapAll = (s: any, taps: Array<string | null>) => taps.reduce((st, id) => (id === null ? E.expireStep(st) : E.pickStep(st, id)), s);
+
+  it('the order is the tree flattened depth first, siblings by order; from the game or its steps', () => {
+    expect(E.orderOf(door)).toEqual(DOOR);
+    expect(E.orderOf(door.steps)).toEqual(DOOR);
+    expect(E.orderOf(outlineGame)).toEqual(['r', 'a', 'b']);
+    // A deeper tree: a child's own children come before its next sibling.
+    const deep = [
+      { id: 'r2', parent: null, order: 2 },
+      { id: 'a1', parent: 'a', order: 1 },
+      { id: 'r', parent: null, order: 1 },
+      { id: 'b', parent: 'r', order: 2 },
+      { id: 'a', parent: 'r', order: 1 },
     ];
-    const up = E.moveRow(rows, 1, 'up');
-    expect(up.at).toBe(0);
-    expect(up.rows.map((r: any) => r.id)).toEqual(['r', 'a', 'b']);
-    const nested = E.moveRow(up.rows, 1, 'indent');
-    expect(nested.rows[1].depth).toBe(1);
-    // Cannot nest twice under the row above, nor nest the first row, nor move past an end.
-    expect(E.moveRow(nested.rows, 1, 'indent').rows).toBe(nested.rows);
-    expect(E.moveRow(rows, 0, 'indent').rows).toBe(rows);
-    expect(E.moveRow(rows, 0, 'up').rows).toBe(rows);
-    expect(E.moveRow(rows, 2, 'down').rows).toBe(rows);
-    // Moving a parent up leaves its child no deeper than one under the row above.
-    expect(E.clampRows([{ id: 'x', depth: 2 }, { id: 'y', depth: 3 }])).toEqual([
-      { id: 'x', depth: 0 },
-      { id: 'y', depth: 1 },
-    ]);
-    expect(E.placeRow(rows, 1, 0, 0).map((r: any) => r.id)).toEqual(['r', 'a', 'b']);
-    expect(E.placeRow(rows, 2, 1, 5)).toEqual([
-      { id: 'a', depth: 0 },
-      { id: 'b', depth: 1 },
-      { id: 'r', depth: 0 },
-    ]);
+    expect(E.orderOf(deep)).toEqual(['r', 'a', 'a1', 'b', 'r2']);
+    expect(E.orderOf([])).toEqual([]);
+    expect(E.orderOf(undefined)).toEqual([]);
+  });
+
+  it('the next-step check: only the step right after the placed ones, and only when those are in order', () => {
+    expect(E.isNextStep(DOOR, [], 'app-sends')).toBe(true);
+    expect(E.isNextStep(DOOR, [], 'look-up')).toBe(false);
+    expect(E.isNextStep(DOOR, ['app-sends', 'look-up'], 'add-key')).toBe(true);
+    expect(E.isNextStep(DOOR, ['app-sends', 'look-up'], 'write-usage')).toBe(false);
+    expect(E.isNextStep(DOOR, ['look-up'], 'add-key')).toBe(false);
+    expect(E.isNextStep(DOOR, DOOR, 'app-sends')).toBe(false);
+    expect(E.isNextStep(DOOR, [], null)).toBe(false);
+    expect(E.isNextStep(DOOR, [], '')).toBe(false);
+  });
+
+  it('a round: every step in the pool, shuffled by the seed and never already in order, every heart', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6, 7]) {
+      const s = E.newOrderRound(door, { seed });
+      expect(s.order).toEqual(DOOR);
+      expect([...s.pool].sort()).toEqual([...DOOR].sort());
+      expect(s.pool).not.toEqual(DOOR);
+      expect(s).toMatchObject({ placed: [], total: 6, lives: E.LIVES, score: 0, streak: 0, mistakes: 0, status: 'playing', last: null });
+      expect(E.nextStep(s)).toBe('app-sends');
+    }
+    expect(E.newOrderRound(door, { seed: 3 }).pool).toEqual(E.newOrderRound(door, { seed: 3 }).pool);
+    expect(E.newOrderRound({ steps: [] }).status).toBe('won');
+  });
+
+  it('a right tap places the step and scores like a card; the whole route in order wins with 3 stars', () => {
+    let s = E.newOrderRound(door, { seed: 2 });
+    const before = s;
+    s = E.pickStep(s, 'app-sends');
+    expect(before.placed).toEqual([]);
+    expect(s.placed).toEqual(['app-sends']);
+    expect(s.pool).not.toContain('app-sends');
+    expect(s.last).toEqual({ id: 'app-sends', expected: 'app-sends', correct: true, points: E.BASE_POINTS, timedOut: false });
+    s = E.pickStep(s, 'look-up', { left: 5, limit: 10 });
+    expect(s.last.points).toBe(E.pointsFor({ streak: 2, left: 5, limit: 10 }));
+    s = tapAll(s, DOOR.slice(2));
+    expect(s.status).toBe('won');
+    expect(s.placed).toEqual(DOOR);
+    expect(s.pool).toEqual([]);
+    expect(s.bestStreak).toBe(6);
+    expect(E.starsFor({ won: true, mistakes: s.mistakes })).toBe(3);
+    // A finished round takes no more taps.
+    expect(E.pickStep(s, 'app-sends')).toBe(s);
+    expect(E.nextStep(s)).toBeNull();
+  });
+
+  it('a wrong tap costs a heart, resets the streak, keeps the step in the pool and names the step expected', () => {
+    let s = tapAll(E.newOrderRound(door, { seed: 1 }), ['app-sends', 'look-up']);
+    s = E.pickStep(s, 'write-usage');
+    expect(s.last).toEqual({ id: 'write-usage', expected: 'add-key', correct: false, points: 0, timedOut: false });
+    expect(s).toMatchObject({ lives: 2, streak: 0, mistakes: 1, placed: ['app-sends', 'look-up'], misses: { 'add-key': 1 } });
+    expect(s.pool).toContain('write-usage');
+    expect(E.nextStep(s)).toBe('add-key');
+    // A tap on a step that is not in the pool (already placed, or unknown) changes nothing.
+    expect(E.pickStep(s, 'look-up')).toBe(s);
+    expect(E.pickStep(s, 'nope')).toBe(s);
+    // The clock running out is a wrong tap with no step.
+    const t = E.expireStep(s);
+    expect(t.last).toEqual({ id: null, expected: 'add-key', correct: false, points: 0, timedOut: true });
+    expect(t.lives).toBe(1);
+    expect(t.misses).toEqual({ 'add-key': 2 });
+  });
+
+  it('stars by mistakes (0: 3, 1: 2, 2: 1); the third mistake ends the round', () => {
+    const won = (wrong: number) => {
+      let s = E.newOrderRound(door, { seed: 4 });
+      for (let i = 0; i < wrong; i++) s = E.pickStep(s, 'write-usage');
+      s = tapAll(s, DOOR);
+      return E.starsFor({ won: s.status === 'won', mistakes: s.mistakes });
+    };
+    expect([0, 1, 2].map(won)).toEqual([3, 2, 1]);
+    const lost = tapAll(E.newOrderRound(door, { seed: 4 }), ['look-up', null, 'add-key']);
+    expect(lost.status).toBe('lost');
+    expect(lost.lives).toBe(0);
+    expect(E.pickStep(lost, 'app-sends')).toBe(lost);
+    expect(E.starsFor({ won: false, mistakes: 3 })).toBe(0);
+  });
+
+  it('agrees with the outline grader: the placed order at the tree depths is a right outline', () => {
+    const s = tapAll(E.newOrderRound(door, { seed: 1 }), DOOR);
+    const depth = new Map(grade.outlineAnswer(door).map((r: any) => [r.id, r.depth]));
+    expect(grade.gradeOutline(door, s.placed.map((id: string) => ({ id, depth: depth.get(id) }))).correct).toBe(true);
   });
 });
 
@@ -272,15 +344,15 @@ describe('keys', () => {
     expect(E.choiceKey('4', four)).toEqual({ choose: 'b4' });
     expect(E.choiceKey('x', four)).toBeNull();
   });
-  it('a tile: Space picks it up and drops it, the arrows move it, Escape puts it back', () => {
-    expect(E.tileKey(' ')).toBe('grab');
-    expect(E.tileKey('Enter')).toBe('grab');
-    expect(E.tileKey('ArrowDown')).toBe('focus-next');
-    expect(E.tileKey('ArrowUp')).toBe('focus-prev');
-    expect(E.tileKey('ArrowLeft')).toBeNull();
-    expect(E.tileKey(' ', { grabbed: true })).toBe('drop');
-    expect(E.tileKey('Escape', { grabbed: true })).toBe('cancel');
-    expect(['ArrowUp', 'ArrowDown', 'ArrowRight', 'ArrowLeft'].map((k) => E.tileKey(k, { grabbed: true }))).toEqual(['up', 'down', 'indent', 'outdent']);
+  it('a step card: 1 to 9 pick by its number, up to the cards on show', () => {
+    expect(E.stepKey('1', 6)).toBe(1);
+    expect(E.stepKey('6', 6)).toBe(6);
+    expect(E.stepKey('7', 6)).toBe(0);
+    expect(E.stepKey('9', 12)).toBe(9);
+    expect(E.stepKey('0', 6)).toBe(0);
+    expect(E.stepKey('10', 12)).toBe(0);
+    expect(E.stepKey('ArrowLeft', 6)).toBe(0);
+    expect(E.stepKey(' ', 6)).toBe(0);
   });
 });
 

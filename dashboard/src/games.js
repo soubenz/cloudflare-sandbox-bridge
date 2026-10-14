@@ -5,19 +5,19 @@
  *                  press ← / → (1 to 4 when there are more than two buckets)
  *   flag           the same cards game with two sides: "leave it" (left) and "flag it" (right), or the
  *                  words of the game's `choices`; a `board` shows the providers' status above the card
- *   order-and-nest drag the steps into the order of the pipeline and nest them, then send a packet through
- *                  it: it stops and bounces at the first step out of place
+ *   order-and-nest "what happens next": the steps are big shuffled cards; tap (or press the number of) the one
+ *                  that happens next, and it joins the route strip above; a step out of turn costs a heart
  *   sliders        move the sliders, dial the readout (to the `target` when there is one), pick the slider
  *                  that moves it most
  *
  * Every game sits in one shell: a title and its one-line goal, a host from the comic's cast who reacts to
- * each answer, a Start button and a 3-2-1 count-in, the score, the combo, hearts (sort and flag), a
+ * each answer, a Start button and a 3-2-1 count-in, the score, the combo, hearts (sort, flag, order-and-nest), a
  * progress bar, Sound and Timer toggles, and an end screen with stars, the score, the best score kept in
  * this browser, a recap of every item with the right answer and why, Play again and Continue. "Skip this
  * game" (and on the first game "Skip all games") is always one press away. The rules (points, hearts,
  * stars, keys) are pure functions in game-engine.js; the graders are in game-grade.js.
  *
- * Accessibility: every action is a real button or a focusable card or tile with keys; drag and swipe are
+ * Accessibility: every action is a real button or a focusable card with keys; drag and swipe are
  * extra ways, never the only one. A live region says each card, each verdict and the hearts left; the
  * picture never carries a result alone (words say Right, Not quite, Up, Down). The clock can be turned off
  * (the Timer toggle, remembered). Reduced motion (and test mode) draws no sliding, flying or shaking: the
@@ -39,7 +39,7 @@ import { make, button } from './learn-ui.js';
 import { bust } from './comic-art.js';
 import { unlockStings, playSting } from './comic-sfx.js';
 import { CAST } from '../../src/labs/comic-kit.ts';
-import { gradeSort, gradeFlag, gradeAsk, evalFormula, formatReadout, outlineAnswer, shuffle } from './game-grade.js';
+import { gradeSort, gradeFlag, gradeAsk, evalFormula, formatReadout } from './game-grade.js';
 import * as E from './game-engine.js';
 
 export { shuffle, gradeSort, gradeFlag, evalFormula, formatReadout, gradeAsk, outlineAnswer, gradeOutline } from './game-grade.js';
@@ -53,7 +53,7 @@ export const HOSTS = ['maren', 'tomasz', 'graham', 'ollie', 'jess', 'priya'];
 export const DEFAULT_HOST = 'tomasz';
 
 /** How long feedback stays before the next card, in ms (test mode: none; reduced motion: shorter). */
-const DELAY = { right: 650, count: 650, packet: 260, lost: 700 };
+const DELAY = { right: 650, count: 650, place: 280, lost: 700 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const GLYPHS = {
@@ -85,6 +85,8 @@ function glyph(names, { size = 20, fill = false, cls = '' } = {}) {
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+/** A lab's line as a sentence: a full stop added unless it ends in one already. */
+const sentence = (t) => (/[.!?…]$/.test(String(t).trim()) ? String(t).trim() : `${String(t).trim()}.`);
 
 // ---------------------------------------------------------------------------
 // Where the game runs: test mode, motion, the clock, storage, sound
@@ -235,8 +237,8 @@ function shell(game, env, opts) {
   for (let i = 0; i < E.COMBO_CAP; i++) pips.append(make('i'));
   const comboValue = make('strong', 'game-combo', '×1');
   streakBox.append(make('span', 'game-hud-label', 'Combo'), pips, comboValue);
-  // Only the card games keep a combo.
-  streakBox.hidden = game.kind !== 'sort' && game.kind !== 'flag';
+  // The card games and "what happens next" keep a combo.
+  streakBox.hidden = game.kind !== 'sort' && game.kind !== 'flag' && game.kind !== 'order-and-nest';
   const livesBox = make('div', 'game-hud-item game-lives');
   livesBox.setAttribute('role', 'img');
   const toggles = make('div', 'game-toggles');
@@ -880,321 +882,335 @@ function mountCards(game, sh, env, report) {
 }
 
 // ---------------------------------------------------------------------------
-// order-and-nest: the pipeline
+// order-and-nest: tap what happens next
 // ---------------------------------------------------------------------------
 
-const ACTIONS = [
-  ['up', 'Move up', '↑'],
-  ['down', 'Move down', '↓'],
-  ['outdent', 'Nest less', '⇤'],
-  ['indent', 'Nest under the step above', '⇥'],
-];
-
-function mountPipeline(game, sh, env, report) {
+function mountRoute(game, sh, env, report) {
   const steps = Array.isArray(game.steps) ? game.steps : [];
-  const text = new Map(steps.map((s) => [s.id, s.text]));
-  const answer = outlineAnswer(game);
-  let rows = [];
-  let sends = 0;
-  let solved = false;
-  let busy = false;
-  let grabbed = null;
-  let held = null;
+  const byId = new Map(steps.map((s) => [s.id, s]));
+  const textOf = (id) => byId.get(id)?.text ?? '';
+  let state = null;
   let rounds = 0;
-  const tiles = new Map();
+  let locked = true;
+  let clock = null;
 
-  const arena = make('div', 'game-pipe');
-  const hintId = `${sh.id}-pipehint`;
-  const hint = make('p', 'game-keys', 'Drag a step, or focus it and press Space to pick it up, the arrows to move it (← and → nest it), and Space to drop it.');
-  hint.id = hintId;
-  const ends = (label, cls) => {
-    const e = make('div', `game-pipe-end ${cls}`, label);
-    e.setAttribute('aria-hidden', 'true');
-    return e;
-  };
-  const list = make('ol', 'game-pipeline');
-  list.setAttribute('aria-label', 'The pipeline, in order');
-  const packet = make('div', 'game-packet');
+  const arena = make('div', 'game-route');
+
+  // The route so far: a numbered slot for every step, filled as the steps are placed, and the packet on the newest.
+  const track = make('div', 'game-route-track');
+  const startPin = make('span', 'game-route-start', 'Start');
+  startPin.setAttribute('aria-hidden', 'true');
+  const strip = make('ol', 'game-route-strip');
+  strip.setAttribute('aria-label', 'The route so far');
+  const packet = make('span', 'game-route-packet');
   packet.setAttribute('aria-hidden', 'true');
-  const track = make('div', 'game-pipe-track');
-  track.append(ends('In', 'game-pipe-in'), list, ends('Out', 'game-pipe-out'), packet);
-  const send = button('Send it through', { kind: 'accent' });
-  send.classList.add('btn-lg', 'game-send');
-  arena.append(hint, track, send);
+  track.append(startPin, strip);
+  const lastLine = make('p', 'game-route-last');
+  lastLine.setAttribute('aria-hidden', 'true');
+
+  // What happens next: the steps still to place, as big cards with a number each.
+  const askRow = make('div', 'game-route-askrow');
+  const ask = make('p', 'game-route-ask');
+  ask.id = `${sh.id}-ask`;
+  const ring = make('div', 'game-clock game-route-clock');
+  ring.setAttribute('aria-hidden', 'true');
+  const ringSvg = document.createElementNS(SVG_NS, 'svg');
+  ringSvg.setAttribute('viewBox', '0 0 48 48');
+  ringSvg.setAttribute('class', 'game-clock-ring');
+  // Markup this file wrote.
+  ringSvg.innerHTML = '<circle class="game-clock-track" cx="24" cy="24" r="20"/><circle class="game-clock-left" cx="24" cy="24" r="20"/>';
+  const ringNum = make('span', 'game-clock-num');
+  ring.append(ringSvg, ringNum);
+  ring.hidden = true;
+  askRow.append(ask, ring);
+  const pool = make('div', 'game-route-pool');
+  pool.setAttribute('role', 'group');
+  pool.setAttribute('aria-labelledby', ask.id);
+  const keys = make('p', 'game-keys', 'Tap the step that happens next, or press its number.');
+  arena.append(track, lastLine, askRow, pool, keys);
   sh.stage.append(arena);
 
-  function tile(id) {
-    if (tiles.has(id)) return tiles.get(id);
-    const li = make('li', 'game-tile');
-    li.dataset.id = id;
-    li.tabIndex = 0;
-    li.setAttribute('aria-describedby', hintId);
-    const node = make('span', 'game-tile-node');
-    node.setAttribute('aria-hidden', 'true');
-    const grip = make('span', 'game-tile-grip', '⋮⋮');
-    grip.setAttribute('aria-hidden', 'true');
-    const body = make('span', 'game-tile-text', text.get(id));
-    const level = make('span', 'game-tile-level');
-    const bar = make('span', 'game-tile-actions');
-    for (const [action, name, sign] of ACTIONS) {
-      const b = button(sign, { kind: 'ghost' });
-      b.classList.add('btn-tiny', 'game-tile-btn');
-      b.dataset.action = action;
-      b.tabIndex = -1;
-      b.setAttribute('aria-label', `${name}: ${text.get(id)}`);
-      b.addEventListener('click', (e) => {
-        e.stopPropagation();
-        act(id, action, { focus: true });
-      });
-      bar.append(b);
-    }
-    li.append(node, grip, body, level, bar);
-    drag(li, id);
-    tiles.set(id, li);
-    return li;
+  const cards = new Map();
+  function cardFor(id) {
+    if (cards.has(id)) return cards.get(id);
+    // Not a .btn: a card is a big flat button of its own.
+    const b = make('button', 'game-route-card');
+    b.type = 'button';
+    b.dataset.id = id;
+    const key = make('span', 'game-route-key');
+    key.setAttribute('aria-hidden', 'true');
+    b.append(key, make('span', 'game-route-card-text', textOf(id)));
+    b.addEventListener('click', () => pick(id));
+    cards.set(id, b);
+    return b;
   }
 
-  function render() {
-    rows.forEach((r, i) => {
-      const li = tile(r.id);
-      li.style.setProperty('--depth', String(r.depth));
-      li.dataset.depth = String(r.depth);
-      if (grabbed === r.id) li.dataset.grabbed = 'true';
-      else delete li.dataset.grabbed;
-      li.querySelector('.game-tile-level').textContent = `Level ${r.depth + 1}`;
-      li.setAttribute('aria-label', `Step ${i + 1} of ${rows.length}, level ${r.depth + 1}: ${text.get(r.id)}${grabbed === r.id ? ', picked up' : ''}`);
-      for (const b of li.querySelectorAll('[data-action]')) {
-        const a = b.dataset.action;
-        const can = !solved && !busy && E.moveRow(rows, i, a).rows !== rows;
-        b.disabled = !can;
+  // --- drawing -------------------------------------------------------------------
+  function drawStrip(fresh = false) {
+    strip.replaceChildren();
+    for (let i = 0; i < state.total; i++) {
+      const id = state.placed[i];
+      const li = make('li', 'game-route-slot');
+      li.dataset.n = String(i + 1);
+      const num = make('span', 'game-route-num', String(i + 1));
+      num.setAttribute('aria-hidden', 'true');
+      if (id) {
+        li.dataset.filled = 'true';
+        li.append(num, make('span', 'game-route-slot-text', textOf(id)));
+        if (state.misses[id]) li.dataset.missed = 'true';
+        if (fresh && i === state.placed.length - 1 && !env.still) li.classList.add('game-pop');
+      } else {
+        li.append(num, make('span', 'sr-only', 'not placed yet'));
       }
-      // Moved only when out of place: moving a node takes the focus off it.
-      if (list.children[i] !== li) list.insertBefore(li, list.children[i] ?? null);
+      strip.append(li);
+    }
+    // The packet rides on the newest step placed, or waits at the start.
+    const newest = state.placed.length ? strip.children[state.placed.length - 1] : null;
+    if (newest) newest.append(packet);
+    else startPin.append(packet);
+    if (fresh && !env.still) {
+      packet.classList.remove('game-pop');
+      void packet.offsetWidth;
+      packet.classList.add('game-pop');
+    }
+    const n = state.placed.length;
+    lastLine.textContent = n ? `${n}. ${textOf(state.placed[n - 1])}` : '';
+    lastLine.hidden = n === 0;
+  }
+
+  function drawPool() {
+    ask.textContent = state.placed.length === 0 ? 'What happens first?' : 'What happens next?';
+    const shown = state.pool.map((id) => cardFor(id));
+    pool.replaceChildren(...shown);
+    shown.forEach((b, i) => {
+      const n = i + 1;
+      b.querySelector('.game-route-key').textContent = n <= 9 ? String(n) : '';
+      if (n <= 9) b.setAttribute('aria-keyshortcuts', String(n));
+      else b.removeAttribute('aria-keyshortcuts');
+      b.disabled = false;
+      delete b.dataset.result;
+      b.classList.remove('game-shake');
     });
-    send.disabled = solved || busy;
+    pool.dataset.n = String(shown.length);
   }
 
-  function clearMarks() {
-    for (const li of tiles.values()) {
-      delete li.dataset.state;
-      li.classList.remove('game-shake');
-    }
-    delete packet.dataset.at;
-    delete packet.dataset.bounce;
-    packet.hidden = true;
+  function hud() {
+    sh.score(state.score, state.last?.correct ? state.last.points : 0);
+    sh.streak(state.streak);
+    sh.lives(state.lives, state.maxLives);
+    sh.progress(state.total ? state.placed.length / state.total : 1, `${state.placed.length} of ${plural(state.total, 'step', 'steps')} placed`);
   }
 
-  function act(id, action, { focus = false, quiet = false } = {}) {
-    if (solved || busy) return;
-    const i = rows.findIndex((r) => r.id === id);
-    const moved = E.moveRow(rows, i, action);
-    if (moved.rows === rows) return;
-    rows = moved.rows;
-    clearMarks();
-    render();
-    sh.play('pop');
-    if (!quiet) {
-      const r = rows[moved.at];
-      sh.say(`${text.get(id)}: step ${moved.at + 1} of ${rows.length}, level ${r.depth + 1}.`);
-    }
-    if (focus) tiles.get(id)?.focus();
-  }
+  const firstCard = () => pool.querySelector('.game-route-card');
 
-  list.addEventListener('keydown', (e) => {
-    if (sh.root.dataset.phase !== 'play') return;
-    const li = e.target?.closest?.('.game-tile');
-    if (!li || e.target !== li) return;
-    const id = li.dataset.id;
-    const k = E.tileKey(e.key, { grabbed: grabbed === id });
-    if (!k) return;
-    e.preventDefault();
-    const i = rows.findIndex((r) => r.id === id);
-    if (k === 'focus-prev' || k === 'focus-next') {
-      const j = k === 'focus-prev' ? i - 1 : i + 1;
-      if (rows[j]) tiles.get(rows[j].id).focus();
-      return;
-    }
-    if (k === 'grab') {
-      if (solved || busy) return;
-      grabbed = id;
-      held = rows.map((r) => ({ ...r }));
-      render();
-      li.focus();
-      sh.say(`Picked up: ${text.get(id)}. Step ${i + 1}, level ${rows[i].depth + 1}. Arrows move it, Space drops it, Escape puts it back.`);
-      return;
-    }
-    if (k === 'drop') {
-      grabbed = null;
-      held = null;
-      render();
-      const r = rows[i];
-      sh.say(`Dropped: ${text.get(id)} at step ${i + 1}, level ${r.depth + 1}.`);
-      li.focus();
-      return;
-    }
-    if (k === 'cancel') {
-      if (held) rows = held;
-      grabbed = null;
-      held = null;
-      render();
-      sh.say(`Put back: ${text.get(id)}.`);
-      li.focus();
-      return;
-    }
-    act(id, k, { quiet: false });
-    li.focus();
-  });
-
-  function drag(li, id) {
-    let d = null;
-    li.addEventListener('pointerdown', (e) => {
-      if (solved || busy || e.button > 0 || e.target?.closest?.('button')) return;
-      const from = rows.findIndex((r) => r.id === id);
-      d = { x: e.clientX, y: e.clientY, pid: e.pointerId, from, depth: rows[from].depth };
-      li.setPointerCapture?.(e.pointerId);
-      li.dataset.dragging = 'true';
-    });
-    li.addEventListener('pointermove', (e) => {
-      if (!d || e.pointerId !== d.pid) return;
-      li.style.transform = `translate(${e.clientX - d.x}px, ${e.clientY - d.y}px)`;
-    });
-    const up = (e) => {
-      if (!d || e.pointerId !== d.pid) return;
-      const dx = e.clientX - d.x;
-      const done = e.type === 'pointerup';
-      const from = d.from;
-      const depth = d.depth + Math.round(dx / 40);
-      d = null;
-      delete li.dataset.dragging;
-      li.style.transform = '';
-      if (!done) return;
-      // The row it lands on: the tile under the pointer's height.
-      let to = from;
-      const others = rows.map((r) => tiles.get(r.id));
-      others.forEach((t, j) => {
-        const box = t.getBoundingClientRect?.();
-        if (!box || !box.height) return;
-        if (e.clientY > box.top && e.clientY < box.bottom) to = j;
-      });
-      const placed = E.placeRow(rows, from, to, depth);
-      if (JSON.stringify(placed) === JSON.stringify(rows)) return;
-      rows = placed;
-      clearMarks();
-      render();
-      sh.play('pop');
-      const at = rows.findIndex((r) => r.id === id);
-      sh.say(`${text.get(id)}: step ${at + 1} of ${rows.length}, level ${rows[at].depth + 1}.`);
-    };
-    li.addEventListener('pointerup', up);
-    li.addEventListener('pointercancel', up);
-  }
-
-  function startRound() {
-    rounds += 1;
-    sends = 0;
-    solved = false;
-    busy = false;
-    grabbed = null;
-    held = null;
-    sh.lives(null);
-    sh.useTimer(false);
-    sh.score(0);
-    sh.streak(0);
-    // Shuffled for display, never left in the answer order.
-    let order = shuffle(steps.map((s) => s.id), env.seed + rounds);
-    if (order.length > 1 && order.every((id, i) => id === answer[i]?.id)) order = [...order.slice(1), order[0]];
-    rows = order.map((id) => ({ id, depth: 0 }));
-    clearMarks();
-    sh.progress(0, `0 of ${plural(rows.length, 'step', 'steps')} through`);
-    sh.react(null, null);
-    render();
-    tiles.get(rows[0]?.id)?.focus();
-  }
-
-  send.addEventListener('click', () => {
-    if (solved || busy) return;
-    sends += 1;
-    grabbed = null;
-    held = null;
-    clearMarks();
-    const res = E.sendPipeline(game, rows);
-    busy = true;
-    render();
-    const travel = (k) => {
-      if (k >= res.passed) return land();
-      const li = tiles.get(rows[k].id);
-      li.dataset.state = 'pass';
-      packet.hidden = false;
-      packet.dataset.at = String(k);
-      packet.style.top = `${(li.offsetTop ?? 0) + (li.offsetHeight ?? 0) / 2}px`;
-      sh.play('pop');
-      sh.later(() => travel(k + 1), env.delay(DELAY.packet));
-    };
-    const land = () => {
-      busy = false;
-      sh.progress(res.passed / rows.length, `${res.passed} of ${plural(rows.length, 'step', 'steps')} through`);
-      if (res.correct) {
-        solved = true;
-        packet.dataset.at = 'out';
-        render();
-        sh.react('pleased', 'Straight through!');
-        const score = E.orderScore(sends);
-        sh.score(score);
-        const ol = make('ol', 'game-recap-outline');
-        for (const r of answer) {
-          const li = make('li', 'game-recap-step', text.get(r.id));
-          li.style.setProperty('--depth', String(r.depth));
-          ol.append(li);
-        }
-        sh.end({
-          won: true,
-          stars: E.orderStars(sends),
-          score,
-          title: sends === 1 ? 'Straight through!' : 'Through the pipeline!',
-          line: `It took ${plural(sends, 'send', 'sends')}.`,
-          recap: ol,
-          onReplay: () => sh.countIn(startRound),
-        });
-        report(rounds);
+  // --- the clock -------------------------------------------------------------------
+  const limitNow = () => E.timerFor(game, { enabled: sh.timerOn && !env.testMode });
+  function startClock() {
+    stopClock();
+    const limit = limitNow();
+    ring.hidden = limit === 0;
+    if (!limit) return;
+    clock = { limit, began: env.clock.now(), handle: null, lastWhole: limit };
+    const tick = () => {
+      if (!clock) return;
+      const left = Math.max(0, clock.limit - (env.clock.now() - clock.began) / 1000);
+      drawRing(left, clock.limit);
+      const whole = Math.ceil(left);
+      if (whole !== clock.lastWhole) {
+        clock.lastWhole = whole;
+        if (whole <= 3 && whole > 0) sh.play('tick');
+      }
+      if (left <= 0) {
+        expire();
         return;
       }
-      const bad = rows[res.stop];
-      const li = bad ? tiles.get(bad.id) : null;
-      if (li) {
-        li.dataset.state = 'wrong';
-        if (!env.still) li.classList.add('game-shake');
-      }
-      // The call stops where it bounced: at the wrong step (or the end, for a step missing).
-      packet.hidden = false;
-      packet.dataset.at = String(res.stop);
-      packet.dataset.bounce = String(res.stop);
-      if (li) packet.style.top = `${(li.offsetTop ?? 0) + (li.offsetHeight ?? 0) / 2}px`;
-      if (!env.still) {
-        packet.classList.remove('game-bounce');
-        void packet.offsetWidth;
-        packet.classList.add('game-bounce');
-      }
-      sh.play('thud');
-      const where = `Step ${res.stop + 1}`;
-      const msg = bad ? `${where} is out of place or at the wrong level: "${text.get(bad.id)}".` : 'A step is missing.';
-      sh.react('worried', `The call bounced at step ${res.stop + 1}.`);
-      sh.say(`Bounced. ${msg} ${res.passed} ${res.passed === 1 ? 'step went' : 'steps went'} through.`);
-      render();
-      li?.focus();
+      clock.handle = env.clock.setTimeout(tick, 100);
     };
-    sh.react('surprised', 'Here it goes…');
-    sh.later(() => travel(0), env.delay(DELAY.packet));
-  });
+    drawRing(limit, limit);
+    clock.handle = env.clock.setTimeout(tick, 100);
+  }
+  /** Stops the clock; returns { left, limit } as it stood (zeros with no clock). */
+  function stopClock() {
+    if (!clock) return { left: 0, limit: 0 };
+    env.clock.clearTimeout(clock.handle);
+    const out = { left: Math.max(0, clock.limit - (env.clock.now() - clock.began) / 1000), limit: clock.limit };
+    clock = null;
+    return out;
+  }
+  function drawRing(left, limit) {
+    const c = 2 * Math.PI * 20;
+    const arc = ringSvg.lastChild;
+    arc?.setAttribute?.('stroke-dasharray', c.toFixed(2));
+    arc?.setAttribute?.('stroke-dashoffset', (c * (1 - left / limit)).toFixed(2));
+    ringNum.textContent = String(Math.ceil(left));
+    ring.dataset.low = String(left <= 3);
+  }
+  sh.onTimerToggle = (on) => {
+    if (locked || !state || state.status !== 'playing') return;
+    if (on) startClock();
+    else {
+      stopClock();
+      ring.hidden = true;
+    }
+  };
 
+  // --- a round -------------------------------------------------------------------
+  function startRound() {
+    rounds += 1;
+    state = E.newOrderRound(game, { seed: env.seed + rounds });
+    sh.useTimer(E.timerFor(game) > 0 && !env.testMode);
+    sh.react(null, null);
+    hud();
+    drawStrip();
+    drawPool();
+    locked = false;
+    sh.say(`What happens first? ${plural(state.total, 'step', 'steps')} to place. Press a number, or tab to a step.`);
+    firstCard()?.focus();
+    startClock();
+  }
+
+  function pick(id) {
+    if (locked || !state || state.status !== 'playing' || !state.pool.includes(id)) return;
+    state = E.pickStep(state, id, stopClock());
+    verdict();
+  }
+
+  function expire() {
+    if (locked || !state || state.status !== 'playing') return;
+    stopClock();
+    state = E.expireStep(state);
+    verdict();
+  }
+
+  function verdict() {
+    const last = state.last;
+    hud();
+    ring.hidden = true;
+    if (last.correct) {
+      const n = state.placed.length;
+      sh.play(state.streak >= 3 ? 'register' : 'ping');
+      sh.react(state.streak >= 3 ? 'surprised' : 'pleased', state.streak >= 3 ? `${state.streak} in a row!` : CHEERS[(n - 1) % CHEERS.length]);
+      sh.say(`Right: step ${n} of ${state.total}, ${textOf(last.id)}. Plus ${last.points}.${state.streak >= 2 ? ` ${state.streak} in a row.` : ''}`);
+      const card = cards.get(last.id);
+      drawStrip(true);
+      if (state.status === 'won') {
+        locked = true;
+        return sh.later(() => finish(), env.delay(DELAY.right));
+      }
+      if (card && !env.still) {
+        // The card pops out of the pool while its slot pops in; the pool is drawn again after.
+        locked = true;
+        card.dataset.result = 'right';
+        sh.later(() => {
+          locked = false;
+          drawPool();
+          firstCard()?.focus();
+          startClock();
+        }, env.delay(DELAY.place));
+        return;
+      }
+      drawPool();
+      firstCard()?.focus();
+      startClock();
+      return;
+    }
+    // Wrong, or the clock ran out: a heart, and the host says what comes first. The step stays in the pool.
+    const expected = sentence(textOf(last.expected));
+    const tapped = last.id ? byId.get(last.id) : null;
+    const head = last.timedOut ? 'Time is up.' : 'Not yet.';
+    const hint = tapped?.why ?? `First: ${expected}`;
+    const hearts = state.lives === 0 ? 'No hearts left.' : `${plural(state.lives, 'heart', 'hearts')} left.`;
+    sh.play('thud');
+    sh.react(last.timedOut ? 'surprised' : 'worried', `${head} ${hint}`);
+    sh.say(`${head} First: ${expected} ${hearts}`);
+    for (const b of cards.values()) delete b.dataset.result;
+    const card = tapped ? cards.get(tapped.id) : null;
+    if (card) {
+      card.dataset.result = 'wrong';
+      if (!env.still) {
+        card.classList.remove('game-shake');
+        void card.offsetWidth;
+        card.classList.add('game-shake');
+      }
+    }
+    if (state.status === 'lost') {
+      locked = true;
+      for (const b of cards.values()) b.disabled = true;
+      sh.later(() => finish(), env.delay(DELAY.lost));
+      return;
+    }
+    firstCard()?.focus();
+    startClock();
+  }
+
+  function finish() {
+    stopClock();
+    locked = true;
+    const won = state.status === 'won';
+    // A won round placed every step in the order the tree gives.
+    if (won && state.placed.join('\n') !== E.orderOf(game).join('\n')) return;
+    const route = make('ol', 'game-route-answer');
+    for (const id of state.order) {
+      const li = make('li', 'game-route-answer-step');
+      const misses = state.misses[id] ?? 0;
+      const reached = state.placed.includes(id);
+      li.dataset.ok = String(reached && misses === 0);
+      li.append(make('span', 'game-route-answer-text', textOf(id)));
+      const note = misses > 0 ? `missed ${plural(misses, 'time', 'times')}` : reached ? '' : 'not reached';
+      if (note) li.append(make('span', 'game-recap-note', ` (${note})`));
+      route.append(li);
+    }
+    const box = make('div', 'game-route-recap');
+    box.append(make('p', 'game-route-recap-head', 'The route, in order'), route);
+    sh.end({
+      won,
+      stars: E.starsFor({ won, mistakes: state.mistakes }),
+      score: state.score,
+      title: won ? (state.mistakes === 0 ? 'Straight through!' : 'Route complete!') : 'Out of hearts',
+      line: won ? `Best streak: ${state.bestStreak}. Mistakes: ${state.mistakes}.` : 'A step out of turn costs a heart. Here is the whole route: have another go.',
+      recap: box,
+      onReplay: () => sh.countIn(startRound),
+    });
+    if (won) report(rounds);
+  }
+
+  // --- keys ----------------------------------------------------------------------
+  // Listened for on the whole page while this game is on screen, as for the card games: 1 to 9 pick a card.
+  const onKey = (e) => {
+    if (!sh.root.isConnected) {
+      document.removeEventListener('keydown', onKey);
+      return;
+    }
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (sh.root.dataset.phase !== 'play' || locked || !state) return;
+    const t = e.target;
+    if (t?.closest?.('.game-toggles, .game-skipbar')) return;
+    if (t && t !== document.body && !sh.root.contains(t) && t.closest?.('input, textarea, select, [contenteditable="true"], button, a')) return;
+    const n = E.stepKey(e.key, Math.min(9, state.pool.length));
+    if (!n) return;
+    e.preventDefault();
+    pick(state.pool[n - 1]);
+  };
+  document.addEventListener('keydown', onKey);
+
+  const secs = E.timerFor(game);
   sh.intro({
     rules: [
-      'Put the steps in the order of one call, top to bottom. Nest a step under the one it belongs to.',
-      'Drag a step, or use its buttons. From the keyboard: Space picks a step up, the arrows move it (← and → nest it), Space drops it.',
-      'Then send it through: the call stops and bounces at the first step out of place. Fewer sends, more stars.',
+      'Tap the step that happens first, then the one that happens next, until the route is complete.',
+      'Each step has a number: press it to pick that step from the keyboard.',
+      `${plural(E.LIVES, 'heart', 'hearts')}: a step out of turn costs one, and the host tells you what comes first.`,
+      secs > 0 ? `${secs} seconds a step, and the faster you answer the more points. You can turn the timer off.` : 'Take your time: there is no clock.',
+      'Several right in a row make a combo.',
     ],
     onStart: startRound,
   });
-  return { test: { rows: () => rows }, destroy() {} };
+  return {
+    test: { state: () => state, expire: () => expire() },
+    destroy() {
+      stopClock();
+      document.removeEventListener('keydown', onKey);
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1361,7 +1377,8 @@ function mountSliders(game, sh, env, report) {
 
 /**
  * Draws `game` into `host` (replacing what was there). See the top of this file for the options.
- * Returns { root, destroy }; in test mode `root.gameTest` exposes the round (and a sort or flag card's `expire()`).
+ * Returns { root, destroy }; in test mode `root.gameTest` exposes the round (and `expire()`, the clock running out, for
+ * a sort or flag card or an order-and-nest step).
  */
 export function mountGame(host, game, opts = {}) {
   const env = envOf(opts);
@@ -1377,7 +1394,7 @@ export function mountGame(host, game, opts = {}) {
       kind = mountSliders(game, sh, env, report);
       break;
     case 'order-and-nest':
-      kind = mountPipeline(game, sh, env, report);
+      kind = mountRoute(game, sh, env, report);
       break;
     default:
       sh.root.replaceChildren(make('p', 'game-status', 'This game is not available in this version of the console.'));

@@ -325,9 +325,9 @@ const consolePairs = [
   ["win-ok", "navy-deep", 3.0, "a healthy service's dot"],
   ["win-warn", "navy-deep", 3.0, "a restarting service's dot"],
   // The warm-up games (games.css): ink on the flat fills of the buckets, the nested tiles and the badges ...
-  ["ink", "accent-teal-soft", 4.5, "a game's first bucket, a tile nested once"],
-  ["ink", "accent-amber-soft", 4.5, "a game's second bucket, an Again or New best badge"],
-  ["ink", "accent-violet-soft", 4.5, "a game's third bucket, a tile nested twice"],
+  ["ink", "accent-teal-soft", 4.5, "a game's first bucket, a placed step on the route"],
+  ["ink", "accent-amber-soft", 4.5, "a game's second bucket, a step card's number, an Again or New best badge"],
+  ["ink", "accent-violet-soft", 4.5, "a game's third bucket"],
   ["ink", "accent-rose-soft", 4.5, "a game's fourth bucket"],
   ["ink", "accent-green-soft", 4.5, "a Solved badge, the right slider"],
   ["accent-amber-ink", "surface", 4.5, "a game's combo once it is hot"],
@@ -335,7 +335,7 @@ const consolePairs = [
   ["bad", "surface-2", 4.5, "a missed mark in a game's recap"],
   // ... and the shapes that must be seen: hearts, stars and combo pips, the clock and the progress fill.
   ["accent-rose", "surface", 3.0, "a heart left"],
-  ["accent-amber", "surface", 3.0, "a star earned, a combo pip"],
+  ["accent-amber", "surface", 3.0, "a star earned, a combo pip, the packet on the route"],
   ["accent", "surface-3", 3.0, "a game's progress, clock and closeness meter against their track"],
   ["bad", "surface-3", 3.0, "a game's clock in its last three seconds"],
 ];

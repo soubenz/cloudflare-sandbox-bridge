@@ -17,9 +17,10 @@ import { GAMES, warmUpBundleOf } from './comic-fixture';
  *   - its card says Open (not Start) and carries the "Start here" chip;
  *   - Open runs the whole flow, whatever the screen size and whether it was seen before: there is no
  *     "Skip all", nothing is prepared and no session is started;
- *   - each game is played through its game UI (Start, the cards with the keys or a tap, the pipeline with Space
- *     and the arrows, the sliders' answer) in test mode (`window.__opalixGameTest`: no count-in, no clock, no
- *     delays), and ends on its end screen;
+ *   - a lab has at most two games (the fixture's: a sort and an order-and-nest), each played through its game
+ *     UI (Start, the cards with the keys; "what happens next" with a tap and the number keys, a step out of turn
+ *     costing a heart) in test mode (`window.__opalixGameTest`: no count-in, no clock, no delays), and ends on
+ *     its end screen;
  *   - a game's Continue (the last game's "Finish the warm-up") comes on once it is solved or skipped, the
  *     addresses are /closing and /games (?step=N for a later game), and a refresh keeps the games already solved;
  *   - the games only go forward: no game step has a Back to the closing story or to an earlier game;
@@ -178,6 +179,19 @@ const card = (page: Page) => page.locator(`.lab[data-slug="${WARM}"]`);
 const gameNext = (page: Page) => page.locator('#btnGameNext');
 const game = (page: Page, id: string) => host(page).locator(`.game[data-game="${id}"]`);
 
+/** The order an order-and-nest fixture's steps happen in: its tree flattened depth first, siblings by order. */
+function routeOf(g: any): string[] {
+  const out: string[] = [];
+  const walk = (parent: string | null) => {
+    for (const s of g.steps.filter((x: any) => x.parent === parent).sort((a: any, b: any) => a.order - b.order)) {
+      out.push(s.id);
+      walk(s.id);
+    }
+  };
+  walk(null);
+  return out;
+}
+
 /** Plays the game on screen to the right answer, first time, through its game UI, and waits for its end screen. */
 async function solve(page: Page, fixture: (typeof GAMES)[number]) {
   const g = fixture as any;
@@ -203,30 +217,18 @@ async function solve(page: Page, fixture: (typeof GAMES)[number]) {
   } else if (g.kind === 'sliders') {
     await root.locator(`.game-ask-option[data-option="${g.ask.answer}"]`).click();
   } else {
-    // The steps start shuffled: from the keyboard, pick each up with Space, move it with the arrows, drop it.
-    const target = [
-      ['gw', 0],
-      ['alias', 1],
-      ['provider', 1],
-    ] as const;
-    const rows = () => root.locator('.game-tile').evaluateAll((els) => els.map((e) => [(e as HTMLElement).dataset.id, Number((e as HTMLElement).dataset.depth)]));
-    for (const [i, [id, depth]] of target.entries()) {
-      await root.locator(`.game-tile[data-id="${id}"]`).focus();
-      await page.keyboard.press('Space');
-      for (let guard = 0; guard < target.length; guard++) {
-        const at = (await rows()).findIndex((r) => r[0] === id);
-        if (at === i) break;
-        await page.keyboard.press(at > i ? 'ArrowUp' : 'ArrowDown');
+    // What happens next: the first step tapped, the others picked with their number keys.
+    for (const [i, id] of routeOf(g).entries()) {
+      await expect(root.locator('.game-route-ask')).toHaveText(i === 0 ? 'What happens first?' : 'What happens next?');
+      // The focus stays in the pool, on its first card.
+      await expect(root.locator('.game-route-card').first()).toBeFocused();
+      if (i === 0) await root.locator(`.game-route-card[data-id="${id}"]`).click();
+      else {
+        const pool = await root.locator('.game-route-card').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.id));
+        await page.keyboard.press(String(pool.indexOf(id) + 1));
       }
-      for (let guard = 0; guard < 3; guard++) {
-        const now = (await rows()).find((r) => r[0] === id)![1] as number;
-        if (now === depth) break;
-        await page.keyboard.press(now < depth ? 'ArrowRight' : 'ArrowLeft');
-      }
-      await page.keyboard.press('Space');
+      if (i < g.steps.length - 1) await expect(root.locator('.game-route-slot[data-filled="true"]')).toHaveCount(i + 1);
     }
-    expect(await rows()).toEqual(target.map(([id, d]) => [id, d]));
-    await root.locator('.game-send').click();
   }
   await expect(root).toHaveAttribute('data-phase', 'end');
   await expect(root.locator('.game-end-title')).toBeVisible();
@@ -284,7 +286,7 @@ test.describe('a warm-up', () => {
     await open(page);
     await toTheGames(page);
 
-    // One game a step: /games for the first, ?step=N for the others (story 1, round 2, lessons 3, closing 4, games 5 to 8).
+    // One game a step: /games for the first, ?step=N for the other (story 1, round 2, lessons 3, closing 4, games 5 and 6).
     // No game goes back; the last game's button finishes the warm-up.
     for (const [k, game] of GAMES.entries()) {
       const last = k === GAMES.length - 1;
@@ -302,8 +304,8 @@ test.describe('a warm-up', () => {
       await expect(page.locator('#btnSkipAll')).toHaveCount(0);
       await solve(page, game);
       await expect(gameNext(page)).toBeEnabled();
-      // The end screen's own Continue is the step's: the second game is left with it.
-      if (k === 1) await host(page).locator('.game-continue').click();
+      // The end screen's own Continue is the step's: the first game is left with it.
+      if (k === 0) await host(page).locator('.game-continue').click();
       else if (!last) await gameNext(page).click();
     }
     expect(s.completes).toHaveLength(0);
@@ -396,30 +398,59 @@ test.describe('a warm-up', () => {
     expect(s.errors).toEqual([]);
   });
 
-  test('Skip this game moves on (during play too); a skipped game is sent as skipped beside the solved ones', async ({ page }) => {
+  test('Skip this game moves on (during play too); a skipped game is sent as skipped beside the solved one', async ({ page }) => {
+    const s = await stub(page);
+    await open(page);
+    await toTheGames(page);
+    // Game 1 skipped before Start: game 2 is next, and it has no Skip all games.
+    await page.locator('#btnSkipGame').click();
+    await expect(heading(page)).toHaveText(`Game 2 of ${GAMES.length}`);
+    await expect(page.locator('#btnSkipAllGames')).toHaveCount(0);
+    expect(s.completes).toHaveLength(0);
+    // Game 2, the last: started, a step tapped out of turn, then skipped part-way. That finishes the warm-up.
+    const g = GAMES[1]! as any;
+    const root = game(page, g.id);
+    await root.locator('.game-start').click();
+    await expect(root).toHaveAttribute('data-phase', 'play');
+    const route = routeOf(g);
+    await root.locator(`.game-route-card[data-id="${route[1]}"]`).click();
+    await expect(root.locator('.game-lives')).toHaveAttribute('aria-label', '2 of 3 hearts left');
+    const first = g.steps.find((x: any) => x.id === route[0]).text;
+    await expect(root.locator('.game-bubble')).toHaveText(`Not yet. First: ${first}.`);
+    await expect(root.locator('.game-route-card')).toHaveCount(route.length);
+    await page.locator('#btnSkipGame').focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
+    expect(s.completes[0]!.games).toEqual([
+      { id: GAMES[0]!.id, solved: false, skipped: true, tries: 0 },
+      { id: GAMES[1]!.id, solved: false, skipped: true, tries: 0 },
+    ]);
+  });
+
+  test('a step tapped out of turn costs a heart and the host names the step that comes first; the game can still be won', async ({ page }) => {
     const s = await stub(page);
     await open(page);
     await toTheGames(page);
     await solve(page, GAMES[0]!);
     await gameNext(page).click();
-    // Game 2: started, then skipped part-way.
-    await game(page, GAMES[1]!.id).locator('.game-start').click();
-    await expect(game(page, GAMES[1]!.id)).toHaveAttribute('data-phase', 'play');
-    await page.locator('#btnSkipGame').focus();
-    await page.keyboard.press('Enter');
-    await expect(heading(page)).toHaveText(`Game 3 of ${GAMES.length}`);
-    await expect(page.locator('#btnSkipAllGames')).toHaveCount(0);
-    await solve(page, GAMES[2]!);
+    const g = GAMES[1]! as any;
+    const root = game(page, g.id);
+    await root.locator('.game-start').click();
+    const route = routeOf(g);
+    // The last step first: its own why is what the host says.
+    await root.locator(`.game-route-card[data-id="${route.at(-1)}"]`).click();
+    await expect(root.locator('.game-lives')).toHaveAttribute('aria-label', '2 of 3 hearts left');
+    await expect(root.locator('.game-bubble')).toHaveText(`Not yet. ${g.steps.find((x: any) => x.id === route.at(-1)).why}`);
+    await expect(root.locator('.game-status')).toContainText('Not yet.');
+    await expect(root.locator('.game-route-card').first()).toBeFocused();
+    for (const id of route) await root.locator(`.game-route-card[data-id="${id}"]`).click();
+    await expect(root).toHaveAttribute('data-phase', 'end');
+    await expect(root.locator('.game-stars')).toHaveAttribute('aria-label', '2 of 3 stars');
+    await expect(root.locator('.game-route-answer-step')).toHaveCount(route.length);
     await gameNext(page).click();
-    // The last game skipped: that finishes the warm-up.
-    await page.locator('#btnSkipGame').click();
     await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
-    expect(s.completes[0]!.games).toEqual([
-      { id: GAMES[0]!.id, solved: true, tries: 1 },
-      { id: GAMES[1]!.id, solved: false, skipped: true, tries: 0 },
-      { id: GAMES[2]!.id, solved: true, tries: 1 },
-      { id: GAMES[3]!.id, solved: false, skipped: true, tries: 0 },
-    ]);
+    expect(s.completes[0]!.games).toEqual(GAMES.map((x) => ({ id: x.id, solved: true, tries: 1 })));
+    expect(s.errors).toEqual([]);
   });
 
   test('opens on a phone-sized screen too: there is nothing to run', async ({ page }) => {

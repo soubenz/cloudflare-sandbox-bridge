@@ -11,7 +11,7 @@
   padding: var(--s4) var(--s4) var(--s3); border: var(--g-line); border-radius: var(--radius-lg);
   background: var(--surface); box-shadow: var(--g-shadow); color: var(--ink);
 }
-.game .btn:focus-visible, .game-cardx:focus-visible, .game-tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.game .btn:focus-visible, .game-cardx:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .game [hidden] { display: none !important; }
 
 /* --- top: the host, the title, the bubble ------------------------------------------------- */
@@ -133,40 +133,70 @@
 .game-board-state { font-size: var(--fs-sm); color: var(--good); }
 .game-board-item[data-status="down"] .game-board-state { color: var(--bad); }
 
-/* --- order-and-nest: the pipeline ------------------------------------------------------------- */
-.game-pipe { display: flex; flex-direction: column; gap: var(--s3); }
-.game-pipe-track { position: relative; display: flex; flex-direction: column; gap: var(--s2); padding-left: 30px; }
-.game-pipe-track::before { content: ""; position: absolute; left: 11px; top: 14px; bottom: 14px; width: 6px; border-radius: 3px; background: var(--ink); }
-.game-pipe-end { align-self: flex-start; margin-left: -30px; padding: 0 8px; border: 2px solid var(--ink); border-radius: 999px; background: var(--surface-3); font-size: var(--fs-sm); font-weight: 750; color: var(--ink); position: relative; }
-.game-pipeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
-.game-tile {
-  --depth: 0;
-  position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2);
-  margin-left: calc(var(--depth) * 28px); padding: var(--s2) var(--s3); min-width: 0;
-  border: var(--g-line); border-radius: var(--radius-sm); background: var(--surface); box-shadow: 3px 3px 0 var(--ink);
-  touch-action: none; user-select: none; cursor: grab;
+/* --- order-and-nest: what happens next ------------------------------------------------------- */
+.game-route { display: flex; flex-direction: column; gap: var(--s3); }
+/* the route so far: a start pin, then a numbered slot per step, the packet riding on the newest */
+.game-route-track { display: flex; align-items: flex-start; gap: var(--s2); min-width: 0; }
+.game-route-start {
+  position: relative; flex: none; display: inline-grid; place-items: center; min-height: 40px; padding: 0 10px;
+  border: 2px solid var(--ink); border-radius: 999px; background: var(--surface-3); color: var(--ink);
+  font-size: var(--fs-sm); font-weight: 750;
 }
-.game-tile[data-depth="1"] { background: var(--accent-teal-soft); }
-.game-tile[data-depth="2"] { background: var(--accent-violet-soft); }
-.game-tile[data-depth="3"] { background: var(--accent-amber-soft); }
-.game-tile[data-grabbed="true"] { outline: 3px dashed var(--accent); outline-offset: 3px; transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
-.game-tile[data-dragging="true"] { z-index: 2; cursor: grabbing; box-shadow: 8px 8px 0 var(--ink); }
-.game-tile[data-state="pass"] { border-color: var(--good); }
-.game-tile[data-state="wrong"] { border-color: var(--bad); outline: 3px solid var(--bad); outline-offset: 2px; }
-.game-tile-node { position: absolute; left: calc(-30px - var(--depth) * 28px + 6px); top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%; border: 3px solid var(--ink); background: var(--surface); }
-.game-tile[data-state="pass"] .game-tile-node { background: var(--good); }
-.game-tile[data-state="wrong"] .game-tile-node { background: var(--bad); }
-.game-tile-grip { color: var(--ink-muted); font-weight: 800; letter-spacing: -2px; }
-.game-tile-text { flex: 1 1 160px; min-width: 0; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
-.game-tile-level { font-size: var(--fs-sm); color: var(--ink-2); }
-.game-tile-actions { display: inline-flex; gap: 2px; }
-.game-tile-btn { min-width: 32px; padding: 0 6px; font-size: 16px; }
-.game-packet {
-  position: absolute; left: 4px; top: 14px; width: 20px; height: 20px; margin-top: -10px; border-radius: 6px;
-  border: 3px solid var(--ink); background: var(--accent-amber); transition: top 0.24s ease; z-index: 1;
+.game-route-strip { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2); min-width: 0; flex: 1 1 auto; }
+.game-route-slot {
+  position: relative; display: flex; align-items: center; justify-content: center; gap: 6px; flex: none;
+  min-width: 40px; min-height: 40px; padding: 6px; border: 2px dashed var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--ink-muted); font-size: var(--fs-sm); line-height: 1.3;
 }
-.game-packet.game-bounce { animation: game-bounce 0.5s ease; }
-.game-send { align-self: flex-start; border: var(--g-line); box-shadow: var(--g-shadow); }
+/* a placed step grows to show its words; the empty slots stay small */
+.game-route-slot[data-filled="true"] {
+  flex: 1 1 9em; max-width: 15em; justify-content: flex-start; padding: 6px 8px;
+  border: 2px solid var(--ink); background: var(--accent-teal-soft); color: var(--ink); box-shadow: 2px 2px 0 var(--ink);
+}
+.game-route-num {
+  flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  border: 2px solid currentColor; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.game-route-slot[data-filled="true"] .game-route-num { background: var(--surface); border-color: var(--ink); }
+.game-route-slot-text { min-width: 0; font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.game-route-packet {
+  position: absolute; right: -8px; top: -8px; width: 16px; height: 16px; border-radius: 5px;
+  border: 3px solid var(--ink); background: var(--accent-amber); z-index: 1;
+}
+.game-route-last { margin: 0; display: none; font-weight: 650; color: var(--ink-2); overflow-wrap: anywhere; }
+
+/* the question and the steps still to place, as big numbered cards */
+.game-route-askrow { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); min-height: 48px; }
+.game-route-ask { margin: 0; font-family: var(--display); font-size: clamp(20px, 2.4vw, 26px); font-weight: 750; letter-spacing: -0.01em; }
+.game-route-clock { position: relative; top: auto; right: auto; flex: none; }
+.game-route-pool { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3); }
+.game-route-card {
+  display: flex; align-items: center; gap: var(--s3); min-height: 76px; padding: var(--s3) var(--s4); min-width: 0;
+  border: var(--g-line); border-radius: var(--radius); background: var(--surface); color: var(--ink);
+  font: inherit; font-weight: 650; line-height: 1.35; text-align: left; cursor: pointer;
+  box-shadow: var(--g-shadow); transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.game-route-card:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+.game-route-card:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }
+.game-route-card:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.game-route-card:disabled { cursor: default; }
+.game-route-key {
+  flex: none; display: inline-grid; place-items: center; min-width: 32px; height: 32px; padding: 0 6px;
+  border: 2px solid var(--ink); border-radius: 8px; background: var(--accent-amber-soft); color: var(--ink);
+  font-family: var(--mono); font-size: 16px; font-weight: 700;
+}
+.game-route-key:empty { visibility: hidden; }
+.game-route-card-text { min-width: 0; overflow-wrap: anywhere; }
+.game-route-card[data-result="wrong"] { border-color: var(--bad); outline: 3px solid var(--bad); outline-offset: 2px; }
+.game-route-card[data-result="right"] { border-color: var(--good); animation: game-pop-out 0.28s ease-in forwards; }
+
+/* the end screen's route, 1 to N */
+.game-route-recap-head { margin: 0 0 var(--s2); font-weight: 700; }
+.game-route-answer { margin: 0; padding-left: 1.6em; display: grid; gap: var(--s2); line-height: 1.45; }
+.game-route-answer-step { padding-left: var(--s1); overflow-wrap: anywhere; }
+.game-route-answer-step::marker { font-weight: 800; }
+.game-route-answer-step[data-ok="false"]::marker { color: var(--bad); }
+.game-route-answer-text { font-weight: 600; }
 
 /* --- sliders ------------------------------------------------------------------------------------ */
 .game-sliders { display: grid; gap: var(--s4); padding: var(--s4); border: var(--g-line); border-radius: var(--radius); background: var(--surface-2); }
@@ -212,8 +242,6 @@
 .game-recap-answer { font-weight: 650; color: var(--ink); }
 .game-recap-note { color: var(--ink-muted); }
 .game-recap-why { display: block; color: var(--ink-2); }
-.game-recap-outline { margin: 0; padding-left: 1.4em; display: grid; gap: var(--s1); }
-.game-recap-step { --depth: 0; margin-left: calc(var(--depth) * 22px); line-height: 1.45; }
 .game-explain { padding: var(--s3) var(--s4); border-radius: var(--radius); border: 2px solid var(--good); background: var(--surface-2); }
 .game-explain-head { color: var(--good); }
 .game-explain-body { margin: var(--s1) 0 0; line-height: 1.55; }
@@ -229,7 +257,7 @@
 @keyframes game-fly-right { to { transform: translateX(140%) rotate(18deg); opacity: 0; } }
 @keyframes game-fly-down { to { transform: translateY(80%) scale(0.6); opacity: 0; } }
 @keyframes game-float { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-26px); opacity: 0; } }
-@keyframes game-bounce { 0%, 100% { transform: translateY(0); } 30% { transform: translateY(-22px); } 60% { transform: translateY(6px); } }
+@keyframes game-pop-out { 0% { transform: scale(1); opacity: 1; } 40% { transform: scale(1.06); } 100% { transform: scale(0.6) translateY(-30%); opacity: 0; } }
 @keyframes game-blink { 50% { opacity: 0.35; } }
 
 .game[data-still] *, .game[data-still] *::before { animation: none !important; transition: none !important; }
@@ -246,10 +274,13 @@
   .game-lane[data-n="2"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "deck deck" "left right"; }
   .game-bucket { min-height: 88px; }
   .game-cardx { min-height: 150px; padding: var(--s4) var(--s3); }
-  .game-tile { margin-left: calc(var(--depth) * 16px); }
-  .game-tile-node { left: calc(-30px - var(--depth) * 16px + 6px); }
-  .game-tile-actions { display: flex; flex-basis: 100%; }
-  .game-tile-btn { flex: 1 1 0; min-width: 0; min-height: 44px; }
+  .game-route-track { gap: 6px; }
+  .game-route-strip { gap: 6px; }
+  .game-route-slot[data-filled="true"] { flex: none; max-width: none; padding: 6px; justify-content: center; }
+  .game-route-slot-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .game-route-last { display: block; }
+  .game-route-pool { grid-template-columns: minmax(0, 1fr); gap: var(--s2); }
+  .game-route-card { min-height: 60px; padding: var(--s2) var(--s3); }
   .game-toggles { margin-left: 0; }
   .game-toggle-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }

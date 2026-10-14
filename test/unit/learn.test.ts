@@ -180,16 +180,18 @@ const GAMES = {
 
 describe('closing and games', () => {
   const closing = { story: { title: 'Friday at Larkfield', minutes: 2, body: 'By Friday we knew.' }, comic: parseYaml(CLOSING_YAML) };
-  const raw = (over: Record<string, unknown> = {}) => ({ ...bundle(), closing, games: Object.values(GAMES), ...over });
+  // Two games, the most a lab may have: a sort and an order-and-nest, as in the gateway warm-up.
+  const raw = (over: Record<string, unknown> = {}) => ({ ...bundle(), closing, games: [GAMES.sort, GAMES.nest], ...over });
   const parse = (over: Record<string, unknown> = {}) => LearnBundleSchema.safeParse(raw(over));
   const game = (g: Record<string, unknown>) => LearnBundleSchema.safeParse(raw({ games: [g] }));
   const messages = (r: ReturnType<typeof parse>) => (r.success ? '' : r.error.issues.map((i) => i.message).join('\n'));
 
-  it('accepts a closing and one game of each kind, and the bundle checks clean', () => {
+  it('accepts a closing and two games, every kind, and the bundle checks clean', () => {
     const r = parse();
     expect(r.success).toBe(true);
     const b = r.success ? r.data : undefined;
-    expect(b!.games.map((g) => g.kind)).toEqual(['sort', 'flag', 'sliders', 'order-and-nest']);
+    expect(b!.games.map((g) => g.kind)).toEqual(['sort', 'order-and-nest']);
+    expect(parse({ games: [GAMES.flag, GAMES.sliders] }).success).toBe(true);
     expect(b!.closing!.comic.pages[0]!.panels).toHaveLength(4);
     expect(checkLearnBundle(b!, known)).toEqual([]);
     for (const g of Object.values(GAMES)) expect(game(g).success, g.kind).toBe(true);
@@ -285,10 +287,15 @@ describe('closing and games', () => {
     const flag = { ...GAMES.flag, timer: 0, choices: { flag: 'Keeps answering', leave: 'Goes dark' }, board: [{ name: 'OpenAI', status: 'down' }, { name: 'Anthropic', status: 'up' }] };
     const sliders = { ...GAMES.sliders, host: 'jess', target: { value: 50, tolerance: 1 } };
     for (const g of [sort, flag, sliders]) expect(game(g).success, g.kind).toBe(true);
-    const r = LearnBundleSchema.parse(raw({ games: [sort, flag, sliders] }));
+    const r = LearnBundleSchema.parse(raw({ games: [sort, flag] }));
     expect(r.games[0]).toMatchObject({ host: 'maren', timer: 12 });
     expect(r.games[1]).toMatchObject({ timer: 0, choices: { flag: 'Keeps answering', leave: 'Goes dark' } });
-    expect(r.games[2]).toMatchObject({ target: { value: 50, tolerance: 1 } });
+    expect(LearnBundleSchema.parse(raw({ games: [sliders] })).games[0]).toMatchObject({ target: { value: 50, tolerance: 1 } });
+    // order-and-nest: a step's why and a timer.
+    const nest = { ...GAMES.nest, timer: 20, steps: GAMES.nest.steps.map((s) => (s.id === 'provider' ? { ...s, why: 'The provider answers last.' } : s)) };
+    const n = LearnBundleSchema.parse(raw({ games: [nest] })).games[0] as { timer?: number; steps: Array<{ why?: string }> };
+    expect(n.timer).toBe(20);
+    expect(n.steps[2]!.why).toBe('The provider answers last.');
     expect(messages(game({ ...GAMES.sort, host: 'jonas' }))).toMatch(/host must be one of/);
     expect(messages(game({ ...GAMES.sort, host: 'you' }))).toMatch(/host must be one of/);
     expect(game({ ...GAMES.sort, timer: 61 }).success).toBe(false);
@@ -318,10 +325,12 @@ describe('closing and games', () => {
     expect(checkLearnBundle(withFields, known).join()).toMatch(/either games .* or fields/);
   });
 
-  it('allows at most six games', () => {
-    const many = Array.from({ length: 7 }, (_, i) => ({ ...GAMES.flag, id: `flag-${i}` }));
-    expect(parse({ games: many.slice(0, 6) }).success).toBe(true);
-    expect(parse({ games: many }).success).toBe(false);
+  it('allows at most two games, and says so', () => {
+    const many = Array.from({ length: 3 }, (_, i) => ({ ...GAMES.flag, id: `flag-${i}` }));
+    expect(parse({ games: many.slice(0, 2) }).success).toBe(true);
+    const r = parse({ games: many });
+    expect(r.success).toBe(false);
+    expect(messages(r)).toBe('a lab may have at most 2 games');
   });
 });
 
@@ -428,9 +437,7 @@ fields:
       ...noFields,
       'learn/closing.md': CLOSING_MD,
       'learn/closing.yaml': CLOSING_YAML,
-      'learn/games.yaml': `games:\n${Object.values(GAMES)
-        .map((g) => `  - ${JSON.stringify(g)}`)
-        .join('\n')}\n`,
+      'learn/games.yaml': `games:\n${[GAMES.sort, GAMES.nest].map((g) => `  - ${JSON.stringify(g)}`).join('\n')}\n`,
     });
     try {
       const r = compileLearnDir(dir)!;
@@ -438,7 +445,22 @@ fields:
       expect(r.bundle!.closing!.story.title).toBe('Friday at Larkfield');
       expect(r.bundle!.closing!.story.body).toBe('By Friday we knew.');
       expect(r.bundle!.closing!.comic.title).toBe('What we found');
-      expect(r.bundle!.games.map((g) => g.id)).toEqual(['sort-calls', 'flag-logs', 'cost', 'request-path']);
+      expect(r.bundle!.games.map((g) => g.id)).toEqual(['sort-calls', 'request-path']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('learn-check refuses a third game: a lab may have at most 2 games', () => {
+    const { ['learn/questions.yaml']: _q, ['workspace/answers.json']: _a, ...noFields } = GOOD;
+    const dir = labDir({
+      ...noFields,
+      'learn/closing.md': CLOSING_MD,
+      'learn/closing.yaml': CLOSING_YAML,
+      'learn/games.yaml': `games:\n${[GAMES.sort, GAMES.flag, GAMES.nest].map((g) => `  - ${JSON.stringify(g)}`).join('\n')}\n`,
+    });
+    try {
+      expect(compileLearnDir(dir)!.problems).toEqual(['games: a lab may have at most 2 games']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

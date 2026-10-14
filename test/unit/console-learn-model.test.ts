@@ -763,8 +763,10 @@ describe('normalizing what the API sent', () => {
     const norm = (learn: Record<string, unknown>, slug?: string) => m.normalizeLearn({ version: '1.0.0', ...(slug ? { slug } : {}), learn: { concepts: [], questions: [], ...learn } }) as unknown as Out;
 
     it('passes every game of every kind and the closing through, as the server schema has them', () => {
-      const out = norm({ games: Object.values(GAMES), closing }, 'warm-up-lab');
-      expect(out.learn.games).toEqual(Object.values(GAMES));
+      // Two games a lab, at most: every kind across two bundles.
+      const out = norm({ games: [GAMES.sort, GAMES.nest], closing }, 'warm-up-lab');
+      expect(out.learn.games).toEqual([GAMES.sort, GAMES.nest]);
+      expect(norm({ games: [GAMES.flag, GAMES.sliders], closing }).learn.games).toEqual([GAMES.flag, GAMES.sliders]);
       expect(out.learn.closing!.story).toEqual(closing.story);
       expect(out.learn.closing!.comic).toEqual(closing.comic);
       // The closing's narration gets the lab's slug, like the opener's: its clips share the lab's folder.
@@ -780,7 +782,12 @@ describe('normalizing what the API sent', () => {
       const sort = { ...GAMES.sort, host: 'maren', timer: 12, cards: GAMES.sort.cards.map((c) => ({ ...c, why: 'Because.' })) };
       const flag = { ...GAMES.flag, timer: 0, choices: { flag: 'Keeps answering', leave: 'Goes dark' }, board: [{ name: 'OpenAI', status: 'down' }, { name: 'Anthropic', status: 'up' }] };
       const sliders = { ...GAMES.sliders, target: { value: 50, tolerance: 1 } };
-      expect(norm({ games: [sort, flag, sliders] }).learn.games).toEqual([sort, flag, sliders]);
+      expect(norm({ games: [sort, flag] }).learn.games).toEqual([sort, flag]);
+      expect(norm({ games: [sliders] }).learn.games).toEqual([sliders]);
+      // order-and-nest: a step's why and the timer; a why that is not text and a timer out of range are left out.
+      const nest = { ...GAMES.nest, timer: 20, steps: GAMES.nest.steps.map((st, i) => (i === 2 ? { ...st, why: 'Last.' } : st)) };
+      expect(norm({ games: [nest] }).learn.games).toEqual([nest]);
+      expect(norm({ games: [{ ...GAMES.nest, timer: 99, steps: GAMES.nest.steps.map((st) => ({ ...st, why: 5 })) }] }).learn.games).toEqual([GAMES.nest]);
       const odd = norm({
         games: [
           { ...GAMES.sort, host: 'Not A Host', timer: 900 },

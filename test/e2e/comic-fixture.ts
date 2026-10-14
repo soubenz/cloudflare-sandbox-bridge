@@ -342,7 +342,10 @@ export const CLOSING: FixtureComic = {
   ],
 };
 
-/** One small game of each kind, valid to the schema; the warm-up spec plays them in this order. */
+/**
+ * The warm-up's games, valid to the schema: two, the most a lab may have (src/labs/learn.ts MAX_GAMES), a sort
+ * and an order-and-nest as in the gateway warm-up. The warm-up spec plays them in this order.
+ */
 export const GAMES: FixtureGame[] = [
   {
     kind: 'sort',
@@ -361,51 +364,22 @@ export const GAMES: FixtureGame[] = [
     ],
   },
   {
-    kind: 'flag',
-    id: 'flag-logs',
-    title: 'Spot the leak',
-    prompt: 'Flag the log lines that leak a secret.',
-    explanation: 'Keys never belong in logs.',
-    items: [
-      { id: 'a', text: 'key=sk-123', flag: true, why: 'A raw key.' },
-      { id: 'b', text: 'status=200', flag: false },
-      { id: 'c', text: 'model=fast', flag: false },
-    ],
-  },
-  {
-    kind: 'sliders',
-    id: 'cost',
-    title: 'What a day costs',
-    prompt: 'Move the sliders and watch the bill.',
-    explanation: 'Calls times price is the bill.',
-    inputs: [
-      { id: 'calls', label: 'Calls a day', min: 0, max: 1000, step: 10, default: 100 },
-      { id: 'price', label: 'Price per call', min: 0, max: 1, step: 0.01, default: 0.1, unit: 'USD' },
-    ],
-    formula: [
-      { input: 'calls', op: '*' },
-      { input: 'price', op: '*' },
-    ],
-    readout: { label: 'Daily cost', unit: 'USD', decimals: 2 },
-    ask: { prompt: 'Which input moves the bill most?', answer: 'calls' },
-  },
-  {
     kind: 'order-and-nest',
     id: 'request-path',
     title: 'Follow one request',
-    prompt: 'Order the steps and nest them.',
+    prompt: 'Tap what happens next, until the call is through.',
     explanation: 'The gateway wraps the provider call.',
     steps: [
       { id: 'gw', text: 'Gateway receives the call', parent: null, order: 0 },
       { id: 'alias', text: 'Alias resolves', parent: 'gw', order: 0 },
-      { id: 'provider', text: 'Provider answers', parent: 'gw', order: 1 },
+      { id: 'provider', text: 'Provider answers', parent: 'gw', order: 1, why: 'The provider answers once the alias says which one.' },
     ],
   },
 ];
 
 /**
  * A warm-up's bundle (the 26-warm-up spec): the small bundle above, with no fields (a lab with games has
- * none), its closing story and comic, and one game of each kind.
+ * none), its closing story and comic, and its two games.
  */
 export function warmUpBundleOf(comic?: FixtureComic): FixtureBundle {
   return {

@@ -374,7 +374,7 @@ A lab can end with a second story: what the case turned out to be. `closing.md` 
 
 ## Games (optional): `learn/games.yaml`
 
-Up to six small games, played after the closing. A lab with games needs a closing and has no `questions.yaml` fields. Every game has an `id` (lowercase, unique across the lab's games), a `title`, a `prompt` (shown as the game's one-line goal) and an `explanation` shown on its end screen; `kind` picks one of four shapes. The fields marked optional can be left out: a game without them plays with the defaults.
+At most two small games, played after the closing: `labs learn-check` refuses a third with "a lab may have at most 2 games" (`MAX_GAMES` in `src/labs/learn.ts`). A lab with games needs a closing and has no `questions.yaml` fields. Every game has an `id` (lowercase, unique across the lab's games), a `title`, a `prompt` (shown as the game's one-line goal) and an `explanation` shown on its end screen; `kind` picks one of four shapes. The fields marked optional can be left out: a game without them plays with the defaults. The example below shows one game of each kind to show the shapes; a lab's own `games.yaml` lists two at most.
 
 ```yaml
 games:
@@ -412,33 +412,35 @@ games:
     readout: { label: Daily cost, unit: USD, decimals: 2 }
     ask: { prompt: Which input moves the bill most?, answer: calls }  # answer is an input id
     target: { value: 50, tolerance: 1 }   # optional: a readout to dial in first; closeness scores points
-  - kind: order-and-nest             # order the steps in the pipeline, nest them, send a call through
+  - kind: order-and-nest             # "what happens next": tap the steps in the order they happen
     id: request-path
     title: Follow one request
-    prompt: Order the steps and nest them.
+    prompt: Tap what happens next, until the call is through.
     explanation: The gateway wraps the provider call.
+    timer: 15                        # optional: seconds a step (default 15; 0 = no clock)
     steps:                           # 3 to 10; exactly one root (parent: null), parents exist, no cycles,
       - { id: gw, text: Gateway receives the call, parent: null, order: 0 }   # siblings have distinct order
       - { id: alias, text: Alias resolves, parent: gw, order: 0 }
+      - { id: provider, text: The provider answers, parent: gw, order: 1, why: The provider is called once the alias says which one. }  # why optional
 ```
 
-All text is plain single-line text, as in `quiz.yaml`. `host`, `timer`, `choices`, `board`, a card's `why` and `target` are optional; `timer` belongs to sort and flag, `choices` and `board` to flag, `target` to sliders.
+All text is plain single-line text, as in `quiz.yaml`. `host`, `timer`, `choices`, `board`, a card's or step's `why` and `target` are optional; `timer` belongs to sort, flag and order-and-nest, `choices` and `board` to flag, `target` to sliders.
 
 ### How a game plays
 
-Every game opens on its title, its goal (the `prompt`), its host (a small bust of the `host`, who reacts to each answer with a mood and a speech bubble) and its rules, with a Start button and a 3, 2, 1 count-in. While it plays it shows the score, a progress bar, Sound and Timer toggles (Sound is the comic's own setting, `opalix.comicSound`; Timer is remembered as `opalix.gameTimer`), and for sort and flag a combo meter and three hearts.
+Every game opens on its title, its goal (the `prompt`), its host (a small bust of the `host`, who reacts to each answer with a mood and a speech bubble) and its rules, with a Start button and a 3, 2, 1 count-in. While it plays it shows the score, a progress bar, Sound and Timer toggles (Sound is the comic's own setting, `opalix.comicSound`; Timer is remembered as `opalix.gameTimer`), and for sort, flag and order-and-nest a combo meter and three hearts.
 
 - **sort and flag**: the cards come one at a time. A card goes to a side by dragging or swiping it, by tapping the side, or with ← and → (1 to 4 when a sort has more than two buckets). A flag's left side is "leave it" and its right side "flag it" (or the words of `choices`), so the data is the same `flag: true/false`. A right card scores 100, up to 50 more for speed when the clock is on, times the combo (x1.25 for each card in a row, up to x2). A wrong card, or a card whose clock runs out, costs a heart, shows the right side and the card's `why` (or "That one is: <bucket>"), and comes back at the end of the deck. The round is won when every card is in its place; it is lost when the hearts are gone (Try again starts a new round).
-- **order-and-nest**: the steps start shuffled in the pipeline. Drag a step (sideways nests it), use its arrow buttons, or from the keyboard focus it and press Space to pick it up, the arrows to move it (← and → nest it), Space to drop it and Escape to put it back. "Send it through" sends a call down the pipeline: it stops and bounces at the first step out of place, or comes out the end when every step is in order at its level. No hearts; fewer sends, more stars.
+- **order-and-nest** ("what happens next"): the steps are shown as big shuffled cards (two columns, one on a phone), under the question "What happens first?" and then "What happens next?". Tap the step that happens next, or press the number on its card (1 to 9); Tab and Enter work as on any button. A right step pops into the next numbered slot of the route strip above the cards (a small packet moves to it) and scores like a card (100, the speed bonus when the clock is on, times the combo). A step tapped out of turn shakes, costs a heart and stays in the pool, and the host says what must come first: the tapped step's `why`, or "First: <the next step>". The clock, when on, runs for each step (`timer`, default 15 seconds); running out costs a heart too. The right order is the `steps` tree flattened depth first (a step's children, by `order`, come before its next sibling), so the nesting is how the steps are written, not something the learner is asked to build. The round is won when every step is placed, lost when the hearts are gone.
 - **sliders**: move the sliders and watch the readout (with a `target`, a meter shows how close it is), then pick the slider that moves it most. Points for closeness (500, or all 500 with no target) and for the answer (500 first time, 250 second, 100 after).
 
-The end screen shows one to three stars (sort and flag: 3 with no mistake, 2 with one, 1 with more; order-and-nest: 3 for one send, 2 for two, 1 for more; sliders: 3 for the right slider first time and the target within 90%, 2 by the second try, 1 after), the score, the best score kept in this browser, a recap of every item with its right answer and its `why`, the `explanation`, and Play again and Continue.
+The end screen shows one to three stars (sort, flag and order-and-nest: 3 with no mistake, 2 with one, 1 with more; sliders: 3 for the right slider first time and the target within 90%, 2 by the second try, 1 after), the score, the best score kept in this browser, a recap of every item with its right answer and its `why` (for order-and-nest, the whole route in order, 1 to N), the `explanation`, and Play again and Continue.
 
 Under reduced motion nothing slides, flies or shakes and the feedback is immediate; the game is the same otherwise. Every action is also a button or a key, and a live region says each card, each verdict and the hearts left. The Timer toggle turns the clock off for anyone who needs more time. For end-to-end tests, `?gameTest=1` in the page address (or `window.__opalixGameTest = true`) skips the count-in, the clock, the delays and the sound.
 
 ### Solving, skipping and finishing
 
-A game is solved when a round is won (every card in its place, the call straight through, the right slider). The console records the first solve with `tries`, the rounds played to it. The games only go forward: there is no way back from a game to the closing story or to an earlier game, only Back to labs. "Skip this game" (before Start and during play) moves on to the next game, and on the last game finishes the warm-up; the first game also has "Skip all games", which skips every game not yet solved and finishes. A skipped game says "Skipped" when it is shown again, and can still be played and solved.
+A game is solved when a round is won (every card in its place, every step placed in order, the right slider). The console records the first solve with `tries`, the rounds played to it. The games only go forward: there is no way back from a game to the closing story or to an earlier game, only Back to labs. "Skip this game" (before Start and during play) moves on to the next game, and on the last game finishes the warm-up; the first game also has "Skip all games" (when the lab has two), which skips every game not yet solved and finishes. A skipped game says "Skipped" when it is shown again, and can still be played and solved.
 
 "Finish the warm-up" sends every game: `{ id, solved: true, tries }` for a solved one, `{ id, solved: false, skipped: true, tries: 0 }` for a skipped one. The warm-up is done when every game is solved or skipped. In the completion a skipped game's result passes with weight 0 and the message "skipped": the warm-up still counts as finished (the path moves on), but a skipped game adds nothing to its score, and one with every game skipped scores 0. XP is earned per lab, not per game: there is no XP for a game, played or skipped, and finishing the warm-up earns its completion XP either way.
 

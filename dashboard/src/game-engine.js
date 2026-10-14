@@ -9,13 +9,16 @@
  *                     grows, the card is cleared. Wrong, or the card's clock runs out: a heart is lost, the
  *                     streak resets, and the card goes to the back of the deck to be answered again. The
  *                     round is won when the deck is empty, lost when the hearts are gone.
- *   order-and-nest    the steps are sent through the pipeline as a whole; a send that is not right stops at
- *                     the first step out of place. No hearts: the stars count the sends.
+ *   order-and-nest    "what happens next": the steps are shown shuffled, and the learner taps the one that
+ *                     happens next, again and again, until the route is complete. The right order is the
+ *                     yaml's tree flattened depth first (orderOf). A right tap places the step (points, the
+ *                     streak grows); a wrong one, or the step's clock running out, costs a heart and the step
+ *                     stays in the pool. The hearts, points, combo and stars are the card games'.
  *   sliders           dial the readout (to the `target` when the game has one), then answer which slider
  *                     moves it most. No hearts: the stars count the answers.
  */
 
-import { shuffle, gradeOutline, outlineAnswer, evalFormula } from './game-grade.js';
+import { shuffle, outlineAnswer, evalFormula } from './game-grade.js';
 
 /** Hearts a sort or flag round starts with. */
 export const LIVES = 3;
@@ -25,8 +28,8 @@ export const BASE_POINTS = 100;
 export const SPEED_POINTS = 50;
 /** The streak at which the combo stops growing (x1, x1.25, ... x2). */
 export const COMBO_CAP = 5;
-/** Seconds a card stays on the clock when a game names no `timer`. A `timer: 0` turns the clock off. */
-export const DEFAULT_TIMER = { sort: 8, flag: 10 };
+/** Seconds a card (a step, for order-and-nest) stays on the clock when a game names no `timer`. A `timer: 0` turns the clock off. */
+export const DEFAULT_TIMER = { sort: 8, flag: 10, 'order-and-nest': 15 };
 export const MAX_TIMER = 60;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -47,7 +50,7 @@ export function pointsFor({ streak = 1, left = 0, limit = 0 } = {}) {
   return Math.round((BASE_POINTS + speed) * comboFor(streak));
 }
 
-/** Stars for a finished sort or flag round: 3 with no mistake, 2 with one, 1 with more; 0 for a lost round. */
+/** Stars for a finished sort, flag or order-and-nest round: 3 with no mistake, 2 with one, 1 with more; 0 for a lost round. */
 export function starsFor({ won, mistakes }) {
   if (!won) return 0;
   return mistakes <= 0 ? 3 : mistakes === 1 ? 2 : 1;
@@ -178,71 +181,101 @@ export function placementOf(state, game) {
 }
 
 // ---------------------------------------------------------------------------
-// Order and nest
+// Order and nest: tap what happens next
 // ---------------------------------------------------------------------------
 
-/** The first row (index) that is not the step the answer has there, at its depth; -1 when every row is right. */
-export function firstWrong(game, rows) {
-  const expected = outlineAnswer(game);
-  const got = Array.isArray(rows) ? rows : [];
-  const n = Math.max(expected.length, got.length);
-  for (let i = 0; i < n; i++) {
-    const e = expected[i];
-    const g = got[i];
-    if (!e || !g || e.id !== g.id || e.depth !== g.depth) return i;
-  }
-  return -1;
+/**
+ * The steps of an order-and-nest game in the order they happen: its tree (`parent`, `order`) flattened depth
+ * first, siblings by `order`. Takes the game or its list of steps; returns the step ids. The nesting stays in
+ * the yaml (it is how the steps were written) but is not asked of the learner: only this order is.
+ */
+export function orderOf(gameOrSteps) {
+  const game = Array.isArray(gameOrSteps) ? { steps: gameOrSteps } : gameOrSteps;
+  return outlineAnswer(game).map((r) => r.id);
 }
 
-/** One send of the pipeline: { correct, stop (the row the packet stops at, -1 when it goes through), passed (rows before it) }. */
-export function sendPipeline(game, rows) {
-  const stop = firstWrong(game, rows);
-  const correct = stop === -1 && gradeOutline(game, rows).correct;
-  return { correct, stop, passed: stop === -1 ? rows.length : stop };
+/** Is `id` the step that happens right after the `placed` ones (ids, in order)? `order` is orderOf's list. */
+export function isNextStep(order, placed, id) {
+  const done = Array.isArray(placed) ? placed : [];
+  const list = Array.isArray(order) ? order : [];
+  if (done.some((p, i) => list[i] !== p)) return false;
+  return typeof id === 'string' && id !== '' && list[done.length] === id;
 }
-
-/** Stars for an order-and-nest game by the sends it took: 1 send 3 stars, 2 sends 2, more 1. */
-export const orderStars = (sends) => (sends <= 1 ? 3 : sends === 2 ? 2 : 1);
-/** Points for an order-and-nest game: 1000 for the first send, 250 less for each send after, never under 250. */
-export const orderScore = (sends) => Math.max(250, 1000 - 250 * (Math.max(1, sends) - 1));
 
 /**
- * Keeps an outline drawable: the first row at the top level, and no row more than one level under the row
- * above it. Returns new rows.
+ * A fresh round of "what happens next": the steps shuffled into the pool by `seed` (never left in the right
+ * order), every heart, no points.
+ *   order      the step ids in the order they happen (the answer)
+ *   placed     the ids placed so far, in order
+ *   pool       the ids still to place, as the cards are shown
+ *   misses     { step id: wrong taps (or clocks run out) while it was the next step }
+ *   status     'playing' | 'won' | 'lost'
+ *   last       the latest answer: { id, expected, correct, points, timedOut } (null before any)
  */
-export function clampRows(rows) {
-  const out = rows.map((r) => ({ ...r }));
-  out.forEach((r, i) => {
-    r.depth = i === 0 ? 0 : clamp(r.depth, 0, out[i - 1].depth + 1);
-  });
-  return out;
+export function newOrderRound(game, { seed = 1, lives = LIVES } = {}) {
+  const order = orderOf(game);
+  let pool = shuffle(order, seed);
+  if (pool.length > 1 && pool.every((id, i) => id === order[i])) pool = [...pool.slice(1), pool[0]];
+  return {
+    order,
+    placed: [],
+    pool,
+    total: order.length,
+    lives,
+    maxLives: lives,
+    score: 0,
+    streak: 0,
+    bestStreak: 0,
+    mistakes: 0,
+    misses: {},
+    status: order.length ? 'playing' : 'won',
+    last: null,
+  };
 }
 
-/** Applies a move ('up', 'down', 'indent', 'outdent') to row `i`. Returns { rows, at } (where the row is now); an impossible move changes nothing. */
-export function moveRow(rows, i, action) {
-  if (i < 0 || i >= rows.length) return { rows, at: i };
-  const out = rows.map((r) => ({ ...r }));
-  let at = i;
-  if (action === 'up' && i > 0) {
-    [out[i - 1], out[i]] = [out[i], out[i - 1]];
-    at = i - 1;
-  } else if (action === 'down' && i < out.length - 1) {
-    [out[i + 1], out[i]] = [out[i], out[i + 1]];
-    at = i + 1;
-  } else if (action === 'indent' && i > 0 && out[i].depth < out[i - 1].depth + 1) out[i].depth += 1;
-  else if (action === 'outdent' && out[i].depth > 0) out[i].depth -= 1;
-  else return { rows, at: i };
-  return { rows: clampRows(out), at };
+/** The step that must be placed next, or null when the round is over. */
+export const nextStep = (state) => (state.status === 'playing' ? (state.order[state.placed.length] ?? null) : null);
+
+/**
+ * Taps the step `id` from the pool (null when the step's clock ran out). Right: it is placed, points (the
+ * card games' points: base, speed, combo), the streak grows. Wrong: a heart is lost, the streak resets and the
+ * step stays in the pool. Returns the next state; the state passed in is not changed. A tap on a step that
+ * is not in the pool, or on a finished round, changes nothing.
+ */
+export function pickStep(state, id, { left = 0, limit = 0 } = {}) {
+  const expected = nextStep(state);
+  if (expected === null) return state;
+  const timedOut = id === null || id === undefined;
+  if (!timedOut && !state.pool.includes(id)) return state;
+  const correct = !timedOut && isNextStep(state.order, state.placed, id);
+  const next = { ...state, placed: [...state.placed], pool: [...state.pool], misses: { ...state.misses } };
+  let points = 0;
+  if (correct) {
+    next.placed.push(id);
+    next.pool = next.pool.filter((p) => p !== id);
+    next.streak = state.streak + 1;
+    next.bestStreak = Math.max(state.bestStreak, next.streak);
+    points = pointsFor({ streak: next.streak, left, limit });
+    next.score = state.score + points;
+  } else {
+    next.streak = 0;
+    next.lives = Math.max(0, state.lives - 1);
+    next.mistakes = state.mistakes + 1;
+    next.misses[expected] = (state.misses[expected] ?? 0) + 1;
+  }
+  if (next.lives <= 0) next.status = 'lost';
+  else if (next.placed.length === next.total) next.status = 'won';
+  next.last = { id: timedOut ? null : id, expected, correct, points, timedOut };
+  return next;
 }
 
-/** Moves row `from` to index `to` and sets its depth to `depth` (clamped). For a drag. */
-export function placeRow(rows, from, to, depth) {
-  if (from < 0 || from >= rows.length) return rows;
-  const out = rows.map((r) => ({ ...r }));
-  const [row] = out.splice(from, 1);
-  const at = clamp(to, 0, out.length);
-  out.splice(at, 0, { ...row, depth: Math.max(0, Math.round(depth ?? row.depth)) });
-  return clampRows(out);
+/** The step's clock ran out: the same as a wrong tap. */
+export const expireStep = (state) => pickStep(state, null);
+
+/** What a key does in the pool: the 1-based number of the card it picks (1 to 9, up to `count`), or 0. */
+export function stepKey(key, count) {
+  const n = /^[1-9]$/.test(String(key)) ? Number(key) : 0;
+  return n >= 1 && n <= count ? n : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -310,22 +343,6 @@ export function choiceKey(key, choices) {
   const n = /^[1-9]$/.test(key) ? Number(key) : 0;
   if (n >= 1 && n <= list.length) return { choose: list[n - 1].id };
   return null;
-}
-
-/**
- * What a key does on an order-and-nest tile. Not holding one: Space or Enter picks it up, ↑ and ↓ move the
- * focus. Holding one: the arrows move it (← → nest), Space or Enter drops it, Escape puts it back.
- * Returns 'grab' | 'drop' | 'cancel' | 'up' | 'down' | 'indent' | 'outdent' | 'focus-prev' | 'focus-next' | null.
- */
-export function tileKey(key, { grabbed = false } = {}) {
-  const space = key === ' ' || key === 'Spacebar' || key === 'Enter';
-  if (grabbed) {
-    if (space) return 'drop';
-    if (key === 'Escape') return 'cancel';
-    return { ArrowUp: 'up', ArrowDown: 'down', ArrowRight: 'indent', ArrowLeft: 'outdent' }[key] ?? null;
-  }
-  if (space) return 'grab';
-  return { ArrowUp: 'focus-prev', ArrowDown: 'focus-next' }[key] ?? null;
 }
 
 // ---------------------------------------------------------------------------
