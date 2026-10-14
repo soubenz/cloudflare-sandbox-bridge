@@ -217,11 +217,11 @@ async function shot(page: Page, name: string) {
 }
 
 test.describe('the file tree', () => {
-  test('leaves see-what-a-gateway-does\'s services/ and brief.md out, and shows the rest', async ({ page }) => {
+  test('leaves see-what-a-gateway-does\'s services/, lib/ and brief.md out, and shows the rest', async ({ page }) => {
     const s = await session(page, GATEWAY);
-    expect(gatewayHidden).toEqual(['services/']);
+    expect(gatewayHidden).toEqual(['lib/', 'services/']);
     // The API lists them; the tree does not show them.
-    expect(listing(WORKSPACES[GATEWAY]!.files, '').map((e) => e.name).sort()).toEqual(['answers.json', 'brief.md', 'gateway', 'send_calls.py', 'services']);
+    expect(listing(WORKSPACES[GATEWAY]!.files, '').map((e) => e.name).sort()).toEqual(['answers.json', 'brief.md', 'gateway', 'lib', 'send_calls.py', 'services']);
     await expect.poll(() => tree(page)).toEqual(['gateway', 'answers.json', 'send_calls.py']);
     await shot(page, 'see-what-a-gateway-does-tree');
     // A folder that stays is still a folder that opens.
@@ -230,8 +230,9 @@ test.describe('the file tree', () => {
     await shot(page, 'see-what-a-gateway-does-tree-expanded');
     // Nothing was listed inside services/ to decide: a hidden folder is dropped by its name.
     expect(s.listed).not.toContain('services');
+    expect(s.listed).not.toContain('lib');
     // The Brief tab still shows the brief the tree leaves out.
-    await expect(page.locator('#briefBody')).toContainText('What is running');
+    await expect(page.locator('#briefBody')).toContainText('What you have');
     expect(s.errors).toEqual([]);
   });
 

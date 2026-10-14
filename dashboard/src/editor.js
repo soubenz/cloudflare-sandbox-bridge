@@ -32,11 +32,33 @@ const GRAMMARS = {
   css: () => import('@codemirror/lang-css').then((m) => m.css()),
 };
 
-async function loadLanguage(filename) {
-  const ext = (filename.split('.').pop() ?? '').toLowerCase();
-  // Highlighting is a nicety: when a grammar cannot be fetched (a build older than this page, a flaky connection)
-  // the file still opens, as plain text.
-  return GRAMMARS[ext] ? GRAMMARS[ext]().catch(() => null) : null;
+/** ext -> the grammar's promise, so each is fetched once; `ready` holds the ones that have arrived. */
+const loading = new Map();
+const ready = new Map();
+
+const extOf = (filename) => (String(filename).split('.').pop() ?? '').toLowerCase();
+
+function loadLanguage(filename) {
+  const ext = extOf(filename);
+  if (!GRAMMARS[ext]) return Promise.resolve(null);
+  if (!loading.has(ext)) {
+    // Highlighting is a nicety: when a grammar cannot be fetched (a build older than this page, a flaky
+    // connection) the file still opens, as plain text, and a later open tries again.
+    const pending = GRAMMARS[ext]().then(
+      (language) => (ready.set(ext, language), language),
+      () => (loading.delete(ext), null)
+    );
+    loading.set(ext, pending);
+  }
+  return loading.get(ext);
+}
+
+/**
+ * Fetches the grammars `filenames` will need, ahead of an open: a grammar is two or three chunks fetched one
+ * after the other, which the first open of a .py used to wait for after the file itself had arrived.
+ */
+export function preloadLanguages(filenames) {
+  for (const name of new Set((filenames ?? []).map(extOf))) loadLanguage(`x.${name}`);
 }
 
 export async function createEditor(mount, { onChange, onSave } = {}) {
@@ -45,7 +67,9 @@ export async function createEditor(mount, { onChange, onSave } = {}) {
   const languageSlot = new Compartment();
   // Replacing the document to open a file is not an edit, and reporting it
   // as one made every freshly opened file look unsaved.
-  let loading = false;
+  let replacing = false;
+  /** Bumped by every load, so a grammar that arrives late is only applied to the file it was fetched for. */
+  let loads = 0;
 
   const editor = new EditorView({
     doc: '',
@@ -69,7 +93,7 @@ export async function createEditor(mount, { onChange, onSave } = {}) {
       oneDark,
       languageSlot.of([]),
       EditorView.updateListener.of((u) => {
-        if (u.docChanged && !loading) onChange?.();
+        if (u.docChanged && !replacing) onChange?.();
       }),
       // The window's colours: the code sits on the same navy as the window around it. oneDark keeps the
       // syntax colours; what it paints behind and around them is replaced here.
@@ -89,9 +113,14 @@ export async function createEditor(mount, { onChange, onSave } = {}) {
   });
 
   return {
+    /**
+     * Shows `text` at once; its highlighting follows as soon as the grammar is here (at once when it already
+     * is). Resolves once the text is shown, not when the grammar arrives.
+     */
     async load(text, filename) {
-      const language = await loadLanguage(filename);
-      loading = true;
+      const load = ++loads;
+      const language = ready.get(extOf(filename)) ?? null;
+      replacing = true;
       try {
         editor.dispatch({
           changes: { from: 0, to: editor.state.doc.length, insert: text },
@@ -100,7 +129,12 @@ export async function createEditor(mount, { onChange, onSave } = {}) {
           scrollIntoView: true,
         });
       } finally {
-        loading = false;
+        replacing = false;
+      }
+      if (!language) {
+        loadLanguage(filename).then((late) => {
+          if (late && load === loads) editor.dispatch({ effects: languageSlot.reconfigure([late]) });
+        });
       }
     },
     value: () => editor.state.doc.toString(),

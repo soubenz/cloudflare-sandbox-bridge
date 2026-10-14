@@ -13,6 +13,8 @@ import { deleteLearnProgress, loadLearnProgress, parseLearnProgressBody, saveLea
 import { requireServiceAuth, requireBrowserAuth, mintSessionToken, previousKeyHeader } from './auth';
 import { ApiError, fromSdkError } from './lib/errors';
 import { workspacePath } from './lib/paths';
+import { timedJson } from './lib/timing';
+import { parseBatchReadBody } from './session/files';
 import { insertSession, upsertFeedback, healSessionRow, isActiveSessionConflict, ACTIVE_STATES_SQL, activeSessionRows, markResuming, unmarkResuming } from './session/d1';
 import { healIfStale, healUserActiveRows } from './session/reconcile';
 import { userProgress, sessionProgressSummary, sessionChecks, userChecks, parseFeedback, clampLimit } from './session/progress';
@@ -410,12 +412,31 @@ export function createRouter(): Hono<{ Bindings: Env }> {
     }
   });
 
+  // The read routes answer with a Server-Timing header (lib/timing.ts): where an open's time goes, in DevTools.
   app.get('/sessions/:id/files/:path{.+}', async (c) => {
+    const started = Date.now();
     const id = c.req.param('id');
     await requireBrowserAuth(c.req.raw, c.env, id);
     const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
-    const result = await stub.readFile(workspacePath(c.req.param('path')));
-    return c.json(result);
+    const { value, timing } = await stub.readFile(workspacePath(c.req.param('path')));
+    return timedJson(value, started, timing);
+  });
+
+  /**
+   * Up to 30 files in one container call, each answered on its own (content, or an error code): the console
+   * reads the files its tree shows ahead of a click. POST because the list is a body, not because it writes.
+   * Same auth, fence and learner identity as the single read (session/files.ts readWorkspaceFiles).
+   */
+  app.post('/sessions/:id/files/read', async (c) => {
+    const started = Date.now();
+    const id = c.req.param('id');
+    await requireBrowserAuth(c.req.raw, c.env, id);
+    const body = await c.req.text();
+    if (body.length > 64 * 1024) throw ApiError.payloadTooLarge('Batch read body exceeds 64 KiB');
+    const paths = parseBatchReadBody(body);
+    const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
+    const { value, timing } = await stub.readFiles(paths);
+    return timedJson({ files: value }, started, timing);
   });
 
   app.put('/sessions/:id/files/:path{.+}', async (c) => {
@@ -429,13 +450,15 @@ export function createRouter(): Hono<{ Bindings: Env }> {
   });
 
   app.get('/sessions/:id/files', async (c) => {
+    const started = Date.now();
     const id = c.req.param('id');
     await requireBrowserAuth(c.req.raw, c.env, id);
     // The query value went straight to listFiles, so listing outside the
     // workspace needed no encoding trick at all.
     const path = workspacePath(c.req.query('path') ?? '/workspace');
     const stub = c.env.SESSION.get(c.env.SESSION.idFromName(id));
-    return c.json(await stub.listFiles(path));
+    const { value, timing } = await stub.listFiles(path);
+    return timedJson(value, started, timing);
   });
 
   app.delete('/sessions/:id/files/:path{.+}', async (c) => {

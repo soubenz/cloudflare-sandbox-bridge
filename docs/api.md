@@ -73,8 +73,9 @@ minutes are usable now.
 | GET | `/sessions` | service | every live session (including `ready` pre-warms), newest first, max 200 |
 | GET | `/sessions/:id` | session | the `status()` body: `{ meta, services, snapshots, checks?, cost, hints, pressure, manifest_summary?, checks_history, solution, server_time }` — see [Session status](#session-status) |
 | GET | `/sessions/:id/solution` | session token only | the lab's solution as files, once the session has earned it → `200 { files: [{ path, content }], truncated }`; `404 no_solution`, `403 solution_locked`; the service key is refused with `403 session_token_required`. See [Solution reveal](#solution-reveal) |
-| GET/PUT/DELETE | `/sessions/:id/files/:path` | session | under `/workspace`; PUT capped at 2 MiB |
-| GET | `/sessions/:id/files?path=` | session | list; `path` defaults to `/workspace` but is **not** confined to it |
+| GET/PUT/DELETE | `/sessions/:id/files/:path` | session | under `/workspace`; PUT capped at 2 MiB. GET answers `{ content, encoding }` (`utf-8`, or `base64` for bytes that are not UTF-8) with a `Server-Timing` header (see below) |
+| POST | `/sessions/:id/files/read` | session | batch read, for reading ahead of a click: body `{ "paths": ["app.py", "gateway/config.yaml"] }`, 1 to 30 paths as the single GET takes them → `200 { files: [...] }`, one entry per path in request order: `{ path, content, encoding }` or `{ path, error: { code, message } }` with `code` `bad_path` (outside `/workspace`, a directory, not a regular file, or unreadable by `learner`), `not_found`, or `too_large` (over 256 KiB; the single GET still returns it). ONE container exec for the whole list, with the same realpath fence and `learner` identity as the single read. `400 bad_batch` for a body that is not that shape or names more than 30 paths; `413 payload_too_large` over 64 KiB. Carries `Server-Timing` |
+| GET | `/sessions/:id/files?path=` | session | list; `path` defaults to `/workspace` and is confined to it like the others. Carries `Server-Timing` |
 | POST | `/sessions/:id/checks` | session | `{ only? }` → runs and returns the full `ChecksRun`. `only` must name checks of the lab's manifest (400 `unknown_check` otherwise, empty list included). A session runs one check run at a time (409 `checks_running`) and at most one every 2 seconds, measured from the start of the previous run (429 `checks_too_frequent`). A run that would execute no check is never stored |
 | GET | `/sessions/:id/checks?limit=20` | session | this session's last runs from D1, newest first (default 20, max 100) → `{ runs: [{ run_id, started_at, finished_at, passed, total, score, results }] }`; `results` is the parsed `CheckResultEntry[]` |
 | GET | `/sessions/:id/progress-summary` | session | this session's user on this session's lab → `{ slug, attempts, best_score, passed_all, last_run_at, sessions, attempts_this_session }` (zeros and `last_run_at: null` before any run) |
@@ -207,6 +208,18 @@ reports — `cost`, `llm.call` and `alert`. Any other value is rejected with
 `400 unknown_event_type`. An `llm.call` whose `data.cost_usd` is a number is
 added to the session's running LLM spend.
 
+### Server-Timing on the file routes
+
+`GET /sessions/{id}/files/{path}`, `GET /sessions/{id}/files` and
+`POST /sessions/{id}/files/read` answer with a `Server-Timing` header, so
+DevTools (Network, Timing) shows where a file open spends its time:
+`running` (the Session DO reading its state), `exec` (the container call that
+starts the process), `output` (running it and collecting its output), `do`
+(the Session DO in all) and `total` (the Worker in all; `total - do` is
+auth plus the hop to the DO). `Timing-Allow-Origin` names the console's
+origin, so the page can read the same numbers from
+`performance.getEntriesByType('resource')`.
+
 ## Pool schedule
 
 `POOL_TARGET_<FAMILY>` is a fixed warm-container count. To vary it by time of
@@ -252,7 +265,8 @@ the RPC boundary.
 | 404 | `not_found` | an unknown DO sub-route; SDK not-found errors |
 | 404 | `lab_not_found` | no published lab with that slug |
 | 400 | `bad_window` | `GET /usage` with a `from`/`to` that is not a non-negative number, or `from >= to` |
-| 400 | `bad_path` | a `/files` path that is not under `/workspace` — lexically, after `realpath` resolution (symlinks included), or because `learner` cannot access it |
+| 400 | `bad_path` | a `/files` path that is not under `/workspace` — lexically, after `realpath` resolution (symlinks included), or because `learner` cannot access it. In a batch read (`POST /sessions/{id}/files/read`) it is the entry's `error.code`, not the response's status, as are `not_found` and `too_large` (over 256 KiB) |
+| 400 | `bad_batch` | `POST /sessions/{id}/files/read` with a body that is not JSON `{ paths: [...] }` of 1 to 30 non-empty strings |
 | 400 | `unknown_event_type` | `POST /sessions/{id}/events` with a type outside the injectable set (`cost`, `llm.call`, `alert`, `pressure`, `hint`, `solution.unlocked`, `session.idle_warning`, `session.expiring`, `session.state`, `service.health`) |
 | 404 | `unknown_family` | a `/pools/:family` path that is not `agent` or `gateway` |
 | 403 | `session_token_required` | `POST /sessions/{id}/services/{name}/session` or `GET /sessions/{id}/solution` called with the service key |
@@ -278,7 +292,7 @@ the RPC boundary.
 | 409 | `version_exists` | `POST /labs/publish` for a `<slug>/<version>` that is already published, without `force` |
 | 409 | `file_exists` | SDK `FileExistsError` |
 | 429 | `checks_too_frequent` | `POST /sessions/{id}/checks` less than 2 seconds after the previous run started; `details.retry_after_ms` is the wait left (also in the message as `retry_after_ms=N`) |
-| 413 | `payload_too_large` | `PUT .../files/...` over 2 MiB, a warm-up completion body over 16 KiB, or the SDK's own file-size limit |
+| 413 | `payload_too_large` | `PUT .../files/...` over 2 MiB, a `POST .../files/read` body over 64 KiB, a warm-up completion body over 16 KiB, or the SDK's own file-size limit |
 | 502 | `service_down` | service proxy while that service is `unhealthy` |
 | 503 | `at_capacity` | `POST /sessions`, `POST /sessions/start`, `POST /sessions/prepare`, `POST /sessions/{id}/resume`: the family's pool is at `max_instances` or backing off; `details.retry_after_s`, and the `Retry-After` header carries the same number |
 | 503 | `container_unavailable` | SDK `ContainerUnavailableError`; `details.retry_after_ms` when the SDK supplies it |

@@ -323,6 +323,8 @@ export const api = {
   listFiles: (id, token, path = '/workspace') =>
     request(`/sessions/${id}/files?path=${encodeURIComponent(path)}`, { token }),
   readFile: (id, token, path) => request(`/sessions/${id}/files/${path}`, { token }),
+  /** Up to 30 files in one call: `{files: [{path, content, encoding} | {path, error: {code, message}}]}` (see file-cache.js). */
+  readFiles: (id, token, paths) => request(`/sessions/${id}/files/read`, { method: 'POST', body: { paths }, token }),
   writeFile: (id, token, path, content) =>
     request(`/sessions/${id}/files/${path}`, { method: 'PUT', body: content, raw: true, token }),
 };

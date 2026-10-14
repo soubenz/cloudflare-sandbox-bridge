@@ -2,6 +2,7 @@ import { api, plainError, configureAuth, eventsUrl, serviceUrl, serviceBaseUrl }
 import { attachTerminal } from './terminal.js';
 import { diffLines, collapseContext } from './diff.js';
 import { hiddenRules, visibleEntries } from './file-tree.js';
+import { createFileCache } from './file-cache.js';
 import {
   breadcrumbs,
   buildLauncherModel,
@@ -2550,6 +2551,7 @@ async function loadLearn() {
         },
         onWritten: (text) => {
           // The file changed under the editor: show it, unless there are edits there to lose.
+          fileCache.set(file, text);
           if (state.openFile === file && !state.dirty && state.editor) state.editor.load(text, file);
           refreshFiles();
         },
@@ -3907,8 +3909,12 @@ function attachSessionTerminal() {
     token: state.session.token,
     onNotice: (text) => addNotice('warn', 'Terminal', text),
     onStatus: setTerminalStatus,
-    // Any keystroke answers the idle warning.
-    onInput: hideIdleBanner,
+    // Any keystroke answers the idle warning. It can also change files (a Run button types here too), so what
+    // the editor read ahead is read again before it is trusted.
+    onInput: () => {
+      hideIdleBanner();
+      fileCache.markStale();
+    },
   });
 }
 
@@ -4979,6 +4985,7 @@ async function refreshFiles() {
     list.innerHTML = '';
     for (const row of rows) list.append(fileRow(row));
     if (!rows.length) list.innerHTML = '<li class="muted">empty</li>';
+    readAhead(rows);
   } catch (err) {
     list.innerHTML = '<li class="error"></li>';
     list.querySelector('li').textContent = `Could not list files. ${plainError(err)}`;
@@ -5067,6 +5074,49 @@ function normalizeFiles(result) {
     .sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name));
 }
 
+/**
+ * The files the tree shows, read ahead in one call so a click opens them at once (file-cache.js). Entries
+ * belong to the session they were read in.
+ */
+const fileCache = createFileCache({
+  scope: () => state.session?.id ?? null,
+  readMany: (paths) => api.readFiles(state.session.id, state.session.token, paths),
+  readOne: (path) => api.readFile(state.session.id, state.session.token, path),
+});
+
+/** After the tree is drawn: read its text files ahead, and fetch the grammars they will need. */
+function readAhead(rows) {
+  if (!state.session) return;
+  const files = rows.filter((row) => !row.isDirectory);
+  fileCache.prefetch(files);
+  (window.requestIdleCallback ?? ((fn) => setTimeout(fn, 200)))(() => {
+    import('./editor.js').then((m) => m.preloadLanguages(files.map((row) => row.path))).catch(() => {});
+  });
+}
+
+/** `{content, cached}`: what was read ahead (waiting for a batch already reading it), else the file's own read. */
+async function openedText(name) {
+  const held = await fileCache.lookup(name);
+  if (held) return { content: held.content, cached: true };
+  const result = await api.readFile(state.session.id, state.session.token, name);
+  if (result?.encoding !== 'base64' && typeof result?.content === 'string') fileCache.set(name, result.content);
+  return { content: result?.content ?? '', cached: false };
+}
+
+/**
+ * Reads the open file again and shows the answer if it differs, only while it is still the open file and
+ * nothing was typed since it was shown (`edits`): unsaved work is never replaced. A failed read changes nothing.
+ */
+function revalidateOpenFile(name, edits) {
+  fileCache
+    .revalidate(name)
+    .then((fresh) => {
+      if (!fresh?.changed || state.openFile !== name || state.dirty || state.edits !== edits || !state.editor) return;
+      state.editor.load(fresh.content, name);
+    })
+    .catch(() => {});
+}
+
 /** Created on first use: a session that never opens a file loads no editor. */
 async function ensureEditor() {
   if (state.editor) return state.editor;
@@ -5131,16 +5181,18 @@ async function openFile(name) {
   // Switch first and say what is happening: a slow read used to leave the
   // click looking ignored, and an error landed on a view nobody was on.
   showView('editor');
-  setEditorStatus(`Opening ${name}…`);
+  if (!fileCache.get(name)) setEditorStatus(`Opening ${name}…`);
   try {
     // Side by side: the first open used to read the file, and only then fetch and build the editor.
-    const [result, editor] = await Promise.all([api.readFile(state.session.id, state.session.token, name), ensureEditor()]);
+    const [result, editor] = await Promise.all([openedText(name), ensureEditor()]);
     if (!editor) return;
     state.openFile = name;
     updateWindowTitle();
     $('editorPath').textContent = name;
     $('editorPath').title = `/workspace/${name}`;
-    await editor.load(result.content ?? '', name);
+    await editor.load(result.content, name);
+    // What was read ahead is shown at once; the file's own read follows, in case it changed since.
+    if (result.cached) revalidateOpenFile(name, state.edits);
     setDirty(false);
     $('btnSaveFile').disabled = false;
     setEditorStatus('');
@@ -5171,6 +5223,7 @@ async function newFile() {
 
   try {
     await api.writeFile(state.session.id, state.session.token, clean, '');
+    fileCache.set(clean, '');
     // A file made inside a folder should be visible once it exists.
     const parts = clean.split('/').slice(0, -1);
     parts.forEach((_, i) => state.expanded.add(parts.slice(0, i + 1).join('/')));
@@ -5199,7 +5252,9 @@ async function saveFile() {
   setEditorStatus('saving…');
   try {
     const edits = state.edits;
-    await api.writeFile(state.session.id, state.session.token, name, state.editor?.value() ?? '');
+    const text = state.editor?.value() ?? '';
+    await api.writeFile(state.session.id, state.session.token, name, text);
+    fileCache.set(name, text);
     // Typing while the write was in flight made new edits that were not
     // part of it, so those are still unsaved.
     if (state.openFile === name && state.edits === edits) {
@@ -5721,7 +5776,11 @@ $('btnSignOut')?.addEventListener('click', async () => {
   location.reload();
 });
 
-$('btnRefreshFiles').addEventListener('click', refreshFiles);
+// Asked for: whatever was read ahead is read again too.
+$('btnRefreshFiles').addEventListener('click', () => {
+  fileCache.markStale();
+  refreshFiles();
+});
 $('btnNewFile').addEventListener('click', newFile);
 $('btnReconnectTerm').addEventListener('click', reconnectTerminal);
 $('btnSaveFile').addEventListener('click', saveFile);

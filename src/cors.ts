@@ -42,6 +42,8 @@ export function corsMiddleware() {
     const headers = new Headers(c.res.headers);
     headers.set('Access-Control-Allow-Origin', allowed);
     headers.set('Access-Control-Expose-Headers', 'Content-Type');
+    // Lets the console read the file routes' Server-Timing (performance.getEntriesByType('resource')), not only DevTools.
+    headers.set('Timing-Allow-Origin', allowed);
     headers.append('Vary', 'Origin');
 
     c.res = new Response(c.res.body, {

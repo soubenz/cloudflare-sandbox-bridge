@@ -82,6 +82,10 @@ const SESSION_TOKEN: Array<[string, string]> = [
   ['delete', '/sessions/:id'],
   ['get', '/sessions/:id/events'],
   ['get', '/sessions/:id/files'],
+  ['get', '/sessions/:id/files/:path{.+}'],
+  ['put', '/sessions/:id/files/:path{.+}'],
+  ['delete', '/sessions/:id/files/:path{.+}'],
+  ['post', '/sessions/:id/files/read'],
   ['get', '/sessions/:id/checks'],
   ['get', '/sessions/:id/progress-summary'],
   ['post', '/sessions/:id/feedback'],
@@ -210,6 +214,19 @@ describe('route auth matrix', () => {
     expect(body).toContain('parseUserId(');
     expect(body.indexOf('requireServiceAuth(')).toBeLessThan(body.indexOf('LearnProgress('));
     if (method === 'put') expect(body.indexOf('requireServiceAuth(')).toBeLessThan(body.indexOf('c.req.text('));
+  });
+
+  it('the batch read takes the same auth as the single read, before it reads the body or calls the session', () => {
+    const batch = handlerFor('post', '/sessions/:id/files/read');
+    const single = handlerFor('get', '/sessions/:id/files/:path{.+}');
+    expect(batch).toContain('await requireBrowserAuth(c.req.raw, c.env, id)');
+    expect(single).toContain('await requireBrowserAuth(c.req.raw, c.env, id)');
+    // Session token or service key, like the single read: neither refuses the other kind.
+    expect(batch).not.toContain('auth.kind');
+    expect(single).not.toContain('auth.kind');
+    const auth = batch.indexOf('requireBrowserAuth(');
+    expect(auth).toBeLessThan(batch.indexOf('c.req.text('));
+    expect(auth).toBeLessThan(batch.indexOf('.readFiles('));
   });
 
   it('has no unauthenticated session-start route', () => {

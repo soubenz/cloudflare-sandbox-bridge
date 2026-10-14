@@ -3,6 +3,8 @@ import type { FileEncoding, FileInfo, ListFilesResult } from './backend';
 import { STAGE_DIR, ensureStageDir } from './hydrate';
 import { WORKSPACE_ROOT } from '../lib/paths';
 import { ApiError } from '../lib/errors';
+import { workspacePath } from '../lib/paths';
+import type { OpTiming } from '../lib/timing';
 
 /**
  * Files API against the container, in two layers, because `workspacePath()`
@@ -69,9 +71,11 @@ function asText(v: unknown): string {
   return '';
 }
 
-async function run(rt: SessionRuntime, argv: readonly [string, ...string[]]): Promise<Ran> {
-  const proc = await rt.backend().exec(argv, EXEC_OPTIONS);
-  const out = await proc.output();
+/** One exec; with `timing`, starting the process and waiting for its output are timed apart (see lib/timing.ts). */
+async function run(rt: SessionRuntime, argv: readonly [string, ...string[]], timing?: OpTiming): Promise<Ran> {
+  const timed = <T>(name: string, fn: () => Promise<T>) => (timing ? timing.time(name, fn) : fn());
+  const proc = await timed('exec', () => rt.backend().exec(argv, EXEC_OPTIONS));
+  const out = await timed('output', () => proc.output());
   return { exitCode: out.exitCode, stdout: asText(out.stdout), stderr: asText(out.stderr) };
 }
 
@@ -88,18 +92,130 @@ function failure(r: Ran, what: string): ApiError {
   return ApiError.internal(`${what} failed (exit ${r.exitCode}): ${err.slice(0, 500)}`);
 }
 
-export async function readWorkspaceFile(rt: SessionRuntime, path: string): Promise<{ content: string; encoding?: FileEncoding }> {
-  const r = await run(rt, ['sh', '-c', READ_SCRIPT, '_', path]);
+export async function readWorkspaceFile(rt: SessionRuntime, path: string, timing?: OpTiming): Promise<{ content: string; encoding?: FileEncoding }> {
+  const r = await run(rt, ['sh', '-c', READ_SCRIPT, '_', path], timing);
   if (r.exitCode !== 0) throw failure(r, 'read');
+  return decoded(r.stdout.trim());
+}
 
-  const base64 = r.stdout.trim();
+/** The file's bytes as text when they are UTF-8, else as the base64 they came in as (the SDK's shape). */
+function decoded(base64: string, bytes = fromBase64(base64)): { content: string; encoding: FileEncoding } {
   try {
-    const bytes = Uint8Array.from(atob(base64), (ch) => ch.charCodeAt(0));
     return { content: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes), encoding: 'utf-8' };
   } catch {
-    // Not valid UTF-8: hand the bytes back as base64, as the SDK does.
     return { content: base64, encoding: 'base64' };
   }
+}
+
+function fromBase64(base64: string): Uint8Array {
+  return Uint8Array.from(atob(base64), (ch) => ch.charCodeAt(0));
+}
+
+// ------------------------------------------------------------ batch read
+
+/** At most this many paths in one batch read, so one call stays one bounded exec. */
+export const MAX_BATCH_FILES = 30;
+/** A file larger than this is answered `too_large` in a batch; the single read still returns it. */
+export const MAX_BATCH_FILE_BYTES = 256 * 1024;
+
+/**
+ * Many files in ONE container call: the console reads the files its tree shows ahead of a click, so opening
+ * one is not a container round trip (each costs ~0.5-0.8 s end to end).
+ *
+ * The same two layers as a single read, per path. Root runs the realpath fence over every path and blanks the
+ * ones that land outside /workspace; then ONE `runuser` hands the whole list to learner, who stats and reads
+ * each. A blank is answered as an escape without being touched. Only a regular file is read (a FIFO or a link
+ * to /dev/zero would block or never end), and only up to the size cap, checked by stat first and again on the
+ * bytes that came back, since a file can grow in between.
+ *
+ * One line per path, in order: `E` (escapes, a directory, unreadable), `N` (missing), `L <size>` (too large),
+ * `O <base64>` (the bytes), or `O <base64> !` when the read itself failed after the checks.
+ */
+const BATCH_FENCE =
+  'n=$#; i=0; while [ "$i" -lt "$n" ]; do a=$1; shift; p=$(realpath -m -- "$a") || p=; ' +
+  'case "$p" in /workspace|/workspace/*) set -- "$@" "$a";; *) set -- "$@" "";; esac; i=$((i+1)); done;';
+const BATCH_READ =
+  'for f; do ' +
+  'if [ -z "$f" ]; then echo E; continue; fi; ' +
+  'if ! s=$(stat -L -c %s -- "$f" 2>&1); then case "$s" in *"No such file"*) echo N;; *) echo E;; esac; continue; fi; ' +
+  'if [ ! -f "$f" ] || [ ! -r "$f" ]; then echo E; continue; fi; ' +
+  `if [ "$s" -gt ${MAX_BATCH_FILE_BYTES} ]; then echo "L $s"; continue; fi; ` +
+  'printf "O "; base64 -w0 -- "$f" 2>/dev/null || printf " !"; echo; ' +
+  'done';
+const BATCH_SCRIPT = `${BATCH_FENCE} exec ${AS_LEARNER.join(' ')} sh -c '${BATCH_READ}' _ "$@"`;
+
+export type BatchReadEntry =
+  | { path: string; content: string; encoding: FileEncoding }
+  | { path: string; error: { code: 'bad_path' | 'not_found' | 'too_large'; message: string } };
+
+/**
+ * The batch body: `{ "paths": ["send_calls.py", "gateway/config.yaml"] }`, 1 to MAX_BATCH_FILES strings,
+ * each a path as the single read's URL takes it (relative to /workspace, or absolute inside it).
+ */
+export function parseBatchReadBody(text: string): string[] {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw ApiError.badRequest('bad_batch', 'Body must be JSON: {"paths": ["file.py", ...]}');
+  }
+  const paths = (body as { paths?: unknown } | null)?.paths;
+  if (!Array.isArray(paths) || paths.length === 0 || !paths.every((p) => typeof p === 'string' && p !== '')) {
+    throw ApiError.badRequest('bad_batch', '"paths" must be a non-empty array of file paths');
+  }
+  if (paths.length > MAX_BATCH_FILES) {
+    throw ApiError.badRequest('bad_batch', `At most ${MAX_BATCH_FILES} paths per batch read`, { max: MAX_BATCH_FILES });
+  }
+  return paths as string[];
+}
+
+/**
+ * Reads `paths` (as the client gave them) in one exec and answers each in order: its content, or why not.
+ * A path `workspacePath` refuses never reaches the container; when no path is left, no exec runs at all.
+ */
+export async function readWorkspaceFiles(rt: SessionRuntime, paths: string[], timing?: OpTiming): Promise<BatchReadEntry[]> {
+  const escaped = (path: string): BatchReadEntry => ({ path, error: { code: 'bad_path', message: `path escapes ${WORKSPACE_ROOT}` } });
+  const resolved = paths.map((path) => {
+    try {
+      return workspacePath(path);
+    } catch {
+      return null;
+    }
+  });
+  const absolute = resolved.filter((p): p is string => p !== null);
+  if (absolute.length === 0) return paths.map(escaped);
+
+  const r = await run(rt, ['sh', '-c', BATCH_SCRIPT, '_', ...absolute], timing);
+  if (r.exitCode !== 0) throw failure(r, 'read');
+  const lines = r.stdout.split('\n');
+  if (lines.pop() !== '' || lines.length !== absolute.length) {
+    throw ApiError.internal(`batch read answered ${lines.length} lines for ${absolute.length} paths`);
+  }
+
+  let next = 0;
+  return paths.map((path, i): BatchReadEntry => {
+    if (resolved[i] === null) return escaped(path);
+    const line = lines[next++]!;
+    if (line === 'N') return { path, error: { code: 'not_found', message: `No such file or directory: ${path}` } };
+    if (line.startsWith('L ')) return tooLarge(path, Number(line.slice(2)));
+    if (!line.startsWith('O ') || line.endsWith(' !')) return escaped(path);
+    const base64 = line.slice(2);
+    let bytes: Uint8Array;
+    try {
+      bytes = fromBase64(base64);
+    } catch {
+      return escaped(path);
+    }
+    if (bytes.length > MAX_BATCH_FILE_BYTES) return tooLarge(path, bytes.length);
+    return { path, ...decoded(base64, bytes) };
+  });
+}
+
+function tooLarge(path: string, size: number): BatchReadEntry {
+  return {
+    path,
+    error: { code: 'too_large', message: `${path} is ${size} bytes; a batch read returns files up to ${MAX_BATCH_FILE_BYTES} bytes (read it on its own)` },
+  };
 }
 
 export async function writeWorkspaceFile(rt: SessionRuntime, path: string, content: string): Promise<void> {
@@ -118,8 +234,8 @@ export async function writeWorkspaceFile(rt: SessionRuntime, path: string, conte
   }
 }
 
-export async function listWorkspaceDir(rt: SessionRuntime, path: string): Promise<ListFilesResult> {
-  const r = await run(rt, ['sh', '-c', LIST_SCRIPT, '_', path]);
+export async function listWorkspaceDir(rt: SessionRuntime, path: string, timing?: OpTiming): Promise<ListFilesResult> {
+  const r = await run(rt, ['sh', '-c', LIST_SCRIPT, '_', path], timing);
   if (r.exitCode !== 0) throw failure(r, 'list');
 
   const base = path.replace(/\/+$/, '');

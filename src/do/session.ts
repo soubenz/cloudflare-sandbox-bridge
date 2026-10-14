@@ -12,7 +12,8 @@ import { runChecks } from '../session/checks';
 import { buildSolutionStatus, solutionAvailable, solutionProgress } from '../session/solution';
 import { restartService as restartServiceImpl } from '../session/services';
 import { recordLlmCost } from '../session/metrics';
-import { readWorkspaceFile, writeWorkspaceFile, listWorkspaceDir, deleteWorkspaceFile } from '../session/files';
+import { readWorkspaceFile, readWorkspaceFiles, writeWorkspaceFile, listWorkspaceDir, deleteWorkspaceFile } from '../session/files';
+import { OpTiming, type Phases } from '../lib/timing';
 import { ApiError, fromSdkError } from '../lib/errors';
 
 /**
@@ -111,9 +112,13 @@ export class Session extends DurableObject<Env> {
     return lifecycle.endIfStuck(this.rt);
   }
 
+  // The reads answer `{ value, timing }`: the route puts `timing` in a Server-Timing header (lib/timing.ts).
   async readFile(path: string) {
-    await this.rt.requireRunning();
-    return readWorkspaceFile(this.rt, path);
+    return this.timed((t) => readWorkspaceFile(this.rt, path, t));
+  }
+  /** Several files in one container call (see readWorkspaceFiles); `paths` as the client gave them. */
+  async readFiles(paths: string[]) {
+    return this.timed((t) => readWorkspaceFiles(this.rt, paths, t));
   }
   async writeFile(path: string, content: string): Promise<void> {
     await this.rt.requireRunning();
@@ -121,13 +126,19 @@ export class Session extends DurableObject<Env> {
     await this.rt.touchInput();
   }
   async listFiles(path: string) {
-    await this.rt.requireRunning();
-    return listWorkspaceDir(this.rt, path);
+    return this.timed((t) => listWorkspaceDir(this.rt, path, t));
   }
   async deleteFile(path: string): Promise<void> {
     await this.rt.requireRunning();
     await deleteWorkspaceFile(this.rt, path);
     await this.rt.touchInput();
+  }
+
+  private async timed<T>(op: (timing: OpTiming) => Promise<T>): Promise<{ value: T; timing: Phases }> {
+    const timing = new OpTiming();
+    await timing.time('running', () => this.rt.requireRunning());
+    const value = await op(timing);
+    return { value, timing: timing.done() };
   }
 
   /**
