@@ -100,13 +100,20 @@ interface Bundle {
   fields: Array<Record<string, unknown>>;
 }
 
-function compileLearn(slug: string): Bundle {
+/**
+ * See-what-a-gateway-does has no story of its own (the warm-up explains the gateway), so the story of this
+ * fixture comes from a lab that still has one; its lessons and questions are the gateway lab's.
+ */
+const STORY_LAB = 'follow-one-request-through-the-stack';
+
+function compileLearn(slug: string, storySlug: string = STORY_LAB): Bundle {
   const dir = join(ROOT, 'labs', slug, 'learn');
+  const storyDir = join(ROOT, 'labs', storySlug, 'learn');
   const split = (text: string) => {
     const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)!;
     return { data: parseYaml(m[1]!) as Record<string, any>, body: m[2]!.trim() };
   };
-  const story = split(readFileSync(join(dir, 'story.md'), 'utf8'));
+  const story = split(readFileSync(join(storyDir, 'story.md'), 'utf8'));
   const concepts = readdirSync(join(dir, 'concepts'))
     .filter((f) => f.endsWith('.md'))
     .sort()

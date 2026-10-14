@@ -81,7 +81,7 @@ const LABS = [
   lab({ slug: PLAIN, title: 'See how tools reach an agent', order: 5, has_learn: false }),
 ];
 
-/** The bundle each lab serves: the first has the real comic, the second a three-page one, the third none, the fourth one that cannot be drawn. */
+/** The bundle each lab serves: the first has the one-page comic, the second a three-page one, the third none, the fourth one that cannot be drawn. */
 const BUNDLES: Record<string, Bundle> = {
   [EXPLORE]: bundle,
   [MULTI]: { ...bundle, comic: multi },

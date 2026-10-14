@@ -24,7 +24,7 @@ import { MODULE_PAGE, pressStart } from './browse';
  * Like 16, 17 and 18 this needs no password, no API and no container: a static server serves
  * dashboard/public (the built bundle, with the CSP from public/_headers) and every call the
  * console makes is answered by a route stub. The content is real: the learn bundle and the
- * comic are compiled from labs/see-what-a-gateway-does/learn, and the other labs of this spec
+ * comic are compiled from labs/follow-one-request-through-the-stack/learn (the gateway lab has none), with the lessons and questions of labs/see-what-a-gateway-does/learn, and the other labs of this spec
  * are that bundle with parts taken away.
  *
  * Run `npm run build:dashboard` first (the page loads dashboard/public/dist).
@@ -59,14 +59,21 @@ interface Bundle {
   fields: Array<{ key: string; prompt: string; kind: string; choices?: string[]; help?: string }>;
 }
 
+/**
+ * See-what-a-gateway-does has no story or comic of its own (the warm-up explains the gateway), so the
+ * story and comic of these fixtures come from a lab that still has both; its lessons and questions are the gateway lab's.
+ */
+const STORY_LAB = 'follow-one-request-through-the-stack';
+
 /** The lab's learn/ folder as the bundle the API would serve (the CLI's compiler cannot be imported here), comic included. */
-function compileLearn(slug: string): Bundle {
+function compileLearn(slug: string, storySlug: string = STORY_LAB): Bundle {
   const dir = join(ROOT, 'labs', slug, 'learn');
+  const storyDir = join(ROOT, 'labs', storySlug, 'learn');
   const split = (text: string) => {
     const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)!;
     return { data: parseYaml(m[1]!) as Record<string, any>, body: m[2]!.trim() };
   };
-  const story = split(readFileSync(join(dir, 'story.md'), 'utf8'));
+  const story = split(readFileSync(join(storyDir, 'story.md'), 'utf8'));
   const concepts = readdirSync(join(dir, 'concepts'))
     .filter((f) => f.endsWith('.md'))
     .sort()
@@ -78,7 +85,7 @@ function compileLearn(slug: string): Bundle {
     .map(({ order: _order, ...c }) => c);
   const quiz = parseYaml(readFileSync(join(dir, 'quiz.yaml'), 'utf8')) as { questions: Question[] };
   const qs = parseYaml(readFileSync(join(dir, 'questions.yaml'), 'utf8')) as { answers_file: string; fields: Bundle['fields'] };
-  const raw = parseYaml(readFileSync(join(dir, 'comic.yaml'), 'utf8')) as { title: string; panels?: Array<Record<string, any>>; pages?: Array<{ title?: string; panels: Array<Record<string, any>> }> };
+  const raw = parseYaml(readFileSync(join(storyDir, 'comic.yaml'), 'utf8')) as { title: string; panels?: Array<Record<string, any>>; pages?: Array<{ title?: string; panels: Array<Record<string, any>> }> };
   const panelOf = (p: Record<string, any>) => ({ cast: [], prop: 'none', bubbles: [], ...p });
   return {
     story: { title: story.data.title, minutes: story.data.minutes, body: story.body },

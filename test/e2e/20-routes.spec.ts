@@ -33,7 +33,7 @@ import { serveConsole, serveWorker } from './console-server';
  * Like 16 to 19 this needs no password for the console (except where the gate is the point), no API
  * and no container: a static server with the Worker's single-page-application fallback serves
  * dashboard/public, and every call the console makes is answered by a route stub. The learning content
- * is real (labs/see-what-a-gateway-does/learn) and the other labs are that bundle with parts taken away.
+ * is real (labs/see-what-a-gateway-does/learn, its story from labs/follow-one-request-through-the-stack) and the other labs are that bundle with parts taken away.
  *
  * Run `npm run build:dashboard` first.
  */
@@ -61,14 +61,21 @@ interface Bundle {
   fields: Array<Record<string, unknown>>;
 }
 
+/**
+ * See-what-a-gateway-does has no story or comic of its own (the warm-up explains the gateway), so the
+ * story of these fixtures comes from a lab that still has one; its lessons and questions are the gateway lab's.
+ */
+const STORY_LAB = 'follow-one-request-through-the-stack';
+
 /** The lab's learn/ folder as the bundle the API would serve it. */
-function compileLearn(slug: string): Bundle {
+function compileLearn(slug: string, storySlug: string = STORY_LAB): Bundle {
   const dir = join(ROOT, 'labs', slug, 'learn');
+  const storyDir = join(ROOT, 'labs', storySlug, 'learn');
   const split = (text: string) => {
     const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)!;
     return { data: parseYaml(m[1]!) as Record<string, any>, body: m[2]!.trim() };
   };
-  const story = split(readFileSync(join(dir, 'story.md'), 'utf8'));
+  const story = split(readFileSync(join(storyDir, 'story.md'), 'utf8'));
   const concepts = readdirSync(join(dir, 'concepts'))
     .filter((f) => f.endsWith('.md'))
     .sort()

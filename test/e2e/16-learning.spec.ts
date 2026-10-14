@@ -20,7 +20,7 @@ import { serveConsole } from './console-server';
  * API. The Worker's own routes are covered by test/unit/console-worker.test.ts.
  *
  * The content is real: the learn bundle is compiled from
- * labs/see-what-a-gateway-does/learn and the onboarding quiz is
+ * labs/see-what-a-gateway-does/learn (its story from follow-one-request-through-the-stack, which has one) and the onboarding quiz is
  * packages/catalogue/onboarding.json, so a change to either that breaks the
  * console shows up here.
  *
@@ -77,18 +77,25 @@ const LEARN_500 = 'has-learn-but-the-fetch-fails';
 const NOQUIZ = 'a-lab-that-asks-no-questions';
 
 /**
+ * See-what-a-gateway-does has no story or comic of its own (the warm-up explains the gateway), so the
+ * story of these fixtures comes from a lab that still has one; its lessons and questions are the gateway lab's.
+ */
+const STORY_LAB = 'follow-one-request-through-the-stack';
+
+/**
  * The lab's learn/ folder as the bundle the API would serve. The CLI's own
  * compiler cannot be imported here (Playwright loads specs as plain ESM, which
  * refuses the JSON imports the compiler's schema module makes), so this reads
  * the same files the same way; test/unit/learn.test.ts covers the compiler.
  */
-function compileLearn(slug: string): Bundle {
+function compileLearn(slug: string, storySlug: string = STORY_LAB): Bundle {
   const dir = join(ROOT, 'labs', slug, 'learn');
+  const storyDir = join(ROOT, 'labs', storySlug, 'learn');
   const split = (text: string) => {
     const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)!;
     return { data: parseYaml(m[1]!) as Record<string, any>, body: m[2]!.trim() };
   };
-  const story = split(readFileSync(join(dir, 'story.md'), 'utf8'));
+  const story = split(readFileSync(join(storyDir, 'story.md'), 'utf8'));
   const concepts = readdirSync(join(dir, 'concepts'))
     .filter((f) => f.endsWith('.md'))
     .sort()

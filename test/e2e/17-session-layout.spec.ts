@@ -15,7 +15,7 @@ import { MODULE_PAGE, pressStart } from './browse';
  * server serves dashboard/public (the built bundle, with the CSP from public/_headers) and every
  * call the console makes is answered by a route stub, the session's too (status, events, files,
  * checks, the service proxy, the end call). The learn bundle is the real one, compiled from
- * labs/see-what-a-gateway-does/learn.
+ * labs/see-what-a-gateway-does/learn (its story from follow-one-request-through-the-stack, which has one).
  *
  * Run `npm run build:dashboard` first (the page loads dashboard/public/dist).
  * SESSION_SHOTS_DIR chooses where the screenshots go (default test/e2e/shots/session);
@@ -39,14 +39,21 @@ interface Bundle {
   fields: Array<{ key: string; prompt: string; kind: string; choices?: string[]; help?: string }>;
 }
 
+/**
+ * See-what-a-gateway-does has no story or comic of its own (the warm-up explains the gateway), so the
+ * story of these fixtures comes from a lab that still has one; its lessons and questions are the gateway lab's.
+ */
+const STORY_LAB = 'follow-one-request-through-the-stack';
+
 /** The lab's learn/ folder as the bundle the API would serve (the CLI's compiler cannot be imported here). */
-function compileLearn(slug: string): Bundle {
+function compileLearn(slug: string, storySlug: string = STORY_LAB): Bundle {
   const dir = join(ROOT, 'labs', slug, 'learn');
+  const storyDir = join(ROOT, 'labs', storySlug, 'learn');
   const split = (text: string) => {
     const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text)!;
     return { data: parseYaml(m[1]!) as Record<string, any>, body: m[2]!.trim() };
   };
-  const story = split(readFileSync(join(dir, 'story.md'), 'utf8'));
+  const story = split(readFileSync(join(storyDir, 'story.md'), 'utf8'));
   const concepts = readdirSync(join(dir, 'concepts'))
     .filter((f) => f.endsWith('.md'))
     .sort()
