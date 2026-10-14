@@ -479,7 +479,8 @@ test.describe('a lab session', () => {
       { id: 4, event: 'container.restarted', data: {} }
     );
     await expect(page.locator('#noticeList')).toContainText('Your lab restarted');
-    await expect(page.locator('#noticeList')).toContainText('Something went wrong');
+    // An internal alert (the platform's own plumbing) is not the learner's business: it never reaches the feed.
+    await expect(page.locator('#noticeList')).not.toContainText('Something went wrong');
     // The activity feed is one line until it is opened.
     if (await page.locator('#btnActivityToggle').isVisible()) await page.locator('#btnActivityToggle').click();
     await expect(page.locator('#noticeList')).toContainText('Session ending soon');
