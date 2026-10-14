@@ -117,6 +117,11 @@ pressure:
       about the weekend. If the loop still has no ceiling, this queue is
       about to cost more than the last one.
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - services/
+
 checks:
   - name: run-costs-under-budget
     script: run-costs-under-budget.sh

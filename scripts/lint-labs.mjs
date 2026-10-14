@@ -10,7 +10,7 @@
 // with Finding = { rule, file, line, message }. This only READS the lab.
 //
 // Rules: leak, python-no-B, port-kill, port, service-user, hints-duplicate, brief-length,
-// pressure-undisclosed, harness-stale-lock, lesson-leaks-answer, warm-up. See "Lint" in docs/lab-authoring.md.
+// pressure-undisclosed, harness-stale-lock, lesson-leaks-answer, warm-up, hidden. See "Lint" in docs/lab-authoring.md.
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -562,6 +562,57 @@ function ruleLessonLeaksAnswer(dir, add) {
   }
 }
 
+/**
+ * Manifest `hidden` (paths the console's file tree leaves out, relative to workspace/, a trailing slash
+ * for a folder). Two warnings, never errors: an entry that matches nothing in workspace/ (a typo, or a
+ * file since moved), and an entry that brief.md, hints.md or a timed hint in the manifest mentions,
+ * since a file the learner is told about should be one they can find. The schema itself (src/labs/manifest.ts) refuses malformed entries.
+ */
+function ruleHidden(dir, m, add) {
+  const hidden = m.data.hidden;
+  if (!Array.isArray(hidden)) return;
+  const workspace = join(dir, 'workspace');
+  const texts = ['brief.md', 'hints.md']
+    .map((name) => join(dir, name))
+    .filter((file) => existsSync(file))
+    .map((file) => ({ file, text: readText(file) }))
+    .filter((t) => t.text !== null);
+  // The timed hints are read by the learner too; a finding points at the hint's line in the manifest.
+  (Array.isArray(m.data.hints) ? m.data.hints : []).forEach((h, i) => {
+    if (h && typeof h.text === 'string') texts.push({ file: m.file, text: h.text, line: manifestLine(m, ['hints', i, 'text']) });
+  });
+  hidden.forEach((entry, i) => {
+    if (typeof entry !== 'string' || !entry) return;
+    const line = manifestLine(m, ['hidden', i]);
+    const folder = entry.endsWith('/');
+    const bare = entry.replace(/\/+$/, '');
+    let st = null;
+    try {
+      st = statSync(join(workspace, bare));
+    } catch {
+      // missing: reported below
+    }
+    if (!st || (folder ? !st.isDirectory() : !st.isFile())) {
+      const isDefault = !folder && (bare === 'brief.md' || bare === 'hints.md');
+      add('warning', 'hidden', m.file, line, isDefault
+        ? `hidden entry "${entry}" is not needed: brief.md and hints.md are never shown in the file tree`
+        : `hidden entry "${entry}" matches no ${folder ? 'folder' : 'file'} in workspace/`);
+    }
+    // A file is mentioned by its path or its name; a folder by its path with the slash ("services/").
+    const needles = folder ? [`${bare}/`] : [...new Set([bare, bare.split('/').pop()])];
+    for (const { file, text, line: at } of texts) {
+      for (const needle of needles) {
+        const re = new RegExp(`(?<![\\w./-])(?:\\/?workspace\\/)?${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${folder ? '' : '(?![\\w-])'}`);
+        const hit = re.exec(text);
+        if (hit) {
+          add('warning', 'hidden', file, at ?? lineOf(text, hit.index), `${at ? 'a hint ' : ''}mentions "${needle}", which manifest hidden (${entry}) leaves out of the file tree; hide only what the learner never needs to read, run or edit`);
+          break;
+        }
+      }
+    }
+  });
+}
+
 // --------------------------------------------------------------------- API
 
 /**
@@ -590,6 +641,7 @@ export function lintLab(dir) {
     ruleServiceUser(m, readFileSync(m.file, 'utf8'), add);
     ruleHintsDuplicate(dir, m, add);
     ruleBrief(dir, m, add);
+    ruleHidden(dir, m, add);
     if (isWarmUp(m)) ruleWarmUp(dir, m, add);
   }
 

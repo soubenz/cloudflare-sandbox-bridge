@@ -105,6 +105,7 @@ Defaults and limits worth knowing, since the schema fills them in silently:
 | `estimated_minutes` | optional; integer 5-240, how long the lab honestly takes (distinct from `timeout_minutes`, the session cap) |
 | `learner_restart` | optional boolean, default `false`; `true` when the task has the learner edit a config and restart a service. The console's status chip ("Operational" / "Needs attention") then opens a restart list; without it the chip is one word and nothing can be restarted. Briefs call it "the status chip above the workspace". |
 | `archived` | optional boolean, default `false`; `true` hides the lab from learners (see [Archiving a lab](#archiving-a-lab)) |
+| `hidden` | optional list of paths relative to `/workspace` (`services/fake_provider.py`; a trailing slash is a whole folder, `services/`) that the console's file tree leaves out. No leading `/`, no `..`, `.` or empty segment, no wildcard. See [Hiding scaffolding from the file tree](#hiding-scaffolding-from-the-file-tree) |
 | catalogue sort | `labs/index.json` is ordered by `(path, module, order, slug)`; a missing `path` sorts as `zz` (last), a missing `module`/`order` as 999. The manifest is the only source of placement — there is no separate paths file |
 | `env` keys (both levels) | must be shell identifiers: `^[A-Za-z_][A-Za-z0-9_]*$` |
 | `services[].name` | 1-40 chars |
@@ -135,6 +136,20 @@ expanded.
 ### Archiving a lab
 
 Set `archived: true` for a lab learners should not see: a test fixture, or a lab you have retired. The lab stays published and startable by slug (`POST /sessions`, `/labs/<slug>/session` and the test suites keep working), and `GET /labs` still lists it with `archived: true`. The learner console leaves it out of the launcher, path and module counts, search, suggestions and progress totals; the admin Catalogue tab shows it with an "Archived" chip. Republish the lab for the flag to reach the catalogue index.
+
+### Hiding scaffolding from the file tree
+
+Most labs ship files the learner never needs to open: a scripted fake model provider, the page behind a view tab, an admin proxy, seed and bootstrap scripts, a tracing backend's config. List them under `hidden` and the console's file tree leaves them out:
+
+```yaml
+hidden:
+  - services/                 # a trailing slash: the whole folder
+  - gateway/seed_teams.py     # one file
+```
+
+Only the tree changes. The files stay in `/workspace`, so services, the terminal (`ls`, `cat`) and checks see them as before, and one the learner opens some other way still opens. A folder left with nothing to show is left out too. `brief.md` and `hints.md` are never in the tree on any lab, with no entry needed: the Brief and Hints tabs show them.
+
+Hide a file only when nothing the learner reads (the brief, hints, questions, or the docstring of a file they work on) asks them to read, run or edit it. When the task is to fix or edit a service file, it stays visible; a fake provider whose behaviour the task depends on (how it prices a call, how it tells two deployments apart) stays visible too. The lint warns when `brief.md`, `hints.md` or a timed hint mentions a hidden path, and when an entry matches nothing in `workspace/`. The field reaches the console in the session status (`manifest_summary.hidden`), so a lab picks it up when it is republished.
 
 ### Warm-ups
 
@@ -373,6 +388,7 @@ errors, with a one-line reason. `labs test` does not lint.
 | `brief-length` | warning / error | `brief.md` is over 500 words (warning) or 700 words (error), not counting fenced code blocks |
 | `pressure-undisclosed` | error | the manifest has a non-empty `pressure[]` and `brief.md` never contains the word "minute" (any case) |
 | `lesson-leaks-answer` | warning | a `learn/concepts/*.md` lesson contains, as a whole word (letters, digits, `_` and `-` do not end a word) and ignoring case, a string value of six or more characters from `solution/answers.json`. Numbers, booleans and short values are ignored; a lab with no `solution/answers.json` is skipped |
+| `hidden` | warning | a manifest `hidden` entry matches no file (or, with a trailing slash, no folder) in `workspace/`, names `brief.md` / `hints.md` (never shown anyway), or `brief.md`, `hints.md` or a manifest `hints[].text` mentions a hidden path: a file by its path or name, a folder by its path with the slash |
 | `harness-stale-lock` | warning | `checks/_harness.py` mentions a `.lock` file but lacks either a staleness check (`getmtime` / `st_mtime`) or a `try:` / `except Exception` around main |
 
 ### Canonical ports

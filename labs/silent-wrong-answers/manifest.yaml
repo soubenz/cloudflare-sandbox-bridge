@@ -177,6 +177,11 @@ pressure:
       asking which of last month's answers were wrong. If a turn still cannot
       be read back, that question has no answer either.
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - services/
+
 checks:
   # The outcome: a turn that can be explained after the fact.
   - name: every-turn-is-attributable

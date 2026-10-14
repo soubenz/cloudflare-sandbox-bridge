@@ -145,6 +145,11 @@ pressure:
       cut-short rows, then slow ones, then nothing at all for a while. If a
       200 is still being read as an answer, it is about to be read as several.
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - services/
+
 checks:
   - name: never-states-unverified-stock
     script: never-states-unverified-stock.sh

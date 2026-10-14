@@ -1,6 +1,7 @@
 import { api, plainError, configureAuth, eventsUrl, serviceUrl, serviceBaseUrl } from './api.js';
 import { attachTerminal } from './terminal.js';
 import { diffLines, collapseContext } from './diff.js';
+import { hiddenRules, visibleEntries } from './file-tree.js';
 import {
   breadcrumbs,
   buildLauncherModel,
@@ -4972,10 +4973,17 @@ async function refreshFiles() {
   }
 }
 
-/** Lists `dir` and, depth first, every expanded directory beneath it. */
+/** One folder of the workspace, as the tree's rows would name it ('' is /workspace itself). */
+async function listDir(dir) {
+  return normalizeFiles(await api.listFiles(state.session.id, state.session.token, dir ? `/workspace/${dir}` : '/workspace'));
+}
+
+/**
+ * Lists `dir` and, depth first, every expanded directory beneath it. brief.md, hints.md and the lab's
+ * manifest `hidden` paths are left out (file-tree.js); they still open by their path.
+ */
 async function listTree(dir, depth = 0) {
-  const path = dir ? `/workspace/${dir}` : '/workspace';
-  const entries = normalizeFiles(await api.listFiles(state.session.id, state.session.token, path));
+  const entries = await visibleEntries(hiddenRules(state.summary?.hidden), dir, await listDir(dir), listDir);
   const rows = [];
   for (const entry of entries) {
     const rel = dir ? `${dir}/${entry.name}` : entry.name;

@@ -115,6 +115,27 @@ const egressSchema = z.object({
   allow: z.array(z.string()).default([]),
 });
 
+/**
+ * One entry of a manifest's `hidden` list: a path relative to /workspace,
+ * a trailing slash meaning a whole folder (`services/`). Plain paths only:
+ * no leading slash, no `.` or `..` segment, no empty segment, no backslash
+ * and no wildcard, so an entry names exactly one file or folder and can
+ * never point outside the workspace.
+ */
+export const hiddenPathSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .superRefine((p, ctx) => {
+    const fail = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    if (p.startsWith('/')) return fail(`"${p}" must be relative to /workspace, not absolute (write "services/x.py", not "/workspace/services/x.py")`);
+    if (p.includes('\\')) return fail(`"${p}" must use forward slashes`);
+    if (/[*?[\]{}]/.test(p)) return fail(`"${p}" must name one file or folder; wildcards are not supported`);
+    const segments = (p.endsWith('/') ? p.slice(0, -1) : p).split('/');
+    if (segments.some((s) => s === '..')) return fail(`"${p}" must not contain ".."`);
+    if (segments.some((s) => s === '' || s === '.')) return fail(`"${p}" must not contain an empty or "." segment`);
+  });
+
 export const labManifestSchema = z.object({
   slug: z.string().regex(slugPattern, 'slug must be lowercase, hyphenated, 3-64 chars'),
   version: z.string().regex(versionPattern, 'version must be semver, e.g. 1.0.0'),
@@ -190,6 +211,19 @@ export const labManifestSchema = z.object({
   checks: z.array(checkSchema).default([]),
   hints: z.array(hintSchema).default([]),
   egress: egressSchema.default({ allow: [] }),
+  /**
+   * Workspace files the learner never needs to see: a scripted fake
+   * provider, the page behind a view tab, seed scripts. Paths relative to
+   * /workspace; a trailing slash hides a whole folder (`services/`). This
+   * only leaves them out of the console's file tree: they are still in
+   * /workspace, so services, the terminal and checks see them unchanged,
+   * and a learner who opens one by its path still can. brief.md and
+   * hints.md are left out of the tree on every lab without being listed
+   * (the Brief and Hints tabs show them). Hide a file only when the brief
+   * never asks the learner to read, run or edit it; the lint warns when a
+   * brief mentions a hidden path or an entry matches nothing.
+   */
+  hidden: z.array(hiddenPathSchema).max(100).optional(),
 }).superRefine((m, ctx) => {
   const issue = (path: string, message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
   if (m.type !== 'warm-up') {
@@ -208,6 +242,7 @@ export const labManifestSchema = z.object({
   if (m.checks.length > 0) issue('checks', 'a warm-up has no container, so no checks');
   if (m.pressure.length > 0) issue('pressure', 'a warm-up has no container, so no pressure events');
   if (m.hints.length > 0) issue('hints', 'a warm-up has no session, so no timed hints');
+  if ((m.hidden?.length ?? 0) > 0) issue('hidden', 'a warm-up has no workspace, so nothing to hide');
   if (m.tier !== 'free') issue('tier', 'a warm-up must be tier: free');
   if (m.difficulty !== 'intro') issue('difficulty', 'a warm-up must be difficulty: intro');
   if (m.estimated_minutes === undefined) issue('estimated_minutes', 'a warm-up needs estimated_minutes');

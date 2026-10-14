@@ -89,6 +89,11 @@ pressure:
       Six more tickets just landed. If the duplicates are not fixed yet,
       this is about to make them louder.
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - services/
+
 checks:
   - name: one-email-per-ticket
     script: one-email-per-ticket.sh

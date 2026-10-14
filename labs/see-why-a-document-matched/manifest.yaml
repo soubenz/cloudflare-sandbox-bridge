@@ -208,6 +208,13 @@ services:
 
 pressure: []
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - services/corpus.py
+  - services/phoenix_view_proxy.py
+  - services/seed_documents.py
+
 checks:
   - name: services-are-up
     script: services-are-up.sh

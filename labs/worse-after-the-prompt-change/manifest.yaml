@@ -145,6 +145,11 @@ pressure:
       can act on, not a vibe. Two new cases have also been added to
       gate/cases.json -- re-run your gate against the bigger set.
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - services/
+
 checks:
   # The strongest single signal, and the one most gate designs miss: does
   # it actually refuse something worse. Weighted accordingly.

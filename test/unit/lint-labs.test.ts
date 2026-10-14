@@ -464,3 +464,84 @@ estimated_minutes: 10
     expect(lintLab(lab()).errors.filter((e) => e.rule === 'warm-up')).toEqual([]);
   });
 });
+
+describe('hidden', () => {
+  const hiddenOf = (r: LintResult) => r.warnings.filter((w) => w.rule === 'hidden');
+  const withHidden = (entries: string[], extra = '') => manifest(`hidden:\n${entries.map((e) => `  - ${e}\n`).join('')}${extra}`);
+
+  it('is quiet when every entry matches something and nothing the learner reads mentions it', () => {
+    const r = lintLab(
+      lab({
+        'manifest.yaml': withHidden(['services/', 'view.py', 'gateway/seed.py']),
+        'brief.md': 'Run `python3 -B send_calls.py` and open the view tab.\n',
+        'workspace/services/fake_provider.py': 'x = 1\n',
+        'workspace/view.py': 'x = 1\n',
+        'workspace/gateway/seed.py': 'x = 1\n',
+        'workspace/gateway/config.yaml': 'a: 1\n',
+      })
+    );
+    expect(hiddenOf(r)).toEqual([]);
+    expect(r.errors).toEqual([]);
+  });
+
+  it('warns when an entry matches nothing in workspace/, or is a folder where a file is (and back)', () => {
+    const r = lintLab(
+      lab({
+        'manifest.yaml': withHidden(['services/fake_provder.py', 'view.py/', 'gateway']),
+        'workspace/services/fake_provider.py': 'x = 1\n',
+        'workspace/view.py': 'x = 1\n',
+        'workspace/gateway/config.yaml': 'a: 1\n',
+      })
+    );
+    const w = hiddenOf(r);
+    expect(w.map((f) => f.message)).toEqual([
+      'hidden entry "services/fake_provder.py" matches no file in workspace/',
+      'hidden entry "view.py/" matches no folder in workspace/',
+      'hidden entry "gateway" matches no file in workspace/',
+    ]);
+    // Each points at its own line of the manifest.
+    expect(new Set(w.map((f) => f.line)).size).toBe(3);
+    expect(w.every((f) => f.file.endsWith('manifest.yaml'))).toBe(true);
+    expect(r.errors).toEqual([]);
+  });
+
+  it('says brief.md and hints.md need no entry: they are never in the tree', () => {
+    const w = hiddenOf(lintLab(lab({ 'manifest.yaml': withHidden(['brief.md']) })));
+    expect(w).toHaveLength(1);
+    expect(w[0]!.message).toContain('never shown in the file tree');
+  });
+
+  it('warns when brief.md, hints.md or a timed hint mentions a hidden path, by path or file name', () => {
+    const r = lintLab(
+      lab({
+        'manifest.yaml': withHidden(['services/', 'gateway/view.py'], 'hints:\n  - after_minutes: 5\n    text: "Read services/fake_provider.py."\n'),
+        'brief.md': '# Brief\n\nThe page is drawn by `view.py`.\n',
+        'hints.md': 'See /workspace/services/fake_provider.py.\n',
+        'workspace/services/fake_provider.py': 'x = 1\n',
+        'workspace/gateway/view.py': 'x = 1\n',
+      })
+    );
+    const w = hiddenOf(r);
+    expect(w.map((f) => [f.file.split('/').pop(), f.line])).toEqual([
+      ['brief.md', 3],
+      ['hints.md', 1],
+      ['manifest.yaml', expect.any(Number)],
+    ]);
+    expect(w.find((f) => f.file.endsWith('brief.md'))!.message).toContain('"view.py"');
+    expect(w.find((f) => f.file.endsWith('manifest.yaml'))!.message).toMatch(/^a hint mentions "services\/"/);
+    expect(r.errors).toEqual([]);
+  });
+
+  it('does not count a different file with the same tail, or a folder name without its slash, as a mention', () => {
+    const r = lintLab(
+      lab({
+        'manifest.yaml': withHidden(['view.py', 'services/']),
+        'brief.md': 'Edit `gateway/view.py` and `preview.py`; the services are up.\n',
+        'workspace/view.py': 'x = 1\n',
+        'workspace/services/a.py': 'x = 1\n',
+        'workspace/gateway/view.py': 'x = 1\n',
+      })
+    );
+    expect(hiddenOf(r)).toEqual([]);
+  });
+});

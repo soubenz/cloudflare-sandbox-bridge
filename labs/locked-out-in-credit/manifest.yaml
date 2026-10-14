@@ -125,6 +125,11 @@ pressure:
       account's own spending is what should decide whether it gets served,
       none of those three should even notice.
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - services/
+
 checks:
   - name: no-tenant-spends-past-its-own-budget
     script: no-tenant-spends-past-its-own-budget.sh

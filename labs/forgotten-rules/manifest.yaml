@@ -153,6 +153,11 @@ pressure:
       Every one of them is another turn the desk has to answer, and the
       conversation only gets longer from here.
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - services/
+
 checks:
   - name: rules-survive-every-call
     script: rules-survive-every-call.sh

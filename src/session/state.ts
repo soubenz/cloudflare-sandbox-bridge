@@ -173,6 +173,8 @@ export interface ManifestSummary {
   hints_schedule: number[];
   /** The lab's task has the learner restart a service, so the console offers the restart list. */
   learner_restart: boolean;
+  /** Manifest `hidden`: workspace paths the console's file tree leaves out (a trailing slash is a folder). Absent when the lab hides nothing. */
+  hidden?: string[];
 }
 
 /** What `GET /sessions/:id` (the Session DO's `status()`) returns. Documented in docs/api.md. */
@@ -211,6 +213,7 @@ export function summarizeManifest(manifest: RunnableManifest): ManifestSummary {
     })),
     hints_schedule: manifest.hints.map((h) => h.after_minutes),
     learner_restart: manifest.learner_restart,
+    ...(manifest.hidden?.length ? { hidden: manifest.hidden } : {}),
   };
 }
 

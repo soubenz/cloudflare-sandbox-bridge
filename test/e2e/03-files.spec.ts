@@ -10,6 +10,8 @@ test.describe('the workspace', () => {
     await expect(files.first()).toBeVisible({ timeout: 30_000 });
     const names = await session.locator('#fileList .name').allTextContents();
     expect(names.join(' ')).toContain('README.md');
+    // brief.md is in /workspace too, but the Brief tab shows it, so the tree does not (30-hidden-files.spec.ts).
+    expect(names).not.toContain('brief.md');
     // A regular file reports a size; only directories are blank.
     expect(await session.locator('#fileList .size').first().textContent()).toMatch(/\d/);
   });
@@ -31,8 +33,8 @@ test.describe('the workspace', () => {
     await expect(session.locator('#editorStatus')).toHaveText('saved', { timeout: 30_000 });
 
     // Re-open from the container rather than trusting what is on screen.
-    await session.locator('#fileList li', { hasText: 'brief' }).first().click();
-    await expect(session.locator('#editorPath')).toHaveText('brief.md');
+    await session.locator('#fileList li', { hasText: 'index.html' }).first().click();
+    await expect(session.locator('#editorPath')).toHaveText('index.html');
     await session.locator('#fileList li', { hasText: 'README' }).first().click();
     await expect(session.locator('.cm-content')).toHaveText(marker, { timeout: 30_000 });
   });

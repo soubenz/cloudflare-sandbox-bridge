@@ -179,6 +179,11 @@ services:
 
 pressure: []
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - gateway/view.py
+
 checks:
   # Each check shares one grader-run's worth of setup (its own LiteLLM
   # against a fresh `grading` database, loaded with the learner's current

@@ -135,6 +135,11 @@ pressure:
       INCIDENT.md. If the boundary is not there yet, the program will answer
       them for you.
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - services/
+
 checks:
   # Eleven programs, one of which deliberately never stops, so this one gets
   # the most time. The harness has its own smaller budget inside this.

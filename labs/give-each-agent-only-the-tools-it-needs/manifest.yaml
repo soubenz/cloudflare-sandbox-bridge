@@ -336,6 +336,12 @@ services:
 
 pressure: []
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - admin_proxy.py
+  - view.py
+
 checks:
   # Each check shares one grader-run's worth of setup (its own
   # ContextForge against a fresh SQLite db, its own copies of the three

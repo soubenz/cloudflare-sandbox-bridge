@@ -176,6 +176,11 @@ pressure:
       account as this morning's lockout, so if the outage still empties into
       silence, it is about to do it in front of somebody who has noticed.
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - services/
+
 checks:
   - name: degrades-instead-of-stopping
     script: degrades-instead-of-stopping.sh

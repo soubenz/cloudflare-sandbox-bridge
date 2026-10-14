@@ -200,6 +200,11 @@ services:
 
 pressure: []
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - jaeger/
+
 checks:
   # Sequential on purpose (same reasoning as one-endpoint-one-key): whichever
   # check runs first pays the cost of firing both requests and polling

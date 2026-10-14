@@ -165,6 +165,11 @@ pressure:
       which one she is allowed to keep. If a turn still starts over from the
       beginning, this queue will make more of these.
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - services/
+
 checks:
   - name: continuity-holds-across-replicas
     script: continuity-holds-across-replicas.sh

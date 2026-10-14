@@ -259,6 +259,13 @@ services:
 
 pressure: []
 
+# Left out of the learner's file tree (still in /workspace for the services,
+# the terminal and the checks): scaffolding the brief never asks them to open.
+hidden:
+  - admin_proxy.py
+  - seed_contextforge.py
+  - view_service.py
+
 checks:
   - name: gateway-is-up
     script: gateway-is-up.sh

@@ -759,7 +759,7 @@ reconnects without `Last-Event-ID` needs nothing else to redraw itself.
 | `cost` | `{ running_s, usd, llm_usd, accounted_until? }` |
 | `hints` | `{ delivered: [{ index, after_minutes, text }], total, schedule }`; `schedule` is every hint's `after_minutes`, `total` its length, `delivered` the hints whose timer has fired (also sent as `hint` events) |
 | `pressure` | `{ [event_id]: { status: "pending" \| "fired" \| "failed", fired_at? } }`; `pending` covers events still to come and is not reported once the session has ended |
-| `manifest_summary?` | `{ title, objectives, timeout_minutes, idle_minutes, checks: [{ name, weight }], services: [{ name, ui, port? }], hints_schedule }`; absent if the manifest is gone |
+| `manifest_summary?` | `{ title, objectives, timeout_minutes, idle_minutes, checks: [{ name, weight }], services: [{ name, ui, port?, label?, about? }], hints_schedule, learner_restart, hidden? }`; `hidden` is the manifest's list of workspace paths the console's file tree leaves out (absent when the lab hides nothing); the whole summary is absent if the manifest is gone |
 | `checks_history` | the last 10 finished runs, oldest first: `{ run_id, started_at, finished_at?, passed, total, score, results: [{ name, pass, weight }] }` (no messages; `GET /sessions/:id/checks` has the full runs) |
 | `solution` | `{ available, unlocked, rule, progress: { check_runs, hints_delivered, hints_total, completed } }` — see [Solution reveal](#solution-reveal) |
 | `server_time` | server epoch ms, for correcting client clock skew against `meta.expires_at` |
