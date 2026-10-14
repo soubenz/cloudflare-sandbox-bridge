@@ -1,8 +1,5 @@
 # See what a gateway actually does
 
-Nothing is broken here. LiteLLM is up, backed by Postgres, in front of a
-scripted stand-in for a model provider. This is a tour, not a puzzle.
-
 ## What is running
 
 | Service | What it is doing |

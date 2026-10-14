@@ -699,7 +699,7 @@ describe('normalizing what the API sent', () => {
   });
 
   it('passes a comic\'s narration through with the lab slug the API sent, and only with a comic and a slug', () => {
-    const bundle = compileLearnDir('labs/see-what-a-gateway-does')!.bundle!;
+    const bundle = compileLearnDir('labs/gateway-warm-up')!.bundle!;
     const withSlug = m.normalizeLearn({ slug: 'see-what-a-gateway-does', version: '1.0.0', learn: bundle })! as { learn: { audio?: { slug: string; clips: object; lines: unknown[] } } };
     expect(withSlug.learn.audio!.slug).toBe('see-what-a-gateway-does');
     expect(Object.keys(withSlug.learn.audio!.clips)).toHaveLength(Object.keys(bundle.audio!.clips).length);
