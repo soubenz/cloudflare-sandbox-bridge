@@ -10,7 +10,7 @@ He finds the cause fast. OpenAI, the company that runs the assistant's model, is
 
 That night did not come out of nowhere. Every app at Larkfield talks to its own provider, OpenAI, Anthropic or Google, and holds its own key. A key is the secret that proves who is paying.
 
-On Tuesday, Ollie, a developer, is proud of an answer from the assistant and shares a screenshot in the team chat. Ollie: "Look at this answer! Best one yet." In the corner of the picture sits the team's OpenAI key. Maren, who leads the platform team: "Ollie. Bottom corner. That's our OpenAI key."
+On Tuesday, Ollie, a developer, is proud of an answer from the assistant and shares a screenshot in the team chat. In the corner of the picture sits the team's OpenAI key. Maren, who leads the platform team: "Ollie. Bottom corner. That's our OpenAI key." Ollie: "Deleting it now. Eleven people have already seen it, though."
 
 Then, on Friday evening, Ollie's research script hits an error and simply tries again. It keeps trying all weekend. By Monday morning it has spent the whole month's budget. Ollie: "In my defence, the error did say try again."
 

@@ -42,8 +42,8 @@ panels:
     sfx: { text: "PING!", cue: "screenshot", sound: ping }
     voiceover: On Tuesday, Ollie, a developer, is proud of an answer from the assistant and shares a screenshot in the team chat. In the corner of the picture sits the team's OpenAI key.
     bubbles:
-      - { who: ollie, text: "Look at this answer! Best one yet.", cue: "team chat" }
       - { who: maren, text: "Ollie. Bottom corner. That's our OpenAI key.", cue: "OpenAI key" }
+      - { who: ollie, text: "Deleting it now. Eleven people have already seen it, though.", cue: "OpenAI key" }
     lines:
       - { text: "team chat: 11 likes", cue: "shares a screenshot" }
       - { text: "in the corner: sk-proj-4f9a...7d3e", cue: "In the corner" }
