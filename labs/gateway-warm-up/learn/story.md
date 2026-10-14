@@ -2,7 +2,7 @@
 title: Six things went wrong
 minutes: 2
 ---
-Last month, a company called Larkfield had six things go wrong. Four of them will happen to you.
+This is Larkfield, a company whose apps all use AI models. Last month, six things went wrong there. If your team builds with AI, you have probably seen some of them already.
 
 It starts on a Saturday. At three twelve in the morning, the phone of Tomasz, an engineer on Larkfield's platform team, lights up the dark bedroom. The support assistant has stopped answering customers. Tomasz: "Search is fine. Support is dark."
 

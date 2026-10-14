@@ -2,9 +2,9 @@ title: Six things went wrong
 panels:
   - scene: black
     captions:
-      - { text: "Six things went wrong.", cue: "six things go wrong" }
-      - { text: "Four will happen to you.", cue: "Four of them" }
-    voiceover: Last month, a company called Larkfield had six things go wrong. Four of them will happen to you.
+      - { text: "Larkfield. One month. Six problems.", cue: "six things went wrong" }
+      - { text: "Have you seen these at work?", cue: "probably seen" }
+    voiceover: This is Larkfield, a company whose apps all use AI models. Last month, six things went wrong there. If your team builds with AI, you have probably seen some of them already.
   - scene: clip
     clip: phone-alert-night
     cast: [tomasz]
