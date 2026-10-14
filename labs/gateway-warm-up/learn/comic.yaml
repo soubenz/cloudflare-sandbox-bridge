@@ -13,10 +13,10 @@ panels:
     sfx: { text: "BZZT!", cue: "lights up", sound: phone }
     voiceover: It starts on a Saturday. At three twelve in the morning, the phone of Tomasz, an engineer on Larkfield's platform team, lights up the dark bedroom. The support assistant has stopped answering customers.
     bubbles:
-      - { who: tomasz, text: "Search is fine. Support is dark.", cue: "stopped answering customers" }
+      - { who: tomasz, text: "Two hundred customers waiting. I'm getting up.", cue: "stopped answering customers" }
     lines:
-      - { text: "support assistant (OpenAI): down", cue: "stopped answering" }
-      - { text: "search assistant (Anthropic): fine", cue: "support assistant" }
+      - { text: "support assistant: not answering", cue: "stopped answering" }
+      - { text: "customers waiting: 214", cue: "answering customers" }
   - scene: desk
     cast: [{ who: tomasz, mood: worried, pose: typing }]
     bg: night

@@ -4,7 +4,7 @@ minutes: 2
 ---
 This is Larkfield, a company whose apps all use AI models. Last month, six things went wrong there. If your team builds with AI, you have probably seen some of them already.
 
-It starts on a Saturday. At three twelve in the morning, the phone of Tomasz, an engineer on Larkfield's platform team, lights up the dark bedroom. The support assistant has stopped answering customers. Tomasz: "Search is fine. Support is dark."
+It starts on a Saturday. At three twelve in the morning, the phone of Tomasz, an engineer on Larkfield's platform team, lights up the dark bedroom. The support assistant has stopped answering customers. Tomasz: "Two hundred customers waiting. I'm getting up."
 
 He finds the cause fast. OpenAI, the company that runs the assistant's model, is down. Anthropic is up, but OpenAI's name is written into the app's code. So at three forty, Tomasz is still rewriting it by hand. Tomasz: "I've done good work at three a.m. This isn't it."
 
