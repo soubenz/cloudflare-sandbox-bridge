@@ -45,9 +45,26 @@ export function isShellBlock(pre) {
   return SHELL_LANGS.has(blockLang(pre));
 }
 
-/** Whether a block may carry a Run button: a shell block with a command in it, in the brief, with a terminal to type into. */
+/**
+ * A `<placeholder>` for the learner to fill in (`<team-name>`, `<the id you got back>`): angle brackets
+ * around letters, digits, spaces, `-` and `_`, starting with a letter and not ending in a space. A heredoc
+ * (`<<EOF`) and a redirect (`< file`, `<in >out`) are not one.
+ */
+const PLACEHOLDER = /(?<!<)<[A-Za-z](?:[A-Za-z0-9 _-]*[A-Za-z0-9_-])?>/;
+
+/** Whether any of the commands has a placeholder in it: typed as it is, it would fail (or redirect). */
+export function hasPlaceholder(lines) {
+  return lines.some((line) => PLACEHOLDER.test(line));
+}
+
+/**
+ * Whether a block may carry a Run button: a shell block in the brief, with a terminal to type into, and
+ * commands that can run as written (at least one, and no placeholder: that block gets Copy only).
+ */
 export function canRun(pre, terminal) {
-  return isShellBlock(pre) && Boolean(pre.closest(RUN_SCOPE)) && Boolean(terminal?.()) && commandLines(codeText(pre)).length > 0;
+  if (!isShellBlock(pre) || !pre.closest(RUN_SCOPE) || !terminal?.()) return false;
+  const lines = commandLines(codeText(pre));
+  return lines.length > 0 && !hasPlaceholder(lines);
 }
 
 /**

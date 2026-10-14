@@ -25,6 +25,7 @@ const CC = (await import('../../dashboard/src/code-copy.js' as string)) as {
   isShellBlock: (pre: FakeElement) => boolean;
   canRun: (pre: FakeElement, terminal?: Opts['terminal']) => boolean;
   commandLines: (text: string) => string[];
+  hasPlaceholder: (lines: string[]) => boolean;
   sendCommands: (send: (t: string) => boolean, lines: string[]) => boolean;
   decorateBlocks: (root: FakeElement, opts?: Opts) => void;
   installCodeCopy: (root: FakeElement, opts?: Opts) => { dispose: () => void; refresh: () => void };
@@ -110,6 +111,43 @@ describe('which blocks get Run', () => {
     expect(CC.canRun(pre, () => null)).toBe(false);
     const { pre: comments } = block('# only a comment\n\n');
     expect(CC.canRun(comments, () => fakeTerminal())).toBe(false);
+  });
+
+  it('not a block with a <placeholder> in a command: the whole block gets Copy only', () => {
+    const term = fakeTerminal();
+    const { pre } = block('python3 -B platform/onboard.py growth\npython3 -B platform/onboard.py <team-name>');
+    expect(CC.canRun(pre, () => term)).toBe(false);
+    CC.decorateBlocks(doc.body, { terminal: () => term });
+    expect(pre.querySelector('.code-copy')).not.toBeNull();
+    expect(run(pre)).toBeNull();
+    // A placeholder in a comment is not run, so it does not count.
+    const { pre: commented } = block('# replace <team-name> with yours\nls');
+    expect(CC.canRun(commented, () => term)).toBe(true);
+  });
+
+  it('what counts as a placeholder, and what is a heredoc or a redirect', () => {
+    for (const line of [
+      'python3 -B platform/onboard.py <team-name>',
+      "psql -c \"select 1 where id = '<the id you got back>';\"",
+      'curl <URL>',
+      'echo <x>',
+      'run <name_2>',
+    ]) {
+      expect(CC.hasPlaceholder([line]), line).toBe(true);
+    }
+    for (const line of [
+      'python3 run_tool.py --label some-name < program.py',
+      'sort <in >out',
+      'cat <<EOF',
+      'cat <<EOF>',
+      'diff <(ls a) <(ls b)',
+      'echo "a < b > c"',
+      'echo <1x>',
+      'echo <>',
+      'python3 -B send_calls.py support "hello gateway"',
+    ]) {
+      expect(CC.hasPlaceholder([line]), line).toBe(false);
+    }
   });
 
   it('decorating adds Run beside Copy, in one row, Run first; a lesson block keeps Copy alone', () => {

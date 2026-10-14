@@ -9,8 +9,8 @@ import { MODULE_PAGE, pressStart } from './browse';
  * The Run button on a lab brief's shell blocks (dashboard/src/code-copy.js).
  *
  * What is pinned here:
- *   - a ```bash block in the brief of a running lab has Run beside Copy; a plain block and a ```python one
- *     have Copy only;
+ *   - a ```bash block in the brief of a running lab has Run beside Copy; a plain block, a ```python one and
+ *     a ```bash one with a `<placeholder>` in it have Copy only;
  *   - Run puts the terminal on screen (the Terminal tab selected, the address ending in /terminal) and the
  *     terminal's socket receives Ctrl-E Ctrl-U, then each command with Enter, comments and blank lines left out;
  *     a ```console block runs only its `$ ` lines, without the prompt;
@@ -81,6 +81,12 @@ const BRIEF = [
   '```',
   'model_list:',
   '  - model_name: support',
+  '```',
+  '',
+  '## Onboard your team',
+  '',
+  '```bash',
+  'python3 -B platform/onboard.py <team-name>',
   '```',
   '',
   '```python',
@@ -203,7 +209,7 @@ test.describe('the Run button on a brief’s shell blocks', () => {
   test('is on the bash and console blocks, beside Copy; a plain and a python block have Copy only', async ({ page }) => {
     const s = await stub(page);
     await startLab(page);
-    await expect(blocks(page)).toHaveCount(4);
+    await expect(blocks(page)).toHaveCount(5);
     await expect(bashBlock(page)).toHaveAttribute('data-lang', 'bash');
     for (const i of [0, 1]) {
       const pre = blocks(page).nth(i);
@@ -218,7 +224,9 @@ test.describe('the Run button on a brief’s shell blocks', () => {
       expect(runBox.x + runBox.width).toBeLessThanOrEqual(copyBox.x);
       expect(runBox.y + runBox.height).toBeLessThanOrEqual(codeBox.y);
     }
-    for (const i of [2, 3]) {
+    // A bash block with a <placeholder> to fill in cannot be run as written: Copy only.
+    await expect(blocks(page).nth(3)).toHaveAttribute('data-lang', 'bash');
+    for (const i of [2, 3, 4]) {
       await expect(blocks(page).nth(i).locator('.code-run')).toHaveCount(0);
       await expect(blocks(page).nth(i).locator('.code-copy')).toHaveCount(1);
     }
@@ -279,7 +287,7 @@ test.describe('the Run button on a brief’s shell blocks', () => {
     await expect(page.locator('#launcher')).toBeVisible();
     await expect(page.locator('#briefBody .code-run')).toHaveCount(0);
     // Copy stays on the blocks (in its corner), for whenever the brief is read again.
-    await expect(page.locator('#briefBody .code-copy')).toHaveCount(4);
+    await expect(page.locator('#briefBody .code-copy')).toHaveCount(5);
   });
 
   test('looks right in the dark and on a phone', async ({ page }) => {
