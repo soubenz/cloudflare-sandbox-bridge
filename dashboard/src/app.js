@@ -79,8 +79,18 @@ import {
 import pathMeta from '../../packages/catalogue/paths.json';
 // The owner's developer view (admin-mode.js): a client-side view mode, shown only when /api/me says can_admin.
 import { adminMode } from './admin-mode.js';
+import { createAlertFilter } from './learner-alerts.js';
 
 const $ = (id) => document.getElementById(id);
+
+/**
+ * `alert` events are mostly internal (a health probe that lost the container
+ * for a few minutes after a deploy, a terminal socket closing, a timer that
+ * threw). Only the few that change the learner's lab reach the Lab activity
+ * strip, each once per session, in words of their own (learner-alerts.js).
+ * Admin mode's event log still records every one, raw.
+ */
+const learnerAlerts = createAlertFilter();
 
 /**
  * The session is kept in localStorage so a reload, a closed tab or a
@@ -2979,6 +2989,7 @@ function enterSession() {
   setServicesOpen(false);
   $('serviceFrame').removeAttribute('src');
   $('noticeList').innerHTML = '';
+  learnerAlerts.reset();
   $('noticeEmpty').hidden = false;
   $('noticeCount').textContent = '';
   $('activityPane').dataset.open = 'false';
@@ -3238,7 +3249,6 @@ const LEARNER_NOTICES = {
   },
   'session.idle_warning': () => ['Still there?', 'This session ends soon if nothing happens.'],
   'container.restarted': () => ['Your lab restarted', 'Your workspace is being restored and the terminal will reconnect on its own.'],
-  alert: () => ['Something went wrong', 'The lab ran into a problem. If it keeps happening, end the lab and start it again.'],
 };
 
 function noticeFor(type, tone, data) {
@@ -3248,6 +3258,11 @@ function noticeFor(type, tone, data) {
   if (type === 'service.health' && data?.health) {
     const bad = data.health !== 'healthy';
     return addNotice(bad ? 'bad' : 'good', `${data.service} is ${data.health}`, '');
+  }
+  if (type === 'alert') {
+    const notice = learnerAlerts.take(data);
+    if (notice) addNotice(notice.tone, notice.title, notice.detail);
+    return;
   }
   const build = LEARNER_NOTICES[type];
   if (!build) return;

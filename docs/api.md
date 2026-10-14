@@ -982,8 +982,15 @@ one, the last 50 events are replayed. The log is capped at the most recent
 `alert` is the catch-all for a failure that does not end the session. The
 `kind` values the code emits are `pressure_failed`, `terminal_upstream_closed`,
 `terminal_reconnect_failed`, `terminal_resize_failed`, `timer_failed`,
-`recover_no_snapshot`, `snapshot_on_end_failed` and
+`health_unreachable`, `recover_no_snapshot`, `snapshot_on_end_failed` and
 `set_allowed_hosts_failed`, plus whatever the LLM Worker posts.
+`timer_failed` and `health_unreachable` carry `error_name`, the SDK error
+class behind a 500 `internal_error`, when there is one. `health_unreachable`
+is sent once per spell in which the health probe cannot reach the container
+(the backend call throws, as it does for a few minutes after a deploy); the
+session keeps running, and only if that lasts 15 minutes with no service
+port answering does the health tick recover the container. The console shows
+a learner only the alerts that change their lab, once each.
 
 The `metrics` cost figure is an upper bound, not a bill: the SDK exposes no
 per-instance CPU utilization, so it assumes the vCPU is active for the whole

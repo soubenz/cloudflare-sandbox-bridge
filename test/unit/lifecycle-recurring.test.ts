@@ -7,6 +7,7 @@ import { FakeBackend } from '../fakes/fake-backend';
 import { parseManifest, requireRunnable } from '../../src/labs/manifest';
 import { scheduleTimer } from '../../src/session/timers';
 import { handleAlarm, recover } from '../../src/session/lifecycle';
+import { ApiError } from '../../src/lib/errors';
 
 // Same container-facing stubs as session-guards.test.ts. The service probes
 // are mocks here so a test can make one throw.
@@ -22,6 +23,7 @@ const services = vi.hoisted(() => ({
   relaunchAllServices: vi.fn(async () => {}),
   healthCheckAll: vi.fn(async () => {}),
   allServicesGone: vi.fn(async () => false),
+  anyServicePortAnswers: vi.fn(async () => false),
 }));
 vi.mock('../../src/session/services', () => services);
 vi.mock('../../src/session/d1', () => ({
@@ -84,6 +86,7 @@ beforeEach(() => {
   services.allServicesGone.mockReset().mockResolvedValue(false);
   services.healthCheckAll.mockReset().mockResolvedValue(undefined);
   services.relaunchAllServices.mockReset().mockResolvedValue(undefined);
+  services.anyServicePortAnswers.mockReset().mockResolvedValue(false);
 });
 
 describe('recurring timers survive a throw (B-10)', () => {
@@ -99,7 +102,9 @@ describe('recurring timers survive a throw (B-10)', () => {
     const health = (await rt.timers()).filter((t) => t.kind === 'health');
     expect(health).toHaveLength(1);
     expect(health[0]!.at).toBeGreaterThan(before);
-    expect(events().some((e) => e.type === 'alert' && e.data.kind === 'timer_failed' && e.data.timer === 'health')).toBe(true);
+    // The tick handles its own probe failure: one specific alert, not timer_failed.
+    expect(events().some((e) => e.type === 'alert' && e.data.kind === 'health_unreachable')).toBe(true);
+    expect(events().some((e) => e.type === 'alert' && e.data.kind === 'timer_failed')).toBe(false);
     expect(backend.callsTo('destroy')).toHaveLength(0);
   });
 
@@ -203,5 +208,119 @@ describe('recovering cannot wedge (B-10)', () => {
     expect(healed.state).toBe('running');
     expect(healed.recover_failures).toBeUndefined();
     expect('recover_failures' in healed).toBe(false);
+  });
+});
+
+/**
+ * Live incident, 14 Oct 2026: a Worker deploy reset the sandbox's Durable
+ * Object mid-lab. The terminal socket closed, then every health tick's
+ * getProcess() threw a 500 internal_error for ~6 minutes (and again 15
+ * minutes later, for ~7) while the container, its services and the learner's
+ * files were fine — and each tick reached the learner as another "Something
+ * went wrong".
+ */
+describe('a health probe that cannot reach the container (deploy reset)', () => {
+  const unreachable = () => ApiError.internal('Internal error', { error_name: 'SomeSdkError' });
+  const runTick = async (rt: SessionRuntime) => {
+    await scheduleTimer(rt, 'health', Date.now() - 1);
+    await handleAlarm(rt);
+  };
+
+  it('alerts once per spell, names the error class, re-arms every time and does not recover', async () => {
+    const { rt, events } = makeRuntime();
+    await rt.putMeta(metaIn('running', { sandbox_id: 'sb' }));
+    await rt.putManifest(manifest());
+    services.allServicesGone.mockRejectedValue(unreachable());
+
+    for (let i = 0; i < 4; i++) await runTick(rt);
+
+    const alerts = events().filter((e) => e.type === 'alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.data).toMatchObject({ kind: 'health_unreachable', error_name: 'SomeSdkError' });
+    expect((await rt.timers()).filter((t) => t.kind === 'health')).toHaveLength(1);
+    expect((await rt.requireMeta()).health_failing_since).toBeTypeOf('number');
+    expect(services.relaunchAllServices).not.toHaveBeenCalled();
+    expect((await rt.requireMeta()).state).toBe('running');
+  });
+
+  it('the next tick that gets an answer ends the spell, so a later one alerts again', async () => {
+    const { rt, events } = makeRuntime();
+    await rt.putMeta(metaIn('running', { sandbox_id: 'sb' }));
+    services.allServicesGone.mockRejectedValueOnce(unreachable());
+    await runTick(rt);
+    await runTick(rt);
+    expect('health_failing_since' in (await rt.requireMeta())).toBe(false);
+    expect(services.healthCheckAll).toHaveBeenCalledTimes(1);
+
+    services.allServicesGone.mockRejectedValueOnce(unreachable());
+    await runTick(rt);
+    expect(events().filter((e) => e.type === 'alert' && e.data.kind === 'health_unreachable')).toHaveLength(2);
+  });
+
+  it('unreachable for 7 minutes (as long as the live spells lasted), nothing answering: still waits it out', async () => {
+    const { rt, events } = makeRuntime();
+    await rt.putMeta(metaIn('running', { sandbox_id: 'sb', health_failing_since: Date.now() - 7 * 60_000 }));
+    await rt.putManifest(manifest());
+    services.allServicesGone.mockRejectedValue(unreachable());
+
+    await runTick(rt);
+
+    expect(services.relaunchAllServices).not.toHaveBeenCalled();
+    expect(events().some((e) => e.type === 'container.restarted')).toBe(false);
+    expect(events().some((e) => e.type === 'alert')).toBe(false);
+  });
+
+  it('unreachable for 15 minutes with no port answering: treats the container as lost and recovers', async () => {
+    const { rt, events } = makeRuntime();
+    await rt.putMeta(metaIn('running', { sandbox_id: 'sb', health_failing_since: Date.now() - 16 * 60_000 }));
+    await rt.putManifest(manifest());
+    services.allServicesGone.mockRejectedValue(unreachable());
+
+    await runTick(rt);
+
+    expect(events().some((e) => e.type === 'container.restarted' && e.data.reason === 'health_unreachable')).toBe(true);
+    expect(services.relaunchAllServices).toHaveBeenCalledTimes(1);
+    const meta = await rt.requireMeta();
+    expect(meta.state).toBe('running');
+    expect('health_failing_since' in meta).toBe(false);
+  });
+
+  it('unreachable for 15 minutes but a service port still answers: keeps waiting, does not relaunch over live services', async () => {
+    const { rt } = makeRuntime();
+    await rt.putMeta(metaIn('running', { sandbox_id: 'sb', health_failing_since: Date.now() - 16 * 60_000 }));
+    await rt.putManifest(manifest());
+    services.allServicesGone.mockRejectedValue(unreachable());
+    services.anyServicePortAnswers.mockResolvedValue(true);
+
+    await runTick(rt);
+
+    expect(services.relaunchAllServices).not.toHaveBeenCalled();
+    expect((await rt.requireMeta()).health_failing_since).toBeTypeOf('number');
+    expect((await rt.timers()).filter((t) => t.kind === 'health')).toHaveLength(1);
+  });
+
+  it('recoveries that keep failing are still bounded: the session ends after MAX_RECOVER_FAILURES', async () => {
+    const { rt } = makeRuntime();
+    await rt.putMeta(metaIn('running', { sandbox_id: 'sb', health_failing_since: Date.now() - 16 * 60_000 }));
+    await rt.putManifest(manifest());
+    services.allServicesGone.mockRejectedValue(unreachable());
+    services.relaunchAllServices.mockRejectedValue(new Error('still unreachable'));
+
+    for (let i = 0; i < 3; i++) await runTick(rt);
+    expect((await rt.requireMeta()).recover_failures).toBe(3);
+    await runTick(rt);
+
+    expect((await rt.requireMeta()).end_reason).toBe('error');
+  });
+
+  it('timer_failed alerts carry the SDK error class too', async () => {
+    const { rt, events } = makeRuntime();
+    await rt.putMeta(metaIn('running', { sandbox_id: 'sb' }));
+    vi.spyOn(rt, 'putCost').mockRejectedValueOnce(unreachable());
+    await scheduleTimer(rt, 'metrics', Date.now() - 1);
+
+    await handleAlarm(rt);
+
+    expect(events().find((e) => e.type === 'alert' && e.data.kind === 'timer_failed')?.data.error_name).toBe('SomeSdkError');
   });
 });

@@ -305,7 +305,7 @@ export async function allServicesGone(rt: SessionRuntime): Promise<boolean> {
  * what counts: any HTTP response at all, including a 404 or a 500, proves
  * something is listening, which is the only question here.
  */
-async function anyServicePortAnswers(rt: SessionRuntime): Promise<boolean> {
+export async function anyServicePortAnswers(rt: SessionRuntime): Promise<boolean> {
   const services = await rt.services();
   const backend = rt.backend();
   for (const runtime of Object.values(services)) {

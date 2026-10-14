@@ -7,7 +7,7 @@ import { emitEvent, hasActiveEventClients } from './events';
 import { BASE_ALLOWED_HOSTS } from '../families/egress';
 import { scheduleTimer, cancelTimer, cancelTimersOfKind, cancelTimersExcept, popDueTimers, rearmAlarm } from './timers';
 import { hydrateWorkspaceFiles, hydratePressureScripts, applySessionEnv } from './hydrate';
-import { startAllServices, relaunchAllServices, healthCheckAll, allServicesGone } from './services';
+import { startAllServices, relaunchAllServices, healthCheckAll, allServicesGone, anyServicePortAnswers } from './services';
 import { firePressureEvent } from './pressure';
 import { tickMetrics } from './metrics';
 import { tryEmitSolutionUnlocked } from './solution';
@@ -48,6 +48,15 @@ const PURGE_DEFAULT_AFTER_MS = 7 * 24 * 60 * 60_000;
 const RECOVERING_TIMEOUT_MS = 5 * 60_000;
 /** Consecutive failed recoveries after which the health tick gives up and ends the session. */
 const MAX_RECOVER_FAILURES = 3;
+/**
+ * How long the health probe may keep throwing (the backend unreachable, not a
+ * service unhealthy) before the tick stops waiting it out and tries
+ * recover(), and then only if no service port answers either. Twice the
+ * 6-7 minute spells seen live, during which the container itself, and the
+ * learner's work in it, carried on untouched and came back on their own:
+ * recovering into one of those ends the session for nothing.
+ */
+const HEALTH_UNREACHABLE_RECOVER_MS = 15 * 60_000;
 /**
  * A `start` or `resume` timer re-arms itself this far ahead before it runs the
  * boot, and the boot cancels it when it finishes. If the run is killed
@@ -435,7 +444,7 @@ export async function handleAlarm(rt: SessionRuntime): Promise<void> {
           break;
       }
     } catch (err) {
-      emitEvent(rt, 'alert', { kind: 'timer_failed', timer: timer.kind, ref: timer.ref, error: String(err) });
+      emitEvent(rt, 'alert', { kind: 'timer_failed', timer: timer.kind, ref: timer.ref, error: String(err), error_name: errorName(err) });
       if (timer.kind === 'start' || timer.kind === 'resume') {
         await endSession(rt, 'error').catch(() => {});
         // A cancel may have ended the session while the call that threw was in
@@ -523,14 +532,64 @@ async function runHealthTick(rt: SessionRuntime): Promise<void> {
   }
   if (meta.state !== 'running') return;
 
-  if (await allServicesGone(rt)) {
-    await recover(rt, 'all_services_gone');
-  } else {
-    await healthCheckAll(rt);
+  try {
+    if (await allServicesGone(rt)) {
+      await recover(rt, 'all_services_gone');
+    } else {
+      await healthCheckAll(rt);
+    }
+  } catch (err) {
+    // The session may have ended (or started recovering) under the probe.
+    if ((await rt.requireMeta()).state === 'running') await healthProbeFailed(rt, meta, err);
+    // At the idle interval (a failing backend is not asked again every 15s),
+    // and never on an ended session or over a timer already re-armed.
+    await rescheduleRecurring(rt, 'health');
+    return;
   }
+  if (meta.health_failing_since !== undefined) await rt.patchMeta({ health_failing_since: undefined });
 
   const interval = hasActiveEventClients(rt) ? HEALTH_INTERVAL_ACTIVE_MS : HEALTH_INTERVAL_IDLE_MS;
   await scheduleTimer(rt, 'health', Date.now() + interval);
+}
+
+/**
+ * The health probe could not reach the container at all: the backend call
+ * threw, which says nothing about the services. Seen live (14 Oct 2026):
+ * right after a Worker deploy reset the sandbox's Durable Object the terminal
+ * socket closed and every call through that Durable Object (getProcess, file
+ * listing, the service proxy) failed with an error fromSdkError does not
+ * classify, i.e. a 500 internal_error, for ~6 minutes, while the container,
+ * its services and the learner's files were fine; then again 15 minutes
+ * later with no deploy, the container instance still `running`. Each failed
+ * tick used to escape as `timer_failed`, a learner-facing "Something went
+ * wrong", and nothing ever escalated. Both spells healed by themselves.
+ *
+ * Alerts once per spell (with the underlying error class), and waits it out.
+ * Only if it lasts HEALTH_UNREACHABLE_RECOVER_MS and no service port answers
+ * does it treat the container as lost and recover(); every tick after that
+ * tries again until recover() succeeds (which clears the spell) or fails
+ * MAX_RECOVER_FAILURES times (runHealthTick then ends the session).
+ */
+async function healthProbeFailed(rt: SessionRuntime, meta: SessionMeta, err: unknown): Promise<void> {
+  const now = Date.now();
+  const since = meta.health_failing_since;
+  if (since === undefined) {
+    emitEvent(rt, 'alert', { kind: 'health_unreachable', error: String(err), error_name: errorName(err) });
+    await rt.patchMeta({ health_failing_since: now });
+    return;
+  }
+  if (now - since < HEALTH_UNREACHABLE_RECOVER_MS) return;
+  if (await anyServicePortAnswers(rt)) return;
+  await recover(rt, 'health_unreachable');
+}
+
+/**
+ * The SDK class behind an error fromSdkError could not name (it becomes a
+ * 500 "Internal error" with the class in `details`, which String(err) drops).
+ */
+function errorName(err: unknown): string | undefined {
+  const name = (err as { details?: { error_name?: unknown } } | undefined)?.details?.error_name;
+  return typeof name === 'string' ? name : undefined;
 }
 
 /**
@@ -586,7 +645,7 @@ export async function recover(rt: SessionRuntime, reason: string): Promise<void>
     await relaunchAllServices(rt);
     await resetTerminal(rt);
 
-    await rt.patchMeta({ state: 'running', recovering_since: undefined, recover_failures: undefined });
+    await rt.patchMeta({ state: 'running', recovering_since: undefined, recover_failures: undefined, health_failing_since: undefined });
     emitEvent(rt, 'session.state', { state: 'running', recovered: true });
   } catch (err) {
     // Never leave the session in `recovering`: the health tick skips it, and

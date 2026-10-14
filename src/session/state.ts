@@ -43,6 +43,14 @@ export interface SessionMeta {
   /** Consecutive failed recover() runs since the last success. */
   recover_failures?: number;
   /**
+   * When the health tick's container probe started failing (the backend
+   * call itself throwing, as it does for a few minutes after a deploy resets
+   * the sandbox's Durable Object). Cleared by the next tick that gets an
+   * answer. Lets the tick alert once per spell and escalate to recover() if
+   * the container stays unreachable.
+   */
+  health_failing_since?: number;
+  /**
    * How many times a `start` or `resume` timer has begun the boot sequence
    * since it was requested. Each run re-arms the same timer as a watchdog
    * first, so a run killed mid-flight (a deploy, an eviction) is retried; the
