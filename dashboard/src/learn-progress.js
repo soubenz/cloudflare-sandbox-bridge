@@ -119,10 +119,30 @@ export function pagePoint(lab, progress) {
 }
 
 /**
+ * What a lab's page does with the saved progress it read (`progress`, `{ version, state, updated_at? }` or null, and
+ * `point`, pagePoint's reading of it) for a lab that is `done` or not, done when `doneAt` (ms, the lab's last run):
+ *   'resume'      not done: "You left off at ...", with Continue where you left off and Start over
+ *   'second-run'  done, and a second run is under way: past its first step and saved after the lab was done (or
+ *                 with no time to compare): one quiet "Continue your second run" link
+ *   'forget'      done, and what is saved is left over (the first step of a run opened again, or older than the
+ *                 finish): nothing is shown, and it is deleted without a word
+ *   'none'        nothing to show (no progress, or progress that no longer fits the lab, which Start forgets)
+ */
+export function labPlaceView({ done = false, progress = null, point = null, doneAt = null } = {}) {
+  if (!isRecord(progress)) return 'none';
+  if (!done) return point ? 'resume' : 'none';
+  if (!point || point.at < 1) return 'forget';
+  const saved = progress.updated_at;
+  if (Number.isFinite(saved) && Number.isFinite(doneAt) && saved <= doneAt) return 'forget';
+  return 'second-run';
+}
+
+/**
  * The calls to the API's learn progress, with a short memory: what was last read or sent for a lab is
  * answered from it for `ttl` ms, so the lab's page shows the place the flow saved a moment ago without
  * waiting on that save. `api` has learnProgress, saveLearnProgress and clearLearnProgress (api.js).
- *   get(slug, { fresh })  { version, state } or null; a failed read is null (and not remembered)
+ *   get(slug, { fresh })  { version, state, updated_at? } or null; a failed read is null (and not remembered); two
+ *                         reads at once share one call, and a save or clear made while it was out wins over its answer
  *   save(slug, body, { keepalive })   resolves true or false, never throws; remembered at once, and forgotten
  *                                     again when the call fails (the server does not have it)
  *   clear(slug, { keepalive })        likewise
@@ -147,18 +167,35 @@ export function createProgressClient(api, { ttl = PROGRESS_TTL_MS, now = () => D
       return false;
     }
   };
+  /** The reads under way, by slug. */
+  const reading = new Map();
+  const read = async (slug) => {
+    const before = memory.get(slug);
+    try {
+      const body = await api.learnProgress(slug);
+      // Saved or forgotten here while the call was out: that is newer than what the server answered.
+      const since = memory.get(slug);
+      if (since !== before && since) return since.value;
+      const p = body?.progress;
+      // `updated_at` (ms) says when it was saved: the lab's page weighs it against when the lab was done.
+      const value = isRecord(p) ? { version: p.version, state: p.state, ...(Number.isFinite(p.updated_at) ? { updated_at: p.updated_at } : {}) } : null;
+      remember(slug, value);
+      return value;
+    } catch {
+      return null;
+    }
+  };
   return {
-    async get(slug, { fresh = false } = {}) {
+    get(slug, { fresh = false } = {}) {
       const hit = memory.get(slug);
-      if (!fresh && hit && now() - hit.at < ttl) return hit.value;
-      try {
-        const body = await api.learnProgress(slug);
-        const value = isRecord(body?.progress) ? { version: body.progress.version, state: body.progress.state } : null;
-        remember(slug, value);
-        return value;
-      } catch {
-        return null;
-      }
+      if (!fresh && hit && now() - hit.at < ttl) return Promise.resolve(hit.value);
+      // Two readers at once (a page drawn twice) share one call, so neither answer lands after the other's change.
+      if (!fresh && reading.has(slug)) return reading.get(slug);
+      const call = read(slug).finally(() => {
+        if (reading.get(slug) === call) reading.delete(slug);
+      });
+      reading.set(slug, call);
+      return call;
     },
     save(slug, body, opts = {}) {
       return change(slug, { version: body.version, state: body.state }, () => api.saveLearnProgress(slug, body, opts));
@@ -179,6 +216,8 @@ export function createProgressClient(api, { ttl = PROGRESS_TTL_MS, now = () => D
  *   storage         the local copy's storage (default sessionStorage), as createFlowStore
  *   pagesStorage    where the lessons pager keeps its memory (default localStorage)
  *   remote          a createProgressClient (omitted: local only, as before)
+ *   done            true for a lab already done (opened again): a visit of it is not worth coming back to until it
+ *                   is past its first step, so opening a finished lab and leaving it saves nothing
  *   delay           the debounce, ms
  *   timers          { setTimeout, clearTimeout } (default globalThis)
  *   events          where `pagehide` and `visibilitychange` are listened for (default globalThis and document)
@@ -191,8 +230,11 @@ export function createProgressClient(api, { ttl = PROGRESS_TTL_MS, now = () => D
  *                         server, and sends nothing more
  * clear() ends the visit without forgetting it (Back to labs, leaving the page): what changed is sent first.
  */
-export function createProgressStore({ slug, version = '', learn, storage, pagesStorage, remote, delay = SAVE_DELAY_MS, timers = globalThis, events } = {}) {
+export function createProgressStore({ slug, version = '', learn, storage, pagesStorage, remote, done = false, delay = SAVE_DELAY_MS, timers = globalThis, events } = {}) {
   const local = createFlowStore({ slug, version, storage });
+  // A finished lab opened again brings its lessons pager's memory (and so "lessons read") with it: only a step on
+  // makes that visit one to come back to.
+  const worth = (state) => worthResuming(state) && (!done || (Number.isInteger(state.at) && state.at > 0));
   const pages = lessonPagesFor(slug, pagesStorage);
   let last = null; // { steps, answers, games, started_at, at }
   let sentJson = null;
@@ -248,7 +290,7 @@ export function createProgressStore({ slug, version = '', learn, storage, pagesS
     cancel();
     if (ended || !remote || !version) return;
     const body = record();
-    if (!body || !worthResuming(body.state)) return;
+    if (!body || !worth(body.state)) return;
     const json = JSON.stringify(body);
     if (json === sentJson) return;
     sentJson = json;
@@ -289,7 +331,7 @@ export function createProgressStore({ slug, version = '', learn, storage, pagesS
       last = { steps, answers, games, started_at, at: Number.isInteger(at) ? at : (last?.at ?? 0) };
       if (!remote) return;
       // A new step goes at once; anything else (a save that names no step included) waits for the learner to pause.
-      if (Number.isInteger(at) && at !== sentAt && worthResuming(record()?.state)) return send();
+      if (Number.isInteger(at) && at !== sentAt && worth(record()?.state)) return send();
       cancel();
       timer = timers.setTimeout(() => {
         timer = null;

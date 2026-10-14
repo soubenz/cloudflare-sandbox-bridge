@@ -11,7 +11,7 @@ import { serveConsole } from './console-server';
  *   - the profile's `next_lab` is the one answer: Home's "Your path" band, the "Suggested start" badge on the
  *     path card and on the module, and the card at the end of a finished lab all name the same lab;
  *   - a finished lab's result card says what it earned ("+120 XP", "Skill: Gateway and access 12 → 31") from the
- *     profile read again, and offers "Next lab: <title>" as a link;
+ *     profile read again, and offers "Next: <title> →" as a link (the same way on as a finished lab's page);
  *   - "Back to labs" in a lab goes to the lab's module page, not to the lab's own page;
  *   - Home keeps all its blocks in one order: the hero, "Your path", "Your progress", the search and filters, then
  *     the path cards; "No labs match" sits just above the cards; there is no lone "Home" crumb;
@@ -235,7 +235,7 @@ test.describe('a finished lab', () => {
     await expect(gain).toContainText('+120 XP');
     await expect(gain).toContainText(`Skill: ${moduleTitle(1)} 12 → 31`);
     const next = page.locator('#resultNextLink');
-    await expect(next).toHaveText('Next lab: Hard budget');
+    await expect(next).toHaveText('Next: Hard budget');
     await expect(next).toHaveAttribute('href', '/labs/hard-budget');
     expect(s.fullProfileReads).toBeGreaterThanOrEqual(2);
 

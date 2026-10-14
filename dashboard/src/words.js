@@ -154,6 +154,28 @@ export const skillChangeText = (title, from, to) => `Skill: ${title} ${from} \u2
 /** "Next lab: Trace one request". */
 export const nextLabText = (title) => `Next lab: ${title}`;
 
+/** "Next: Trace one request": the big button on from a finished lab (its page, its result card, a warm-up's end). */
+export const nextStepText = (title) => `Next: ${title}`;
+
+/** Where the way on goes when there is no next lab: the lab's path, or (a lab on no path) the labs. */
+export const BACK_TO_PATH = 'Back to the path';
+export const BACK_TO_LABS = 'Back to labs';
+
+/**
+ * The line under "Warm-up done": what the games came to, from what Finish sent ([{ id, solved, tries, skipped? }]).
+ * "You solved all 4 games, 3 on the first try." / "You solved 2 of 4 games." / "You finished the warm-up." (no game
+ * solved, or none at all).
+ */
+export function warmUpDoneLine(games) {
+  const list = Array.isArray(games) ? games.filter((g) => g && typeof g === 'object') : [];
+  const solved = list.filter((g) => g.solved === true);
+  if (solved.length === 0) return 'You finished the warm-up.';
+  const first = solved.filter((g) => g.tries === 1).length;
+  const count = solved.length === list.length ? (list.length === 1 ? 'the game' : `all ${list.length} games`) : `${solved.length} of ${list.length} games`;
+  const onFirst = first === 0 ? '' : first === solved.length ? (solved.length === 1 ? ', on the first try' : ', every one on the first try') : `, ${first} on the first try`;
+  return `You solved ${count}${onFirst}.`;
+}
+
 // ------------------------------------------------------------------ plan locks
 
 /** The short form, for a chip or a button's description. */

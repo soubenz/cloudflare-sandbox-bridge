@@ -8,6 +8,7 @@ import {
   findPath,
   heroLede,
   isPlanLocked,
+  labPageActions,
   labStatus,
   locateLab,
   moduleLabel,
@@ -21,8 +22,11 @@ import {
   summaryLine,
   unmetPrerequisite,
   visibleLabs,
+  wayOn,
 } from './launcher-model.js';
 import {
+  BACK_TO_LABS,
+  BACK_TO_PATH,
   PLAN_LOCK_LONG,
   STATUS_FILTERS,
   STATUS_WORDS,
@@ -33,8 +37,9 @@ import {
   labTime,
   labTypeLabel,
   labsDone,
-  nextLabText,
+  nextStepText,
   skillChangeText,
+  warmUpDoneLine,
   xpGainText,
 } from './words.js';
 import { skillForPlacement } from './skills.js';
@@ -49,7 +54,7 @@ import { catalogueNextLab, createMasteryStore, normalizeLearn, introSeen, normal
 import { runOnboarding } from './onboarding.js';
 import { createProgressHub } from './progress-hub.js';
 import { runBeforeYouBegin } from './before-you-begin.js';
-import { createProgressClient, createProgressStore, pagePoint, progressSummary, resumePoint } from './learn-progress.js';
+import { createProgressClient, createProgressStore, labPlaceView, pagePoint, progressSummary, resumePoint } from './learn-progress.js';
 import { actionBar, button as learnButton, focusHeading, screenHead, show as showIn } from './learn-ui.js';
 import { mountQuestionsForm } from './questions-form.js';
 import { SAFE_FILE } from './answers-file.js';
@@ -401,6 +406,9 @@ async function applyRoute(route, { initial = false } = {}) {
         break;
       case 'lab-step':
         await openLabStepRoute(route, stale);
+        break;
+      case 'lab-done':
+        openLabDoneRoute(route);
         break;
       case 'session':
         await openSessionRoute(route, stale);
@@ -883,6 +891,27 @@ const shown = (entries) => entries.filter((e) => labMatches(e.lab));
 function currentNextLab() {
   const next = progress.nextLab();
   return next === undefined ? catalogueNextLab([...labsBySlug.values()]) : next;
+}
+
+/** The way on from a finished lab (launcher-model.js `wayOn`): the next lab, or back to its path. */
+function wayOnFrom(lab) {
+  return wayOn(lab, [...labsBySlug.values()], currentNextLab());
+}
+
+/**
+ * The way on as a link that looks like a button: "Next: <title> →" to the next lab's page, or "Back to the path"
+ * ("Back to labs" for a lab on no path). `className` is the button's look ('btn btn-accent ...').
+ */
+function wayOnLink(way, className, id) {
+  const label = way.kind === 'next' ? nextStepText(way.title) : way.route.name === 'path' ? BACK_TO_PATH : BACK_TO_LABS;
+  const link = routeLink(className, label, way.route);
+  if (id) link.id = id;
+  link.dataset.way = way.kind;
+  if (way.kind === 'next') {
+    link.dataset.slug = way.slug;
+    link.append(uiIcon('arrow', 16));
+  }
+  return link;
 }
 
 /** Where the "Suggested start" badge goes: the module (or flat path) that holds the next lab. */
@@ -1535,12 +1564,16 @@ function labPage(lab) {
     if (button.getAttribute('aria-disabled') === 'true') return;
     beginLab(lab, page);
   });
-  side.append(status, button);
+  side.append(status);
+  // A finished lab leads on: "Next: <title> →" (or back to its path) is the big button, Open again a quiet one.
+  const way = wayOnLink(wayOnFrom(lab), 'btn btn-accent btn-lg lab-way-on', 'btnLabNext');
+  way.hidden = !labPageActions({ done: standing.done, running: lab.slug === runningSlug }).next;
+  side.append(way, button);
   // Saved progress in its "Before you begin" or warm-up: Continue where you left off, or Start over (filled once read).
   const place = node('div', 'lab-progress');
   place.hidden = true;
   side.append(place);
-  if (!(standing.locked || standing.planLocked) || adminMode.isOn()) fillLabPlace(place, lab, page);
+  if (!(standing.locked || standing.planLocked) || adminMode.isOn()) fillLabPlace(place, lab, page, standing.done);
   if (standing.planLocked && !adminMode.isOn()) {
     side.append(node('p', 'lab-detail-note', PLAN_LOCK_LONG));
   } else if (standing.locked && !adminMode.isOn()) {
@@ -1573,6 +1606,9 @@ function styleStartButton(row) {
 /** Marks a row (or a lab's page) as the lab that is running (or clears it), keeping the status line and the button in step. */
 function applyRunning(row, on) {
   row.classList.toggle('lab-running', on);
+  // A finished lab that runs again leads with Resume, not Next (a lab's page only has the Next).
+  const way = row.querySelector('.lab-way-on');
+  if (way) way.hidden = !labPageActions({ done: row.classList.contains('lab-done'), running: on }).next;
   const status = row.querySelector('.lab-status');
   const badge = status.querySelector('.badge-running');
   if (on && !badge) status.prepend(node('span', 'badge badge-running', 'Running'));
@@ -2106,7 +2142,10 @@ function savedPlace(slug) {
  * version of the lab), it is forgotten and the flow starts afresh, without a word.
  */
 function openOrOfferContinue(lab, entry, saved) {
-  const point = resumePoint(entry, saved);
+  let point = resumePoint(entry, saved);
+  // A finished lab opened again: only a second run under way is offered; what is left over goes without a word.
+  const done = passedLabs.has(lab.slug);
+  if (point && done && labPlaceView({ done, progress: saved, point, doneAt: lab.progress?.last_run_at ?? null }) === 'forget') point = null;
   if (!point) {
     if (saved) learnPlace.clear(lab.slug);
     return openLearnFlow(lab, entry);
@@ -2143,11 +2182,31 @@ function openOrOfferContinue(lab, entry, saved) {
 /**
  * The Continue box on a lab's page: shown when the learner has saved progress in the lab's flow (and the lab is
  * not running). Continue opens the flow on the saved step; Start over forgets it and starts the flow afresh.
+ * A finished lab (`done`) has no such box: progress left over from opening it again is deleted without a word,
+ * and a second run under way is one quiet "Continue your second run" link (labPlaceView, learn-progress.js).
  */
-async function fillLabPlace(box, lab, page) {
+async function fillLabPlace(box, lab, page, done = false) {
   if (!(lab.has_learn || lab.type === 'warm-up') || lab.slug === runningSlug) return;
-  const point = pagePoint(lab, await savedPlace(lab.slug));
-  if (!point || !box.isConnected || lab.slug === runningSlug) return;
+  const saved = await savedPlace(lab.slug);
+  const point = pagePoint(lab, saved);
+  const view = labPlaceView({ done, progress: saved, point, doneAt: lab.progress?.last_run_at ?? null });
+  if (view === 'forget') {
+    // The page may be drawn twice while the place is read: one delete is enough.
+    if (learnPlace.peek(lab.slug) !== null) learnPlace.clear(lab.slug);
+    return;
+  }
+  if (view === 'none' || !box.isConnected || lab.slug === runningSlug) return;
+  if (view === 'second-run') {
+    const again = node('button', 'btn btn-quiet btn-link lab-second-run', 'Continue your second run');
+    again.type = 'button';
+    again.id = 'btnLabContinue';
+    again.title = `You left off at ${progressSummary(point)}.`;
+    again.addEventListener('click', () => continueLab(lab, page));
+    box.classList.add('lab-progress-quiet');
+    box.replaceChildren(again);
+    box.hidden = false;
+    return;
+  }
   const go = node('button', 'btn btn-accent', 'Continue where you left off');
   go.type = 'button';
   go.id = 'btnLabContinue';
@@ -2182,8 +2241,9 @@ async function continueLab(lab, page) {
 
 /**
  * The warm-up's last button: records it (POST /api/warmups/<slug>/complete), reads the catalogue's progress and
- * the profile again, and takes the learner to the lab's page (which now says Done) with the next lab named. A
- * failed POST says why and resolves false: the flow stays on its last step, and the button tries again.
+ * the profile again, and shows the warm-up's last screen ("Warm-up done", what the games came to, and "Next:
+ * <the next lab> →"), at /labs/<slug>/done in place of the last step's address. A failed POST says why and
+ * resolves false: the flow stays on its last step, and the button tries again.
  */
 async function finishWarmUp(lab, { started_at, games }, flowStore) {
   try {
@@ -2198,12 +2258,48 @@ async function finishWarmUp(lab, { started_at, games }, flowStore) {
   progress.invalidate();
   const area = skillForPlacement(lab.path, lab.module)?.id ?? null;
   await Promise.all([loadLabs(), progress.finishedLab(area).catch(() => null)]);
-  const next = currentNextLab();
-  const nextTitle = next && next.slug !== lab.slug ? next.title || labsBySlug.get(next.slug)?.title || next.slug : null;
-  // The flow is over: Back from the lab's page does not walk into it again.
-  router.navigate('lab', { slug: lab.slug }, { replace: true });
-  toast(nextTitle ? `Warm-up done. Next: ${nextTitle}` : 'Warm-up done.', 'good', 8000);
+  // The flow is over: its last step's address becomes the warm-up's last screen.
+  setRoute('lab-done', { slug: lab.slug }, { replace: true });
+  showWarmUpDone(labsBySlug.get(lab.slug) ?? lab, games);
   return true;
+}
+
+/**
+ * A finished warm-up's last screen (/labs/<slug>/done): "Warm-up done", one line on what the games came to (`games`
+ * as Finish sent them; none on a page loaded at this address), the big "Next: <the next lab> →" (or Back to the
+ * path when there is none) and Back to labs (the lab's module).
+ */
+function showWarmUpDone(lab, games) {
+  hideLearnScreen();
+  showLearnScreen();
+  learnFlowLab = lab.slug;
+  // Nothing runs here: leaving the screen has nothing to tear down.
+  learnFlow = { destroy() {} };
+  const host = $('learnHost');
+  const next = wayOnLink(wayOnFrom(lab), 'btn btn-accent btn-lg', 'btnDoneNext');
+  const [name, params] = labsRoute(lab.slug);
+  const back = routeLink('btn btn-quiet', BACK_TO_LABS, { name, ...params });
+  back.id = 'btnDoneBack';
+  const screen = node('section', 'learn-done');
+  screen.setAttribute('aria-labelledby', 'warmUpDoneTitle');
+  const mark = node('span', 'learn-done-mark');
+  mark.append(uiIcon('check', 28));
+  screen.append(
+    mark,
+    screenHead({ eyebrow: `Warm-up · ${lab.title || lab.slug}`, title: 'Warm-up done', meta: warmUpDoneLine(games), id: 'warmUpDoneTitle' }),
+    actionBar([next, back], { label: 'Next' })
+  );
+  showIn(host, screen);
+  focusHeading(host);
+}
+
+/** /labs/<slug>/done: the last screen of a warm-up that is done; any other lab (or one not done) has its page. */
+function openLabDoneRoute(route) {
+  const lab = labsBySlug.get(route.slug);
+  if (!lab) return labsBySlug.size ? showNotFound('lab') : showBrowseRoute({ name: 'launcher' }, true);
+  if (lab.type !== 'warm-up' || !passedLabs.has(lab.slug)) return landOnLabPage(lab.slug);
+  if (!clearScreens()) return restoreSessionUrl();
+  showWarmUpDone(lab, null);
 }
 
 /**
@@ -2217,7 +2313,8 @@ function openLearnFlow(lab, entry, initial, { fromRoute = false, n, saved, seed 
   showLearnScreen();
   learnFlowLab = lab.slug;
   // The visit is kept in this tab (a refresh) and on the server (another tab, browser or device): learn-progress.js.
-  const flowStore = createProgressStore({ slug: lab.slug, version: entry.version, learn: entry.learn, remote: learnPlace });
+  // A lab already done, opened again, is saved only once it is past its first step (learn-progress.js `done`).
+  const flowStore = createProgressStore({ slug: lab.slug, version: entry.version, learn: entry.learn, remote: learnPlace, done: passedLabs.has(lab.slug) });
   // Continue where you left off: the saved visit becomes this one, on its step. An address with nothing kept in
   // this tab (a link opened elsewhere) picks up the saved visit too, on the step the address names.
   const from = saved ?? (seed && !flowStore.load() ? seed : null);
@@ -4705,8 +4802,8 @@ function showResultCard(run, celebrate) {
 }
 
 /**
- * What the lab just finished earned, on its result card: "+N XP", "Skill: Retrieval 12 → 31" and the next lab
- * ("Next lab: ..."), all from the profile read again once the lab is done. Nothing is shown for what the
+ * What the lab just finished earned, on its result card: "+N XP", "Skill: Retrieval 12 → 31" and the way on
+ * ("Next: <title> →"), all from the profile read again once the lab is done. Nothing is shown for what the
  * profile does not say (no XP gained, a profile that could not be read).
  */
 function showResultEarnings(slug) {
@@ -4722,15 +4819,11 @@ function showResultEarnings(slug) {
       if (gain?.xp > 0) earned.append(node('span', 'result-xp', xpGainText(gain.xp)));
       if (gain?.skill) earned.append(node('span', 'result-skill', skillChangeText(gain.skill.title, gain.skill.from, gain.skill.to)));
       earned.hidden = earned.childElementCount === 0;
-      const follow = $('resultNext');
-      if (next && typeof next.slug === 'string' && next.slug !== slug) {
-        const link = $('resultNextLink');
-        link.href = buildRoute('lab', { slug: next.slug });
-        link.textContent = nextLabText(next.title || next.slug);
-        follow.hidden = false;
-      } else {
-        follow.hidden = true;
-      }
+      // The way on, as on the lab's page and a warm-up's last screen: "Next: <title> →". With no next lab there is
+      // only the card's own Back to labs (which ends the session first).
+      const way = wayOn(lab ?? { slug }, [...labsBySlug.values()], next ?? null);
+      $('resultNext').replaceChildren(...(way.kind === 'next' ? [wayOnLink(way, 'btn btn-accent', 'resultNextLink')] : []));
+      $('resultNext').hidden = way.kind !== 'next';
     })
     .catch(() => {
       /* the card is complete without it */

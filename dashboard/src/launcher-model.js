@@ -391,3 +391,57 @@ export function scopeEntries(model, route) {
       return [];
   }
 }
+
+// --- the way on from a finished lab
+
+/** Labs of one path in the order a learner meets them: module, then `order`, then slug. */
+const compareInPath = (a, b) => cmp(rank(a.module), rank(b.module)) || compareLabs(a, b);
+
+/**
+ * The lab "Next" goes to once `slug` is done: `{ slug, title }`, or null when there is none.
+ *   labs  the catalogue (progress merged in; archived labs are passed over)
+ *   next  the one next lab as the launcher has it (the profile's `next_lab`, or the console's copy of the catalogue
+ *         rule until the profile answers): `{ slug, title? }` or null
+ * That next lab wins, as on Home and the result card. When it is this very lab (a profile read before the finish
+ * was recorded), the next lab is the first one after this one in its path that is not passed yet: the next lab of
+ * the module, else the first of the next module. Null (the profile says there is none, or nothing is left after
+ * this one) means "Back to the path".
+ */
+export function nextLabAfter(slug, labs, next) {
+  const list = visibleLabs(labs).filter((l) => l && typeof l.slug === 'string');
+  const bySlug = new Map(list.map((l) => [l.slug, l]));
+  if (!next || typeof next.slug !== 'string' || !next.slug) return null;
+  if (next.slug !== slug) {
+    const known = bySlug.get(next.slug);
+    return { slug: next.slug, title: next.title || known?.title || next.slug };
+  }
+  const here = (Array.isArray(labs) ? labs : []).find((l) => l?.slug === slug);
+  if (!here || typeof here.path !== 'string' || !here.path) return null;
+  const inPath = list.filter((l) => l.path === here.path).sort(compareInPath);
+  const at = inPath.findIndex((l) => l.slug === slug);
+  const after = (at < 0 ? [] : inPath.slice(at + 1)).find((l) => !l.progress?.passed_all);
+  return after ? { slug: after.slug, title: after.title || after.slug } : null;
+}
+
+/**
+ * The way on from a finished lab, as its page, its result card and a warm-up's last screen offer it:
+ *   { kind: 'next', slug, title, route: { name: 'lab', slug } }      "Next: <title> →"
+ *   { kind: 'back', route: { name: 'path', path } | { name: 'launcher' } }   no next lab: back to the lab's path
+ *                                                                         (the labs, for a lab on no path)
+ */
+export function wayOn(lab, labs, next) {
+  const to = nextLabAfter(lab?.slug, labs, next);
+  if (to) return { kind: 'next', slug: to.slug, title: to.title, route: { name: 'lab', slug: to.slug } };
+  const path = typeof lab?.path === 'string' && lab.path ? lab.path : null;
+  return { kind: 'back', route: path ? { name: 'path', path } : { name: 'launcher' } };
+}
+
+/**
+ * Which buttons a lab's page leads with, in the card on its right:
+ *   { next: true }   a finished lab: "Next: <title> →" is the big button, and Open again a quiet one under it
+ *   { next: false }  any other: Start (or Resume, or Locked) is the button
+ * A finished lab that is running again leads with Resume (the session is the way on).
+ */
+export function labPageActions({ done = false, running = false } = {}) {
+  return { next: done === true && running !== true };
+}

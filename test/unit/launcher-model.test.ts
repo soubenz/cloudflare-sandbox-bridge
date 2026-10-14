@@ -774,3 +774,62 @@ describe('a warm-up', () => {
     expect(mod1.labs[0]!.lockedByTitle).toBeNull();
   });
 });
+
+describe('the way on from a finished lab: nextLabAfter, wayOn and the lab page\'s actions', () => {
+  type Ref = { slug: string; title?: string } | null;
+  type Way = { kind: 'next'; slug: string; title: string; route: { name: string; slug: string } } | { kind: 'back'; route: { name: string; path?: string } };
+  const m = model as unknown as {
+    nextLabAfter: (slug: string | undefined, labs: Lab[], next: Ref) => { slug: string; title: string } | null;
+    wayOn: (lab: Lab | null, labs: Lab[], next: Ref) => Way;
+    labPageActions: (o?: { done?: boolean; running?: boolean }) => { next: boolean };
+  };
+  const passed = { attempts: 1, best_score: 1, passed_all: true };
+  // Module 1: the warm-up and two labs; module 2: two labs (given out of order); an archived lab between them.
+  const labs = [
+    lab('m2-b', { path: 'platform', module: 2, order: 2, title: 'Two B' }),
+    lab('warm', { path: 'platform', module: 1, order: 0, type: 'warm-up', title: 'Warm-up', progress: passed }),
+    lab('m1-a', { path: 'platform', module: 1, order: 1, title: 'One A' }),
+    lab('m1-b', { path: 'platform', module: 1, order: 2, title: 'One B' }),
+    lab('m1-x', { path: 'platform', module: 1, order: 3, title: 'Retired', archived: true }),
+    lab('m2-a', { path: 'platform', module: 2, order: 1, title: 'Two A' }),
+    lab('agents-1', { path: 'agents', order: 1, title: 'Agents one' }),
+  ];
+
+  it('is the next lab the launcher names (the profile\'s), with its title from the catalogue when it has none', () => {
+    expect(m.nextLabAfter('warm', labs, { slug: 'm1-a', title: 'One A' })).toEqual({ slug: 'm1-a', title: 'One A' });
+    expect(m.nextLabAfter('warm', labs, { slug: 'm2-a' })).toEqual({ slug: 'm2-a', title: 'Two A' });
+    // Even when it is not the one after this in the module (the learner's own path decides).
+    expect(m.nextLabAfter('m1-a', labs, { slug: 'agents-1', title: 'Agents one' })).toEqual({ slug: 'agents-1', title: 'Agents one' });
+  });
+
+  it('when the launcher still names this very lab, is the next one in its path: the module\'s next, else the next module\'s first', () => {
+    expect(m.nextLabAfter('warm', labs, { slug: 'warm' })).toEqual({ slug: 'm1-a', title: 'One A' });
+    // The last of module 1 (the archived one after it is passed over) goes on to module 2's first.
+    expect(m.nextLabAfter('m1-b', labs, { slug: 'm1-b' })).toEqual({ slug: 'm2-a', title: 'Two A' });
+    // A lab already passed on the way is passed over too.
+    const someDone = labs.map((l) => (l.slug === 'm1-a' ? { ...l, progress: passed } : l));
+    expect(m.nextLabAfter('warm', someDone, { slug: 'warm' })).toEqual({ slug: 'm1-b', title: 'One B' });
+    // The last lab of the path: nothing after it.
+    expect(m.nextLabAfter('m2-b', labs, { slug: 'm2-b' })).toBeNull();
+  });
+
+  it('is none when the launcher has none (everything done or held back)', () => {
+    expect(m.nextLabAfter('warm', labs, null)).toBeNull();
+    expect(m.nextLabAfter('warm', [], null)).toBeNull();
+  });
+
+  it('wayOn: "Next" to the lab\'s page, else back to the lab\'s path (the labs, for a lab on no path)', () => {
+    const warm = labs.find((l) => l.slug === 'warm')!;
+    expect(m.wayOn(warm, labs, { slug: 'm1-a' })).toEqual({ kind: 'next', slug: 'm1-a', title: 'One A', route: { name: 'lab', slug: 'm1-a' } });
+    expect(m.wayOn(warm, labs, null)).toEqual({ kind: 'back', route: { name: 'path', path: 'platform' } });
+    expect(m.wayOn(lab('loose'), [lab('loose')], null)).toEqual({ kind: 'back', route: { name: 'launcher' } });
+    expect(m.wayOn(null, labs, null)).toEqual({ kind: 'back', route: { name: 'launcher' } });
+  });
+
+  it('labPageActions: a finished lab leads with Next (Open again follows), unless it is running again', () => {
+    expect(m.labPageActions({ done: true })).toEqual({ next: true });
+    expect(m.labPageActions({ done: true, running: true })).toEqual({ next: false });
+    expect(m.labPageActions({ done: false })).toEqual({ next: false });
+    expect(m.labPageActions()).toEqual({ next: false });
+  });
+});

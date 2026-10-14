@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 type Step = Record<string, unknown> & { kind: string };
 type State = { v: 1; steps: Step[]; at: number; answers: Record<string, unknown>; games?: Record<string, unknown>; started_at?: number; lessons?: Record<string, unknown>; label?: string };
-type Progress = { version: string; state: State } | null;
+type Progress = { version: string; state: State; updated_at?: number } | null;
 type Remote = {
   get: (slug: string, o?: { fresh?: boolean }) => Promise<Progress>;
   save: (slug: string, body: { version: string; state: State }, o?: { keepalive?: boolean }) => Promise<boolean>;
@@ -23,6 +23,7 @@ const m = (await import('../../dashboard/src/learn-progress.js' as string)) as {
   progressSummary: (p: { at: number; total: number; label?: string }) => string;
   resumePoint: (entry: unknown, progress: unknown) => { state: State; at: number; total: number; label: string } | null;
   pagePoint: (lab: unknown, progress: unknown) => { at: number; total: number; label: string } | null;
+  labPlaceView: (o?: { done?: boolean; progress?: unknown; point?: { at: number } | null; doneAt?: number | null }) => string;
   lessonPagesFor: (slug: string, storage?: unknown) => { load: () => unknown; save: (v: unknown) => void };
   createProgressClient: (api: unknown, o?: { ttl?: number; now?: () => number }) => Remote;
   createProgressStore: (o: Record<string, unknown>) => {
@@ -104,7 +105,7 @@ function fakeRemote({ hold = false } = {}) {
   return { remote, sent, release: () => pending.shift()?.() };
 }
 
-function setup(opts: { hold?: boolean; version?: string } = {}) {
+function setup(opts: { hold?: boolean; version?: string; done?: boolean } = {}) {
   const session = webStorage();
   const local = webStorage();
   const win = target();
@@ -118,6 +119,7 @@ function setup(opts: { hold?: boolean; version?: string } = {}) {
     pagesStorage: local,
     remote,
     events: { window: win, document: doc },
+    ...(opts.done ? { done: true } : {}),
   });
   return { store, session, local, win, doc, remote, sent, release };
 }
@@ -350,8 +352,9 @@ describe('createProgressClient', () => {
       clearLearnProgress: vi.fn(async () => ({ deleted: true })),
     };
     const c = m.createProgressClient(api, { ttl: 1000, now: () => t });
-    expect(await c.get('lab')).toEqual({ version: '1.0.0', state: state() });
-    expect(await c.get('lab')).toEqual({ version: '1.0.0', state: state() });
+    // When it was saved comes along: the lab's page weighs it against when the lab was done.
+    expect(await c.get('lab')).toEqual({ version: '1.0.0', state: state(), updated_at: 5 });
+    expect(await c.get('lab')).toEqual({ version: '1.0.0', state: state(), updated_at: 5 });
     expect(api.learnProgress).toHaveBeenCalledTimes(1);
 
     await c.save('lab', { version: '1.0.0', state: state({ at: 3 }) }, { keepalive: true });
@@ -362,8 +365,31 @@ describe('createProgressClient', () => {
     expect(await c.get('lab')).toBeNull();
     expect(api.learnProgress).toHaveBeenCalledTimes(1);
     t = 2000;
-    expect(await c.get('lab')).toEqual({ version: '1.0.0', state: state() });
+    expect(await c.get('lab')).toEqual({ version: '1.0.0', state: state(), updated_at: 5 });
     expect(api.learnProgress).toHaveBeenCalledTimes(2);
+  });
+
+  it('two reads at once share one call, and a clear made while it was out wins over its answer', async () => {
+    let answer: (v: unknown) => void = () => {};
+    const api = {
+      learnProgress: vi.fn(() => new Promise((resolve) => (answer = resolve))),
+      saveLearnProgress: vi.fn(async () => ({ saved: true })),
+      clearLearnProgress: vi.fn(async () => ({ deleted: true })),
+    };
+    const c = m.createProgressClient(api);
+    const one = c.get('lab');
+    const two = c.get('lab');
+    expect(api.learnProgress).toHaveBeenCalledTimes(1);
+    answer({ progress: { version: '1.0.0', state: state(), updated_at: 5 } });
+    expect(await one).toEqual({ version: '1.0.0', state: state(), updated_at: 5 });
+    expect(await two).toEqual(await one);
+
+    // A read out while the place is forgotten: the forgetting is newer, so it stays forgotten.
+    const late = c.get('lab', { fresh: true });
+    await c.clear('lab');
+    answer({ progress: { version: '1.0.0', state: state(), updated_at: 5 } });
+    expect(await late).toBeNull();
+    expect(c.peek('lab')).toBeNull();
   });
 
   it('a failed call is no progress and never throws', async () => {
@@ -403,5 +429,60 @@ describe('the lesson pages key', () => {
     expect(JSON.parse(local.getItem(m.LESSON_PAGES_KEY)!)).toEqual({ other: { read: ['x'] }, mine: { at: {}, pages: { a: 1 }, read: [] } });
     local.setItem(m.LESSON_PAGES_KEY, '{not json');
     expect(pages.load()).toBeNull();
+  });
+});
+
+describe('a lab already done, opened again', () => {
+  it('saves nothing on its first step, even with lessons read (the pager remembers them) or a game played', async () => {
+    const { store, local, sent } = setup({ done: true });
+    local.setItem('opalix.lessonPages', JSON.stringify({ 'gateway-one-night': { at: 0, pages: [], read: ['gateway.alias'] } }));
+    store.save(STEPS, {}, { at: 0 });
+    store.save(STEPS, { q1: ANSWER }, { games: { 'sort-calls': { id: 'sort-calls', tries: 1 } } });
+    await vi.advanceTimersByTimeAsync(5000);
+    store.flush({ keepalive: true });
+    store.clear();
+    await store.settled();
+    expect(sent).toEqual([]);
+  });
+
+  it('saves a second run once it is past its first step', async () => {
+    const { store, sent } = setup({ done: true });
+    store.save(STEPS, {}, { at: 0 });
+    store.save(STEPS, {}, { at: 1 });
+    await store.settled();
+    expect(sent.map((s) => s.body!.state.at)).toEqual([1]);
+  });
+
+  it('a lab not done saves its first step once something is done on it, as before', async () => {
+    const { store, sent } = setup();
+    store.save(STEPS, { q1: ANSWER }, { at: 0 });
+    await vi.advanceTimersByTimeAsync(m.SAVE_DELAY_MS);
+    await store.settled();
+    expect(sent.map((s) => s.body!.state.at)).toEqual([0]);
+  });
+});
+
+describe('labPlaceView (what a lab\'s page does with the saved progress)', () => {
+  const progress = (updated_at?: number) => ({ version: '1.0.0', state: state(), ...(updated_at === undefined ? {} : { updated_at }) });
+
+  it('not done: "You left off" when the place fits the lab, nothing when it does not or there is none', () => {
+    expect(m.labPlaceView({ done: false, progress: progress(), point: { at: 0 } })).toBe('resume');
+    expect(m.labPlaceView({ done: false, progress: progress(), point: null })).toBe('none');
+    expect(m.labPlaceView({ done: false, progress: null, point: null })).toBe('none');
+    expect(m.labPlaceView()).toBe('none');
+  });
+
+  it('done: progress left at the first step (a finished lab opened again) is forgotten, never shown', () => {
+    expect(m.labPlaceView({ done: true, progress: progress(9), point: { at: 0 }, doneAt: 5 })).toBe('forget');
+    expect(m.labPlaceView({ done: true, progress: progress(), point: null })).toBe('forget');
+    expect(m.labPlaceView({ done: true, progress: null, point: null })).toBe('none');
+  });
+
+  it('done: progress older than the finish is forgotten; a second run saved after it is a quiet Continue', () => {
+    expect(m.labPlaceView({ done: true, progress: progress(4), point: { at: 3 }, doneAt: 5 })).toBe('forget');
+    expect(m.labPlaceView({ done: true, progress: progress(5), point: { at: 3 }, doneAt: 5 })).toBe('forget');
+    expect(m.labPlaceView({ done: true, progress: progress(6), point: { at: 3 }, doneAt: 5 })).toBe('second-run');
+    // No time to compare: past the first step is a run under way (a finished lab saves nothing before that).
+    expect(m.labPlaceView({ done: true, progress: progress(), point: { at: 3 }, doneAt: null })).toBe('second-run');
   });
 });

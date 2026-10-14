@@ -26,8 +26,9 @@ import { GAMES, warmUpBundleOf } from './comic-fixture';
  *   - the games only go forward: no game step has a Back to the closing story or to an earlier game;
  *   - "Skip this game" moves on, and the first game's "Skip all games" finishes the warm-up at once, the
  *     skipped games sent as { id, solved: false, skipped: true, tries: 0 };
- *   - "Finish the warm-up" POSTs /api/warmups/<slug>/complete once, with every game and its tries, then lands on
- *     the lab's page, which says Done, with "Warm-up done. Next: <title>"; a failed POST keeps the learner on the
+ *   - "Finish the warm-up" POSTs /api/warmups/<slug>/complete once, with every game and its tries, then shows the
+ *     warm-up's last screen at /labs/<slug>/done, "Warm-up done" with "Next: <title>" (28-done-next pins the rest);
+ *     a failed POST keeps the learner on the
  *     last step to try again.
  *
  * Like 16 to 25 this needs no password, no API and no container: a static server serves dashboard/public and
@@ -314,11 +315,10 @@ test.describe('a warm-up', () => {
     expect(s.completes).toHaveLength(0);
     await gameNext(page).click();
 
-    // The lab's page, which now says Done, and the next lab named.
-    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
-    await expect(page.locator('#learnScreen')).toBeHidden();
-    await expect(page.locator(`.lab-detail[data-slug="${WARM}"] .chip-done`)).toContainText('Done');
-    await expect(page.locator('#toastText')).toHaveText(`Warm-up done. Next: ${NEXT_TITLE}`);
+    // The warm-up's last screen, and the next lab named.
+    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/done$`));
+    await expect(heading(page)).toHaveText('Warm-up done');
+    await expect(page.locator('#btnDoneNext')).toHaveText(`Next: ${NEXT_TITLE}`);
 
     expect(s.completes).toHaveLength(1);
     const body = s.completes[0]!;
@@ -359,8 +359,8 @@ test.describe('a warm-up', () => {
     expect(s.completes).toHaveLength(1);
 
     await finish.click();
-    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
-    await expect(page.locator(`.lab-detail[data-slug="${WARM}"] .chip-done`)).toContainText('Done');
+    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/done$`));
+    await expect(heading(page)).toHaveText('Warm-up done');
     expect(s.completes).toHaveLength(2);
     expect(s.completes[1]).toEqual(s.completes[0]);
   });
@@ -383,7 +383,7 @@ test.describe('a warm-up', () => {
       await solve(page, g);
       await gameNext(page).click();
     }
-    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
+    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/done$`));
     expect(s.completes[0]!.games).toEqual(GAMES.map((g) => ({ id: g.id, solved: true, tries: 1 })));
   });
 
@@ -394,8 +394,8 @@ test.describe('a warm-up', () => {
     await expect(heading(page)).toHaveText(`Game 1 of ${GAMES.length}`);
     // Skipping needs no Start and asks nothing.
     await page.locator('#btnSkipAllGames').click();
-    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
-    await expect(page.locator(`.lab-detail[data-slug="${WARM}"] .chip-done`)).toContainText('Done');
+    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/done$`));
+    await expect(heading(page)).toHaveText('Warm-up done');
     expect(s.completes).toHaveLength(1);
     expect(s.completes[0]!.games).toEqual(GAMES.map((g) => ({ id: g.id, solved: false, skipped: true, tries: 0 })));
     expect(s.errors).toEqual([]);
@@ -423,7 +423,7 @@ test.describe('a warm-up', () => {
     await expect(root.locator('.game-route-card')).toHaveCount(route.length);
     await page.locator('#btnSkipGame').focus();
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
+    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/done$`));
     expect(s.completes[0]!.games).toEqual([
       { id: GAMES[0]!.id, solved: false, skipped: true, tries: 0 },
       { id: GAMES[1]!.id, solved: false, skipped: true, tries: 0 },
@@ -451,7 +451,7 @@ test.describe('a warm-up', () => {
     await expect(root.locator('.game-stars')).toHaveAttribute('aria-label', '2 of 3 stars');
     await expect(root.locator('.game-route-answer-step')).toHaveCount(route.length);
     await gameNext(page).click();
-    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}$`));
+    await expect(page).toHaveURL(new RegExp(`/labs/${WARM}/done$`));
     expect(s.completes[0]!.games).toEqual(GAMES.map((x) => ({ id: x.id, solved: true, tries: 1 })));
     expect(s.errors).toEqual([]);
   });

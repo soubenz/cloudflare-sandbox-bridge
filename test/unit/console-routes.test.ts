@@ -241,6 +241,17 @@ describe('a warm-up\'s steps: /games and /closing', () => {
     expect(without(parse('/labs/warm-up/session/games'))).toEqual({ name: 'session', slug: 'warm-up', invalidTab: true });
   });
 
+  it('reads and builds /done, the last screen of a finished warm-up, which is not a step of the flow', () => {
+    expect(without(parse('/labs/warm-up/done'))).toEqual({ name: 'lab-done', slug: 'warm-up' });
+    expect(without(parse('/labs/warm-up/done/'))).toEqual({ name: 'lab-done', slug: 'warm-up' });
+    expect(r.buildRoute('lab-done', { slug: 'warm-up' })).toBe('/labs/warm-up/done');
+    // `step` belongs to the flow: it is not carried to /done; anything else is.
+    expect(r.buildRoute('lab-done', { slug: 'warm-up', search: '?a=b&step=3' })).toBe('/labs/warm-up/done?a=b');
+    expect(parse('/labs/warm-up/done/1').name).toBe('not-found');
+    expect(() => r.buildRoute('lab-done', { slug: 'Not A Slug' })).toThrow(RangeError);
+    expect(r.routeTitle({ name: 'lab-done', slug: 'warm-up' }, 'Warm up')).toBe('Done · Warm up · Opalix labs');
+  });
+
   it('titles them', () => {
     expect(r.routeTitle({ name: 'lab-step', slug: 'warm-up', step: 'games' }, 'Warm up')).toBe('Games · Warm up · Opalix labs');
     expect(r.routeTitle({ name: 'lab-step', slug: 'warm-up', step: 'closing' }, 'Warm up')).toBe('The closing story · Warm up · Opalix labs');

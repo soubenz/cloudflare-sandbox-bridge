@@ -30,6 +30,9 @@ type Words = {
   xpGainText: (n: number) => string;
   skillChangeText: (title: string, from: number, to: number) => string;
   nextLabText: (title: string) => string;
+  nextStepText: (title: string) => string;
+  BACK_TO_PATH: string;
+  warmUpDoneLine: (games: unknown) => string;
   PLAN_LOCK_SHORT: string;
   PLAN_LOCK_LONG: string;
   isPlanLockWhy: (why: unknown) => boolean;
@@ -136,6 +139,24 @@ describe('what a finished lab earned', () => {
     expect(words.xpGainText(120)).toBe('+120 XP');
     expect(words.skillChangeText('Retrieval', 12, 31)).toBe('Skill: Retrieval 12 → 31');
     expect(words.nextLabText('Trace one request')).toBe('Next lab: Trace one request');
+  });
+
+  it('names the way on from a finished lab: "Next: <title>", or back to the path', () => {
+    expect(words.nextStepText('Trace one request')).toBe('Next: Trace one request');
+    expect(words.BACK_TO_PATH).toBe('Back to the path');
+  });
+
+  it('says what a warm-up\'s games came to, in one line', () => {
+    const solved = (id: string, tries: number) => ({ id, solved: true, tries });
+    const skipped = (id: string) => ({ id, solved: false, skipped: true, tries: 0 });
+    expect(words.warmUpDoneLine([solved('a', 1), solved('b', 1)])).toBe('You solved all 2 games, every one on the first try.');
+    expect(words.warmUpDoneLine([solved('a', 1), solved('b', 3), solved('c', 1), solved('d', 2)])).toBe('You solved all 4 games, 2 on the first try.');
+    expect(words.warmUpDoneLine([solved('a', 2), skipped('b')])).toBe('You solved 1 of 2 games.');
+    expect(words.warmUpDoneLine([solved('a', 1)])).toBe('You solved the game, on the first try.');
+    // Nothing solved, no games, or nothing known (a page loaded at /done): just that it is finished.
+    expect(words.warmUpDoneLine([skipped('a'), skipped('b')])).toBe('You finished the warm-up.');
+    expect(words.warmUpDoneLine([])).toBe('You finished the warm-up.');
+    expect(words.warmUpDoneLine(null)).toBe('You finished the warm-up.');
   });
 });
 

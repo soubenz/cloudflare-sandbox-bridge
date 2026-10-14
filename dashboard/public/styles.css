@@ -964,6 +964,17 @@ kbd {
 .lab-progress { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--border); }
 .lab-progress[hidden] { display: none; }
 .lab-progress .btn { width: 100%; min-height: 44px; }
+/* A finished lab's own way on: "Next: <title> →" leads, Open again follows as the quiet button. */
+.lab-detail-side .lab-way-on {
+  width: 100%; justify-content: center; gap: var(--s2); text-decoration: none;
+  /* A long title wraps inside the card rather than pushing the arrow out of it. */
+  padding: 12px 20px; white-space: normal; text-align: center; line-height: 1.3; font-size: 16px;
+}
+.lab-detail-side .lab-way-on svg { flex: none; }
+.lab-detail-side .lab-way-on[hidden] { display: none; }
+/* A second run of a finished lab: one quiet link, with no divider and no "You left off" box. */
+.lab-progress.lab-progress-quiet { padding-top: 0; border-top: 0; align-items: flex-start; }
+.lab-progress .lab-second-run { width: auto; min-height: 36px; padding: 0 var(--s2); }
 .lab-detail-more { margin: 0; font-size: var(--fs-sm); }
 .lab-detail-more a { color: var(--ink-2); text-underline-offset: 3px; }
 
@@ -1291,3 +1302,12 @@ input::placeholder { color: var(--ink-muted); opacity: 1; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   /* The steps and text still report progress without the spin. */
 }
+
+/* A finished warm-up's last screen (/labs/<slug>/done): a check, "Warm-up done", one line, then Next. */
+.learn-done { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s4); max-width: 680px; padding-top: var(--s5); }
+.learn-done-mark {
+  display: inline-grid; place-items: center; width: 56px; height: 56px; border-radius: 50%;
+  background: color-mix(in oklab, var(--good) 14%, var(--surface)); color: var(--good);
+}
+.learn-done .learn-actions { margin-top: var(--s2); }
+.learn-done .learn-actions a.btn { text-decoration: none; }

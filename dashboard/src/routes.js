@@ -17,6 +17,7 @@
  *                                      step of that kind
  *   /labs/<slug>/closing               a warm-up's closing story, after its lessons, then
  *   /labs/<slug>/games[?step=N]        its games (without N, the first)
+ *   /labs/<slug>/done                  a finished warm-up's last screen: "Warm-up done" and Next: <the next lab>
  *   /labs/<slug>/session               (old form) starts the lab, or rejoins it when it is running; the
  *                                      address becomes the new form once the session's id is known
  *   /labs/<slug>/session/brief|questions|hints|checks|solution
@@ -47,6 +48,8 @@ export const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 /** The steps before a lab starts, in the order the flow shows them; a warm-up goes on to its closing story and its games. */
 export const LAB_STEPS = ['story', 'questions', 'lessons', 'closing', 'games'];
+/** The screen after a finished warm-up's last step (/labs/<slug>/done): not a step of the flow, so not in LAB_STEPS. */
+export const DONE_STEP = 'done';
 /** The guide's tabs, as they are spelled in a URL. */
 export const GUIDE_TAB_NAMES = ['brief', 'questions', 'hints', 'checks', 'solution'];
 /** The workspace window's tabs without a name of their own (a service's is `service/<name>`). */
@@ -119,6 +122,7 @@ const notFound = (pathname, search) => ({
  *   { name: 'my-path' }
  *   { name: 'lab', slug }
  *   { name: 'lab-step', slug, step, n? }   n: the `?step=N` place in the flow (1-based), when the address has a valid one
+ *   { name: 'lab-done', slug }
  *   { name: 'session', slug, userId?, sessionId?, tab?, service?, invalidTab? }
  *   { name: 'not-found', path }
  *
@@ -172,6 +176,7 @@ export function parseRoute(pathname, search = '') {
     if (!isSlug(slug)) return notFound(trimmed, q);
     const tail = rest.slice(1);
     if (tail.length === 0) return { name: 'lab', slug, search: q };
+    if (tail.length === 1 && tail[0] === DONE_STEP) return { name: 'lab-done', slug, search: q };
     if (tail[0] !== 'session') {
       if (!(tail.length === 1 && LAB_STEPS.includes(tail[0]))) return notFound(trimmed, q);
       // `?step=N` is the step's place in the whole flow (1-based): rounds and lesson chunks share /questions and /lessons.
@@ -229,6 +234,10 @@ export function buildRoute(name, params = {}) {
     case 'lab':
       need(isSlug(params.slug), 'slug is not a slug');
       path = `/labs/${seg(params.slug)}`;
+      break;
+    case 'lab-done':
+      need(isSlug(params.slug), 'slug is not a slug');
+      path = `/labs/${seg(params.slug)}/${DONE_STEP}`;
       break;
     case 'lab-step':
       need(isSlug(params.slug), 'slug is not a slug');
@@ -294,6 +303,8 @@ export function routeTitle(route, labTitle = null, titles = {}) {
       const lead = { lessons: 'Lessons', questions: 'Quick questions', games: 'Games', closing: 'The closing story' }[route.step] ?? null;
       return [lead, lab, site].filter(Boolean).join(' · ');
     }
+    case 'lab-done':
+      return ['Done', lab, site].filter(Boolean).join(' · ');
     case 'session':
       return lab ? `Session · ${lab} · ${site}` : `Session · ${site}`;
     case 'not-found':
