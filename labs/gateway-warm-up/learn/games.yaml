@@ -22,7 +22,7 @@ games:
   - kind: order-and-nest
     id: through-the-door
     title: Through the door
-    prompt: "Put the steps of one call in order, and nest each gateway step under the app's call it belongs to."
+    prompt: "Tap what happens next, from the app's call to the usage log."
     host: graham
     explanation: "The app's call holds every other step. The gateway looks the alias up, adds the key only it holds, calls the provider, passes the answer back and writes down the tokens with the team's name."
     steps:
