@@ -1,33 +1,33 @@
 {
   "model": "higgsfield/elevenlabs",
   "clips": {
-    "c44658533f1dd39b": {
+    "56ee446086c46dfc": {
       "who": "narrator",
       "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
-      "text": "Six things went wrong here. Four will happen to you.",
-      "seconds": 3.32,
-      "bytes": 53542
+      "text": "Larkfield is a company whose apps all run on AI models, and last month six things went wrong there, one after another, the kind of problems you have probably met already if your team builds with AI.",
+      "seconds": 11.39,
+      "bytes": 182692
     },
-    "fe450cb69cf36b3f": {
+    "343d0d941eef089a": {
       "who": "narrator",
       "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
-      "text": "Saturday, three twelve in the morning. The support assistant stops answering customers. Its model provider, the company that runs the model, is down.",
-      "seconds": 9.17,
-      "bytes": 147165
+      "text": "It started on a Saturday, at twelve minutes past three in the morning, when the phone of Tomasz, an engineer on Larkfield's platform team, lit up the dark bedroom because the support assistant had stopped answering customers.",
+      "seconds": 12.04,
+      "bytes": 193141
     },
-    "c657106dffc81d1e": {
+    "aa171f5abc003d16": {
       "who": "tomasz",
       "voice": "549ff70a-3ee7-4f04-a4d9-89a24fab7709",
-      "text": "Search is fine. Support is dark.",
-      "seconds": 2.85,
-      "bytes": 46019
+      "text": "Two hundred customers waiting. I'm getting up.",
+      "seconds": 2.69,
+      "bytes": 43511
     },
-    "efeaca711aa7571c": {
+    "8010bf62eeba2ba9": {
       "who": "narrator",
       "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
-      "text": "Another provider is working. But the first provider's name is written into the app's code, so at three forty Tomasz, an engineer on the platform team, is rewriting that code by hand.",
-      "seconds": 10.19,
-      "bytes": 163466
+      "text": "He found the cause within minutes: OpenAI, the company that runs the assistant's model, was down, and although Anthropic was working fine, OpenAI's name was written into the app's code, so at three forty he was still rewriting it by hand.",
+      "seconds": 14.52,
+      "bytes": 232847
     },
     "9527a68a83ff55fe": {
       "who": "tomasz",
@@ -36,40 +36,40 @@
       "seconds": 3.55,
       "bytes": 57304
     },
-    "7fa19f8797456423": {
+    "054aad6a2242ae02": {
       "who": "narrator",
       "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
-      "text": "Every app at Larkfield has its own provider and its own key. A key is the secret that proves who is paying. Whoever holds it can make calls, and the bill goes to its owner.",
-      "seconds": 10.37,
-      "bytes": 166391
+      "text": "That night had been building for a long time, because every app at Larkfield talked to its own provider, whether OpenAI, Anthropic or Google, and kept its own key, the secret that proves who is paying.",
+      "seconds": 11.73,
+      "bytes": 188125
     },
-    "9751b098a10ef13d": {
+    "c23c722ac49f07b7": {
       "who": "narrator",
       "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
-      "text": "Tuesday, ten oh five. Someone shares a screenshot in the team chat to show off a good answer. In the corner of the picture is a provider key.",
-      "seconds": 7.81,
-      "bytes": 125431
+      "text": "On Tuesday, Ollie, one of the developers, was so proud of an answer from the assistant that he shared a screenshot in the team chat, without noticing the team's OpenAI key in the corner of the picture.",
+      "seconds": 10.61,
+      "bytes": 170153
     },
-    "3d1abb6c445ea3e8": {
-      "who": "ollie",
-      "voice": "6b528d43-c056-4a2f-9d82-1591a7ba13b0",
-      "text": "Look at this answer! Best one yet.",
-      "seconds": 2.43,
-      "bytes": 39332
-    },
-    "995c7e01d4cfe406": {
+    "e779b035de745551": {
       "who": "maren",
       "voice": "3c2b83c0-2e0a-5ae8-998a-a5fe71b7eccd",
-      "text": "Ollie. Bottom corner. That's our provider key.",
-      "seconds": 3.08,
-      "bytes": 49781
+      "text": "Ollie. Bottom corner. That's our OpenAI key.",
+      "seconds": 3.4,
+      "bytes": 54796
     },
-    "13701524bec57890": {
+    "d6e362b75105b31f": {
+      "who": "ollie",
+      "voice": "6b528d43-c056-4a2f-9d82-1591a7ba13b0",
+      "text": "Deleting it now. Eleven people have already seen it, though.",
+      "seconds": 3.4,
+      "bytes": 54796
+    },
+    "3aa5f54653ba7407": {
       "who": "narrator",
       "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
-      "text": "Friday evening, a research script gets an error and sends the same call again. It keeps sending it until Monday morning, and by then it has spent the whole month's budget.",
-      "seconds": 9.8,
-      "bytes": 157196
+      "text": "Then on Friday evening his research script hit an error and kept trying again, all weekend long, until by Monday morning it had spent the whole month's budget.",
+      "seconds": 8.91,
+      "bytes": 142986
     },
     "862a0ddc65db83e1": {
       "who": "ollie",
@@ -78,12 +78,12 @@
       "seconds": 3.79,
       "bytes": 61066
     },
-    "395c81ebe056962d": {
+    "2750414c3a31b367": {
       "who": "narrator",
       "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
-      "text": "Sunday. A provider renames one of its models. Three apps have the old name typed into their code, and all three stop working.",
-      "seconds": 7.89,
-      "bytes": 126685
+      "text": "That Sunday, while the team was still cleaning up, Google renamed one of its models, and the three apps that had the old name typed into their code all stopped working at once.",
+      "seconds": 9.87,
+      "bytes": 158450
     },
     "5bebae5d88ee1b65": {
       "who": "tomasz",
@@ -92,12 +92,12 @@
       "seconds": 2.43,
       "bytes": 39332
     },
-    "92c6d6a03c8031a5": {
+    "94b7c60f38ffffaf": {
       "who": "narrator",
       "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
-      "text": "End of the month, one invoice arrives, with one number on it. Finance asks which team spent it, and with which provider. Nobody can say.",
-      "seconds": 8.44,
-      "bytes": 135462
+      "text": "When the invoice arrived at the end of the month, it showed a single number, and Graham, the head of engineering, asked the one question nobody in the room could answer.",
+      "seconds": 8.83,
+      "bytes": 141732
     },
     "7677f5ef67a1555b": {
       "who": "graham",
@@ -106,19 +106,12 @@
       "seconds": 2.69,
       "bytes": 43511
     },
-    "0a07fdcafa2971c7": {
-      "who": "maren",
-      "voice": "3c2b83c0-2e0a-5ae8-998a-a5fe71b7eccd",
-      "text": "I've practised the shrug. It's very good now.",
-      "seconds": 2.85,
-      "bytes": 46019
-    },
-    "4bb487e5e81d6d06": {
+    "b4899a163382fbf4": {
       "who": "narrator",
       "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
-      "text": "Then a better model comes out, faster and cheaper. Nobody tries it, because trying it means changing every app that would use it.",
-      "seconds": 7.71,
-      "bytes": 123759
+      "text": "And the month ended on a missed chance, because a new model came out, faster and cheaper, and Jess, the product manager, wanted to try it at once, even though that meant changing every app by hand.",
+      "seconds": 10.92,
+      "bytes": 175168
     },
     "e237d273270e7225": {
       "who": "jess",
@@ -134,35 +127,35 @@
       "seconds": 2.59,
       "bytes": 41839
     },
-    "c75f9f4a71255cee": {
+    "2c126fc7e3bdd73b": {
       "who": "narrator",
       "voice": "27c04473-84a9-4b60-a41f-c8e8458bd4f1",
-      "text": "A rewrite at three in the morning. A key in a screenshot. A weekend of retries. A renamed model. One invoice. A model nobody tried. For each one, is this normal, or a sign that something is missing?",
-      "seconds": 13.87,
-      "bytes": 222398
+      "text": "So here are the six problems from that month, and as each one appears, ask yourself whether it is normal, or a sign that something is missing.",
+      "seconds": 7.39,
+      "bytes": 118744
     }
   },
   "lines": [
     {
       "panel": 0,
       "kind": "voiceover",
-      "clip": "c44658533f1dd39b"
+      "clip": "56ee446086c46dfc"
     },
     {
       "panel": 1,
       "kind": "voiceover",
-      "clip": "fe450cb69cf36b3f"
+      "clip": "343d0d941eef089a"
     },
     {
       "panel": 1,
       "kind": "bubble",
       "bubble": 0,
-      "clip": "c657106dffc81d1e"
+      "clip": "aa171f5abc003d16"
     },
     {
       "panel": 2,
       "kind": "voiceover",
-      "clip": "efeaca711aa7571c"
+      "clip": "8010bf62eeba2ba9"
     },
     {
       "panel": 2,
@@ -173,29 +166,29 @@
     {
       "panel": 3,
       "kind": "voiceover",
-      "clip": "7fa19f8797456423"
+      "clip": "054aad6a2242ae02"
     },
     {
       "panel": 4,
       "kind": "voiceover",
-      "clip": "9751b098a10ef13d"
+      "clip": "c23c722ac49f07b7"
     },
     {
       "panel": 4,
       "kind": "bubble",
       "bubble": 0,
-      "clip": "3d1abb6c445ea3e8"
+      "clip": "e779b035de745551"
     },
     {
       "panel": 4,
       "kind": "bubble",
       "bubble": 1,
-      "clip": "995c7e01d4cfe406"
+      "clip": "d6e362b75105b31f"
     },
     {
       "panel": 5,
       "kind": "voiceover",
-      "clip": "13701524bec57890"
+      "clip": "3aa5f54653ba7407"
     },
     {
       "panel": 5,
@@ -206,7 +199,7 @@
     {
       "panel": 6,
       "kind": "voiceover",
-      "clip": "395c81ebe056962d"
+      "clip": "2750414c3a31b367"
     },
     {
       "panel": 6,
@@ -217,7 +210,7 @@
     {
       "panel": 7,
       "kind": "voiceover",
-      "clip": "92c6d6a03c8031a5"
+      "clip": "94b7c60f38ffffaf"
     },
     {
       "panel": 7,
@@ -226,15 +219,9 @@
       "clip": "7677f5ef67a1555b"
     },
     {
-      "panel": 7,
-      "kind": "bubble",
-      "bubble": 1,
-      "clip": "0a07fdcafa2971c7"
-    },
-    {
       "panel": 8,
       "kind": "voiceover",
-      "clip": "4bb487e5e81d6d06"
+      "clip": "b4899a163382fbf4"
     },
     {
       "panel": 8,
@@ -251,7 +238,7 @@
     {
       "panel": 9,
       "kind": "voiceover",
-      "clip": "c75f9f4a71255cee"
+      "clip": "2c126fc7e3bdd73b"
     }
   ]
 }
