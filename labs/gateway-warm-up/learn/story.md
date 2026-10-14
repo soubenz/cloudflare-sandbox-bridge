@@ -20,11 +20,4 @@ At the end of the month, one invoice arrives with one number on it. Graham, the 
 
 The month ends on a missed chance. A new model comes out, faster and cheaper. Jess, the product manager, wants to try it today, but trying it means changing every app by hand. Jess: "It's faster AND cheaper! Can we try it today?" Tomasz: "Sure. In every app. By hand."
 
-One month, six problems. Read each one, and ask yourself whether it is normal, or a sign that something is missing.
-
-- OpenAI goes down, and the fix is rewriting app code at 3 a.m.
-- An OpenAI key leaks in a screenshot in the team chat.
-- A script retries all weekend and spends the month's budget.
-- Google renames a model, and three apps break at once.
-- One invoice, and nobody can say which team spent what.
-- A faster, cheaper model nobody can try without changing every app.
+One month, six problems: a rewrite at three in the morning, a key in a screenshot, a weekend of retries, a renamed model, one invoice nobody can split, and a model nobody can try. For each one, ask yourself whether it is normal, or a sign that something is missing.
