@@ -1,0 +1,84 @@
+name: Preview site
+
+# Every pull request that touches the site gets its own preview at
+# https://pr-<number>-opalix-site.<account-subdomain>.workers.dev, updated on
+# each push. It uploads a Worker *version* with a preview alias, which never
+# changes what production serves; merging to main is still what deploys
+# (deploy-site.yml).
+#
+# Previews share production's bindings, so they run with PREVIEW=true: the
+# waitlist form validates but stores nothing (see site/src/worker.ts). D1
+# migrations are deliberately not applied here, since that would change the
+# production database before the PR is merged.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'site/**'
+      - '.github/workflows/preview-site.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-site-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    # Forks don't get the Cloudflare secret.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Upload preview version
+        id: upload
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          npx wrangler versions upload --config site/wrangler.jsonc \
+            --preview-alias "pr-$PR" \
+            --var PREVIEW:true \
+            --message "PR #$PR ${SHA:0:7}" | tee upload.log
+          url=$(grep -oE "https://pr-$PR-[a-zA-Z0-9.-]+\.workers\.dev" upload.log | head -1)
+          if [ -z "$url" ]; then
+            echo "::error::wrangler did not print a preview alias URL"
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Preview: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment the preview URL on the PR
+        uses: actions/github-script@v7
+        env:
+          URL: ${{ steps.upload.outputs.url }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const marker = '<!-- opalix-site-preview -->';
+            const body = [
+              marker,
+              `**Site preview:** ${process.env.URL}`,
+              '',
+              `Built from ${process.env.SHA.slice(0, 7)}. The waitlist form works but stores nothing here. Merging deploys production.`,
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find((c) => c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
