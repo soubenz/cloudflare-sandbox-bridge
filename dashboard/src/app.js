@@ -2958,6 +2958,7 @@ function enterSession() {
   // never attaches a terminal to the new one.
   runningHandled = false;
   state.expiresAt = null;
+  expiryToldAt.clear();
   stopExpiryTimer();
   stopStreamFallback();
   hideIdleBanner();
@@ -4114,10 +4115,22 @@ async function imHere() {
   }
 }
 
+/** The lab's last minutes are easy to miss in a thin strip, so each step (5 min, then 1 min) also says so once as a toast. */
+const expiryToldAt = new Set();
+
 function showExpiryBanner(left) {
   $('expiryCountdown').textContent = formatClock(left);
-  $('expiryBanner').hidden = false;
+  const banner = $('expiryBanner');
+  banner.hidden = false;
+  banner.dataset.urgent = left <= 60_000 ? '1' : '0';
   if (!endInFlight) $('btnEnd').textContent = 'End & save';
+  const step = left <= 60_000 ? 'one' : 'five';
+  if (!expiryToldAt.has(step)) {
+    expiryToldAt.add(step);
+    if (step === 'one') expiryToldAt.add('five');
+    const minutes = Math.max(1, Math.ceil(left / 60_000));
+    toast(`Your lab ends in ${minutes} minute${minutes === 1 ? '' : 's'}. Your work is saved when it ends.`, step === 'one' ? 'bad' : 'warn', 10_000);
+  }
 }
 
 function hideExpiryBanner() {

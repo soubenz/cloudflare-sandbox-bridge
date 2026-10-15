@@ -1269,6 +1269,28 @@ test.describe('banners and the activity strip', () => {
     expect(w.y + w.height).toBeLessThanOrEqual(900);
   });
 
+  test('says the lab is ending as a toast too, once at five minutes and once in the last minute, where the banner turns urgent', async ({ page }) => {
+    const s = await stub(page);
+    s.status.expiresInMs = 4 * 60_000;
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page);
+    await startLab(page, BUILD);
+    await expect(page.locator('#toast')).toContainText('Your lab ends in 4 minutes. Your work is saved when it ends.');
+    await expect(page.locator('#expiryBanner')).toHaveAttribute('data-urgent', '0');
+    await expect(page.locator('#expiryBanner')).toContainText('Your work is saved when the lab ends');
+  });
+
+  test('in the last minute the banner is urgent and the toast says one minute', async ({ page }) => {
+    const s = await stub(page);
+    s.status.expiresInMs = 50_000;
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await open(page);
+    await startLab(page, BUILD);
+    await expect(page.locator('#expiryBanner')).toHaveAttribute('data-urgent', '1');
+    await expect(page.locator('#toast')).toContainText('Your lab ends in 1 minute.');
+    await expect(page.locator('#toast')).toHaveAttribute('data-tone', 'bad');
+  });
+
   test('asks "still there?" on an idle warning, with a countdown in the banner and the window bar, and clears on "I\'m here"', async ({ page }) => {
     const s = await stub(page);
     s.events = [{ id: 1, event: 'session.idle_warning', data: {} }];

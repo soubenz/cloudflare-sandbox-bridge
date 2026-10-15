@@ -1199,6 +1199,7 @@ input::placeholder { color: var(--ink-muted); opacity: 1; }
 }
 .toast[data-tone="good"] { border-left-color: var(--good); }
 .toast[data-tone="bad"] { border-left-color: var(--bad); }
+.toast[data-tone="warn"] { border-left-color: var(--warn); }
 .toast #toastText { flex: 1; padding-top: 4px; }
 
 /* ---------- launcher: narrower screens ---------- */

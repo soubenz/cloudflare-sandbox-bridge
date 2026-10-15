@@ -203,6 +203,8 @@ body:has(#workspace:not([hidden])) .nav-account > #btnHelp { display: inline-fle
 }
 .banner svg { flex: none; color: var(--warn); }
 .banner-warn { background: color-mix(in oklab, var(--warn) 12%, var(--surface)); border-color: color-mix(in oklab, var(--warn) 45%, var(--border)); }
+.banner-warn[data-urgent="1"] { background: color-mix(in oklab, var(--bad) 14%, var(--surface)); border-color: color-mix(in oklab, var(--bad) 50%, var(--border)); }
+.banner-warn[data-urgent="1"] svg { color: var(--bad); }
 .ended-banner { background: color-mix(in oklab, var(--bad) 12%, var(--surface)); border-color: color-mix(in oklab, var(--bad) 40%, var(--border)); font-weight: 500; }
 .ended-banner > span:first-child { flex: 1 1 320px; min-width: 0; }
 .banner-text { flex: 1 1 240px; min-width: 0; }
