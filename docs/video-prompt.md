@@ -105,20 +105,36 @@ CHARACTERS AND HUMOUR
 - The bubbles are dry and kind, never mocking the viewer. A character never
   repeats the narrator, and the narrator never repeats a bubble.
 
-HOOK (panel 1)
-- The first spoken sentence is under 12 words, no name, no term, no setup,
-  and it is true in the video: whatever it promises is paid off by panel 3.
-- The picture is the hook before the voice is: the number, the clock or the
-  screenshot is already on screen at second zero.
-- Patterns that work for engineers: the number that should not exist ("a
-  month's budget in one weekend"), the quiet disaster ("every dashboard was
-  green; the bill had tripled"), you have this bug ("one of your keys is in a
-  screenshot right now"), the absurd detail ("answered a customer from Leeds
-  in perfect Dutch"), the countdown ("3:12 a.m., the fix is a code change"),
-  the confession ("we pasted a key into the chat"), the bet ("six things went
-  wrong here; four will happen to you"), the outcome first then rewind.
-- Never "in this video", never "have you ever", never a question the
-  narrator then answers.
+HOOK (panel 1, the first 3 seconds; playbook and sources: docs/research/hooks.md)
+- At 0 s the screen already shows a kicker naming the genre (INTERVIEW
+  QUESTION, DEBUGGING QUESTION, SYSTEM DESIGN), one question in plain words
+  (4 to 9 words), and a picture that explains itself on mute, with one
+  concrete number or object (1 GB → 400 MB, 15 lines → 8, HTTP 200 beside
+  isError: true). Something moves within the first second. No logo, no intro.
+- Stranger test: an engineer who has never heard the term understands the
+  question, the picture and the first line. No term, no Larkfield, no
+  character name, no date or place before the problem.
+- There is a gap the viewer can feel: two things that disagree, a number
+  that should not be possible, something they have seen but never questioned,
+  a common belief that is wrong, a real cost. Its answer is the video's ONE
+  idea.
+- The voice starts at once. First sentence under 12 words; at most one more
+  sentence, then the example the video will follow (KodeKloud: "Let's
+  understand this with one small word, banana."). The hook question may be
+  spoken once; no other narrated questions, never "in this video", "let's
+  dive in", "have you ever" or a greeting.
+- Question, picture and voice say the same thing; none presupposes what
+  another contradicts.
+- Payoff: the first real piece of the answer within about 20 s (by panel 2),
+  the whole answer by the end, the term named after the idea. Never promise
+  what the video does not pay off.
+- Honest: real numbers or ones marked illustrative; no unsourced statistics,
+  no fake urgency, no "nobody knows"; INTERVIEW QUESTION only on a question an
+  interviewer could plausibly ask.
+- The story (a time, a place, one person) starts after the hook, on panel 2
+  at the earliest, as the worked example of the question. For the first 3
+  seconds this overrides "open inside a concrete moment" (STORY) and "cold
+  open" (CINEMA).
 - The hook line is also the card text in the catalogue.
 
 CINEMA (every panel)

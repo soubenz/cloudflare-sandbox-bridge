@@ -4,6 +4,92 @@ For `labs/see-how-tools-reach-an-agent`. Built on the research brief
 [mcp-gateway.md](mcp-gateway.md); every factual line traces to a source listed at the end.
 Format and writing rules: `docs/shorts.md` and `docs/video-prompt.md`.
 
+## Hook options
+
+The owner rejected the current page-1 hooks (worked example of why:
+[hooks.md, section 8](hooks.md#worked-bad-example-our-rejected-hook)). Below are three
+replacements per video, written to the [hook checklist](hooks.md#7-hook-checklist-apply-to-every-video).
+The tables further down are unchanged until the owner picks; the "Page 2" line says what the
+existing page 2 would need so the first piece of the answer lands within about 20 s.
+
+Every option: no names, no Larkfield, no term in the first line; the kicker and title are on
+the board at 0 s; the first spoken line is under 12 words (count in brackets). The story
+(Ollie, Maren, Priya, Tomasz) starts on page 2 or later. An option that speaks its question
+(V1 A) reads the board question aloud once; that needs the "No narrated questions" rule in
+"How to read these tables" relaxed for page 1, as the playbook now allows.
+
+### Video 1. What is MCP?
+
+| | Kicker | On-screen question | Picture at 0 s | Spoken (first line, then at most one sentence) | Pattern |
+|---|---|---|---|---|---|
+| **A (recommended)** | INTERVIEW QUESTION | How does an AI model know today's weather? | Left: model chip under a torn calendar page "trained: months ago" (grey). Right: chat bubble "Leeds, now: 10 °C, cloudy" with a ticking clock "now". Between them an arrow with a "?" that pulses at 0.5 s. | "This AI model stopped learning months ago." (7) "So how can it tell you the weather in Leeds right now?" | Curiosity gap with a concrete contrast (months ago vs now); interview question |
+| B | AI QUESTION | Why did the AI invent snow? | Chat bubble "Heavy snow in Leeds today"; beside it a window card "Leeds: 10 °C, cloudy"; a red stamp "NO SNOW" lands at 1 s. | "The AI promised heavy snow in Leeds." (7) "It was ten degrees and cloudy." | Show the failure first (confident and wrong) |
+| C | COMMON MYTH | Does the AI call the weather API itself? | Model chip with an arrow to "weather API", crossed out in red at 1 s; an empty dashed box "?" between them. | "The AI model never calls the weather API." (8) "Another program does; the model only asks." | Myth / counterintuitive claim |
+
+- **Page 2.** A: replace the existing voice with "A language model, the part that reads and
+  writes text, knows only its training. Alone, it guesses: Larkfield's assistant once promised
+  heavy snow in Leeds that never fell." (26 words; the answer starts by about 20 s: alone it
+  cannot, it guesses.) Page 3 then ends "Ollie, who built that assistant, put the fix there."
+  B: the existing page 2 works unchanged ("so the snow was a guess"). C: unchanged; the
+  promise is paid on page 3 (the agent carries out what the model decides) and page 10.
+- **Recommended: A**, because it is the one question the whole video answers (live data
+  reaches a frozen model through a tool, over MCP), a newcomer can ask it, and "months ago"
+  against "now" reads on mute.
+
+### Video 2. Why an MCP gateway?
+
+| | Kicker | On-screen question | Picture at 0 s | Spoken (first line, then at most one sentence) | Pattern |
+|---|---|---|---|---|---|
+| **A (recommended)** | SYSTEM DESIGN | How does one more box mean 7 fewer connections? | Three agent dots left, five server dots right, 15 lines drawing in by 1 s, counter "15". At about 3 s a violet box drops into the middle, the lines re-route through it, the counter rolls to "8". | "Three AI agents, five servers: fifteen connections to maintain." (9) "Put one box in the middle, and it drops to eight." | Paradox with concrete numbers; show the result first (the KodeKloud 1 GB → 400 MB shape) |
+| B | PLATFORM QUESTION | Which agent is flooding this server? | Server node "orders" with a red "slow" chip and a climbing request counter; three agent nodes, each with a "?" and its own small log scroll. | "One server is drowning in calls, and nobody can say who." (11) "Each of three agents keeps its own logs." | Stakes plus a whodunit gap |
+| C | SECURITY QUESTION | Where do 15 secret keys live? | Three agent nodes, each holding five key chips; counter "15 keys"; a sixth server appears at 1.5 s and three more keys flicker in. | "Fifteen secret keys, copied across three AI agents." (8) "Add one more server, and all three change again." | Stakes / cost |
+
+- **Page 2.** A: merge the existing pages 2-3 into one: "Each line was an address and a
+  credential, a secret proving who asks, kept inside an agent. The box in the middle is an
+  MCP gateway." (26 words; the gateway is named by about 20 s.) Page 4 then starts "So Maren,
+  Larkfield's platform lead, put one program in the middle"; page 8's "8 connections" becomes
+  the callback. B: the answer (one row per call, who asked) arrives on page 9, about 1:35;
+  page 2 would have to name the gateway early to pass the 20 s check. C: the keys move into
+  the gateway on page 8; page 2 as for A.
+- **Recommended: A**, because it has the reference's exact shape: a number that shrinks for a
+  reason the viewer cannot yet see, drawn so it reads on mute, and 3 + 5 = 8 is the video's
+  idea.
+
+### Video 3. Virtual servers
+
+| | Kicker | On-screen question | Picture at 0 s | Spoken (first line, then at most one sentence) | Pattern |
+|---|---|---|---|---|---|
+| A | SECURITY QUESTION | Why can the support bot issue refunds? | Chat window "Support bot" with its tool menu; at 1 s the bottom chip `issue_refund` turns red and a "£" stamp lands. | "This support chatbot can send customers refunds." (7) "Nobody chose that; it was handed every tool." | Stakes ("you have this bug") |
+| **B (recommended)** | ACCESS QUESTION | It needs 5 tools. Why does it see 12? | Support agent with a 12-chip menu; 5 chips glow green, 7 stay grey; at 1.5 s one grey chip turns red, `issue_refund`, with "£". | "This agent needs five tools, and its menu shows twelve." (10) "One of the extra seven sends refunds." | Concrete numbers plus stakes |
+| C | COMMON MISTAKE | Is a hidden tool a blocked tool? | Menu with the refund chip faded to a dashed outline; a dashed arrow sneaks around the menu to the orders server. | "Taking a tool off the menu does not lock it." (10) "Unless the agent's key is limited, it can still reach it." | Myth / common mistake |
+
+- **Page 2.** A and B: the existing page 2 works with its first words changed ("They got
+  there because the MCP gateway offered every agent its whole catalogue…"); the virtual server
+  that picks five arrives on pages 4-5, about 45-55 s. Priya can ask her question on page 3.
+  C: the answer is page 11, about 2:00, which fails the 20 s check; it is better as the hook
+  of a later short on credentials.
+- **Recommended: B**, because two numbers and one dangerous tool state the problem on mute,
+  and "pick five of twelve" is exactly what a virtual server is. It says "see", never "block":
+  page 11 explains that a shorter menu is not a lock.
+
+### Video 4. When a tool fails
+
+| | Kicker | On-screen question | Picture at 0 s | Spoken (first line, then at most one sentence) | Pattern |
+|---|---|---|---|---|---|
+| A | DEBUGGING QUESTION | 200 OK. So why did the tool fail? | Envelope with a green "HTTP 200 OK" chip; under it a reply card whose line `"isError": true` gets a red ring at 1 s. | "The server said 200 OK, and the tool had failed." (10) "The proof was inside the reply." | Paradox (two signals disagree) |
+| **B (recommended)** | INTERVIEW QUESTION | Both returned 200 OK. Which one worked? | Two reply cards side by side, each with a green "HTTP 200": left `content: "Leeds, 10 °C, cloudy"`; right `isError: true` · "Weather service timed out". The right card's `isError` line pulses at 1.5 s. | "Both of these tool calls returned 200 OK." (8) "Only one of them worked." | Interview question; spot the difference (a pretest) |
+| C | AGENT QUESTION | Every check passed. Why did the AI invent a forecast? | A column of green ticks "HTTP 200"; a chat bubble "Expect heavy snow in Leeds"; a red stamp "NO SNOW" at 1 s. | "Every check passed, and the AI still invented a forecast." (10) "The failure was written in a reply nobody read." | Quiet disaster; callback to video 1 |
+
+- **Page 2.** A and B: bring the existing page 5's point forward: "HTTP 200 only says the
+  message arrived and was answered. Whether the tool worked is written in the body, next to
+  isError." (22 words.) The Leeds forecast and Tomasz's trace then follow as the worked
+  example (the old page-1 story opens page 3), and the old page 5 can be cut or kept as a
+  short recap. C: the existing trace page works; the answer lands on pages 4-6, about 40-65 s.
+- **Recommended: B**, because any web engineer reads the picture on mute, guessing which call
+  worked is a pretest the video answers by page 2, and it stays true to the spec: tool
+  execution errors come back as 200 here, without claiming that every error does (the
+  2026-07-28 spec changes the status for some protocol errors).
+
 ## How to read these tables
 
 - **One board page per row, one idea per page.** A board page is one clean whiteboard with
