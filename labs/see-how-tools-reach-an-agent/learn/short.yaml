@@ -15,15 +15,24 @@
 # workers-ai:<speaker> makes the narration with Workers AI; dir:<folder> uses
 # pre-made clips (01.mp3, 02.mp3, ... plus manifest.json; see docs/shorts.md).
 voice: workers-ai:arcas
+theme: navy              # navy (the site's blue) | black
 captions: small          # off | small | karaoke
 
+# Slow by default (docs/shorts.md, "Pace"); these are the defaults, written out to tune.
 pace:
+  enter: 0.7             # an element's entrance (pop, write-on, draw-on)
+  packet: 1.2            # seconds per hop for a packet
+  beatHold: 2.5          # a segment's last beat holds this long before the next voice
+  minBeatGap: 2.0        # warn when elements arrive closer together than this
+  pageTransition: 0.6    # erase / slide / zoom / fade between pages
+  pageMax: 6             # warn when a page has more elements than this
+  drift: 4               # a very small camera drift (0: still)
   gap: 0.7               # quiet between two segments, seconds
   maxPause: 0.6          # longest pause kept inside one clip
-  tail: 2.0              # hold on the final picture
-  minOutputHold: 3.0     # terminal output stays this long after its last highlight
-  transition: 0.4        # a cut between scenes
-  typing: 28             # characters per second when a command is typed
+  tail: 2.5              # hold after the last word; the end card eases in here
+  minOutputHold: 4.0     # terminal output stays this long after its last highlight
+  transition: 0.7        # a soft cross-fade between scenes
+  typing: 16             # characters per second when a command is typed
 
 # One colour per actor, the same in every video and on every chip, node,
 # packet and terminal highlight.
@@ -209,17 +218,22 @@ videos:
           change.
         scene:
           id: door
+          # Three boards: the tangle and the gateway, then Support's bundle, then the lab.
+          pages:
+            - { id: mesh }
+            - { id: bundle, title: "Support's bundle" }
+            - { id: lab, title: "One address per agent" }
           elements:
-            kicker: { type: kicker, text: "Platform question", pos: [500, 45] }
-            q: { type: title, text: "Three agents, three tool servers. Who wires what?", pos: [500, 118], size: 44, width: 900, underline: true }
-            count: { type: text, text: "9 connections", size: 34, color: user, pos: [500, 225] }
-            a1: { type: node, icon: agent, label: Support, color: agent, scale: 0.82, pos: [150, 300] }
-            a2: { type: node, icon: agent, label: Billing, color: agent, scale: 0.82, pos: [150, 420] }
-            a3: { type: node, icon: agent, label: Ops, color: agent, scale: 0.82, pos: [150, 540] }
-            s1: { type: node, icon: server, label: Weather, color: weather, scale: 0.82, pos: [850, 300] }
-            s2: { type: node, icon: server, label: Calculator, color: calc, scale: 0.82, pos: [850, 420] }
-            s3: { type: node, icon: server, label: Admin, color: admin, scale: 0.82, pos: [850, 540] }
-            s4: { type: node, icon: server, label: Docs, color: quiet, scale: 0.82, pos: [850, 650] }
+            kicker: { type: kicker, page: mesh, text: "Platform question", pos: [500, 45] }
+            q: { type: title, page: mesh, text: "Three agents, three tool servers. Who wires what?", pos: [500, 118], size: 44, width: 900, underline: true }
+            count: { type: text, page: mesh, text: "9 connections", size: 34, color: user, pos: [500, 225] }
+            a1: { type: node, page: mesh, icon: agent, label: Support, color: agent, scale: 0.82, pos: [150, 300] }
+            a2: { type: node, page: mesh, icon: agent, label: Billing, color: agent, scale: 0.82, pos: [150, 420] }
+            a3: { type: node, page: mesh, icon: agent, label: Ops, color: agent, scale: 0.82, pos: [150, 540] }
+            s1: { type: node, page: mesh, icon: server, label: Weather, color: weather, scale: 0.82, pos: [850, 300] }
+            s2: { type: node, page: mesh, icon: server, label: Calculator, color: calc, scale: 0.82, pos: [850, 420] }
+            s3: { type: node, page: mesh, icon: server, label: Admin, color: admin, scale: 0.82, pos: [850, 540] }
+            s4: { type: node, page: mesh, icon: server, label: Docs, color: quiet, scale: 0.82, pos: [850, 650] }
             l11: { type: arrow, from: a1, to: s1, color: quiet }
             l12: { type: arrow, from: a1, to: s2, color: quiet }
             l13: { type: arrow, from: a1, to: s3, color: quiet }
@@ -232,7 +246,7 @@ videos:
             l14: { type: arrow, from: a1, to: s4, color: quiet, dashed: true }
             l24: { type: arrow, from: a2, to: s4, color: quiet, dashed: true }
             l34: { type: arrow, from: a3, to: s4, color: quiet, dashed: true }
-            gw: { type: node, icon: gateway, label: "Tool gateway", color: gateway, scale: 0.82, pos: [500, 420] }
+            gw: { type: node, page: mesh, icon: gateway, label: "Tool gateway", color: gateway, scale: 0.82, pos: [500, 420] }
             r1: { type: arrow, from: s1, to: gw, color: weather }
             r2: { type: arrow, from: s2, to: gw, color: calc }
             r3: { type: arrow, from: s3, to: gw, color: admin }
@@ -240,16 +254,23 @@ videos:
             g1: { type: arrow, from: a1, to: gw, color: agent }
             g2: { type: arrow, from: a2, to: gw, color: agent }
             g3: { type: arrow, from: a3, to: gw, color: agent }
-            catalog: { type: text, text: "knows every tool", size: 26, color: quiet, pos: [500, 505] }
-            key: { type: chip, icon: key, text: "own key", color: agent, pos: [150, 205] }
-            btitle: { type: text, text: "Support's bundle (a virtual server)", size: 24, color: gateway, pos: [500, 548] }
-            b1: { type: list, row: true, items: [{ text: get_weather, color: weather }, { text: get_forecast, color: weather }], pos: [500, 595] }
-            b2: { type: list, row: true, items: [{ text: add, color: calc }, { text: subtract, color: calc }, { text: multiply, color: calc }], pos: [500, 650] }
-            risky: { type: chip, font: mono, icon: warn, text: delete_order, color: admin, pos: [850, 612] }
-            leftout: { type: stamp, text: "left out", size: 32, color: bad, pos: [850, 668], rotate: -6 }
-            p_cmd: { type: packet, on: g1, label: "tools/list", color: agent }
-            logcard: { type: card, title: "gateway log", color: ok, lines: ["tool:   calculator-tools-add", "result: 42.0  ✓"], pos: [500, 225] }
-            cta: { type: chip, text: "Open the lab · See how tools reach an agent", color: user, pos: [560, 228] }
+            catalog: { type: text, page: mesh, text: "knows every tool", size: 26, color: quiet, pos: [500, 505] }
+            # page: bundle
+            aB: { type: node, page: bundle, icon: agent, label: Support, color: agent, pos: [190, 250] }
+            gwB: { type: node, page: bundle, icon: gateway, label: "Tool gateway", color: gateway, pos: [600, 250] }
+            eB: { type: arrow, from: aB, to: gwB, color: agent }
+            b1: { type: list, page: bundle, row: true, items: [{ text: get_weather, color: weather }, { text: get_forecast, color: weather }], pos: [600, 390] }
+            b2: { type: list, page: bundle, row: true, items: [{ text: add, color: calc }, { text: subtract, color: calc }, { text: multiply, color: calc }], pos: [600, 460] }
+            risky: { type: chip, page: bundle, font: mono, icon: warn, text: delete_order, color: admin, pos: [600, 570] }
+            key: { type: chip, page: bundle, icon: key, text: "own key", color: agent, pos: [190, 370] }
+            # page: lab
+            aL: { type: node, page: lab, icon: agent, label: Support, color: agent, pos: [190, 300] }
+            gwL: { type: node, page: lab, icon: gateway, label: "Tool gateway", color: gateway, pos: [600, 300] }
+            gL: { type: arrow, from: aL, to: gwL, color: agent }
+            p_cmd: { type: packet, on: gL, label: "tools/list", color: agent }
+            keyL: { type: chip, page: lab, icon: key, text: "own key", color: agent, pos: [190, 420] }
+            logcard: { type: card, page: lab, title: "gateway log", color: ok, lines: ["tool:   calculator-tools-add", "result: 42.0  ✓"], pos: [600, 470] }
+            cta: { type: chip, page: lab, text: "Open the lab · See how tools reach an agent", color: user, pos: [500, 640] }
             tlist:
               type: terminal
               command: python3 -B call_tool.py --list
@@ -325,17 +346,15 @@ videos:
           alone call it. And the support agent gets its own key, so the gateway
           always knows who is asking.
         beats:
-          - { at: "should every agent see every tool", hide: [s4, r4, count, catalog] }
-          - { at: "Take the support agent", dim: [a2, a3, g2, g3], ring: a1 }
-          - { at: "builds it a bundle", show: btitle }
-          - { at: "called a virtual server", ring: btitle }
-          - { at: "get weather and get forecast", show: b1, ring: s1 }
-          - { at: "add, subtract and multiply", show: b2, ring: s2 }
-          - { at: "a risky tool", show: risky, ring: s3 }
-          - { at: "leaves it out", show: leftout }
-          - { at: "cannot even see it", focus: [btitle, b1, b2] }
+          - { at: "But should every agent", page: bundle, transition: erase, pause: 0.8 }
+          - { at: "Take the support agent", show: aB }
+          - { at: "builds it a bundle", show: [gwB, eB] }
+          - { at: "get weather and get forecast", show: b1 }
+          - { at: "add, subtract and multiply", show: b2 }
+          - { at: "a risky tool", show: risky }
+          - { at: "leaves it out", color: { risky: bad }, text: { risky: "delete_order · left out" }, ring: risky }
+          - { at: "cannot even see it", focus: [b1, b2] }
           - { at: "its own key", show: key, focus: [] }
-          - { at: "who is asking", ring: key }
 
       - id: list
         vo: >-
@@ -345,11 +364,12 @@ videos:
           exactly five tools, from two servers. Nothing else can be reached from
           there.
         beats:
-          - { at: "In the lab", layout: split, run: tlist, focus: [] }
+          - { at: "In the lab", card: { kicker: "In the lab", title: "See it for real" }, page: lab, transition: slide }
+          - { at: "the bundle is called toy tools", show: [aL, gwL, gL], stagger: 0.4 }
+          - { at: "Ask the gateway", layout: split, run: tlist }
           - { at: "look at the address", mark: url }
-          - { at: "One address for this agent", ring: gw, travel: p_cmd }
+          - { at: "One address for this agent", travel: p_cmd }
           - { at: "exactly five tools", mark: [weather, calc] }
-          - { at: "Nothing else can be reached", focus: [b1, b2] }
 
       - id: log
         vo: >-
@@ -363,6 +383,7 @@ videos:
           - { at: "that same door", mark: door }
           - { at: "gets back forty two", mark: answer }
           - { at: "record every call", show: logcard }
+          - { at: "the view tab", ring: logcard }
 
       - id: recap
         vo: >-
@@ -371,13 +392,12 @@ videos:
           every call passes one door, where it can be checked and recorded. Open
           the lab, See how tools reach an agent, and list the tools yourself.
         beats:
-          - { at: "Focus on what just happened", layout: canvas, undim: all }
-          - { at: "Tool servers register once", ring: [s1, s2, s3] }
-          - { at: "one address", ring: gw }
-          - { at: "its own key", ring: key }
-          - { at: "only the tools picked for it", focus: [b1, b2] }
-          - { at: "passes one door", focus: [gw] }
-          - { at: "Open the lab", show: cta, hide: [logcard, key], focus: [] }
+          - { at: "Focus on what just happened", layout: canvas }
+          - { at: "Tool servers register once", ring: gwL }
+          - { at: "one address", travel: p_cmd }
+          - { at: "its own key", show: keyL }
+          - { at: "passes one door", focus: [gwL] }
+          - { at: "Open the lab", show: cta, focus: [] }
 
   # --------------------------------------------------------------------------
   - id: mcp-when-a-tool-fails

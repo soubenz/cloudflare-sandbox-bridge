@@ -111,6 +111,8 @@ function loadScript(file) {
     });
     if (!segments.length) throw new Error(`${file}: video "${v.id}" has no segments`);
     const cap = v.captions ?? doc.captions ?? 'small';
+    const theme = v.theme ?? doc.theme ?? 'navy';
+    if (!['navy', 'black'].includes(theme)) throw new Error(`${file}: theme must be navy or black, not ${theme}`);
     if (!['off', 'small', 'karaoke'].includes(cap)) throw new Error(`${file}: captions must be off, small or karaoke, not ${cap}`);
     const pace = { ...PACE, ...doc.pace, ...v.pace };
     for (const [k, val] of Object.entries(pace)) if (typeof val !== 'number' || !Number.isFinite(val) || val < 0) throw new Error(`${file}: pace.${k} must be a number of seconds (or words), not ${JSON.stringify(val)}`);
@@ -122,6 +124,8 @@ function loadScript(file) {
       pace,
       poster: v.poster,
       colors: { ...doc.colors, ...v.colors },
+      theme: v.theme ?? doc.theme ?? 'navy',
+      endCard: v.endCard ?? doc.endCard,
       captions: v.captions ?? doc.captions ?? 'small',
       segments,
     };
@@ -204,8 +208,20 @@ function mixTrack(segs, timeline) {
   const total = Math.ceil(timeline.duration * SAMPLE_RATE);
   const out = new Float32Array(total);
   segs.forEach((s, i) => {
-    const at = Math.round(timeline.segments[i].audioStart * SAMPLE_RATE);
-    out.set(s.samples.subarray(0, Math.max(0, Math.min(s.samples.length, total - at))), at);
+    // A pause beat opened gaps in this clip: copy it piece by piece, leaving the gaps silent.
+    let dst = Math.round(timeline.segments[i].audioStart * SAMPLE_RATE);
+    let src = 0;
+    const put = (end) => {
+      const piece = s.samples.subarray(src, Math.min(end, s.samples.length));
+      out.set(piece.subarray(0, Math.max(0, Math.min(piece.length, total - dst))), dst);
+      dst += piece.length;
+      src += piece.length;
+    };
+    for (const c of timeline.segments[i].cuts || []) {
+      put(Math.round(c.at * SAMPLE_RATE));
+      dst += Math.round(c.pad * SAMPLE_RATE);
+    }
+    put(s.samples.length);
   });
   return out;
 }
@@ -356,6 +372,7 @@ async function main() {
     const timeline = buildTimeline(video, segs, video.pace, { captions: video.captions });
     timeline.fps = o.fps;
     timeline.title = video.title;
+    timeline.theme = video.theme;
     assertLength(video.id, segs.map((s) => ({ id: s.id, duration: s.duration })), timeline.duration, MAX_SECONDS);
     const wordsTotal = segs.reduce((n, s) => n + s.words.length, 0);
     const speech = segs.reduce((n, s) => n + s.duration, 0);

@@ -12,12 +12,16 @@ Each format is an H.264 + AAC MP4 at 30 fps. Every render also writes a poster f
 (`<id>-landscape.jpg`) and a WebVTT caption sidecar (`<id>.vtt`) for embedding.
 
 The style follows KodeKloud's whiteboard explainers. There is **one idea per video and
-one running example**, drawn on **one canvas that builds up**. Every narrated phrase
-adds or animates one small thing on the word that names it: a chip appears, an arrow
-draws itself, a packet travels, a dashed box circles what is being discussed, a ring
-pulses. Nothing jumps to a new screen while the idea is being built. Each actor has
-one colour everywhere, on chips, nodes, packets and terminal highlights. Terminal
-output in a video is real.
+one running example**, drawn on a board that **builds up slowly**. Every narrated
+phrase adds or animates one small thing on the word that names it: a chip pops in, an
+arrow draws itself, a title writes itself on, a packet travels, a dashed box circles
+what is being discussed, a ring pulses. When a board is full, a **page break** erases
+it and a new page starts. Each actor has one colour everywhere, on chips, nodes,
+packets and terminal highlights. Terminal output in a video is real.
+
+The default look is the site's navy: `#0a0f2c` with a soft top light, a gentle navy
+gradient and the site's faint dot grid. Outlines and text are a slightly bluish white.
+`theme: black` gives the near-black of the KodeKloud reference.
 
 The sample is `labs/see-how-tools-reach-an-agent/learn/short.yaml`, with three videos:
 what a tool is and what MCP adds, one door for many tool servers, and when a tool fails.
@@ -64,6 +68,7 @@ voice down to fill time: add a step to the example instead.
 
 ```yaml
 voice: workers-ai:arcas         # or dir:<folder>, see "Pre-made narration"
+theme: navy                     # navy (default) | black
 captions: small                 # off | small | karaoke
 pace: { gap: 0.7, tail: 2.0 }   # see "Pace"
 colors:                         # one colour per actor, used everywhere
@@ -91,6 +96,10 @@ videos:
           - { at: "give the agent a tool", ring: agent }
 ```
 
+A video may also set `endCard: { title, sub }` (default: the video's title and "Hands-on
+lab · opalix") or `endCard: false`. The end card eases in over a dimmed board after the
+last word.
+
 Start each video with a question hook: a `kicker` (small orange capitals) and a
 hand-written `title`, plus a picture that reads at a glance. Then set up the running
 example. End with a recap ("Focus on what just happened.") and a one-line call to
@@ -101,18 +110,68 @@ first word is spoken; `phrase #2` picks its second occurrence) or a number of se
 from the start of the segment's voice. Punctuation and case don't matter. A phrase
 that is not in the `vo` fails the render, naming the segment.
 
+### Pages
+
+One board shouldn't carry everything. A scene can list `pages`, and each element says
+which page it is on. Aim for 3-6 elements per page; more than `pace.pageMax` prints a
+warning. An element with no `page` is a carry-over: it stays on the board across page
+breaks, which suits a small running-example chip or tag.
+
+```yaml
+scene:
+  pages:
+    - { id: mesh }                                   # the first page is on show from the start
+    - { id: bundle, title: "Support's bundle" }      # a title writes itself on as the page opens
+  elements:
+    a1: { type: node, page: mesh, label: Support, pos: [150, 300] }
+    aB: { type: node, page: bundle, label: Support, pos: [190, 250] }
+    tag: { type: chip, text: "toy-tools", pos: [880, 40], visible: true }   # carry-over
+```
+
+A beat turns the page:
+
+```yaml
+- { at: "But should every agent", page: bundle, transition: erase, pause: 0.8 }
+```
+
+| transition | what happens (in `pace.pageTransition`, 0.6 s by default) |
+|---|---|
+| `erase` (default) | a soft chalky band sweeps the board left to right; what it passes fades and drifts up |
+| `slide` | the old page slides away to the left and fades |
+| `zoom` | the old page shrinks a little and fades |
+| `fade` | the old page fades |
+
+The new page's elements then enter on their own beats (or with `visible: true`, as
+the page opens). Arrows and packets go with the page of the element they start from.
+The dashed focus box is cleared at each page break.
+
+**Pauses.** `pause: <seconds>` on any beat opens that much silence in the narration
+just before its cue word, and everything after it moves later. Use 0.6-1.0 s at a page
+break so the wipe happens in quiet. A beat with no `at` pauses before the segment's
+first word.
+
+**Title cards.** `card: { kicker, title, hold }` shows a brief title card over the
+dimmed board between topics. The narration pauses for it: 0.5 s in, `hold` (default
+`pace.cardHold`), and 0.5 s out. It can share a beat with a page break.
+
 ### Elements
 
 Elements sit on a 1000 × 700 grid; `pos: [x, y]` is the element's centre. The grid is
 scaled to the frame, so one scene serves both formats. Every element starts hidden
 unless it has `visible: true`. Any element takes `color` (an actor from `colors`, or a
-palette name: pink, yellow, cyan, green, blue, violet, orange, red, white, grey) and
-`scale`.
+palette name: pink, yellow, cyan, green, blue, violet, orange, red, white, grey), `scale`
+and `page`. On the navy theme, every palette colour keeps at least 5:1 contrast,
+including on the lightest part of the gradient.
+
+Entrances take `pace.enter` (0.7 s). Boxes and chips pop with a little overshoot,
+text and titles write themselves on, and arrows draw from tail to head. A soft ring
+then pulses on the element as it lands (`pace.pulse`; set `pulse: false` on one
+element to skip it).
 
 | type | fields |
 |---|---|
 | `kicker` | `text`: the small orange capitals above a hook |
-| `title` | `text`, `size`, `width`, `underline`: hand-written heading |
+| `title` | `text`, `size`, `width` (a number, or `auto` to fit the words), `underline`: a hand-written heading that writes itself on |
 | `text` | `text`, `size`, `width`, `font` (hand, mono or sans) |
 | `chip` | `text`, `sub`, `icon`, `font`: a rounded pill (a letter, a tool name, a status) |
 | `node` | `label`, `sub`, `icon`, `width`: a box for an actor (agent, server, gateway) |
@@ -144,6 +203,9 @@ A beat is `{ at, ... }` with one or more of:
 | `text: { id: "new text" }` | change what an element says |
 | `color: { id: actor }` | recolour (a server that failed turns red) |
 | `layout: split` / `layout: canvas` | bring the terminal in (landscape: right; vertical: under the canvas) or send it away; the canvas glides to make room |
+| `page: id`, `transition` | turn to another page (see "Pages") |
+| `pause: <seconds>` | open a silence in the narration before this beat's word |
+| `card: { kicker, title, hold }` | a brief title card between topics |
 | `run: terminalId` | the terminal types its command and prints its output |
 | `mark: [highlightIds]` | light highlights in a terminal or card |
 
@@ -169,22 +231,34 @@ of the vertical frame, and at the bottom of the landscape frame. `karaoke` shows
 
 ## Pace
 
-All in `pace:` (seconds unless noted), file-wide or per video:
+Slow is the default. Everything is in `pace:` (seconds unless noted), file-wide or per
+video:
 
 | key | default | what it is |
 |---|---|---|
+| `enter` | 0.7 | an element's entrance: pop with overshoot, write-on, draw-on |
+| `pulse` | 1 | 1: a soft ring pulses on each element as it lands; 0: none |
+| `packet` | 1.2 | seconds per hop for a travelling packet (or `dur` on the packet) |
+| `beatHold` | 2.5 | a segment's last beat holds at least this long before the next voice starts |
+| `minBeatGap` | 2.0 | warn when an element appears sooner than this after the one before |
+| `pageTransition` | 0.6 | a page break |
+| `pageMax` | 6 | warn when a page (or a scene without pages) has more elements than this, not counting arrows, packets and the terminal |
+| `cardHold` | 1.4 | a title card's hold |
+| `drift` | 4 | a very small, slow camera drift on the board, in grid units (0: still) |
 | `gap` | 0.7 | quiet between two segments |
 | `maxPause` | 0.6 | longest pause kept inside one clip |
-| `lead` / `tail` | 0.3 / 2.0 | quiet before the first word / hold after the last |
-| `transition` | 0.4 | a cut between scenes |
-| `minOutputHold` | 3.0 | terminal output stays at least this long after its last highlight |
+| `lead` / `tail` | 0.3 / 2.5 | quiet before the first word / hold after the last (the end card shows here) |
+| `transition` | 0.7 | a soft cross-fade between scenes |
+| `typing` | 16 | characters per second when a command is typed |
+| `minOutputHold` | 4.0 | terminal output stays at least this long after its last highlight |
 | `minStep` | 3.5 | a step of a legacy `diagram` visual stays at least this long |
 | `captionWords` | 4 | most words in one karaoke caption |
-| `typing` | 28 | characters per second when a command is typed |
 
 When a scene would close (or the terminal leave) too soon after its last highlight,
-the next segment waits. A hold that can't be fixed that way is printed as a warning
-naming the segment; `--strict` makes it fail.
+or a segment's last beat wouldn't get its `beatHold`, the next segment waits. A hold
+that can't be fixed that way, a crowded page, or elements that arrive too close
+together are printed as warnings naming the segment and the cue. `--strict` makes
+warnings fail the render.
 
 ## Narration
 
@@ -230,6 +304,8 @@ trailing silence is trimmed, and pauses inside a clip are capped at `pace.maxPau
   or overlapping, the highlighted thing matches the word being spoken, and the terminal
   is readable.
 - `ffprobe` each MP4 for its duration and an AAC stream.
+- Read the warnings: a crowded page or elements arriving close together means the
+  script is rushing. Add a page, a pause or a sentence; don't speed the animation up.
 - Sizes: the hand-written title is 58 px, chips about 34 px, node labels 42 px, and
   terminal text 26 px (25 px in landscape), on a 1000-wide grid that is scaled about 1×
   (vertical) or 1.2× (landscape).

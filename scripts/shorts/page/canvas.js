@@ -17,6 +17,16 @@ export const PALETTE = {
   pink: '#ff7eb6', yellow: '#ffd166', cyan: '#5ad8f5', green: '#6ee7a8', blue: '#8ab4ff',
   violet: '#c4a3ff', orange: '#ffa94d', red: '#ff6b6b', white: '#f2f2f2', grey: '#8a8f98',
 };
+/**
+ * On the navy board (the site's #0a0f2c family) white and grey lean blue. Every
+ * colour keeps at least 5:1 contrast on the lightest part of the navy gradient
+ * (#141c4a); the actor colours are 5.8:1 (red) to 11:1 (yellow).
+ */
+const PALETTES = { black: PALETTE, navy: { ...PALETTE, white: '#e8ebf7', grey: '#9aa2c4' } };
+
+/** How an element enters: `pop` (scale with overshoot) or `write` (revealed left to right, like handwriting). */
+const WRITE_KINDS = new Set(['title', 'kicker', 'text']);
+const PULSE_KINDS = new Set(['node', 'chip', 'circle', 'list', 'card', 'bubble', 'icon']);
 const W = 1000;
 const H = 700;
 
@@ -149,14 +159,21 @@ function lineSet(spec, n) {
 
 // --- the scene ------------------------------------------------------------------------------
 
-export function buildCanvas(v, { format = 'vertical' } = {}) {
+export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} } = {}) {
   const scene = v.scene || {};
   const colorMap = v.colors || {};
+  const pal = PALETTES[theme] || PALETTE;
   const colorOf = (name) => {
-    if (!name) return PALETTE.white;
+    if (!name) return pal.white;
     const mapped = colorMap[name] ?? name;
-    return PALETTE[mapped] || (/^#/.test(mapped) ? mapped : PALETTE.white);
+    return pal[mapped] || (/^#/.test(mapped) ? mapped : pal.white);
   };
+  const ENTER = pace.enter ?? 0.7;
+  const PAGE_T = pace.pageTransition ?? 0.6;
+  const PACKET = pace.packet ?? 1.2;
+  const DRIFT = pace.drift ?? 0;
+  const PULSE = Boolean(pace.pulse ?? 1);
+  const CARD_HOLD = pace.cardHold ?? 1.4;
   const regions = REGIONS[format] || REGIONS.vertical;
 
   const root = h('div', 'cv-root');
@@ -182,7 +199,14 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
     return it;
   }
 
-  for (const [id, spec] of Object.entries(scene.elements || {})) {
+  // Each page with a `title` gets a hand-written heading that writes on as the page opens.
+  const pageList = scene.pages || [];
+  const allElements = { ...(scene.elements || {}) };
+  for (const pg of pageList) {
+    if (pg.title) allElements[`__title_${pg.id}`] = { type: 'title', text: pg.title, size: pg.titleSize || 48, width: 'auto', underline: true, pos: pg.titlePos || [500, 62], page: pg.id, visible: true, color: pg.color };
+  }
+
+  for (const [id, spec] of Object.entries(allElements)) {
     const type = spec.type;
     const c = colorOf(spec.color);
     if (type === 'arrow') {
@@ -221,7 +245,9 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
     else if (type === 'title') {
       node = rich(h('div', `cv-el cv-title${spec.underline ? ' underline' : ''}`), spec.text);
       if (spec.size) node.style.fontSize = `${spec.size}px`;
-      if (spec.width) node.style.width = `${spec.width}px`;
+      // `width: auto` sizes the title to its words, so writing it on reveals text, not an empty line.
+      if (spec.width) node.style.width = spec.width === 'auto' ? 'max-content' : `${spec.width}px`;
+      if (spec.width === 'auto') node.style.maxWidth = '920px';
     } else if (type === 'text') {
       node = rich(h('div', `cv-el cv-text font-${spec.font || 'hand'}`), spec.text);
       if (spec.size) node.style.fontSize = `${spec.size}px`;
@@ -291,6 +317,25 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
     addItem(id, spec, node, type);
   }
 
+  // Which page each element is on: its own `page`, else its arrow's, else its source's. None: it stays across pages.
+  for (const it of items.values()) {
+    if (it.kind === 'item') continue;
+    it.page = it.spec.page ?? null;
+  }
+  for (const it of items.values()) {
+    if (it.kind === 'arrow' && it.page == null) it.page = items.get(it.spec.from)?.page ?? null;
+  }
+  for (const it of items.values()) {
+    if (it.kind === 'packet' && it.page == null) it.page = items.get(it.spec.on)?.page ?? null;
+  }
+  const pageEv = [];
+  const cardEv = [];
+  const eraser = h('div', 'cv-eraser');
+  const cardOver = h('div', 'cv-cardover');
+  const cardKicker = h('div', 'cv-cardover-kicker');
+  const cardTitle = h('div', 'cv-cardover-title');
+  cardOver.append(cardKicker, cardTitle);
+
   // Events from the beats.
   const ev = (id, e) => {
     const it = items.get(id);
@@ -309,6 +354,8 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
     for (const [id, txt] of Object.entries(b.text || {})) ev(id, { t, k: 'text', v: txt });
     for (const [id, col] of Object.entries(b.color || {})) ev(id, { t, k: 'color', v: col });
     if ('focus' in b) sceneEv.push({ t, k: 'focus', v: asList(b.focus) });
+    if (b.page != null) pageEv.push({ t, id: b.page, trans: b.transition || 'erase' });
+    if (b.card) cardEv.push({ t, kicker: b.card.kicker || '', title: b.card.title || '', hold: b.card.hold ?? CARD_HOLD });
     if (b.layout) sceneEv.push({ t, k: 'layout', v: b.layout });
     if (b.run) ev(b.run, { t, k: 'run', v: b.times });
     for (const m of asList(b.mark)) {
@@ -317,6 +364,42 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
   }
   for (const it of items.values()) it.ev.sort((a, b) => a.t - b.t);
   sceneEv.sort((a, b) => a.t - b.t);
+  pageEv.sort((a, b) => a.t - b.t);
+  cv.appendChild(eraser);
+  cv.appendChild(cardOver);
+  const firstPage = pageList[0]?.id ?? null;
+
+  /** The page on show at t: { cur, prev, at, trans, k } (k: 0..1 through the page transition). */
+  function pageAt(t) {
+    let cur = firstPage;
+    let prev = null;
+    let at = -1e9;
+    let trans = 'erase';
+    for (const e of pageEv) if (e.t <= t) { prev = cur; cur = e.id; at = e.t; trans = e.trans; }
+    return { cur, prev, at, trans, k: clamp((t - at) / PAGE_T, 0, 1) };
+  }
+
+  /** How a page break treats an element: { a (opacity factor), dx, dy, s }. */
+  function pageFx(it, pg, cx) {
+    if (it.page == null) return { a: 1, dx: 0, dy: 0, s: 1 };
+    if (it.page === pg.cur) return { a: 1, dx: 0, dy: 0, s: 1 };
+    if (it.page !== pg.prev || pg.k >= 1) return { a: 0, dx: 0, dy: 0, s: 1 };
+    const e = easeInOut(pg.k);
+    if (pg.trans === 'slide') return { a: 1 - e, dx: -280 * e, dy: 0, s: 1 };
+    if (pg.trans === 'zoom') return { a: 1 - e, dx: 0, dy: 0, s: 1 - 0.14 * e };
+    if (pg.trans === 'fade') return { a: 1 - e, dx: 0, dy: 0, s: 1 };
+    // erase: the eraser's front sweeps left to right; what it has passed fades and drifts up.
+    const front = lerp(-160, W + 160, e);
+    const gone = clamp((front - (cx - 60)) / 140, 0, 1);
+    return { a: 1 - gone, dx: 0, dy: -14 * gone, s: 1 };
+  }
+
+  /** When an element on a page counts as shown by `visible: true`: as its page opens. */
+  function pageOpens(it) {
+    if (it.page == null || it.page === firstPage) return -1e9;
+    const e = pageEv.find((x) => x.id === it.page);
+    return e ? e.t + PAGE_T * 0.55 : 1e9;
+  }
 
   const focusRect = s('rect', { class: 'cv-focus', rx: 18 });
   over.appendChild(focusRect);
@@ -326,7 +409,8 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
 
   /** The element's state at t: { shown, alpha, scale, pos, ... } folded from its events. */
   function state(it, t) {
-    let shownAt = it.spec.visible ? -1e9 : null;
+    let shownAt = it.spec.visible ? pageOpens(it) : null;
+    if (shownAt != null && shownAt > t) shownAt = null;
     let hiddenAt = null;
     let dimAt = null;
     let undimAt = null;
@@ -355,17 +439,36 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
     }
     let alpha = 0;
     let scale = 1;
+    let reveal = 1;
+    let sink = 0;
     if (shownAt != null) {
-      const k = (t - shownAt) / 0.32;
-      alpha = clamp(k * 1.6, 0, 1);
-      scale = lerp(0.82, 1, backOut(k));
-      if (hiddenAt != null) alpha *= 1 - clamp((t - hiddenAt) / 0.28, 0, 1);
+      const k = (t - shownAt) / ENTER;
+      if (WRITE_KINDS.has(it.kind)) {
+        // Written on: revealed left to right over a time that grows a little with the text.
+        const len = String(it.spec.text || '').length;
+        const dur = Math.min(1.6, Math.max(ENTER, len * 0.03));
+        reveal = easeInOut((t - shownAt) / dur);
+        alpha = clamp(((t - shownAt) / dur) * 4, 0, 1);
+      } else {
+        alpha = clamp(k * 2, 0, 1);
+        scale = lerp(0.6, 1, backOut(k));
+      }
+      if (hiddenAt != null) {
+        const hk = clamp((t - hiddenAt) / 0.45, 0, 1);
+        alpha *= 1 - easeInOut(hk);
+        sink = 10 * hk;
+      }
+      // A soft pulse as the element lands, unless a ring was asked for later.
+      if (PULSE && PULSE_KINDS.has(it.kind) && it.spec.pulse !== false) {
+        const auto = shownAt + ENTER * 0.7;
+        if (auto <= t && (ringAt == null || ringAt < auto)) ringAt = auto;
+      }
     }
     let dim = 0;
     if (dimAt != null) dim = clamp((t - dimAt) / 0.35, 0, 1) * (undimAt != null ? 1 - clamp((t - undimAt) / 0.35, 0, 1) : 1);
     const mk = movedAt == null ? 1 : easeInOut((t - movedAt) / 0.6);
     const p = [lerp(from[0], pos[0], mk), lerp(from[1], pos[1], mk)];
-    return { shownAt, hiddenAt, alpha, scale, dim, pos: p, text, color, ringAt, travelAt, run, marks };
+    return { shownAt, hiddenAt, alpha, scale, reveal, sink, dim, pos: p, text, color, ringAt, travelAt, run, marks };
   }
 
   function edgePoint(it, toward, st) {
@@ -426,8 +529,32 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
     const ra = regionRect(prevLayout);
     const rb = regionRect(layout);
     const sc = lerp(ra.s, rb.s, lk);
-    cv.style.transform = `translate(${lerp(ra.x, rb.x, lk)}px, ${lerp(ra.y, rb.y, lk)}px) scale(${sc})`;
+    // A very small, slow drift keeps the board alive.
+    const dx = DRIFT * Math.sin(t * 0.21) * sc;
+    const dy = DRIFT * 0.7 * Math.cos(t * 0.17) * sc;
+    const ds = 1 + (DRIFT ? 0.003 * Math.sin(t * 0.13) : 0);
+    cv.style.transform = `translate(${lerp(ra.x, rb.x, lk) + dx}px, ${lerp(ra.y, rb.y, lk) + dy}px) scale(${sc * ds})`;
     const splitness = layout === 'split' ? lk : prevLayout === 'split' ? 1 - lk : 0;
+
+    // Page breaks and title cards.
+    const pg = pageAt(t);
+    let cardK = 0;
+    for (const e of cardEv) {
+      const end = e.t + 0.5 + e.hold;
+      if (t < e.t || t > end + 0.5) continue;
+      cardK = easeInOut((t - e.t) / 0.5) * (1 - easeInOut((t - end) / 0.5));
+      cardKicker.textContent = e.kicker;
+      cardTitle.textContent = e.title;
+    }
+    cardOver.style.opacity = String(cardK);
+    cardOver.style.transform = `translate(-50%, -50%) scale(${lerp(0.96, 1, cardK)})`;
+    cardOver.style.visibility = cardK > 0.001 ? 'visible' : 'hidden';
+    const board = 1 - 0.88 * cardK;
+    if (pg.prev != null && pg.trans === 'erase' && pg.k < 1) {
+      eraser.style.left = `${lerp(-160, W + 160, easeInOut(pg.k))}px`;
+      eraser.style.opacity = String(Math.sin(Math.PI * pg.k));
+      eraser.style.visibility = 'visible';
+    } else eraser.style.visibility = 'hidden';
 
     // Only the terminal run last is on show (crossfading from the one before).
     let active = terminals[0];
@@ -446,13 +573,16 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
       }
       if (it.kind === 'packet') continue;
       const n = it.node;
-      n.style.opacity = String(st.alpha * (1 - 0.75 * st.dim));
-      n.style.left = `${st.pos[0]}px`;
-      n.style.top = `${st.pos[1]}px`;
+      const fx = pageFx(it, pg, st.pos[0]);
+      st.vis = st.alpha * fx.a * board;
+      n.style.opacity = String(st.vis * (1 - 0.75 * st.dim));
+      n.style.left = `${st.pos[0] + fx.dx}px`;
+      n.style.top = `${st.pos[1] + fx.dy + st.sink}px`;
       const rot = it.kind === 'stamp' ? ` rotate(${it.spec.rotate ?? -8}deg)` : '';
-      const slam = it.kind === 'stamp' && st.shownAt != null ? lerp(1.8, 1, easeOut((t - st.shownAt) / 0.18)) : st.scale;
-      n.style.transform = `translate(-50%, -50%) scale(${slam * (it.spec.scale || 1)})${rot}`;
-      n.style.visibility = st.alpha > 0.001 ? 'visible' : 'hidden';
+      const slam = it.kind === 'stamp' && st.shownAt != null ? lerp(1.8, 1, easeOut((t - st.shownAt) / 0.25)) : st.scale;
+      n.style.transform = `translate(-50%, -50%) scale(${slam * fx.s * (it.spec.scale || 1)})${rot}`;
+      n.style.visibility = st.vis > 0.001 ? 'visible' : 'hidden';
+      if (WRITE_KINDS.has(it.kind)) n.style.clipPath = st.reveal >= 1 ? 'none' : `inset(-30% ${((1 - st.reveal) * 100).toFixed(1)}% -30% -4%)`;
       if (st.color) n.style.setProperty('--c', colorOf(st.color));
       if (st.text != null && it.lastText !== st.text) {
         const target = n.querySelector('.cv-label') || n;
@@ -470,9 +600,10 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
           if (ch.gated) {
             const cs = state(ch, t);
             a = cs.alpha * (1 - 0.75 * cs.dim);
+            cs.vis = cs.alpha * st.vis;
             scl = cs.scale;
             if (cs.color) ch.node.style.setProperty('--c', colorOf(cs.color));
-            if (cs.ringAt != null) ringFor(ch, cs, t, n);
+            if (cs.ringAt != null && cs.vis > 0.05) ringFor(ch, cs, t, n);
           }
           ch.node.style.opacity = String(a);
           ch.node.style.transform = `scale(${scl})`;
@@ -486,8 +617,9 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
       const st = states.get(it.id);
       const ends = st.alpha > 0 ? arrowEnds(it, t) : null;
       if (!ends) { it.node.style.opacity = '0'; if (it.label) it.label.style.opacity = '0'; continue; }
-      const draw = st.shownAt == null ? 1 : easeOut((t - st.shownAt) / 0.5);
+      const draw = st.shownAt == null ? 1 : easeInOut((t - st.shownAt) / ENTER);
       const [p0, p1] = ends;
+      const afx = pageFx(it, pg, (ends[0][0] + ends[1][0]) / 2).a * board;
       const tip = [lerp(p0[0], p1[0], draw), lerp(p0[1], p1[1], draw)];
       const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
       const ux = (p1[0] - p0[0]) / len;
@@ -495,7 +627,7 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
       const base = [tip[0] - ux * 16, tip[1] - uy * 16];
       it.path.setAttribute('d', `M${p0[0].toFixed(1)} ${p0[1].toFixed(1)} L${base[0].toFixed(1)} ${base[1].toFixed(1)}`);
       it.head.setAttribute('d', `M${tip[0].toFixed(1)} ${tip[1].toFixed(1)} L${(base[0] - uy * 8).toFixed(1)} ${(base[1] + ux * 8).toFixed(1)} L${(base[0] + uy * 8).toFixed(1)} ${(base[1] - ux * 8).toFixed(1)} Z`);
-      const a = String(clamp(draw * 3, 0, 1) * st.alpha * (1 - 0.75 * st.dim));
+      const a = String(clamp(draw * 3, 0, 1) * st.alpha * afx * (1 - 0.75 * st.dim));
       it.node.style.opacity = a;
       if (st.color) { it.path.setAttribute('stroke', colorOf(st.color)); it.head.setAttribute('fill', colorOf(st.color)); }
       if (it.label) {
@@ -507,7 +639,7 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
         const d = it.spec.labelSide === 'below' ? -30 : 30;
         it.label.style.left = `${mid[0] + nx * d}px`;
         it.label.style.top = `${mid[1] + ny * d}px`;
-        it.label.style.opacity = String(clamp((draw - 0.6) * 3, 0, 1) * st.alpha * (1 - 0.75 * st.dim));
+        it.label.style.opacity = String(clamp((draw - 0.6) * 3, 0, 1) * st.alpha * afx * (1 - 0.75 * st.dim));
         it.label.style.transform = 'translate(-50%, -50%)';
       }
     }
@@ -521,7 +653,7 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
       if (st.travelAt == null || !arrow) { n.style.opacity = '0'; n.style.visibility = 'hidden'; continue; }
       const ends = arrowEnds(arrow, t);
       if (!ends) { n.style.opacity = '0'; continue; }
-      const dur = it.spec.dur || 1.1;
+      const dur = it.spec.dur || PACKET;
       const k = (t - st.travelAt) / dur;
       const [a0, b0] = it.spec.reverse ? [ends[1], ends[0]] : ends;
       // The pill rides between the arrow's ends, its edge (not its middle) reaching the tip,
@@ -537,7 +669,8 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
       n.style.top = `${lerp(a[1], b[1], e) - (it.spec.lift ?? 0)}px`;
       const fadeOut = it.spec.stay ? 1 : 1 - clamp((k - 1) / 0.3, 0, 1);
       const hidden = st.hiddenAt != null && st.hiddenAt >= st.travelAt ? 1 - clamp((t - st.hiddenAt) / 0.28, 0, 1) : 1;
-      n.style.opacity = String(clamp(k * 8, 0, 1) * fadeOut * hidden * (1 - 0.75 * st.dim));
+      const pfx = pageFx(it, pg, parseFloat(n.style.left) || 0).a * board;
+      n.style.opacity = String(clamp(k * 8, 0, 1) * fadeOut * hidden * pfx * (1 - 0.75 * st.dim));
       n.style.visibility = 'visible';
       n.style.transform = 'translate(-50%, -50%)';
       if (st.text != null && it.lastText !== st.text) { n.textContent = st.text; it.lastText = st.text; }
@@ -546,7 +679,7 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
     // The dashed focus box, round the union of its targets.
     let focus = null;
     let focusAt = 0;
-    for (const e of sceneEv) if (e.k === 'focus' && e.t <= t) { focus = e.v; focusAt = e.t; }
+    for (const e of sceneEv) if (e.k === 'focus' && e.t <= t && e.t >= pg.at) { focus = e.v; focusAt = e.t; }
     const targets = (focus || []).map((id) => items.get(id)).filter(Boolean);
     if (targets.length) {
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -561,7 +694,7 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
       focusRect.setAttribute('width', (x1 - x0 + 2 * pad).toFixed(1));
       focusRect.setAttribute('height', (y1 - y0 + 2 * pad).toFixed(1));
       focusRect.setAttribute('stroke-dashoffset', String((-t * 28).toFixed(1)));
-      focusRect.style.opacity = String(clamp(k * 1.5, 0, 1));
+      focusRect.style.opacity = String(clamp(k * 1.5, 0, 1) * board);
       focusRect.setAttribute('stroke', colorOf(targets[0].spec.color));
     } else focusRect.style.opacity = '0';
 
@@ -571,7 +704,7 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
     for (const it of items.values()) {
       if (it.kind === 'item' || it.kind === 'arrow' || it.kind === 'terminal') continue;
       const st = states.get(it.id);
-      if (st.ringAt != null) ringFor(it, st, t);
+      if (st.ringAt != null && (st.vis ?? st.alpha) > 0.05) ringFor(it, st, t);
     }
   }
 
@@ -589,16 +722,18 @@ export function buildCanvas(v, { format = 'vertical' } = {}) {
 
   function ringFor(it, st, t) {
     const age = t - st.ringAt;
-    if (age < 0 || age > 1.2) return;
+    if (age < 0 || age > 1.3) return;
+    // The ring follows the element's own shape: a rounded box that grows and fades.
     const b = boxOf(it, new Map(), t);
-    const cx = (b[0] + b[2]) / 2;
-    const cy = (b[1] + b[3]) / 2;
-    const r0 = Math.max(b[2] - b[0], b[3] - b[1]) / 2 + 6;
-    for (const lag of [0, 0.25]) {
-      const k = clamp((age - lag) / 0.9, 0, 1);
+    const w = b[2] - b[0];
+    const hh = b[3] - b[1];
+    const r = Math.min(hh / 2, 26);
+    for (const lag of [0, 0.28]) {
+      const k = clamp((age - lag) / 1.0, 0, 1);
       if (k <= 0) continue;
-      const c = s('circle', { cx: cx.toFixed(1), cy: cy.toFixed(1), r: (r0 + 34 * easeOut(k)).toFixed(1), class: 'cv-ring', stroke: colorOf(it.spec.color) });
-      c.style.opacity = String((1 - k) * 0.9);
+      const g = 8 + 26 * easeOut(k);
+      const c = s('rect', { x: (b[0] - g).toFixed(1), y: (b[1] - g).toFixed(1), width: (w + 2 * g).toFixed(1), height: (hh + 2 * g).toFixed(1), rx: (r + g).toFixed(1), class: 'cv-ring', stroke: colorOf(it.spec.color) });
+      c.style.opacity = String((1 - k) * 0.85);
       ringLayer.appendChild(c);
       rings.push(c);
     }

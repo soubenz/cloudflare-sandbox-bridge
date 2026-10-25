@@ -104,15 +104,59 @@ export function assertLength(videoId, segs, total, max = MAX_SECONDS) {
 export const PACE = {
   lead: 0.3, // quiet before the first word
   gap: 0.7, // quiet between two segments' voices
-  tail: 2.0, // hold on the last visual after the last word
+  tail: 2.5, // hold after the last word (the end card eases in here)
   maxPause: 0.6, // longest pause kept inside one clip
   visualLead: 0.2, // a visual arrives this long before its voice
-  transition: 0.4, // a cut between visuals
+  transition: 0.7, // a soft cross-fade between scenes
+  enter: 0.7, // an element's entrance: pop with overshoot, write-on text, draw-on arrow
+  packet: 1.2, // seconds per hop for a travelling packet
+  pulse: 1, // 1: a soft ring pulses on each element as it lands; 0: none
+  drift: 4, // camera drift on the board, in grid units (0: still)
+  beatHold: 2.5, // the last beat of a segment holds this long before the next voice
+  minBeatGap: 2.0, // warn when an element appears sooner than this after the one before
+  pageTransition: 0.6, // a page break: erase, slide, zoom or fade
+  pageMax: 6, // warn when a page has more elements than this
+  cardHold: 1.4, // a title card (`card:` beat) stays this long (and the narration pauses for it)
   minStep: 3.5, // a diagram step (legacy `diagram` visual) stays at least this long
-  minOutputHold: 3.0, // terminal output stays this long after its last highlight
+  minOutputHold: 4.0, // terminal output stays this long after its last highlight
   captionWords: 4, // most words in one karaoke caption
-  typing: 28, // characters per second when a command is typed
+  typing: 16, // characters per second when a command is typed
 };
+
+const PAGE_TRANSITIONS = ['erase', 'slide', 'zoom', 'fade'];
+
+/**
+ * The quiet a segment's beats ask for: a `pause: <seconds>` beat (and a
+ * `card:` title card, which pauses for as long as it shows) opens a gap in
+ * the narration just before its cue word. Returns the segment with its word
+ * times shifted and its duration grown, the cuts (in seconds of the clip as
+ * spoken, for the audio mix) and, per beat index, where its pause starts.
+ */
+function applyPauses(s, pace) {
+  const cuts = [];
+  const startOf = new Map();
+  (s.beats || []).forEach((b, k) => {
+    let pad = Number(b.pause) || 0;
+    if (b.card && !b.pause) pad = 1.0 + (b.card.hold ?? pace.cardHold);
+    if (pad <= 0) return;
+    let at = 0;
+    if (typeof b.at === 'number') at = b.at;
+    else if (b.at != null) {
+      const cue = cueTime(b.at, s) + 0.06;
+      const i = s.words.findIndex((w) => Math.abs(w.start - cue) < 1e-6);
+      at = i > 0 ? (s.words[i - 1].end + s.words[i].start) / 2 : Math.max(0, cue - 0.02);
+    }
+    cuts.push({ at, pad, beat: k });
+  });
+  cuts.sort((a, b) => a.at - b.at);
+  if (!cuts.length) return { s, cuts, startOf };
+  const before = (t) => cuts.reduce((n, c) => n + (c.at < t - 1e-6 ? c.pad : 0), 0);
+  const upTo = (t) => cuts.reduce((n, c) => n + (c.at <= t + 1e-6 ? c.pad : 0), 0);
+  for (const c of cuts) startOf.set(c.beat, c.at + before(c.at));
+  const words = s.words.map((w) => ({ ...w, start: w.start + upTo(w.start), end: w.end + upTo(w.start) }));
+  const total = cuts.reduce((n, c) => n + c.pad, 0);
+  return { s: { ...s, words, duration: s.duration + total }, cuts: cuts.map(({ at, pad }) => ({ at, pad })), startOf };
+}
 
 /**
  * When a terminal types and prints, from the time `t0` it is started:
@@ -154,7 +198,8 @@ export function buildTimeline(video, segs, paceIn, { captions = 'small' } = {}) 
   let scene = null; // the canvas visual being built
   let audioStart = pace.lead;
   for (let i = 0; i < segs.length; i++) {
-    const s = segs[i];
+    const paused = applyPauses(segs[i], pace);
+    const s = paused.s;
     const vStart = i === 0 ? 0 : Math.max(placed[i - 1].visualStart, audioStart - pace.visualLead);
     const opens = Boolean(s.scene || (s.visuals && s.visuals.length));
     if (i > 0 && opens) {
@@ -163,15 +208,24 @@ export function buildTimeline(video, segs, paceIn, { captions = 'small' } = {}) 
       if (prev) prev.end = vStart;
     }
     if (!opens && !scene && !visuals.length) throw new Error(`segment "${s.id}": the first segment needs a \`scene\` (or \`visuals\`)`);
-    const seg = { ...s, audioStart, visualStart: opens ? vStart : (placed[i - 1]?.visualStart ?? 0) };
+    const seg = { ...s, audioStart, cuts: paused.cuts, visualStart: opens ? vStart : (placed[i - 1]?.visualStart ?? 0) };
     placed.push(seg);
     const audioEnd = audioStart + s.duration;
     const nextOpens = i + 1 < segs.length && Boolean(segs[i + 1].scene || (segs[i + 1].visuals && segs[i + 1].visuals.length));
     let needEnd = audioEnd;
 
     if (s.scene) {
-      scene = { type: 'canvas', segment: s.id, start: vStart, end: Infinity, scene: s.scene, colors: video.colors || {}, beats: [], termLast: -Infinity };
+      scene = { type: 'canvas', segment: s.id, start: vStart, end: Infinity, scene: s.scene, colors: video.colors || {}, beats: [], termLast: -Infinity, lastShow: -Infinity };
       visuals.push(scene);
+      // Pages: each page's elements (not counting arrows, packets, the terminal or its title) should be few.
+      const pages = (s.scene.pages || []).map((pg) => pg.id);
+      const els = Object.entries(s.scene.elements || {});
+      for (const [id, el] of els) if (el.page != null && !pages.includes(el.page)) throw new Error(`segment "${s.id}": element "${id}" is on page "${el.page}", which scene "${s.scene.id || s.id}" does not list in \`pages\``);
+      const counted = (pg) => els.filter(([, el]) => (el.page ?? null) === pg && !['arrow', 'packet', 'terminal'].includes(el.type)).length;
+      for (const pg of pages.length ? pages : [null]) {
+        const n = counted(pg);
+        if (n > pace.pageMax) warnings.push(`segment "${s.id}": ${pg ? `page "${pg}"` : `scene "${s.scene.id || s.id}"`} has ${n} elements, over pageMax ${pace.pageMax} (split it with another page)`);
+      }
     } else if (s.visuals && s.visuals.length) {
       scene = null;
       let mine = s.visuals.map((v) => resolveCues(v, s, audioStart));
@@ -202,9 +256,21 @@ export function buildTimeline(video, segs, paceIn, { captions = 'small' } = {}) 
     if (s.beats && s.beats.length) {
       if (!scene) throw new Error(`segment "${s.id}": has beats but no scene is open (legacy \`visuals\` take no beats)`);
       const els = scene.scene.elements || {};
-      for (const b of s.beats) {
-        const t = b.at == null ? Math.max(scene.start, audioStart - 0.1) : audioStart + cueTime(b.at, s);
+      const pages = (scene.scene.pages || []).map((pg) => pg.id);
+      let lastBeat = -Infinity;
+      for (const [k, b] of s.beats.entries()) {
+        const t = paused.startOf.has(k) ? audioStart + paused.startOf.get(k) : b.at == null ? Math.max(scene.start, audioStart - 0.1) : audioStart + cueTime(b.at, s);
         const beat = { ...b, t, segment: s.id };
+        if (b.page != null) {
+          if (!pages.includes(b.page)) throw new Error(`segment "${s.id}": page: "${b.page}" is not one of scene "${scene.scene.id || scene.segment}"'s pages (${pages.join(', ') || 'none'})`);
+          if (b.transition && !PAGE_TRANSITIONS.includes(b.transition)) throw new Error(`segment "${s.id}": transition must be ${PAGE_TRANSITIONS.join(', ')}, not ${b.transition}`);
+        }
+        if (b.show != null) {
+          if (t - scene.lastShow < pace.minBeatGap - 1e-6) warnings.push(`segment "${s.id}": "${asList(b.show).join(', ')}" appears ${(t - scene.lastShow).toFixed(1)} s after the element before it (at "${b.at ?? 'start'}"), under minBeatGap ${pace.minBeatGap} s`);
+          scene.lastShow = t + (asList(b.show).length - 1) * (b.stagger || 0);
+        }
+        if (b.page != null) scene.lastShow = -Infinity;
+        if (b.show != null || b.ring != null || b.travel != null || b.focus != null || b.page != null) lastBeat = Math.max(lastBeat, t);
         for (const id of [...asList(b.show), ...asList(b.hide), ...asList(b.ring), ...asList(b.travel), ...asList(b.focus), ...asList(b.dim), ...Object.keys(b.move || {}), ...Object.keys(b.text || {}), ...Object.keys(b.color || {})]) {
           const base = String(id).split('/')[0];
           if (!els[base]) throw new Error(`segment "${s.id}": beat at "${b.at ?? 'start'}" names "${id}", which is not an element of scene "${scene.scene.id || scene.segment}"`);
@@ -229,26 +295,32 @@ export function buildTimeline(video, segs, paceIn, { captions = 'small' } = {}) 
       }
       // The terminal must stay a while after its last highlight before this scene closes.
       if ((nextOpens || i + 1 === segs.length) && scene.termLast > -Infinity) needEnd = Math.max(needEnd, scene.termLast + pace.minOutputHold);
+      // And the segment's last change gets its hold before the next voice starts.
+      if (lastBeat > -Infinity) needEnd = Math.max(needEnd, lastBeat + pace.beatHold - pace.visualLead - 0.2);
     }
 
     for (const w of s.words) words.push({ text: w.text, start: audioStart + w.start, end: audioStart + w.end, segment: i });
     const natural = audioEnd + pace.gap;
     const held = needEnd + pace.visualLead + 0.2;
-    if (held > natural + 0.05 && i + 1 < segs.length) warnings.push(`segment "${s.id}": held ${(held - natural).toFixed(1)} s longer than its voice so its visual can finish (minStep / minOutputHold)`);
+    if (held > natural + 0.05 && i + 1 < segs.length) warnings.push(`segment "${s.id}": held ${(held - natural).toFixed(1)} s longer than its voice so its visual can finish (beatHold / minOutputHold / minStep)`);
     seg.audioEnd = audioEnd;
     seg.needEnd = needEnd;
     audioStart = i + 1 < segs.length ? Math.max(natural, held) : audioStart;
   }
   const last = placed[placed.length - 1];
-  const duration = Math.max(last.audioEnd + pace.tail, last.needEnd + 0.5);
+  const endCardAt = last.audioEnd + 0.5;
+  const endCard = video.endCard === false ? null : { at: endCardAt, title: video.endCard?.title ?? video.title, sub: video.endCard?.sub ?? 'Hands-on lab · opalix' };
+  const duration = Math.max(last.audioEnd + pace.tail, last.needEnd + 0.5, endCard ? endCardAt + 2.0 : 0);
   last.visualEnd = duration;
   visuals.filter((v) => v.end === Infinity).forEach((v) => { v.end = duration; });
-  visuals.forEach((v, k) => { v.index = k; delete v.termLast; });
+  visuals.forEach((v, k) => { v.index = k; delete v.termLast; delete v.lastShow; });
   return {
     duration,
     transition: pace.transition,
+    pace,
+    endCard,
     captionsMode: captions,
-    segments: placed.map(({ id, audioStart: a, duration: d, visualStart, visualEnd }) => ({ id, audioStart: a, duration: d, visualStart, visualEnd })),
+    segments: placed.map(({ id, audioStart: a, duration: d, visualStart, visualEnd, cuts }) => ({ id, audioStart: a, duration: d, visualStart, visualEnd, cuts })),
     visuals,
     captions: chunksToCues(words, captions === 'karaoke' ? { maxWords: pace.captionWords, maxChars: 18 } : { maxWords: 8, maxChars: 44 }),
     subtitles: chunksToCues(words, { maxWords: 8, maxChars: 44 }),

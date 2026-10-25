@@ -465,22 +465,28 @@ function buildCallout(c) {
 }
 
 let FORMAT = 'vertical';
-const BUILDERS = { card: buildCard, chat: buildChat, agent: buildAgent, diagram: buildDiagram, terminal: buildTerminal, code: buildCode, canvas: (v) => buildCanvas(v, { format: FORMAT }) };
+const BUILDERS = { card: buildCard, chat: buildChat, agent: buildAgent, diagram: buildDiagram, terminal: buildTerminal, code: buildCode, canvas: (v) => buildCanvas(v, { format: FORMAT, theme: T.theme || 'navy', pace: T.pace || {} }) };
 
 // ------------------------------------------------------------------ player --
 
 let T = null;
-let stage, capBox, bar;
+let stage, capBox, bar, endCard;
 const built = [];
 const capEls = [];
 
 function transitionStyle(v, i) {
-  return v.transition || (v.type === 'canvas' ? 'zoom' : ['zoom', 'slide', 'zoom', 'slide-left'][i % 4]);
+  return v.transition || (v.type === 'canvas' ? 'soft' : ['zoom', 'slide', 'zoom', 'slide-left'][i % 4]);
 }
 
 function placeIn(el, kind, k) {
   const e = easeInOut(k);
   el.style.opacity = String(clamp(k * 1.2, 0, 1));
+  if (kind === 'soft') {
+    // A soft cross-fade: the new board eases up into place while the old one eases away.
+    el.style.opacity = String(easeInOut(k));
+    el.style.transform = `translateY(${lerp(36, 0, e)}px) scale(${lerp(0.985, 1, e)})`;
+    return;
+  }
   if (kind === 'slide') el.style.transform = `translateY(${lerp(60, 0, e)}px)`;
   else if (kind === 'slide-left') el.style.transform = `translateX(${lerp(90, 0, e)}px)`;
   else el.style.transform = `scale(${lerp(0.94, 1, e)})`;
@@ -488,6 +494,11 @@ function placeIn(el, kind, k) {
 
 function placeOut(el, kind, k) {
   const e = easeInOut(k);
+  if (kind === 'soft') {
+    el.style.opacity = String(1 - e);
+    el.style.transform = `translateY(${lerp(0, -24, e)}px) scale(${lerp(1, 1.01, e)})`;
+    return;
+  }
   el.style.opacity = String(clamp(1 - k * 1.2, 0, 1));
   if (kind === 'slide') el.style.transform = `translateY(${lerp(0, -60, e)}px)`;
   else if (kind === 'slide-left') el.style.transform = `translateX(${lerp(0, -90, e)}px)`;
@@ -498,7 +509,7 @@ async function init(timeline, library, format = 'vertical') {
   T = timeline;
   TRANSITION = timeline.transition ?? TRANSITION;
   FORMAT = format;
-  document.documentElement.classList.add(`fmt-${format}`, `cap-${timeline.captionsMode || 'small'}`);
+  document.documentElement.classList.add(`fmt-${format}`, `cap-${timeline.captionsMode || 'small'}`, `theme-${timeline.theme || 'navy'}`);
   stage = document.getElementById('stage');
   const sceneBox = document.getElementById('scene');
   capBox = document.getElementById('captions');
@@ -535,6 +546,13 @@ async function init(timeline, library, format = 'vertical') {
     capBox.appendChild(el);
     capEls.push({ c, el, ws });
   }
+  if (T.endCard) {
+    endCard = h('div', 'endcard');
+    endCard.insertAdjacentHTML('afterbegin', MARK.replace('class="mark"', 'class="mark endcard-mark"'));
+    endCard.appendChild(h('div', 'endcard-title', T.endCard.title));
+    endCard.appendChild(h('div', 'endcard-sub', T.endCard.sub));
+    document.getElementById('frame').appendChild(endCard);
+  }
   seek(0);
   return { visuals: built.length, captions: capEls.length };
 }
@@ -559,6 +577,16 @@ function seek(t) {
     b.wrap.style.display = visible ? '' : 'none';
     if (visible) b.inst.update(t);
   });
+
+  // The end card eases in after the last word, over a dimmed board.
+  if (endCard) {
+    const k = easeInOut((t - T.endCard.at) / 0.9);
+    endCard.style.opacity = String(k);
+    endCard.style.visibility = k > 0.001 ? 'visible' : 'hidden';
+    endCard.style.setProperty('--k', String(k));
+    document.getElementById('scene').style.opacity = String(1 - 0.9 * k);
+    stage.style.opacity = String(1 - 0.9 * k);
+  }
 
   for (const { c, el, ws } of capEls) {
     const on = t >= c.start && t < c.end;
