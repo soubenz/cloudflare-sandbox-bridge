@@ -1,0 +1,135 @@
+/*
+ * The whiteboard look of `canvas` scenes: near-black background, thin
+ * outlines in pastel neon (one colour per actor, page/canvas.js PALETTE),
+ * a hand-drawn heading font (Kalam Bold, SIL OFL 1.1, fonts/OFL.txt), mono
+ * for anything code. Sizes inside `.cv` are on the 1000 x 700 grid, which the
+ * player scales to the frame.
+ */
+@font-face {
+  font-family: 'Kalam';
+  font-style: normal;
+  font-weight: 700;
+  src: url('./fonts/kalam-latin-700-normal.woff2') format('woff2');
+}
+
+:root { --hand: 'Kalam', 'Funnel Display', cursive; --ink: #f2f2f2; --muted: #8a8f98; --black: #0a0a0a; }
+html, body, .bg { background: var(--black); }
+.progress { background: rgb(255 255 255 / 0.08); }
+.progress i { background: #ffa94d; }
+.brand { color: var(--ink); opacity: 0.85; }
+.brand .mark rect { fill: #ffa94d; }
+.brand .mark circle { fill: var(--black); }
+
+#scene { position: absolute; inset: 0; }
+.visual-full { position: absolute; inset: 0; display: block; transform-origin: 50% 40%; }
+.cv-root { position: absolute; inset: 0; }
+.cv { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.cv-svg { position: absolute; inset: 0; overflow: visible; }
+.cv-layer { position: absolute; inset: 0; }
+.cv-over { pointer-events: none; }
+
+.cv-el { position: absolute; left: 0; top: 0; width: max-content; white-space: nowrap; color: var(--c, var(--ink)); }
+.font-hand { font-family: var(--hand); font-weight: 700; }
+.font-mono { font-family: var(--font-mono); font-weight: 600; font-variant-ligatures: none; }
+.font-sans { font-family: var(--font-sans); font-weight: 600; }
+.emoji { font-family: "Noto Color Emoji", "Apple Color Emoji", sans-serif; font-weight: 400; }
+
+.cv-kicker { font-family: var(--hand); font-weight: 700; font-size: 30px; letter-spacing: 0.1em; text-transform: uppercase; color: #ffa94d; }
+.cv-title {
+  font-family: var(--hand); font-weight: 700; font-size: 58px; line-height: 1.1; font-variant: small-caps;
+  color: var(--c, var(--ink)); text-align: center; white-space: normal; width: 860px;
+}
+.cv-title.underline { padding-bottom: 14px; background: linear-gradient(90deg, rgb(242 242 242 / 0.85) 50%, transparent 0) bottom / 22px 3px repeat-x; background-size: 22px 3px; background-position: 50% 100%; background-repeat: repeat-x; }
+.cv-text { font-size: 30px; line-height: 1.25; text-align: center; white-space: normal; }
+
+.cv-chip {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 6px 20px; border: 3px solid var(--c, var(--ink)); border-radius: 999px;
+  background: var(--black); color: var(--c, var(--ink)); font-size: 34px; line-height: 1.2; white-space: nowrap;
+}
+.cv-chip.font-mono { font-size: 27px; border-radius: 12px; padding: 7px 14px; }
+.cv-chip .cv-sub { font-family: var(--font-mono); font-size: 21px; opacity: 0.85; }
+.cv-ico { display: inline-flex; color: var(--c, var(--ink)); }
+
+.cv-node {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 24px; border: 3px solid var(--c, var(--ink)); border-radius: 22px; background: var(--black);
+  min-width: 170px; justify-content: center;
+}
+.cv-node .cv-label { font-family: var(--hand); font-weight: 700; font-size: 42px; line-height: 1.05; color: var(--c, var(--ink)); }
+.cv-node .cv-sub { font-family: var(--font-mono); font-size: 20px; color: var(--muted); margin-top: 4px; }
+.cv-circle {
+  width: 76px; height: 76px; border-radius: 50%; border: 3px solid var(--c, var(--ink)); background: var(--black);
+  display: grid; place-items: center; font-family: var(--font-mono); font-size: 24px; font-weight: 700;
+}
+.cv-bubble {
+  max-width: 520px; white-space: normal; padding: 16px 24px; border: 3px solid var(--c, var(--ink)); border-radius: 26px;
+  background: var(--black); font-family: var(--hand); font-weight: 700; font-size: 36px; line-height: 1.2;
+}
+.cv-bubble.side-left { border-bottom-left-radius: 6px; }
+.cv-bubble.side-right { border-bottom-right-radius: 6px; }
+.cv-stamp {
+  padding: 4px 18px; border: 5px solid var(--c, #ff6b6b); border-radius: 12px; color: var(--c, #ff6b6b);
+  font-family: var(--hand); font-weight: 700; font-size: 46px; letter-spacing: 0.08em; text-transform: uppercase; background: rgb(10 10 10 / 0.6);
+}
+.cv-icon { color: var(--c, var(--ink)); }
+
+.cv-list { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.cv-list.row { flex-direction: row; align-items: center; }
+.cv-list-title { font-family: var(--hand); font-weight: 700; font-size: 26px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+.cv-list .cv-chip { transform-origin: left center; }
+
+.cv-card {
+  white-space: normal; padding: 14px 18px 16px; border: 2px dashed var(--c, var(--muted)); border-radius: 16px; background: var(--black);
+  font-family: var(--font-mono); font-size: 23px; line-height: 1.5; color: #d9dde6; font-variant-ligatures: none;
+}
+.cv-card-title { font-family: var(--hand); font-weight: 700; font-size: 24px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c, var(--muted)); margin-bottom: 4px; }
+.cv-card-line { white-space: pre; }
+
+.cv-arrow-line { fill: none; stroke-width: 3.5; stroke-linecap: round; }
+.cv-arrow-label { font-family: var(--hand); font-weight: 700; font-size: 26px; color: var(--c, var(--muted)); background: var(--black); padding: 0 6px; }
+.cv-packet {
+  padding: 4px 14px; border-radius: 999px; background: var(--c, var(--ink)); color: var(--black);
+  font-family: var(--font-mono); font-weight: 700; font-size: 23px; box-shadow: 0 0 0 4px var(--black); font-variant-ligatures: none;
+}
+.cv-focus { fill: none; stroke-width: 3; stroke-dasharray: 12 9; }
+.cv-ring { fill: none; stroke-width: 3; }
+
+/* Syntax colours (terminal and cards) and highlights in the actor's colour. */
+.tk-key { color: #b9c3ff; }
+.tk-str { color: #8ff0b8; }
+.tk-num { color: #ffd166; }
+.tk-lit { color: #ff9ac8; font-weight: 700; }
+.tk-arrow { color: #7dd3fc; font-weight: 700; }
+.tk-url { color: #e8ecff; }
+.cv-hl { border-radius: 6px; padding: 0 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.cv-hl.on { box-shadow: 0 0 0 3px var(--c); background: color-mix(in srgb, var(--c) 22%, transparent); }
+
+/* The split layout's terminal. */
+.cv-term { position: absolute; border: 2px solid #2a2e38; border-radius: 22px; background: #050608; overflow: hidden; }
+.cv-term-bar { height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 2px solid #1a1d25; }
+.cv-term-bar i { width: 14px; height: 14px; border-radius: 50%; background: #3a3f4b; display: block; }
+.cv-term-bar span { margin-left: 12px; font-family: var(--font-mono); font-size: 18px; color: #6d7380; }
+.cv-term-body { padding: 16px 20px 18px; }
+.cv-term-line, .cv-term-scroll { font-family: var(--font-mono); font-size: 26px; line-height: 1.38; color: #e6e9f2; white-space: pre-wrap; overflow-wrap: anywhere; font-variant-ligatures: none; }
+.cv-term-cmd { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 2px dashed #22262f; }
+.cv-term-gap { color: #5d6370; }
+.cv-term-view { position: relative; overflow: hidden; }
+.cv-term .ps1 { color: #6ee7a8; font-weight: 700; }
+.cv-term .cmd { color: #fff; font-weight: 600; }
+.cv-term .cursor { display: inline-block; width: 0.6em; height: 1.05em; vertical-align: -0.18em; background: #e6e9f2; }
+.fmt-landscape .cv-term-line, .fmt-landscape .cv-term-scroll { font-size: 25px; }
+
+/* ----------------------------------------------------------------- captions -- */
+.cap-off #captions { display: none; }
+/* small: one subtitle line in the safe lower area (vertical) or at the bottom (landscape). */
+.cap-small #captions { top: 1190px; height: 150px; left: 70px; right: 70px; }
+.cap-small .cap {
+  font-family: var(--font-sans); font-weight: 600; font-size: 40px; line-height: 1.3; gap: 0 11px; letter-spacing: 0;
+  color: rgb(242 242 242 / 0.92); text-shadow: 0 2px 8px rgb(0 0 0 / 0.9);
+}
+.cap-small .cap .w { padding: 0; border-radius: 0; }
+.cap-small .cap .w.now { background: none; color: #ffffff; box-shadow: none; text-shadow: 0 2px 8px rgb(0 0 0 / 0.9); }
+.cap-small .cap .w.later { color: rgb(242 242 242 / 0.92); }
+.fmt-landscape.cap-small #captions { top: 968px; height: 96px; left: 200px; right: 200px; border: 0; padding: 0; }
+.fmt-landscape.cap-small .cap { font-size: 36px; }

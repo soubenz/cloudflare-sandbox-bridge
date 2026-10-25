@@ -1,143 +1,549 @@
-# Short explainer videos for this lab (docs/shorts.md). Render with:
+# Explainer videos for this lab, one idea each (docs/shorts.md). Render with:
 #   node scripts/shorts/render.mjs labs/see-how-tools-reach-an-agent/learn/short.yaml
+# Each video renders to <id>-vertical.mp4, <id>-landscape.mp4, <id>-landscape.jpg
+# and <id>.vtt, and may not run past 180 s.
 #
-# One entry of `videos` per lesson concept; each renders to its own MP4 and may
-# not run past 180 s (the render fails, naming the segment to trim).
+# Every video is ONE canvas that builds up: a scene declares its elements once
+# (hidden), and each segment's beats show or animate one small thing on the
+# word that names it. One running example per video.
 #
-# Terminal output below is real: call_tool.py run against this lab's own
-# services (ContextForge 1.0.10 with weather-tools and calculator-tools, set
-# up by seed_contextforge.py), copied verbatim. Only the display clips the
-# 2,000-character tools/list body (`clip`).
+# Terminal output is real: call_tool.py run against this lab's own services
+# (ContextForge 1.0.10 with weather-tools and calculator-tools, set up by
+# seed_contextforge.py), copied verbatim. A terminal shows a subset of the
+# lines (`show`) and may shorten long ones (`clip`); it never edits them.
 
-voice:
-  model: "@cf/deepgram/aura-2-en"
-  speaker: arcas        # calm male Aura-2 voice
-  tempo: 0.84           # slower than the model reads, so the 8 segments land at ~45 s
-whisper: "@cf/openai/whisper-large-v3-turbo"
+# workers-ai:<speaker> makes the narration with Workers AI; dir:<folder> uses
+# pre-made clips (01.mp3, 02.mp3, ... plus manifest.json; see docs/shorts.md).
+voice: workers-ai:arcas
+captions: small          # off | small | karaoke
+
 pace:
-  gap: 0.28             # silence between segments, seconds (keep <= 0.3)
-  tail: 2.3             # hold on the last card (end card, after the last word)
+  gap: 0.7               # quiet between two segments, seconds
+  maxPause: 0.6          # longest pause kept inside one clip
+  tail: 2.0              # hold on the final picture
+  minOutputHold: 3.0     # terminal output stays this long after its last highlight
+  transition: 0.4        # a cut between scenes
+  typing: 28             # characters per second when a command is typed
+
+# One colour per actor, the same in every video and on every chip, node,
+# packet and terminal highlight.
+colors:
+  agent: blue
+  weather: cyan
+  calc: yellow
+  admin: pink
+  gateway: violet
+  user: orange
+  model: white
+  ok: green
+  bad: red
+  quiet: grey
 
 videos:
-  - id: see-how-tools-reach-an-agent
-    title: See how tools reach an agent
+  # --------------------------------------------------------------------------
+  - id: mcp-what-a-tool-is
+    title: What a tool is, and what MCP adds
     segments:
       - id: hook
-        vo: Your AI agent just made up the weather.
-        visuals:
-          - type: chat
-            agent: Parcel helper
-            status: AI agent · online
-            messages:
-              - { from: customer, text: "Why is my parcel late?" }
-              - { from: agent, text: "Heavy snow in Leeds today ❄️", at: 0.3 }
-            chip: { label: "Actual weather", text: "Leeds 18°C ☀️", at: "made up" }
-            stamp: { text: "Made up", at: "weather" }
+        vo: >-
+          Ask an AI agent: is it snowing in Leeds right now? It answers in a
+          second. Yes, heavy snow. But how could it know? A model only knows
+          what it read during training. It has never seen today's sky. So it
+          guessed.
+        scene:
+          id: hook
+          elements:
+            kicker: { type: kicker, text: "AI agent question", pos: [500, 60] }
+            q: { type: title, text: "How does an agent know today's weather?", pos: [500, 140], underline: true }
+            ask: { type: bubble, text: "Is it snowing in Leeds right now?", color: user, side: right, pos: [640, 300] }
+            agent: { type: node, icon: agent, label: Agent, color: agent, pos: [180, 450] }
+            ans: { type: bubble, text: "Yes, heavy snow ❄️", color: agent, side: left, pos: [520, 450] }
+            trained: { type: chip, icon: model, text: "model: trained months ago", color: model, pos: [300, 590] }
+            stamp: { type: stamp, text: "Guess", color: bad, pos: [780, 450], rotate: -10 }
+        beats:
+          - { show: [kicker, q] }
+          - { at: "is it snowing", show: ask }
+          - { at: "It answers", show: agent }
+          - { at: "Yes, heavy snow", show: ans }
+          - { at: "how could it know", ring: ans }
+          - { at: "what it read during training", show: trained }
+          - { at: "never seen today's sky", ring: trained }
+          - { at: "So it guessed", show: stamp }
 
-      - id: agent
-        vo: An agent is an AI model that can call tools. Without a tool, it guesses.
-        visuals:
-          - type: agent
-            title: Agent
-            model: { icon: "🧠", label: "AI model" }
-            tool: { icon: "🔧", label: "tools", at: "call tools" }
-            missing: { label: "no weather tool", at: "Without" }
-            guess: { text: "Heavy snow in Leeds ❄️", stamp: "Guessed", at: "it guesses" }
+      - id: tool
+        vo: >-
+          The fix is to give the agent a tool. A tool is a small function that
+          someone else runs, like get weather, for a city. You give it a city,
+          and it gives you back today's weather for that city. The function lives
+          on a tool server, here a weather server. The agent cannot see inside
+          that server, and it does not need to. It can only call the tools the
+          server offers.
+        scene:
+          id: tool
+          elements:
+            mcptitle: { type: title, text: "MCP: one way to ask any tool server", pos: [500, 70], size: 44 }
+            agent: { type: node, icon: agent, label: Agent, color: agent, pos: [170, 300] }
+            server: { type: node, icon: server, label: "Weather server", sub: weather-tools, color: weather, pos: [790, 300] }
+            blackbox: { type: text, text: "the agent can't see in here", size: 22, color: quiet, pos: [790, 205] }
+            fn: { type: chip, font: mono, text: "get_weather(city)", color: weather, pos: [790, 425] }
+            fn2: { type: chip, font: mono, text: "get_forecast(city, days)", color: weather, pos: [790, 485] }
+            io: { type: text, font: mono, size: 24, color: quiet, text: "city in → weather out", pos: [790, 485] }
+            desc: { type: text, font: mono, size: 22, width: 420, color: quiet, text: "\"Get the current made-up weather for a city.\"", pos: [790, 565] }
+            others: { type: list, row: true, font: hand, items: [{ text: "calendar", color: quiet }, { text: "tickets", color: quiet }, { text: "docs", color: quiet }, { text: "…", color: quiet }], pos: [500, 650] }
+            pick: { type: chip, icon: model, text: "model: get_weather fits", color: model, scale: 0.85, pos: [250, 430] }
+            call: { type: arrow, from: agent, to: server, color: quiet }
+            mcp: { type: text, text: "MCP", size: 34, color: gateway, pos: [470, 240] }
+            p_list: { type: packet, on: call, label: "tools/list", color: agent }
+            p_menu: { type: packet, on: call, reverse: true, label: "menu: 2 tools", color: weather }
+            p_call: { type: packet, on: call, label: "get_weather · Leeds", color: agent }
+            p_result: { type: packet, on: call, reverse: true, label: "10°C, cloudy", color: ok, stay: true }
+            real: { type: chip, icon: check, text: "real data, not a guess", color: ok, scale: 0.85, pos: [250, 530] }
+            cta: { type: chip, text: "Open the lab · See how tools reach an agent", color: user, pos: [500, 650] }
+            term:
+              type: terminal
+              command: "python3 -B call_tool.py weather-tools-get-weather '{\"city\": \"Leeds\"}'"
+              show: "0-2,5-10"
+              highlight:
+                - { id: method, match: "\"method\": \"tools/call\"", color: agent }
+                - { id: name, match: "\"name\": \"weather-tools-get-weather\"", color: weather }
+                - { id: args, match: "\"arguments\": \\{\"city\": \"Leeds\"\\}", color: weather }
+                - { id: result, match: "\"(temperature_c|conditions)\": [^,]+", lines: "^  \"", color: ok }
+              output: |
+                --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "weather-tools-get-weather", "arguments": {"city": "Leeds"}}}
+                <-- HTTP 200
+                    {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": "{\n  \"city\": \"Leeds\",\n  \"temperature_c\": 10,\n  \"conditions\": \"cloudy\"\n}"}], "isError": false}}
 
-      - id: what-is-mcp
-        vo: MCP is the standard way to give it tools. The agent asks a tool server for its menu, then calls a tool by name.
-        visuals:
-          - type: diagram
-            id: mcp-what-is-mcp
-            title: "MCP: a menu of tools"
-            steps:
-              - { n: 1 }
-              - { n: 2, at: "for its menu" }
-              - { n: 3, at: "then calls" }
-              - { n: 4, at: "by name" }
+                Result:
+                  {
+                  "city": "Leeds",
+                  "temperature_c": 10,
+                  "conditions": "cloudy"
+                }
+        beats:
+          - { show: agent }
+          - { at: "give the agent a tool", show: server }
+          - { at: "A tool is a small function", show: fn, focus: [fn] }
+          - { at: "like get weather", ring: fn }
+          - { at: "You give it a city", show: io }
+          - { at: "The function lives on a tool server", focus: [server, fn] }
+          - { at: "cannot see inside", show: blackbox, ring: server }
+          - { at: "it does not need to", focus: [] }
+          - { at: "It can only call", show: call }
+
+      - id: mcp
+        vo: >-
+          But how does the agent find out what the server offers? There are
+          thousands of tool servers out there, and each could describe its tools
+          in its own way. That is the problem MCP solves. MCP, the Model Context
+          Protocol, is one standard way to ask. First, the agent asks for the
+          menu, with a request called tools slash list. The server answers with
+          every tool it has. Here that is get weather, and get forecast. Each one
+          comes with its name, a short description, and the inputs it needs, like
+          a city, or a number of days.
+        beats:
+          - { at: "how does the agent find out", ring: server }
+          - { at: "thousands of tool servers", show: others }
+          - { at: "in its own way", ring: others }
+          - { at: "That is the problem MCP solves", show: mcp, hide: others }
+          - { at: "one standard way to ask", ring: mcp }
+          - { at: "asks for the menu", travel: p_list }
+          - { at: "answers with every tool", travel: p_menu }
+          - { at: "Here that is get weather", ring: fn }
+          - { at: "and get forecast", hide: io, show: fn2 }
+          - { at: "Each one comes with its name", focus: [fn, fn2] }
+          - { at: "a short description", show: desc }
+          - { at: "like a city", ring: fn }
+          - { at: "a number of days", ring: fn2 }
+
+      - id: call
+        vo: >-
+          Now the agent picks a tool. It shows the menu to its model, along with
+          the question about Leeds, and the model picks get weather. Then the
+          agent calls it by name, with the city Leeds. You can make exactly this
+          call in the lab. Look at the request. The method is tools slash call.
+          Then the tool's name. Then the arguments: city, Leeds. And the reply is
+          plain data. Leeds, ten degrees, cloudy. Not snow. A real answer,
+          instead of a guess.
+        beats:
+          - { at: "shows the menu to its model", focus: [fn, fn2] }
+          - { at: "the model picks get weather", show: pick, focus: [fn] }
+          - { at: "calls it by name", travel: p_call }
+          - { at: "in the lab", layout: split, run: term, focus: [] }
+          - { at: "The method is tools slash call", mark: method }
+          - { at: "Then the tool's name", mark: name }
+          - { at: "Then the arguments", mark: args }
+          - { at: "the reply is plain data", travel: p_result, mark: result }
+          - { at: "A real answer", show: real }
+
+      - id: recap
+        vo: >-
+          Focus on what just happened. The agent never needed to know how the
+          weather server works, or what is behind it. It asked for the menu, its
+          model picked a tool, and the agent called that tool by name. That is
+          MCP: one way to ask any tool server what it can do, and to call it. So
+          the same agent can use a weather server today, and a calendar server
+          tomorrow, without new code. Open the lab, See how tools reach an agent,
+          and make this call yourself.
+        beats:
+          - { at: "Focus on what just happened", layout: canvas, hide: p_result }
+          - { at: "never needed to know", focus: [server, fn, fn2] }
+          - { at: "asked for the menu", travel: p_list, focus: [] }
+          - { at: "model picked a tool", ring: [pick, fn] }
+          - { at: "called that tool by name", travel: p_call }
+          - { at: "That is MCP", show: mcptitle }
+          - { at: "a calendar server tomorrow", show: others }
+          - { at: "without new code", ring: others }
+          - { at: "Open the lab", show: cta, hide: others }
+
+  # --------------------------------------------------------------------------
+  - id: mcp-one-door
+    title: One door for many tool servers
+    segments:
+      - id: hook
+        vo: >-
+          Your company has three agents, and three tool servers: weather, a
+          calculator, and an admin server. If every agent connects to every
+          server, that is nine connections. Nine things to set up, to secure,
+          and to watch. And when you add one more server, every agent has to
+          change.
+        scene:
+          id: door
+          elements:
+            kicker: { type: kicker, text: "Platform question", pos: [500, 45] }
+            q: { type: title, text: "Three agents, three tool servers. Who wires what?", pos: [500, 118], size: 44, width: 900, underline: true }
+            count: { type: text, text: "9 connections", size: 34, color: user, pos: [500, 225] }
+            a1: { type: node, icon: agent, label: Support, color: agent, scale: 0.82, pos: [150, 300] }
+            a2: { type: node, icon: agent, label: Billing, color: agent, scale: 0.82, pos: [150, 420] }
+            a3: { type: node, icon: agent, label: Ops, color: agent, scale: 0.82, pos: [150, 540] }
+            s1: { type: node, icon: server, label: Weather, color: weather, scale: 0.82, pos: [850, 300] }
+            s2: { type: node, icon: server, label: Calculator, color: calc, scale: 0.82, pos: [850, 420] }
+            s3: { type: node, icon: server, label: Admin, color: admin, scale: 0.82, pos: [850, 540] }
+            s4: { type: node, icon: server, label: Docs, color: quiet, scale: 0.82, pos: [850, 650] }
+            l11: { type: arrow, from: a1, to: s1, color: quiet }
+            l12: { type: arrow, from: a1, to: s2, color: quiet }
+            l13: { type: arrow, from: a1, to: s3, color: quiet }
+            l21: { type: arrow, from: a2, to: s1, color: quiet }
+            l22: { type: arrow, from: a2, to: s2, color: quiet }
+            l23: { type: arrow, from: a2, to: s3, color: quiet }
+            l31: { type: arrow, from: a3, to: s1, color: quiet }
+            l32: { type: arrow, from: a3, to: s2, color: quiet }
+            l33: { type: arrow, from: a3, to: s3, color: quiet }
+            l14: { type: arrow, from: a1, to: s4, color: quiet, dashed: true }
+            l24: { type: arrow, from: a2, to: s4, color: quiet, dashed: true }
+            l34: { type: arrow, from: a3, to: s4, color: quiet, dashed: true }
+            gw: { type: node, icon: gateway, label: "Tool gateway", color: gateway, scale: 0.82, pos: [500, 420] }
+            r1: { type: arrow, from: s1, to: gw, color: weather }
+            r2: { type: arrow, from: s2, to: gw, color: calc }
+            r3: { type: arrow, from: s3, to: gw, color: admin }
+            r4: { type: arrow, from: s4, to: gw, color: quiet }
+            g1: { type: arrow, from: a1, to: gw, color: agent }
+            g2: { type: arrow, from: a2, to: gw, color: agent }
+            g3: { type: arrow, from: a3, to: gw, color: agent }
+            catalog: { type: text, text: "knows every tool", size: 26, color: quiet, pos: [500, 505] }
+            key: { type: chip, icon: key, text: "own key", color: agent, pos: [150, 205] }
+            btitle: { type: text, text: "Support's bundle (a virtual server)", size: 24, color: gateway, pos: [500, 548] }
+            b1: { type: list, row: true, items: [{ text: get_weather, color: weather }, { text: get_forecast, color: weather }], pos: [500, 595] }
+            b2: { type: list, row: true, items: [{ text: add, color: calc }, { text: subtract, color: calc }, { text: multiply, color: calc }], pos: [500, 650] }
+            risky: { type: chip, font: mono, icon: warn, text: delete_order, color: admin, pos: [850, 612] }
+            leftout: { type: stamp, text: "left out", size: 32, color: bad, pos: [850, 668], rotate: -6 }
+            p_cmd: { type: packet, on: g1, label: "tools/list", color: agent }
+            logcard: { type: card, title: "gateway log", color: ok, lines: ["tool:   calculator-tools-add", "result: 42.0  ✓"], pos: [500, 225] }
+            cta: { type: chip, text: "Open the lab · See how tools reach an agent", color: user, pos: [560, 228] }
+            tlist:
+              type: terminal
+              command: python3 -B call_tool.py --list
+              show: "0,5-10"
+              clip: 50
+              highlight:
+                - { id: url, match: "/servers/[0-9a-f]+/mcp", lines: "^-->", color: gateway }
+                - { id: weather, match: "weather-tools-[a-z-]+", lines: "^  - ", color: weather }
+                - { id: calc, match: "calculator-tools-[a-z]+", lines: "^  - ", color: calc }
+              output: |
+                --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+                <-- HTTP 200
+                    {"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "calculator-tools-subtract", "description": "Subtract b from a and return the difference.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "subtractArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "subtractOutput", "type": "object"}, "annotations": {}}, {"name": "calculator-tools-multiply", "description": "Multiply two numbers and return the product.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "multiplyArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "multiplyOutput", "type": "object"}, "annotations": {}}, {"name": "weather-tools-get-weather", "description": "Get the current made-up weather for a city.", "inputSchema": {"properties": {"city": {"title": "City", "type": "string"}}, "required": ["city"], "title": "get_weatherArguments", "type": "object"}, "annotations": {}}, {"name": "weather-tools-get-forecast", "description": "Get a made-up multi-day forecast for a city.", "inputSchema": {"properties": {"city": {"title": "City", "type": "string"}, "days": {"default": 3, "title": "Days", "type": "integer"}}, "required": ["city"], "title": "get_forecastArguments", "type": "object"}, "annotations": {}}, {"name": "calculator-tools-add", "description": "Add two numbers and return the sum.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "addArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "addOutput", "type": "object"}, "annotations": {}}]}}
+
+                Tools reachable through virtual server 'toy-tools':
+                  - calculator-tools-subtract: Subtract b from a and return the difference.
+                  - calculator-tools-multiply: Multiply two numbers and return the product.
+                  - weather-tools-get-weather: Get the current made-up weather for a city.
+                  - weather-tools-get-forecast: Get a made-up multi-day forecast for a city.
+                  - calculator-tools-add: Add two numbers and return the sum.
+            tadd:
+              type: terminal
+              command: "python3 -B call_tool.py calculator-tools-add '{\"a\": 17, \"b\": 25}'"
+              show: "0,2,5-6"
+              highlight:
+                - { id: door, match: "/servers/[0-9a-f]+/mcp", lines: "^-->", color: gateway }
+                - { id: answer, match: "42\\.0", lines: "^  42", color: ok }
+              output: |
+                --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "calculator-tools-add", "arguments": {"a": 17, "b": 25}}}
+                <-- HTTP 200
+                    {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": "42.0"}], "structuredContent": {"result": 42.0}, "isError": false}}
+
+                Result:
+                  42.0
+        beats:
+          - { show: [kicker, q] }
+          - { at: "three agents", show: [a1, a2, a3], stagger: 0.25 }
+          - { at: "weather", show: s1 }
+          - { at: "a calculator", show: s2 }
+          - { at: "an admin server", show: s3 }
+          - { at: "every agent connects to every server", show: [l11, l12, l13, l21, l22, l23, l31, l32, l33], stagger: 0.12 }
+          - { at: "nine connections", show: count }
+          - { at: "to secure", ring: count }
+          - { at: "add one more server", show: s4 }
+          - { at: "every agent has to change", show: [l14, l24, l34], stagger: 0.15, text: { count: "12 connections" } }
 
       - id: gateway
-        vo: With many tool servers, you put a tool gateway in front. Servers register once, and each agent gets one address and only the tools picked for it.
-        visuals:
-          - type: diagram
-            id: mcp-virtual-servers
-            title: One door, many tool servers
-            steps:
-              - { n: 1 }
-              - { n: 2, at: "Servers register once" }
-              - { n: 3, at: "only the tools" }
+        vo: >-
+          A tool gateway fixes this. It sits in the middle, as one door. Each
+          tool server registers with the gateway, once: here is my address. The
+          gateway asks each one for its menu, and keeps the list. Each agent
+          connects only to the gateway. Now there are seven lines instead of
+          twelve. And a new server adds one line, not three.
+        beats:
+          - { at: "A tool gateway fixes this", hide: [l11, l12, l13, l21, l22, l23, l31, l32, l33, l14, l24, l34], show: gw }
+          - { at: "as one door", ring: gw, text: { q: "One door for many tool servers" } }
+          - { at: "registers with the gateway", show: [r1, r2, r3, r4], stagger: 0.3 }
+          - { at: "here is my address", ring: s1 }
+          - { at: "keeps the list", show: catalog }
+          - { at: "connects only to the gateway", show: [g1, g2, g3], stagger: 0.3 }
+          - { at: "seven lines instead of twelve", text: { count: "7 connections" }, ring: count }
+          - { at: "adds one line", ring: s4 }
 
-      - id: list-tools
-        vo: Listing tools from the agent's address shows exactly what it can see.
-        visuals:
-          - type: terminal
-            command: python3 -B call_tool.py --list
-            height: 990
-            clip: 92
-            highlight:
-              - { match: "[a-z]+-tools-[a-z-]+", lines: "^  - ", tone: ok, at: "exactly" }
-            output: |
-              --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
-                  {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
-              <-- HTTP 200
-                  {"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "calculator-tools-subtract", "description": "Subtract b from a and return the difference.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "subtractArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "subtractOutput", "type": "object"}, "annotations": {}}, {"name": "calculator-tools-multiply", "description": "Multiply two numbers and return the product.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "multiplyArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "multiplyOutput", "type": "object"}, "annotations": {}}, {"name": "weather-tools-get-weather", "description": "Get the current made-up weather for a city.", "inputSchema": {"properties": {"city": {"title": "City", "type": "string"}}, "required": ["city"], "title": "get_weatherArguments", "type": "object"}, "annotations": {}}, {"name": "weather-tools-get-forecast", "description": "Get a made-up multi-day forecast for a city.", "inputSchema": {"properties": {"city": {"title": "City", "type": "string"}, "days": {"default": 3, "title": "Days", "type": "integer"}}, "required": ["city"], "title": "get_forecastArguments", "type": "object"}, "annotations": {}}, {"name": "calculator-tools-add", "description": "Add two numbers and return the sum.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "addArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "addOutput", "type": "object"}, "annotations": {}}]}}
+      - id: bundle
+        vo: >-
+          But should every agent see every tool? Take the support agent. The
+          gateway builds it a bundle of tools, called a virtual server. It picks
+          get weather and get forecast from one server, and add, subtract and
+          multiply from another. The admin server has a risky tool: delete order.
+          The bundle leaves it out, so the support agent cannot even see it, let
+          alone call it. And the support agent gets its own key, so the gateway
+          always knows who is asking.
+        beats:
+          - { at: "should every agent see every tool", hide: [s4, r4, count, catalog] }
+          - { at: "Take the support agent", dim: [a2, a3, g2, g3], ring: a1 }
+          - { at: "builds it a bundle", show: btitle }
+          - { at: "called a virtual server", ring: btitle }
+          - { at: "get weather and get forecast", show: b1, ring: s1 }
+          - { at: "add, subtract and multiply", show: b2, ring: s2 }
+          - { at: "a risky tool", show: risky, ring: s3 }
+          - { at: "leaves it out", show: leftout }
+          - { at: "cannot even see it", focus: [btitle, b1, b2] }
+          - { at: "its own key", show: key, focus: [] }
+          - { at: "who is asking", ring: key }
 
-              Tools reachable through virtual server 'toy-tools':
-                - calculator-tools-subtract: Subtract b from a and return the difference.
-                - calculator-tools-multiply: Multiply two numbers and return the product.
-                - weather-tools-get-weather: Get the current made-up weather for a city.
-                - weather-tools-get-forecast: Get a made-up multi-day forecast for a city.
-                - calculator-tools-add: Add two numbers and return the sum.
+      - id: list
+        vo: >-
+          In the lab, the bundle is called toy tools. Ask the gateway for the
+          menu, and look at the address. It's slash servers, then the bundle's
+          id, then slash MCP. One address for this agent. And the answer lists
+          exactly five tools, from two servers. Nothing else can be reached from
+          there.
+        beats:
+          - { at: "In the lab", layout: split, run: tlist, focus: [] }
+          - { at: "look at the address", mark: url }
+          - { at: "One address for this agent", ring: gw, travel: p_cmd }
+          - { at: "exactly five tools", mark: [weather, calc] }
+          - { at: "Nothing else can be reached", focus: [b1, b2] }
 
-      - id: call-tool
-        vo: Every call goes through the same door, so the gateway can log who called what.
-        visuals:
-          - type: terminal
-            command: "python3 -B call_tool.py calculator-tools-add '{\"a\": 17, \"b\": 25}'"
-            height: 820
-            highlight:
-              - { match: "/servers/[0-9a-f]+/mcp", lines: "^-->", tone: default, at: "same door" }
-              - { match: "42\\.0", lines: "^  42", tone: ok, at: "Every call" }
-            callouts:
-              - { text: "✅ Gateway logs: calculator-tools-add", tone: ok, at: "log who" }
-            output: |
-              --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
-                  {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "calculator-tools-add", "arguments": {"a": 17, "b": 25}}}
-              <-- HTTP 200
-                  {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": "42.0"}], "structuredContent": {"result": 42.0}, "isError": false}}
+      - id: log
+        vo: >-
+          Every call goes through that same door. Here the agent calls add, with
+          seventeen and twenty five, and gets back forty two. Because the gateway
+          sits in the middle, it can record every call: which tool was called,
+          when, and whether it worked. In the lab, you will find that record in
+          the view tab, one row per call.
+        beats:
+          - { at: "Every call goes through", run: tadd, focus: [] }
+          - { at: "that same door", mark: door }
+          - { at: "gets back forty two", mark: answer }
+          - { at: "record every call", show: logcard }
 
-              Result:
-                42.0
+      - id: recap
+        vo: >-
+          Focus on what just happened. Tool servers register once. Each agent
+          gets one address, its own key, and only the tools picked for it. And
+          every call passes one door, where it can be checked and recorded. Open
+          the lab, See how tools reach an agent, and list the tools yourself.
+        beats:
+          - { at: "Focus on what just happened", layout: canvas, undim: all }
+          - { at: "Tool servers register once", ring: [s1, s2, s3] }
+          - { at: "one address", ring: gw }
+          - { at: "its own key", ring: key }
+          - { at: "only the tools picked for it", focus: [b1, b2] }
+          - { at: "passes one door", focus: [gw] }
+          - { at: "Open the lab", show: cta, hide: [logcard, key], focus: [] }
 
-      - id: tool-errors
-        vo: When a tool fails, you still get a normal reply. Read the reply, not just the status code.
-        visuals:
-          - type: diagram
-            id: mcp-tool-errors
-            title: A tool that fails still answers
-            steps:
-              - { n: 4 }
-              - { n: 5, at: "you still get" }
-              - { n: 6, at: "normal reply" }
-          - type: terminal
-            at: "Read the reply"
-            command: "python3 -B call_tool.py does-not-exist '{}'"
-            typing: 0.45
-            highlight:
-              - { match: "HTTP 200", tone: warn, at: "Read the reply" }
-              - { match: "\"isError\": true", tone: bad, at: "not just" }
-            output: |
-              --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
-                  {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "does-not-exist", "arguments": {}}}
-              <-- HTTP 200
-                  {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": "Tool not found: does-not-exist"}], "isError": true}}
-              call_tool: 'does-not-exist' reported an error: [{'type': 'text', 'text': 'Tool not found: does-not-exist'}]
+  # --------------------------------------------------------------------------
+  - id: mcp-when-a-tool-fails
+    title: When a tool fails
+    segments:
+      - id: hook
+        vo: >-
+          Your agent calls a weather tool for a customer. The status code comes
+          back: two hundred, OK. Everything looks fine. The logs are green. And
+          yet, the agent tells the customer there is heavy snow in Leeds, and
+          there isn't. What went wrong?
+        scene:
+          id: hook
+          elements:
+            kicker: { type: kicker, text: "Debugging question", pos: [500, 60] }
+            q: { type: title, text: "The call returned 200 OK. So why is the answer wrong?", pos: [500, 145], size: 46, width: 900, underline: true }
+            agent: { type: node, icon: agent, label: Agent, color: agent, pos: [190, 380] }
+            ok200: { type: chip, font: mono, icon: check, text: "HTTP 200 OK", color: ok, pos: [620, 320] }
+            ans: { type: bubble, text: "Heavy snow in Leeds ❄️", color: agent, side: left, pos: [620, 460] }
+            puzzled: { type: text, text: "??", size: 72, color: user, pos: [890, 460] }
+            green: { type: chip, font: mono, icon: log, text: "logs: all green", color: ok, pos: [620, 590] }
+        beats:
+          - { show: [kicker, q] }
+          - { at: "calls a weather tool", show: agent }
+          - { at: "two hundred, OK", show: ok200 }
+          - { at: "Everything looks fine", ring: ok200 }
+          - { at: "The logs are green", show: green }
+          - { at: "heavy snow in Leeds", show: ans }
+          - { at: "What went wrong", show: puzzled, ring: ans }
 
-      - id: outro
-        vo: "Try it yourself in the lab: See how tools reach an agent, on Opalix."
-        visuals:
-          - type: card
-            kicker: Try it yourself
-            title: { text: "See how tools reach an agent", at: "See how" }
-            sub: { text: "Hands-on lab · 20 min", at: "See how" }
-            brand: { text: opalix, at: "Opalix" }
+      - id: follow
+        vo: >-
+          Let's follow one call. The agent asks for the weather in Leeds. The
+          gateway passes the call to the weather tool server. That server asks a
+          weather service for the data. Every step so far has worked. But today
+          the weather service is slow, and the server gives up waiting.
+        scene:
+          id: chain
+          elements:
+            agent: { type: node, icon: agent, label: Agent, color: agent, pos: [120, 250] }
+            gw: { type: node, icon: gateway, label: Gateway, color: gateway, pos: [340, 430] }
+            srv: { type: node, icon: server, label: "Weather server", color: weather, pos: [620, 250] }
+            api: { type: node, icon: cloud, label: "Weather API", color: quiet, scale: 0.9, pos: [835, 430] }
+            e1: { type: arrow, from: agent, to: gw, color: quiet }
+            e2: { type: arrow, from: gw, to: srv, color: quiet }
+            e3: { type: arrow, from: srv, to: api, color: quiet }
+            c1: { type: packet, on: e1, label: "get_weather · Leeds", color: agent }
+            c2: { type: packet, on: e2, label: "get_weather · Leeds", color: agent }
+            c3: { type: packet, on: e3, label: "fetch Leeds", color: weather }
+            clock: { type: icon, icon: clock, size: 54, color: bad, pos: [835, 335] }
+            tout: { type: chip, icon: cross, text: "timed out", color: bad, pos: [835, 525] }
+            r2: { type: packet, on: e2, reverse: true, label: "result · isError", color: bad }
+            r1: { type: packet, on: e1, reverse: true, label: "result · isError", color: bad }
+            reply:
+              type: card
+              title: "the reply · tool error"
+              color: quiet
+              pos: [260, 600]
+              lines:
+                - '"result": {'
+                - '  "isError": true,'
+                - '  "content": "…timed out"'
+                - '}'
+              highlight:
+                - { id: flag, match: "\"isError\": true", color: bad }
+                - { id: msg, match: "\"content\": \"…timed out\"", color: user }
+            c200: { type: chip, font: mono, text: "HTTP 200", color: calc, pos: [740, 600] }
+            perr:
+              type: card
+              title: "protocol error"
+              color: quiet
+              pos: [730, 600]
+              lines:
+                - '"error": {'
+                - '  "code": -32601,'
+                - '  "message": "Method not found"'
+                - '}'
+              highlight:
+                - { id: code, match: "\"code\": -32601", color: bad }
+            honest: { type: bubble, text: "Sorry, I couldn't get the weather for Leeds right now.", color: ok, side: left, width: 470, pos: [330, 120] }
+            split: { type: text, text: "the call worked · the work failed", size: 26, color: quiet, pos: [500, 90] }
+            opts: { type: list, title: "agent can", gate: true, font: hand, items: [{ text: "try again", color: agent }, { text: "another tool", color: agent }, { text: "tell the user", color: agent }], pos: [760, 600] }
+            cta: { type: chip, text: "Open the lab · See how tools reach an agent", color: user, pos: [500, 680] }
+            terr:
+              type: terminal
+              command: "python3 -B call_tool.py does-not-exist '{}'"
+              show: "1-4"
+              highlight:
+                - { id: s200, match: "HTTP 200", color: calc }
+                - { id: iserr, match: "\"isError\": true", color: bad }
+                - { id: notfound, match: "Tool not found: does-not-exist", color: user }
+              output: |
+                --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "does-not-exist", "arguments": {}}}
+                <-- HTTP 200
+                    {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": "Tool not found: does-not-exist"}], "isError": true}}
+                call_tool: 'does-not-exist' reported an error: [{'type': 'text', 'text': 'Tool not found: does-not-exist'}]
+        beats:
+          - { show: [agent, gw, srv, api], stagger: 0.3 }
+          - { at: "The agent asks", show: [e1, e2, e3], stagger: 0.2 }
+          - { at: "for the weather in Leeds", travel: c1 }
+          - { at: "passes the call", travel: c2 }
+          - { at: "asks a weather service", travel: c3 }
+          - { at: "Every step so far has worked", ring: [gw, srv] }
+          - { at: "the weather service is slow", show: clock, ring: api }
+          - { at: "gives up waiting", show: tout, color: { api: bad } }
+
+      - id: reply
+        vo: >-
+          Here's the key part. The server does not crash, and the connection
+          does not break. It sends back a normal reply, with a flag inside.
+          isError: true. Plus a short message saying what failed. So the HTTP
+          status is still two hundred. The call itself worked. It was the work
+          behind the tool that failed, and MCP keeps those two apart.
+        beats:
+          - { at: "does not crash", ring: srv }
+          - { at: "sends back a normal reply", travel: [r2, r1], stagger: 1.0 }
+          - { at: "with a flag inside", show: reply }
+          - { at: "isError: true", mark: flag }
+          - { at: "a short message", mark: msg }
+          - { at: "still two hundred", show: c200, ring: c200 }
+          - { at: "The call itself worked", show: split }
+          - { at: "keeps those two apart", ring: split }
+
+      - id: kinds
+        vo: >-
+          In fact there are two kinds of failure. If the request itself is
+          broken, say the method name is wrong, the server cannot even start. You
+          get a protocol error: an error code, and no result at all. But when the
+          tool runs and fails, like our slow weather service, you get a normal
+          result, marked isError. A good agent handles both.
+        beats:
+          - { at: "two kinds of failure", hide: [c200, split, tout] }
+          - { at: "the request itself is broken", show: perr }
+          - { at: "a protocol error", mark: code }
+          - { at: "no result at all", ring: perr }
+          - { at: "when the tool runs and fails", focus: [reply] }
+          - { at: "marked isError", ring: reply }
+          - { at: "handles both", focus: [reply, perr] }
+
+      - id: lab
+        vo: >-
+          You can see the tool error shape in the lab. Call a tool that does not
+          exist. The status line says two hundred. But read the body. isError is
+          true, and the message says: tool not found. The lab asks you exactly
+          this question, so look closely.
+        beats:
+          - { at: "in the lab", layout: split, run: terr, focus: [] }
+          - { at: "The status line", mark: s200 }
+          - { at: "isError is true", mark: iserr }
+          - { at: "tool not found", mark: notfound }
+
+      - id: recap
+        vo: >-
+          So an agent has to read the reply, not just the status code. When
+          isError is true, it can try again, pick another tool, or tell the user
+          honestly: sorry, I couldn't get the weather for Leeds right now. That
+          beats inventing snow. Open the lab, See how tools reach an agent, and
+          break a call on purpose.
+        beats:
+          - { at: "read the reply", layout: canvas }
+          - { at: "not just the status code", focus: [reply] }
+          - { at: "When isError is true", hide: [perr, clock], show: opts, focus: [] }
+          - { at: "try again", show: opts/0 }
+          - { at: "pick another tool", show: opts/1 }
+          - { at: "tell the user", show: opts/2 }
+          - { at: "sorry, I couldn't get the weather", show: honest, focus: [] }
+          - { at: "beats inventing snow", ring: honest }
+          - { at: "Open the lab", show: cta, hide: [reply, opts] }

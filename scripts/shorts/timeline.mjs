@@ -14,14 +14,18 @@ const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
 /**
  * Seconds from a segment's narration start for a cue: a number is already
  * seconds; a phrase is found in the segment's words and lands just before its
- * first word is spoken. Throws naming the segment when the phrase is not there.
+ * first word is spoken (`phrase #2` for its second occurrence). Throws naming
+ * the segment when the phrase is not there.
  */
 export function cueTime(at, seg) {
   if (typeof at === 'number') return at;
-  const want = String(at).split(/\s+/).map(norm).filter(Boolean);
+  const m = /^(.*?)\s*#(\d+)$/.exec(String(at));
+  const nth = m ? Number(m[2]) : 1;
+  const want = String(m ? m[1] : at).split(/\s+/).map(norm).filter(Boolean);
   const words = seg.words.map((w) => norm(w.text));
+  let seen = 0;
   for (let i = 0; i + want.length <= words.length; i++) {
-    if (want.every((w, k) => words[i + k] === w)) return Math.max(0, seg.words[i].start - 0.06);
+    if (want.every((w, k) => words[i + k] === w) && ++seen === nth) return Math.max(0, seg.words[i].start - 0.06);
   }
   throw new Error(`segment "${seg.id}": cue "${at}" is not in its voiceover ("${seg.vo}")`);
 }
@@ -96,53 +100,189 @@ export function assertLength(videoId, segs, total, max = MAX_SECONDS) {
   throw new Error(`video "${videoId}" would run ${total.toFixed(1)} s (narration ${narration.toFixed(1)} s), over the ${max} s limit by ${over.toFixed(1)} s. ${fix}`);
 }
 
+/** Pace defaults (seconds), every one overridable by `pace:` in short.yaml. */
+export const PACE = {
+  lead: 0.3, // quiet before the first word
+  gap: 0.7, // quiet between two segments' voices
+  tail: 2.0, // hold on the last visual after the last word
+  maxPause: 0.6, // longest pause kept inside one clip
+  visualLead: 0.2, // a visual arrives this long before its voice
+  transition: 0.4, // a cut between visuals
+  minStep: 3.5, // a diagram step (legacy `diagram` visual) stays at least this long
+  minOutputHold: 3.0, // terminal output stays this long after its last highlight
+  captionWords: 4, // most words in one karaoke caption
+  typing: 28, // characters per second when a command is typed
+};
+
+/**
+ * When a terminal types and prints, from the time `t0` it is started:
+ * { typeStart, typeEnd, outputStart, lineGap, outputEnd }. Shared with the page.
+ */
+export function terminalTimes(v, t0, pace) {
+  const typeStart = t0 + 0.4;
+  const typeDur = v.typingSeconds ?? Math.min(2.2, Math.max(0.8, String(v.command || '').length / pace.typing));
+  const typeEnd = typeStart + typeDur;
+  const outputStart = typeEnd + 0.45;
+  const lineGap = 0.07;
+  const lines = String(v.output || '').replace(/\n$/, '').split('\n').length;
+  return { typeStart, typeEnd, outputStart, lineGap, outputEnd: outputStart + lines * lineGap };
+}
+
+const asList = (x) => (x == null ? [] : Array.isArray(x) ? x : [x]);
+
 /**
  * The page's timeline. `segs[i]` is the video's segment i plus its narration:
- * `{ id, vo, visuals, duration, words: [{ text, start, end }] }`, word times
- * in seconds of the (trimmed, tempo-adjusted) clip.
- * pace: { lead, gap, tail, visualLead } in seconds.
+ * `{ id, vo, scene?, beats?, visuals?, duration, words: [{ text, start, end }] }`,
+ * word times in seconds of the processed clip. `pace` is PACE with overrides.
+ *
+ * A segment with a `scene` opens a canvas that stays on screen, building up,
+ * until a later segment opens another scene (or uses legacy `visuals`). Each
+ * segment's `beats` change that canvas on its own words.
+ *
+ * Segments are laid end to end `gap` apart, except that a segment is held
+ * longer (the next voice waits) when the visual it ends would otherwise leave
+ * too soon: a terminal's output less than `minOutputHold` after its last
+ * highlight, or a legacy diagram step under `minStep`. Holds that cannot be
+ * fixed that way come back as `warnings` naming the segment.
  */
-export function buildTimeline(video, segs, pace) {
-  const { lead = 0.1, gap = 0.26, tail = 1.0, visualLead = 0.14, padIn = 0, padOut = 0 } = pace;
-  let cursor = lead;
-  const placed = segs.map((s) => {
-    const audioStart = cursor;
-    // The clip carries padIn/padOut of its own quiet; the gap is the whole pause between voices.
-    cursor = audioStart + s.duration + Math.max(0, gap - padIn - padOut);
-    return { ...s, audioStart };
-  });
-  const last = placed[placed.length - 1];
-  const duration = last.audioStart + last.duration + tail;
-
+export function buildTimeline(video, segs, paceIn, { captions = 'small' } = {}) {
+  const pace = { ...PACE, ...paceIn };
+  const warnings = [];
   const visuals = [];
-  const captions = [];
-  placed.forEach((s, i) => {
-    const vStart = i === 0 ? 0 : Math.max(0, s.audioStart - visualLead);
-    const vEnd = i + 1 < placed.length ? Math.max(vStart, placed[i + 1].audioStart - visualLead) : duration;
-    s.visualStart = vStart;
-    s.visualEnd = vEnd;
-    const list = s.visuals || [];
-    const resolved = list.map((v) => resolveCues(v, s, s.audioStart));
-    resolved.forEach((v, k) => {
-      const start = k === 0 ? vStart : Math.max(vStart, v.t ?? vStart);
-      visuals.push({ ...v, segment: s.id, start, end: vEnd });
-      if (k > 0) visuals[visuals.length - 2].end = start;
-    });
+  const words = [];
+  const placed = [];
+  let scene = null; // the canvas visual being built
+  let audioStart = pace.lead;
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    const vStart = i === 0 ? 0 : Math.max(placed[i - 1].visualStart, audioStart - pace.visualLead);
+    const opens = Boolean(s.scene || (s.visuals && s.visuals.length));
+    if (i > 0 && opens) {
+      placed[i - 1].visualEnd = vStart;
+      const prev = visuals.at(-1);
+      if (prev) prev.end = vStart;
+    }
+    if (!opens && !scene && !visuals.length) throw new Error(`segment "${s.id}": the first segment needs a \`scene\` (or \`visuals\`)`);
+    const seg = { ...s, audioStart, visualStart: opens ? vStart : (placed[i - 1]?.visualStart ?? 0) };
+    placed.push(seg);
+    const audioEnd = audioStart + s.duration;
+    const nextOpens = i + 1 < segs.length && Boolean(segs[i + 1].scene || (segs[i + 1].visuals && segs[i + 1].visuals.length));
+    let needEnd = audioEnd;
 
-    const abs = s.words.map((w) => ({ text: w.text, start: s.audioStart + w.start, end: s.audioStart + w.end }));
-    const chunks = captionChunks(abs);
-    const nextStart = i + 1 < placed.length ? placed[i + 1].audioStart : duration;
-    chunks.forEach((c, k) => {
-      const start = c[0].start - 0.04;
-      const end = k + 1 < chunks.length ? chunks[k + 1][0].start - 0.04 : Math.min(c[c.length - 1].end + 0.3, nextStart - 0.04);
-      captions.push({ start, end, words: c });
-    });
-  });
-  visuals.forEach((v, k) => { v.index = k; });
+    if (s.scene) {
+      scene = { type: 'canvas', segment: s.id, start: vStart, end: Infinity, scene: s.scene, colors: video.colors || {}, beats: [], termLast: -Infinity };
+      visuals.push(scene);
+    } else if (s.visuals && s.visuals.length) {
+      scene = null;
+      let mine = s.visuals.map((v) => resolveCues(v, s, audioStart));
+      mine = mine.map((v, k) => ({ ...v, segment: s.id, start: k === 0 ? vStart : Math.max(vStart, v.t ?? vStart) }));
+      mine.forEach((v, k) => { v.end = k + 1 < mine.length ? mine[k + 1].start : Infinity; });
+      for (const v of mine) {
+        if (v.type === 'diagram') {
+          const steps = (v.steps || [{ n: 1 }]).map((st, k) => ({ n: typeof st === 'number' ? st : st.n, t: k === 0 ? v.start : (st.t ?? v.start) }));
+          v.steps = steps;
+          steps.forEach((st, k) => {
+            const until = k + 1 < steps.length ? steps[k + 1].t : v.end;
+            if (until === Infinity) needEnd = Math.max(needEnd, st.t + pace.minStep);
+            else if (until - st.t < pace.minStep - 1e-6) warnings.push(`segment "${s.id}": diagram ${v.id} step ${st.n} shows ${(until - st.t).toFixed(1)} s, under minStep ${pace.minStep} s`);
+          });
+        }
+        if (v.type === 'terminal') {
+          Object.assign(v, terminalTimes(v, v.start, pace));
+          for (const hl of v.highlight || []) if (hl.t == null || hl.t < v.outputEnd) hl.t = Math.max(hl.t ?? 0, v.outputEnd + 0.3);
+          const last = Math.max(v.outputEnd, ...(v.highlight || []).map((hl) => hl.t));
+          if (v.end === Infinity) needEnd = Math.max(needEnd, last + pace.minOutputHold);
+          else if (v.end - last < pace.minOutputHold) warnings.push(`segment "${s.id}": terminal output shows ${(v.end - last).toFixed(1)} s after its last highlight, under minOutputHold ${pace.minOutputHold} s`);
+        }
+      }
+      visuals.push(...mine);
+    }
+
+    // Beats: each change to the canvas, on the word that names it.
+    if (s.beats && s.beats.length) {
+      if (!scene) throw new Error(`segment "${s.id}": has beats but no scene is open (legacy \`visuals\` take no beats)`);
+      const els = scene.scene.elements || {};
+      for (const b of s.beats) {
+        const t = b.at == null ? Math.max(scene.start, audioStart - 0.1) : audioStart + cueTime(b.at, s);
+        const beat = { ...b, t, segment: s.id };
+        for (const id of [...asList(b.show), ...asList(b.hide), ...asList(b.ring), ...asList(b.travel), ...asList(b.focus), ...asList(b.dim), ...Object.keys(b.move || {}), ...Object.keys(b.text || {}), ...Object.keys(b.color || {})]) {
+          const base = String(id).split('/')[0];
+          if (!els[base]) throw new Error(`segment "${s.id}": beat at "${b.at ?? 'start'}" names "${id}", which is not an element of scene "${scene.scene.id || scene.segment}"`);
+        }
+        if (b.run) {
+          const term = els[b.run];
+          if (!term || term.type !== 'terminal') throw new Error(`segment "${s.id}": run: "${b.run}" is not a terminal element`);
+          beat.times = terminalTimes(term, t, pace);
+          scene.termLast = Math.max(scene.termLast, beat.times.outputEnd);
+        }
+        for (const m of asList(b.mark)) {
+          const term = Object.values(els).find((e) => e.type === 'terminal' && (e.highlight || []).some((hl) => hl.id === m));
+          const card = Object.values(els).find((e) => e.type === 'card' && (e.highlight || []).some((hl) => hl.id === m));
+          if (!term && !card) throw new Error(`segment "${s.id}": mark: "${m}" is not the id of a terminal or card highlight`);
+          if (term) scene.termLast = Math.max(scene.termLast, t);
+        }
+        if (b.layout === 'canvas' && scene.termLast > -Infinity && t - scene.termLast < pace.minOutputHold) {
+          warnings.push(`segment "${s.id}": the terminal leaves ${(t - scene.termLast).toFixed(1)} s after its last highlight, under minOutputHold ${pace.minOutputHold} s`);
+        }
+        if (b.layout === 'canvas') scene.termLast = -Infinity;
+        scene.beats.push(beat);
+      }
+      // The terminal must stay a while after its last highlight before this scene closes.
+      if ((nextOpens || i + 1 === segs.length) && scene.termLast > -Infinity) needEnd = Math.max(needEnd, scene.termLast + pace.minOutputHold);
+    }
+
+    for (const w of s.words) words.push({ text: w.text, start: audioStart + w.start, end: audioStart + w.end, segment: i });
+    const natural = audioEnd + pace.gap;
+    const held = needEnd + pace.visualLead + 0.2;
+    if (held > natural + 0.05 && i + 1 < segs.length) warnings.push(`segment "${s.id}": held ${(held - natural).toFixed(1)} s longer than its voice so its visual can finish (minStep / minOutputHold)`);
+    seg.audioEnd = audioEnd;
+    seg.needEnd = needEnd;
+    audioStart = i + 1 < segs.length ? Math.max(natural, held) : audioStart;
+  }
+  const last = placed[placed.length - 1];
+  const duration = Math.max(last.audioEnd + pace.tail, last.needEnd + 0.5);
+  last.visualEnd = duration;
+  visuals.filter((v) => v.end === Infinity).forEach((v) => { v.end = duration; });
+  visuals.forEach((v, k) => { v.index = k; delete v.termLast; });
   return {
     duration,
-    segments: placed.map(({ id, audioStart, duration: d, visualStart, visualEnd }) => ({ id, audioStart, duration: d, visualStart, visualEnd })),
+    transition: pace.transition,
+    captionsMode: captions,
+    segments: placed.map(({ id, audioStart: a, duration: d, visualStart, visualEnd }) => ({ id, audioStart: a, duration: d, visualStart, visualEnd })),
     visuals,
-    captions,
+    captions: chunksToCues(words, captions === 'karaoke' ? { maxWords: pace.captionWords, maxChars: 18 } : { maxWords: 8, maxChars: 44 }),
+    subtitles: chunksToCues(words, { maxWords: 8, maxChars: 44 }),
+    warnings,
   };
+}
+
+/** Caption cues from timed words, chunked within each segment: [{ start, end, words }]. */
+function chunksToCues(words, opts) {
+  const cues = [];
+  const bySeg = new Map();
+  for (const w of words) bySeg.set(w.segment, [...(bySeg.get(w.segment) || []), w]);
+  for (const ws of bySeg.values()) {
+    const chunks = captionChunks(ws, opts);
+    chunks.forEach((c, k) => {
+      const start = c[0].start - 0.05;
+      const end = k + 1 < chunks.length ? chunks[k + 1][0].start - 0.05 : c[c.length - 1].end + 0.35;
+      cues.push({ start, end, words: c.map(({ text, start: a, end: b }) => ({ text, start: a, end: b })) });
+    });
+  }
+  cues.forEach((c, k) => { if (cues[k + 1]) c.end = Math.min(c.end, cues[k + 1].start); });
+  return cues;
+}
+
+const vttTime = (t) => {
+  const ms = Math.max(0, Math.round(t * 1000));
+  const h = String(Math.floor(ms / 3600000)).padStart(2, '0');
+  const m = String(Math.floor(ms / 60000) % 60).padStart(2, '0');
+  const s = String(Math.floor(ms / 1000) % 60).padStart(2, '0');
+  return `${h}:${m}:${s}.${String(ms % 1000).padStart(3, '0')}`;
+};
+
+/** A WebVTT sidecar from the timeline's subtitle cues. */
+export function toVtt(timeline) {
+  const body = timeline.subtitles.map((c, k) => `${k + 1}\n${vttTime(c.start)} --> ${vttTime(c.end)}\n${c.words.map((w) => w.text).join(' ')}\n`);
+  return `WEBVTT\n\n${body.join('\n')}`;
 }

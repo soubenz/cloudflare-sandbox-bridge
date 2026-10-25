@@ -14,11 +14,15 @@
  *             what each step lights
  *   terminal  a command typed at a prompt, then its real output, with highlights on cues
  *   code      real source lines with syntax colours, lines lit on cues
+ *   canvas    a persistent scene that builds up on narrated beats (canvas.js); the
+ *             format the videos are written in now. The types above are the older,
+ *             one-screen-per-segment visuals and still work.
  */
 import { renderDiagram } from '/dashboard/src/diagram.js';
+import { buildCanvas } from '/scripts/shorts/page/canvas.js';
 
-const TRANSITION = 0.22; // seconds: every cut between visuals
-const POP = 0.18; // seconds: an element popping in
+let TRANSITION = 0.4; // seconds: every cut between visuals (timeline.transition)
+const POP = 0.3; // seconds: an element popping in
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const easeOut = (x) => 1 - Math.pow(1 - clamp(x, 0, 1), 3);
@@ -219,15 +223,14 @@ function buildDiagram(v, library) {
   if (!diagram) throw new Error(`no diagram "${v.id}"`);
   const el = h('div', 'dg-wrap');
   el.appendChild(h('div', 'heading', v.title || diagram.title));
-  const player = renderDiagram(diagram, { controls: false, autoplay: false, reducedMotion: false, packetMs: 900, stepMs: 1100 });
+  const player = renderDiagram(diagram, { controls: false, autoplay: false, reducedMotion: false, packetMs: 1400, stepMs: 3500 });
   el.appendChild(player);
   const stepLine = h('div', 'dg-step');
   el.appendChild(stepLine);
   const total = (diagram.steps || []).length;
-  const steps = (v.steps || [{ n: 1 }]).map((s, k) => {
-    const n = typeof s === 'number' ? s : s.n;
-    if (!(n >= 1 && n <= total)) throw new Error(`diagram "${v.id}" has steps 1-${total}, not ${n}`);
-    return { n, t: k === 0 ? v.start : (s.t ?? v.start + k) };
+  const steps = (v.steps || [{ n: 1, t: v.start }]).map((s) => {
+    if (!(s.n >= 1 && s.n <= total)) throw new Error(`diagram "${v.id}" has steps 1-${total}, not ${s.n}`);
+    return s;
   });
   const svg = player.querySelector('.diagram-svg');
   const figure = player.querySelector('.diagram-figure');
@@ -254,7 +257,8 @@ function buildDiagram(v, library) {
     el,
     measure() {
       // The figure keeps the natural height of the whole picture; the camera works inside it.
-      figure.style.height = `${Math.max(svg.getBoundingClientRect().height, v.height || 620)}px`;
+      const want = v.height || parseFloat(getComputedStyle(el).getPropertyValue('--dg-h')) || 620;
+      figure.style.height = `${Math.max(svg.getBoundingClientRect().height, want)}px`;
       regions = steps.map((s) => {
         player.goTo(s.n - 1);
         return camera(stepRegion(svg, diagram));
@@ -271,14 +275,14 @@ function buildDiagram(v, library) {
         shown = k;
       }
       // Packets ride at whatever pace fits the time the step is on screen.
-      const rate = Math.max(1, 0.9 / Math.max(0.3, dwell * 0.85));
+      const rate = Math.max(0.6, 1.4 / Math.max(0.3, dwell * 0.8));
       for (const a of player.getAnimations({ subtree: true })) {
         a.pause();
         a.currentTime = Math.max(0, (t - step.t) * 1000 * rate);
       }
       const to = regions[k];
       const from = k > 0 ? regions[k - 1] : to;
-      const e = easeInOut((t - step.t) / 0.32);
+      const e = easeInOut((t - step.t) / 0.6);
       svg.style.transform = `translate(${lerp(from.tx, to.tx, e)}px, ${lerp(from.ty, to.ty, e)}px) scale(${lerp(from.s, to.s, e)})`;
       stepLine.replaceChildren(document.createTextNode('STEP '), h('b', null, String(step.n)), document.createTextNode(` / ${total}`));
     },
@@ -359,21 +363,18 @@ function buildTerminal(v) {
   bar.append(h('i'), h('i'), h('i'), h('span', null, v.title || 'learner@opalix: /workspace'));
   el.appendChild(bar);
   const body = h('div', 'term-body');
-  const view = h('div', 'term-view');
-  const scroll = h('div', 'term-scroll');
-  view.appendChild(scroll);
-  body.appendChild(view);
-  el.appendChild(body);
-  const LINE = 34 * 1.36;
-  view.style.height = `${Math.floor(((v.height || 880) - 52) / LINE) * LINE}px`;
-
+  // The command line is pinned above the output: it never scrolls away.
   const prompt = v.prompt || '$';
-  const cmdLine = h('div', 'term-line');
+  const cmdLine = h('div', 'term-line term-cmd term-scroll');
   cmdLine.append(h('span', 'ps1', `${prompt} `));
   const cmd = h('span', 'cmd');
   const cursor = h('span', 'cursor');
   cmdLine.append(cmd, cursor);
-  scroll.appendChild(cmdLine);
+  const view = h('div', 'term-view');
+  const scroll = h('div', 'term-scroll');
+  view.appendChild(scroll);
+  body.append(cmdLine, view);
+  el.appendChild(body);
 
   const highlights = v.highlight || [];
   const clip = v.clip || 160;
@@ -394,26 +395,32 @@ function buildTerminal(v) {
   endLine.appendChild(cursor2);
   scroll.appendChild(endLine);
 
-  const typeStart = v.start + (v.typeDelay ?? 0.2);
-  const typeDur = v.typing ?? clamp(v.command.length / 70, 0.45, 1.0);
-  const enter = typeStart + typeDur + 0.12;
-  const lineAt = (i) => enter + 0.16 + i * (v.lineGap ?? 0.03);
-  for (const m of marks) m.t = m.spec.t ?? (lineAt(lines.length) + 0.3);
+  // Times come from the timeline (timeline.mjs terminalTimes), so holds can be checked before rendering.
+  const { typeStart, typeEnd, outputStart, lineGap } = v;
+  const lineAt = (i) => outputStart + i * lineGap;
+  for (const m of marks) m.t = m.spec.t ?? lineAt(lines.length) + 0.3;
+  let LINE = 46;
 
   return {
     el,
+    measure(wrap, stage) {
+      LINE = parseFloat(getComputedStyle(scroll).lineHeight) || LINE;
+      const others = [...wrap.children].filter((c) => c !== el).reduce((n, c) => n + c.offsetHeight + parseFloat(getComputedStyle(c).marginTop || 0), 0);
+      const pad = parseFloat(getComputedStyle(body).paddingTop) + parseFloat(getComputedStyle(body).paddingBottom);
+      const room = stage.clientHeight - others - bar.offsetHeight - pad - cmdLine.offsetHeight - 8;
+      const need = Math.ceil(scroll.scrollHeight / LINE - 0.02) * LINE;
+      view.style.height = `${Math.min(Math.floor(room / LINE) * LINE, need)}px`;
+    },
     update(t) {
-      const n = Math.round(clamp((t - typeStart) / typeDur, 0, 1) * v.command.length);
+      const n = Math.round(clamp((t - typeStart) / (typeEnd - typeStart), 0, 1) * v.command.length);
       cmd.textContent = v.command.slice(0, n);
-      const blink = Math.floor(t * 2.2) % 2 === 0;
-      cursor.style.visibility = t < enter && (t < typeStart || n >= v.command.length ? blink : true) ? 'visible' : 'hidden';
+      const blink = Math.floor(t * 2) % 2 === 0;
+      cursor.style.visibility = t < outputStart && (t < typeStart || n >= v.command.length ? blink : true) ? 'visible' : 'hidden';
       outEls.forEach((row, i) => { row.style.display = t >= lineAt(i) ? '' : 'none'; });
-      const done = t >= lineAt(lines.length);
-      endLine.style.display = done ? '' : 'none';
+      endLine.style.display = t >= lineAt(lines.length) ? '' : 'none';
       cursor2.style.visibility = blink ? 'visible' : 'hidden';
       for (const m of marks) m.node.classList.toggle('on', t >= m.t);
-      // Scroll like a terminal: the newest line stays in view.
-      // Whole lines only, so the top row is never cut in half.
+      // Scroll like a terminal, whole lines only: the newest output stays in view.
       const overflow = scroll.scrollHeight - view.clientHeight;
       scroll.style.transform = `translateY(${-Math.max(0, Math.ceil(overflow / LINE - 0.02)) * LINE}px)`;
     },
@@ -457,49 +464,52 @@ function buildCallout(c) {
   return el;
 }
 
-const BUILDERS = { card: buildCard, chat: buildChat, agent: buildAgent, diagram: buildDiagram, terminal: buildTerminal, code: buildCode };
+let FORMAT = 'vertical';
+const BUILDERS = { card: buildCard, chat: buildChat, agent: buildAgent, diagram: buildDiagram, terminal: buildTerminal, code: buildCode, canvas: (v) => buildCanvas(v, { format: FORMAT }) };
 
 // ------------------------------------------------------------------ player --
 
 let T = null;
-let stage, capBox, bar, glowA, glowB;
+let stage, capBox, bar;
 const built = [];
 const capEls = [];
 
 function transitionStyle(v, i) {
-  return v.transition || ['zoom', 'slide', 'zoom', 'slide-left'][i % 4];
+  return v.transition || (v.type === 'canvas' ? 'zoom' : ['zoom', 'slide', 'zoom', 'slide-left'][i % 4]);
 }
 
 function placeIn(el, kind, k) {
-  const e = easeOut(k);
-  el.style.opacity = String(clamp(k * 1.4, 0, 1));
-  if (kind === 'slide') el.style.transform = `translateY(${lerp(140, 0, e)}px)`;
-  else if (kind === 'slide-left') el.style.transform = `translateX(${lerp(260, 0, e)}px)`;
-  else el.style.transform = `scale(${lerp(0.82, 1, e)})`;
+  const e = easeInOut(k);
+  el.style.opacity = String(clamp(k * 1.2, 0, 1));
+  if (kind === 'slide') el.style.transform = `translateY(${lerp(60, 0, e)}px)`;
+  else if (kind === 'slide-left') el.style.transform = `translateX(${lerp(90, 0, e)}px)`;
+  else el.style.transform = `scale(${lerp(0.94, 1, e)})`;
 }
 
 function placeOut(el, kind, k) {
   const e = easeInOut(k);
-  el.style.opacity = String(clamp(1 - k * 1.3, 0, 1));
-  if (kind === 'slide') el.style.transform = `translateY(${lerp(0, -140, e)}px)`;
-  else if (kind === 'slide-left') el.style.transform = `translateX(${lerp(0, -260, e)}px)`;
-  else el.style.transform = `scale(${lerp(1, 1.12, e)})`;
+  el.style.opacity = String(clamp(1 - k * 1.2, 0, 1));
+  if (kind === 'slide') el.style.transform = `translateY(${lerp(0, -60, e)}px)`;
+  else if (kind === 'slide-left') el.style.transform = `translateX(${lerp(0, -90, e)}px)`;
+  else el.style.transform = `scale(${lerp(1, 1.04, e)})`;
 }
 
-async function init(timeline, library) {
+async function init(timeline, library, format = 'vertical') {
   T = timeline;
+  TRANSITION = timeline.transition ?? TRANSITION;
+  FORMAT = format;
+  document.documentElement.classList.add(`fmt-${format}`, `cap-${timeline.captionsMode || 'small'}`);
   stage = document.getElementById('stage');
+  const sceneBox = document.getElementById('scene');
   capBox = document.getElementById('captions');
   bar = document.querySelector('.progress i');
-  glowA = document.querySelector('.bg-glow.a');
-  glowB = document.querySelector('.bg-glow.b');
   document.querySelector('.brand').insertAdjacentHTML('afterbegin', MARK);
 
   for (const [i, v] of T.visuals.entries()) {
-    const wrap = h('div', 'visual');
     const b = BUILDERS[v.type];
     if (!b) throw new Error(`unknown visual type "${v.type}" in segment "${v.segment}"`);
     const inst = b(v, library);
+    const wrap = h('div', inst.full ? 'visual visual-full' : 'visual');
     wrap.appendChild(inst.el);
     for (const c of v.callouts || []) {
       const node = buildCallout(c);
@@ -507,14 +517,14 @@ async function init(timeline, library) {
       const prev = inst.update;
       inst.update = (t) => { prev(t); pop(node, t, c.t ?? v.start, { from: 0.5, dy: 30 }); };
     }
-    stage.appendChild(wrap);
+    (inst.full ? sceneBox : stage).appendChild(wrap);
     built.push({ v, wrap, inst, kind: transitionStyle(v, i) });
   }
   await document.fonts.ready;
-  await Promise.all(['800 92px "Funnel Display"', '700 40px "Funnel Sans"', '600 34px "JetBrains Mono"', '40px "Noto Color Emoji"']
+  await Promise.all(['800 92px "Funnel Display"', '700 40px "Funnel Sans"', '600 34px "JetBrains Mono"', '40px "Noto Color Emoji"', '700 40px "Kalam"']
     .map((f) => document.fonts.load(f, 'Abc🧠').catch(() => null)));
-  for (const b of built) if (b.inst.measure) b.inst.measure();
-  for (const c of T.captions) {
+  for (const b of built) if (b.inst.measure) b.inst.measure(b.wrap, stage);
+  for (const c of T.captionsMode === 'off' ? [] : T.captions) {
     const el = h('div', 'cap');
     const ws = c.words.map((w) => {
       const s = h('span', 'w', w.text);
@@ -531,8 +541,6 @@ async function init(timeline, library) {
 
 function seek(t) {
   bar.style.width = `${(clamp(t / T.duration, 0, 1) * 100).toFixed(3)}%`;
-  glowA.style.transform = `translate(${-420 + 140 * Math.sin(t * 0.35)}px, ${-380 + 90 * Math.cos(t * 0.27)}px)`;
-  glowB.style.transform = `translate(${220 + 120 * Math.cos(t * 0.31)}px, ${900 + 110 * Math.sin(t * 0.23)}px)`;
 
   let cur = built.findIndex((b) => t >= b.v.start && t < b.v.end);
   if (cur < 0) cur = built.length - 1;
@@ -556,8 +564,8 @@ function seek(t) {
     const on = t >= c.start && t < c.end;
     el.style.display = on ? '' : 'none';
     if (!on) continue;
-    const k = (t - c.start) / 0.12;
-    el.style.transform = `scale(${lerp(0.88, 1, easeOut(k))})`;
+    const k = (t - c.start) / 0.18;
+    el.style.transform = `scale(${lerp(0.94, 1, easeOut(k))})`;
     el.style.opacity = String(clamp(k * 2, 0, 1));
     let now = -1;
     c.words.forEach((w, i) => { if (t >= w.start - 0.03) now = i; });

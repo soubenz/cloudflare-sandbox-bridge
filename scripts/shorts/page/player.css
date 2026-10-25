@@ -128,7 +128,7 @@ html, body {
 .agent-guess .bubble { font-size: 44px; }
 
 /* ----------------------------------------------------------- diagram -- */
-.dg-wrap { width: 1040px; }
+.dg-wrap { width: 1040px; --dg-h: 620px; }
 .dg-wrap .diagram { max-width: none; width: 100%; margin: 0; padding: 18px; border-radius: 34px; border-width: 2px; box-shadow: 0 40px 90px rgb(0 0 0 / 0.45); }
 .dg-wrap .diagram-title, .dg-wrap .diagram-caption { display: none; }
 .dg-wrap .diagram-figure { position: relative; overflow: hidden; border-radius: 22px; padding: 0; }
@@ -149,6 +149,7 @@ html, body {
 .term-scroll { font-family: var(--font-mono); font-size: 34px; line-height: 1.36; color: #dfe4ff; white-space: pre-wrap; overflow-wrap: anywhere; font-variant-ligatures: none; }
 .code-scroll, .term-bar span { font-variant-ligatures: none; }
 .term-line { min-height: 1.36em; }
+.term-cmd { padding-bottom: 10px; margin-bottom: 12px; border-bottom: 2px solid #1d2659; }
 .ps1 { color: #4ade80; font-weight: 700; }
 .cmd { color: #ffffff; font-weight: 600; }
 .cursor { display: inline-block; width: 0.6em; height: 1.1em; vertical-align: -0.2em; background: #dfe4ff; }
@@ -205,3 +206,30 @@ html, body {
 .cap .w { position: relative; padding: 0 12px; border-radius: 18px; }
 .cap .w.now { background: var(--cap-hl); color: var(--cap-hl-ink); text-shadow: none; box-shadow: 0 10px 30px rgb(0 0 0 / 0.4); }
 .cap .w.later { color: rgb(255 255 255 / 0.88); }
+
+/* ---------------------------------------------------- landscape 16:9 -- */
+/* 1920 x 1080 for websites: the visual large on the left (about 68% of the
+   width), captions in a column on the right, brand mark top-left. Text is
+   sized for a laptop screen: captions 64 px, terminal and code 30 px. */
+html.fmt-landscape, html.fmt-landscape body { width: 1920px; height: 1080px; }
+.fmt-landscape .progress { height: 6px; }
+.fmt-landscape .brand { top: 40px; left: 60px; right: auto; justify-content: flex-start; font-size: 36px; gap: 12px; }
+.fmt-landscape .brand svg { width: 40px; height: 40px; }
+.fmt-landscape #stage { left: 40px; right: auto; top: 108px; width: 1310px; height: 940px; }
+.fmt-landscape #captions {
+  left: 1390px; right: 60px; top: 108px; height: 940px;
+  border-left: 2px solid color-mix(in srgb, var(--color-text) 10%, transparent);
+  padding-left: 34px;
+}
+.fmt-landscape .cap { font-size: 68px; gap: 6px 16px; line-height: 1.16; }
+.fmt-landscape .cap .w { padding: 0 10px; border-radius: 14px; }
+.fmt-landscape .panel { width: 1250px; }
+.fmt-landscape .chat.panel { width: 1060px; }
+.fmt-landscape .agent-card.panel { width: 1060px; }
+.fmt-landscape .dg-wrap { width: 1280px; --dg-h: 690px; }
+.fmt-landscape .heading { font-size: 50px; margin-bottom: 24px; }
+.fmt-landscape .term-scroll, .fmt-landscape .code-scroll { font-size: 30px; }
+.fmt-landscape .term-bar { height: 60px; }
+.fmt-landscape .card .title { font-size: 92px; max-width: 1200px; }
+.fmt-landscape .card .kicker { font-size: 34px; }
+.fmt-landscape .card .sub { font-size: 36px; margin-bottom: 56px; }
