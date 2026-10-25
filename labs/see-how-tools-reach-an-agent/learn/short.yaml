@@ -1,0 +1,143 @@
+# Short explainer videos for this lab (docs/shorts.md). Render with:
+#   node scripts/shorts/render.mjs labs/see-how-tools-reach-an-agent/learn/short.yaml
+#
+# One entry of `videos` per lesson concept; each renders to its own MP4 and may
+# not run past 180 s (the render fails, naming the segment to trim).
+#
+# Terminal output below is real: call_tool.py run against this lab's own
+# services (ContextForge 1.0.10 with weather-tools and calculator-tools, set
+# up by seed_contextforge.py), copied verbatim. Only the display clips the
+# 2,000-character tools/list body (`clip`).
+
+voice:
+  model: "@cf/deepgram/aura-2-en"
+  speaker: arcas        # calm male Aura-2 voice
+  tempo: 0.84           # slower than the model reads, so the 8 segments land at ~45 s
+whisper: "@cf/openai/whisper-large-v3-turbo"
+pace:
+  gap: 0.28             # silence between segments, seconds (keep <= 0.3)
+  tail: 2.3             # hold on the last card (end card, after the last word)
+
+videos:
+  - id: see-how-tools-reach-an-agent
+    title: See how tools reach an agent
+    segments:
+      - id: hook
+        vo: Your AI agent just made up the weather.
+        visuals:
+          - type: chat
+            agent: Parcel helper
+            status: AI agent · online
+            messages:
+              - { from: customer, text: "Why is my parcel late?" }
+              - { from: agent, text: "Heavy snow in Leeds today ❄️", at: 0.3 }
+            chip: { label: "Actual weather", text: "Leeds 18°C ☀️", at: "made up" }
+            stamp: { text: "Made up", at: "weather" }
+
+      - id: agent
+        vo: An agent is an AI model that can call tools. Without a tool, it guesses.
+        visuals:
+          - type: agent
+            title: Agent
+            model: { icon: "🧠", label: "AI model" }
+            tool: { icon: "🔧", label: "tools", at: "call tools" }
+            missing: { label: "no weather tool", at: "Without" }
+            guess: { text: "Heavy snow in Leeds ❄️", stamp: "Guessed", at: "it guesses" }
+
+      - id: what-is-mcp
+        vo: MCP is the standard way to give it tools. The agent asks a tool server for its menu, then calls a tool by name.
+        visuals:
+          - type: diagram
+            id: mcp-what-is-mcp
+            title: "MCP: a menu of tools"
+            steps:
+              - { n: 1 }
+              - { n: 2, at: "for its menu" }
+              - { n: 3, at: "then calls" }
+              - { n: 4, at: "by name" }
+
+      - id: gateway
+        vo: With many tool servers, you put a tool gateway in front. Servers register once, and each agent gets one address and only the tools picked for it.
+        visuals:
+          - type: diagram
+            id: mcp-virtual-servers
+            title: One door, many tool servers
+            steps:
+              - { n: 1 }
+              - { n: 2, at: "Servers register once" }
+              - { n: 3, at: "only the tools" }
+
+      - id: list-tools
+        vo: Listing tools from the agent's address shows exactly what it can see.
+        visuals:
+          - type: terminal
+            command: python3 -B call_tool.py --list
+            height: 990
+            clip: 92
+            highlight:
+              - { match: "[a-z]+-tools-[a-z-]+", lines: "^  - ", tone: ok, at: "exactly" }
+            output: |
+              --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
+                  {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+              <-- HTTP 200
+                  {"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "calculator-tools-subtract", "description": "Subtract b from a and return the difference.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "subtractArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "subtractOutput", "type": "object"}, "annotations": {}}, {"name": "calculator-tools-multiply", "description": "Multiply two numbers and return the product.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "multiplyArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "multiplyOutput", "type": "object"}, "annotations": {}}, {"name": "weather-tools-get-weather", "description": "Get the current made-up weather for a city.", "inputSchema": {"properties": {"city": {"title": "City", "type": "string"}}, "required": ["city"], "title": "get_weatherArguments", "type": "object"}, "annotations": {}}, {"name": "weather-tools-get-forecast", "description": "Get a made-up multi-day forecast for a city.", "inputSchema": {"properties": {"city": {"title": "City", "type": "string"}, "days": {"default": 3, "title": "Days", "type": "integer"}}, "required": ["city"], "title": "get_forecastArguments", "type": "object"}, "annotations": {}}, {"name": "calculator-tools-add", "description": "Add two numbers and return the sum.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "addArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "addOutput", "type": "object"}, "annotations": {}}]}}
+
+              Tools reachable through virtual server 'toy-tools':
+                - calculator-tools-subtract: Subtract b from a and return the difference.
+                - calculator-tools-multiply: Multiply two numbers and return the product.
+                - weather-tools-get-weather: Get the current made-up weather for a city.
+                - weather-tools-get-forecast: Get a made-up multi-day forecast for a city.
+                - calculator-tools-add: Add two numbers and return the sum.
+
+      - id: call-tool
+        vo: Every call goes through the same door, so the gateway can log who called what.
+        visuals:
+          - type: terminal
+            command: "python3 -B call_tool.py calculator-tools-add '{\"a\": 17, \"b\": 25}'"
+            height: 820
+            highlight:
+              - { match: "/servers/[0-9a-f]+/mcp", lines: "^-->", tone: default, at: "same door" }
+              - { match: "42\\.0", lines: "^  42", tone: ok, at: "Every call" }
+            callouts:
+              - { text: "✅ Gateway logs: calculator-tools-add", tone: ok, at: "log who" }
+            output: |
+              --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
+                  {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "calculator-tools-add", "arguments": {"a": 17, "b": 25}}}
+              <-- HTTP 200
+                  {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": "42.0"}], "structuredContent": {"result": 42.0}, "isError": false}}
+
+              Result:
+                42.0
+
+      - id: tool-errors
+        vo: When a tool fails, you still get a normal reply. Read the reply, not just the status code.
+        visuals:
+          - type: diagram
+            id: mcp-tool-errors
+            title: A tool that fails still answers
+            steps:
+              - { n: 4 }
+              - { n: 5, at: "you still get" }
+              - { n: 6, at: "normal reply" }
+          - type: terminal
+            at: "Read the reply"
+            command: "python3 -B call_tool.py does-not-exist '{}'"
+            typing: 0.45
+            highlight:
+              - { match: "HTTP 200", tone: warn, at: "Read the reply" }
+              - { match: "\"isError\": true", tone: bad, at: "not just" }
+            output: |
+              --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
+                  {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "does-not-exist", "arguments": {}}}
+              <-- HTTP 200
+                  {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": "Tool not found: does-not-exist"}], "isError": true}}
+              call_tool: 'does-not-exist' reported an error: [{'type': 'text', 'text': 'Tool not found: does-not-exist'}]
+
+      - id: outro
+        vo: "Try it yourself in the lab: See how tools reach an agent, on Opalix."
+        visuals:
+          - type: card
+            kicker: Try it yourself
+            title: { text: "See how tools reach an agent", at: "See how" }
+            sub: { text: "Hands-on lab · 20 min", at: "See how" }
+            brand: { text: opalix, at: "Opalix" }

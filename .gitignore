@@ -43,3 +43,8 @@ dashboard/dist-worker/
 labs/*/checks/results.json
 labs/*/checks/results.lock
 labs/*/checks/grader-*
+
+# scripts/shorts/render.mjs: cached narration (TTS clips, word timings), build
+# scratch and default output. Regenerated on demand; never commit a rendered video.
+scripts/shorts/.cache/
+scripts/shorts/.out/
