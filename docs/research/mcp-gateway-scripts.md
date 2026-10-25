@@ -6,52 +6,67 @@ Format and writing rules: `docs/shorts.md` and `docs/video-prompt.md`.
 
 ## How to read these tables
 
-- **One board page per row.** A board page is one clean whiteboard with 3-6 elements (a list
-  of nodes or a terminal counts as one element). Between pages the board is erased. A row
-  marked "same page" keeps the previous board and adds to it, still within 6 elements.
+- **One board page per row, one idea per page.** A board page is one clean whiteboard with
+  3-6 elements (a list of nodes or a terminal counts as one element). Between pages the board
+  is erased, with 0.8 s of silence for the wipe. A row marked "same page" keeps the previous
+  board and adds to it, only when the picture genuinely builds and stays within 6 elements.
 - **ON SCREEN** lists the elements in the order they appear; the word in [square brackets] is
-  the cue and appears word for word in VOICE.
-- **VOICE** is one or two flowing sentences, at most about 240 characters, past tense for the
-  story. Every term is defined in the sentence where it first appears. No narrated questions:
-  the hook question is written on the board only.
+  the cue and appears word for word in VOICE. The voice names what is being drawn while it is
+  drawn ("drawn here one by one", "under each name sits ..."), so a page can hold the screen
+  for 12-20 s without going quiet.
+- **VOICE** is two or three plain sentences, 20-30 words, past tense for the story. Every term
+  is defined in the sentence where it first appears, after the viewer has felt the need for it.
+  No narrated questions: the hook question is written on the board only. Terms from an earlier
+  video are reused with a short reminder, not redefined.
 - **NOTE** says what is lab-real (verbatim terminal output from `call_tool.py` against the
   lab's own services, already captured in `learn/short.yaml`) and what is illustrative, with
-  the source number from the list at the end.
-- Lengths: word counts are for VOICE only. At 160 words a minute plus the renderer's gaps
-  (0.7 s between pages, 2 s tail) each video lands between about 2:35 and 2:50.
+  the source number from the list at the end. A fact cut from the voice is noted there too.
+- **Lengths.** Word counts are for VOICE only. The estimate is words at 170 a minute (the
+  Workers AI voice at natural speed), plus 0.8 s of silence at every page break and the
+  renderer's 0.3 s lead and 2.5 s tail. The renderer's own beat holds may add a few seconds.
 
 Terms are used exactly as in the brief's glossary: **MCP gateway** (never "tool gateway"),
 **MCP server**, **MCP client**, **host**, **tool**, **input schema**, **virtual server**,
 **protocol error**, **tool execution error**.
 
 Colours (unchanged from `short.yaml`): agent blue, weather cyan, calculator yellow, gateway
-violet, user orange, model white, ok green, bad red, quiet grey. The orders and docs servers
-of the Larkfield examples are new illustrative actors; give them pink and grey.
+violet, user orange, model white, ok green, bad red, quiet grey. The orders, docs and maps
+servers of the Larkfield examples are illustrative actors; give them pink and grey.
+
+The four videos are a mini-course in this order, and each one ends by pointing at the next:
+1 what an MCP server, a tool, `tools/list` and `tools/call` are; 2 why and how an MCP gateway;
+3 virtual servers and what each agent sees; 4 what a failed tool call looks like.
 
 ---
 
 ## Video 1. What is MCP?
 
 - **id** `mcp-what-is-mcp` · **idea** an agent asks an MCP server for its menu of tools and
-  calls one by name · **running example** the Leeds weather question · **voice** 407 words,
-  about 2:45.
+  calls one by name · **running example** the Leeds snow that never fell · **story** Ollie,
+  the engineer who built Larkfield's support assistant, finds out why it guessed ·
+  **voice** 397 words on 14 pages, about 2:33.
 
 | # | BOARD PAGE | ON SCREEN | VOICE | NOTE |
 |---|---|---|---|---|
-| 1 | Hook: the snow answer | kicker "Agent question"; title "How did the agent know it was snowing in Leeds?" (both at 0 s); [customer] user bubble "Is it snowing in Leeds?"; [within a second] agent node "Support assistant" and its bubble "Yes, heavy snow."; caption "09:00" | On Tuesday, an assistant reported heavy snow in Leeds. A customer of Larkfield, a delivery software company, had asked it at nine in the morning, and the answer came back within a second. | Story is illustrative (Larkfield is our fictional company). |
-| 2 | The model guessed | [language model] chip "model"; [training] chip "trained months ago"; [sky] sun icon with "?"; [guess] stamp "GUESS" | The assistant was built on a language model, the part that reads and writes text, and a model only knows what it read in training, months earlier. It could not see that morning's sky, so the answer was a guess. | General fact about model training data. |
-| 3 | Agent and tool | [agent] node "Agent" with the model chip inside it; [tool] chip `get_weather(city)`; [a city in] text "city in → weather out" | An agent is the program around the model: it keeps the conversation and carries out what the model decides. A tool is a function in another system that the agent can run, such as get_weather, with a city in and the weather out. | `get_weather` is real in the lab (`workspace/tools/weather_tool_server.py`). Source 14 for "the application runs the tool". |
-| 4 | MCP server and MCP client | erase; [MCP server] node "Weather MCP server" holding chips `get_weather`, `get_forecast`; [host] small label "host" over the agent node; [MCP client] box "MCP client" inside the agent; [exactly one server] line client to server labelled "MCP" | Tools are offered by an MCP server, a program that speaks MCP, the Model Context Protocol. Inside the agent, which the protocol calls the host, an MCP client holds the connection to exactly one server. | Host, client, server and 1:1 client-server: sources 2, 3. |
-| 5 | JSON-RPC messages | card "request" `{"method": "tools/list", "params": {}}`; [result or an error] card "reply" `{"result": …}` / `{"error": …}`; [standard input] chip "stdio: a local program"; [HTTP] chip "Streamable HTTP · the lab" | Every MCP message is a small JSON document in the JSON-RPC format: a request names a method, and the reply holds either a result or an error. Messages travel over a local program's standard input and output, or over HTTP, as in the lab. | Sources 1, 7, 13. The lab uses Streamable HTTP (manifest, `mcp.run(transport="streamable-http")`). |
-| 6 | The menu: tools/list | packet [tools/list] client to server; card "menu" with `get_weather` · "Get the current made-up weather for a city." · [input schema] `city: string (required)`; second entry `get_forecast` · `city, days (default 3)` at [their types] | First, the client asked the server for its menu with the method tools/list. For each tool the server sent back a name, a plain description and an input schema, the list of inputs the tool needs and their types. | Real: names, descriptions and schemas are copied from the lab's real `tools/list` output (short.yaml `tlist`). Source 4. |
-| 7 | The model chooses | erase; [question] user bubble "Is it snowing in Leeds?"; [menu] stack of the two tool chips; model node; [request] chip "get_weather · city: Leeds"; [wrote] small text "writes the request, runs nothing" | The agent gave the model the customer's question together with that menu, and the model answered with a request: call get_weather with the city Leeds. The model only wrote the request; the agent acted on it. | Illustrative: the lab has no model, the learner plays the agent. Model-API tool use: source 14. Flow: source 4 ("Tool Selection"). |
-| 8 | The call: tools/call | packet [tools/call] "tools/call · get_weather · {city: Leeds}"; ring on server at [ran]; packet [result] back "10 °C, cloudy"; card (simplified) `"content": text "…10 °C, cloudy", "isError": false` | The client sent tools/call with the tool's name and its arguments. The server ran the function and replied with a result whose content held the weather: ten degrees and cloudy. | Source 4 (`tools/call`, `content`, `isError`). 10 °C cloudy is the lab's real output for Leeds. |
-| 9 | In the lab | layout split; terminal (real) `python3 -B call_tool.py weather-tools-get-weather '{"city": "Leeds"}'`, show "0-2,5-10"; marks [tools/call] method, [server's name] `weather-tools-get-weather`, result lines; chip "toy server" at [makes its numbers up] | In the lab you send this tools/call yourself, and the tool's name starts with the server's name, which the next video explains. The lab's weather server is a toy that makes its numbers up; the point is that the answer came from a tool. | Real terminal output (short.yaml `term`). The weather is invented by the toy server (brief §5). |
-| 10 | Recap | layout canvas; erase; four numbered chips: [menu] "1 tools/list: the menu", [picked] "2 the model picks", [by name] "3 tools/call", [data] "4 a result" | Focus on what just happened: the client fetched the menu, the model picked a tool, the client called it by name, and the answer came back as data. Any agent that speaks MCP can use any MCP server this way, with no glue code per tool. | Sources 1, 4. "No glue code for one tool": configuration (the server's address) is still needed. |
-| 11 | Call to action | chip "Open the lab · See how tools reach an agent" | Open the lab, See how tools reach an agent, and ask for the weather in Leeds yourself. | |
+| 1 | Hook: snow in Leeds | kicker "Agent question"; title "How did the assistant know it was snowing in Leeds?" (both at 0 s); caption "Tuesday 09:00"; [heavy snow] agent node "Support assistant" with bubble "Yes, heavy snow in Leeds."; [No snow] stamp "NO SNOW"; [Ollie] user node "Ollie · built it" | On Tuesday morning, an assistant reported heavy snow in Leeds. No snow fell, and by lunchtime the complaint reached Ollie, the Larkfield engineer who had built it. | Illustrative story (Larkfield and Ollie are our fictional company and engineer). First sentence: 10 words, no name, no term. |
+| 2 | The model guessed | erase; [language model] chip "language model · reads text, writes text"; [training] chip "trained months ago"; [guess] stamp "GUESS" on a small copy of the snow bubble | Underneath sat a language model, the part that reads and writes text. It knew only what it had read in training, months earlier, so the snow was a guess. | General fact about training data; brief §7.1 ("the model runs nothing" comes on page 10). |
+| 3 | The agent | erase; [agent] node "Agent" drawn around the model chip; [conversation] text "keeps the conversation"; [carries out] text "carries out what the model decides"; [fix] ring on the agent node | Around the model sits the agent, the program that keeps the conversation and carries out what the model decides. Ollie's fix went there, into the agent. | Glossary "agent" (brief §1). |
+| 4 | A tool | same page; [tool] chip `get_weather` beside the agent; [another program] dashed box "another program" around the chip; [city] text "city in → weather out" | He gave the agent a tool, a function in another program that the agent can run for the model. This one, get_weather, takes a city and returns today's weather. | `get_weather` is real in the lab (`workspace/tools/weather_tool_server.py`). The application, not the model, runs the tool: source 14. |
+| 5 | An MCP server | erase; [MCP server] node "Weather MCP server" holding chips `get_weather`, `get_forecast`; [Model Context Protocol] text "MCP · Model Context Protocol"; [any such program] faint second node "… MCP server" | The program offering get_weather is an MCP server. MCP, the Model Context Protocol, is one shared way to ask any such program for its tools and run them. | Sources 1, 3. A server offers one or more tools (brief §7.4); the lab's weather server offers two. The USB-C analogy is left out of the voice. |
+| 6 | The MCP client | same page; [MCP client] box "MCP client" inside the agent; [exactly one] line client → server labelled "MCP"; [host] small label "host" above the agent | Inside the agent, a part called the MCP client holds the connection to exactly one MCP server. The protocol calls the agent itself the host. | Sources 2, 3 (1:1 client-server; host). "Host" is said once in the course, as the brief asks. |
+| 7 | Messages: JSON-RPC | erase; [request] card "request" `{"method": "tools/list", "params": {}}`; [result] card "reply" `{"result": …}`; [error] card `{"error": …}` beside it | Client and server exchange JSON documents in a format called JSON-RPC. A request names a method, and the reply carries either a result or an error. Remember that pair. | Sources 1, 13. Video 4 builds on "result or error". Transports (stdio, Streamable HTTP) are left out of the voice; the lab uses Streamable HTTP (source 7, manifest). |
+| 8 | The menu: tools/list | erase; packet [tools/list] client → server; [menu] card "menu": `get_weather` · "Get the current made-up weather for a city." / `get_forecast` · "Get a made-up multi-day forecast for a city." | The client asked the server for its menu with tools/list. Back came each tool's name and a description written for the model: Get the current made-up weather for a city. | Real names and descriptions (short.yaml `tlist`). Source 4. The model reads descriptions like a prompt (brief §7.11). |
+| 9 | The input schema | same page; [input schema] line under `get_weather`: `city · string · required`; [days] line under `get_forecast`: `days · integer · default 3` | Under each name sits an input schema, the inputs a tool needs and their types. get_weather wants one, city, a string; get_forecast adds days, a whole number, three by default. | Real schemas (short.yaml `tlist`: `city` string required; `days` integer default 3). Source 4. |
+| 10 | The model chooses | erase; [question] user bubble "Is it snowing in Leeds?"; [menu] stack of the two tool chips; model chip; [request] chip "call get_weather · city: Leeds"; [ran nothing] text "writes the request, runs nothing" | Then the agent handed the model the question and that menu, and the model answered with a request: call get_weather, city Leeds. It wrote the request; it ran nothing. | Illustrative: the lab has no model; the learner plays the agent's client. Model tool use: source 14; tools are model-controlled: source 4. |
+| 11 | The call: tools/call | erase; packet [tools/call] "tools/call · get_weather · {city: Leeds}" client → server; [ran] ring on the server; packet [result] back; card `content: "Leeds, 10 °C, cloudy" · isError: false` | So the client sent tools/call with the tool's name and arguments. The server ran it and replied with a result whose content held the answer: Leeds, ten degrees, cloudy. | Source 4 (`tools/call`, `content`, `isError`). Leeds 10 °C cloudy is the lab's real output (short.yaml `term`). |
+| 12 | In the lab | layout split; terminal (real) `python3 -B call_tool.py weather-tools-get-weather '{"city": "Leeds"}'`, show "0-2,5-10"; marks: [tools/call] the method, then the result lines; [toy server] chip "toy server · numbers made up"; [weather-tools] mark on the tool name | In the lab you send this tools/call yourself. A toy server makes the weather up, and the name starts with weather-tools, a prefix the next video explains. | Real terminal output (short.yaml `term`). The weather is invented by the toy server (brief §5). The lab call goes through ContextForge, hence the prefix (brief §6.5). |
+| 13 | Recap | layout canvas; erase; four numbered chips: [tools/list] "1 tools/list · the menu", [picked] "2 the model picks", [tools/call] "3 tools/call · run by name", [result] "4 a result" | Focus on what just happened. The client fetched the menu with tools/list, the model picked a tool, the client ran it with tools/call, and the weather returned as a result. | Sources 1, 4. |
+| 14 | Call to action | chip "Open the lab · See how tools reach an agent"; [Next] text "Next: one door for many MCP servers" | Open the lab, See how tools reach an agent, and ask for the weather in Leeds yourself. Next, Larkfield wires three agents to four MCP servers. It gets messy. | Pointer to video 2. |
 
 Left out on purpose (one idea per video): resources and prompts, the `initialize`
-handshake (removed in the current spec and not visible in the lab), authorization.
+handshake (removed in the current spec and not visible in the lab), authorization, the two
+transports, the USB-C analogy, and "any agent that speaks MCP can use any MCP server" (true,
+but a second idea; the lab's call still needs the server's address configured).
 
 ---
 
@@ -59,24 +74,26 @@ handshake (removed in the current spec and not visible in the lab), authorizatio
 
 - **id** `mcp-why-a-gateway` · **idea** one proxy in front of many MCP servers gives agents one
   address and the platform team one place for registration, credentials and records ·
-  **running example** Larkfield's three agents and their MCP servers, then the lab ·
-  **voice** 416 words, about 2:45.
+  **running example** Larkfield's three agents and their MCP servers, then the lab · **story**
+  Maren, the platform lead, cannot tell which agent is flooding the orders server ·
+  **voice** 397 words on 14 pages, about 2:33.
 
 | # | BOARD PAGE | ON SCREEN | VOICE | NOTE |
 |---|---|---|---|---|
-| 1 | Hook: the tangle | kicker "Platform question"; title "Three agents, four MCP servers. Who called what?" (at 0 s); [Support, Billing and Ops] column of three agent nodes; [four MCP servers] column "Weather", "Calculator", "Orders", "Docs" | By March, three agents each had their own wiring. Larkfield's Support, Billing and Ops agents each connected straight to four MCP servers: weather, a calculator, orders and docs. | Illustrative. Weather and calculator mirror the lab's two servers. |
-| 2 | Same page: twelve connections | [twelve connections] 12 lines draw, counter "12 connections"; [credential] key chip on each agent "×4"; [one Friday] note card "orders slow · who was calling?" | That made twelve connections, and each one needed an address and a credential, a secret that proves who is asking, kept inside an agent. When the orders server slowed down one Friday, nobody could say which agent had been calling it. | Illustrative. |
-| 3 | Same page: one more server | key chips and note fade; [fifth server] node "Maps"; [all three agents] three dashed lines; [fifteen] counter "15 connections" | When the team added a fifth server for maps, all three agents had to change their configuration, and the count rose to fifteen. | Illustrative. |
-| 4 | An MCP gateway | erase; [MCP gateway] violet node in the centre; agents column left, servers column right; [one MCP server] label on the agent side "looks like one MCP server"; [their client] label on the server side "acts as MCP client" | An MCP gateway is a proxy, a program in the middle of every call: to the agents it looks like one MCP server, and to the real MCP servers it acts as their client. | Definition synthesised from sources 15-21; ContextForge "runs as a fully compliant MCP server" (15). |
-| 5 | Registration and catalogue | [registered] operator icon with card "name + URL" into the gateway; [tools/list] packets from the gateway to each server; [catalogue] list inside the gateway "catalogue" | An operator registered each MCP server with the gateway once, by name and address. The gateway then asked every server for its menu with tools/list and kept the answers in one catalogue. | The server does nothing to register; in the lab `seed_contextforge.py` does it. Sources 15, 22. |
-| 6 | One address | [one address] chip "mcp.larkfield.internal"; lines: three agents to the gateway, gateway to five servers; [eight] counter "8 connections" | Each agent now needed one address, the gateway's, and asking it for the menu returned tools from every server behind it. Three agents and five servers came to eight connections instead of fifteen. | Illustrative address. Single endpoint: sources 15, 16, 17. |
-| 7 | Credentials stay inside | [moved] key chips glide from the agents into the gateway; [own credential] one badge chip per agent; [passing on] chip "agent's token → server" with a red cross | The credentials for the real servers moved into the gateway, so each agent held only its own credential for the gateway. The MCP specification also forbids a server from passing on a token that was issued for someone else. | Credential injection: sources 16, 17; ContextForge stores credentials encrypted (22). Token passthrough forbidden: sources 10, 11. Illustrative in the lab (no upstream credentials). |
-| 8 | One place to watch | [record] card "gateway log (illustration)": `08:14 · Ops · orders-get-order · ok · 120 ms`; [how long] ring on "120 ms"; [who asked] ring on "Ops"; [limit] chip "limit: 100 calls a minute" | Because every call passed through one place, the gateway could record each one: which tool, when, how long it took, whether it worked and, with a credential per agent, who asked. The same place could also limit how often an agent may call. | Logging: sources 16, 17, 19, 22. 100 a minute is ContextForge's default `tool_rate_limit` (22). The lab log has no caller column and rate limiting is off (brief §5). |
-| 9 | What it is not | erase; chip "runs the tools" with cross; chip "chooses the tools" with cross; [AI gateway] chip "AI gateway: calls to language models" | An MCP gateway runs no tools and chooses none: the MCP servers still do the work, and the model still makes the choice. An AI gateway is a different thing, which carries the agents' calls to language models. | Brief §3.3. |
-| 10 | In the lab | layout split; [ContextForge] gateway node relabelled "ContextForge"; terminal (real) `python3 -B call_tool.py --list`, show "0,5-10", clip 50; marks [its address] url, [five tools] weather and calculator names | In the lab, the MCP gateway is ContextForge, IBM's open-source gateway, with two toy MCP servers registered. One tools/list sent to its address returned five tools from both servers. | Real terminal output (short.yaml `tlist`). Source 15. |
-| 11 | The record in the lab | terminal (real) `calculator-tools-add '{"a": 17, "b": 25}'`; mark [forty-two] `42.0`; [view tab] chip "view tab: tool · time · success · response time" | Calling add with seventeen and twenty-five returned forty-two, and the view tab showed that call as a new row with the tool, the time, whether it worked and how long it took. | Real output (short.yaml `tadd`); view columns from `workspace/view_service.py` (ContextForge's `tool_metrics`). |
-| 12 | Recap | layout canvas; erase; four chips [registered once], [one address], [credentials], [record] | Focus on what changed: servers were registered once, agents learned one address, credentials stayed in the gateway, and every call left a record in one place. | |
-| 13 | Call to action | chip "Open the lab · See how tools reach an agent" | Open the lab, See how tools reach an agent, and find your own calls in the view tab. | |
+| 1 | Hook: the slow Friday | kicker "Platform question"; title "Three agents, four MCP servers. Who called what?" (at 0 s); caption "Friday 18:40"; [orders server] server node "Orders" with red chip "slow"; [Maren] user node "Maren · platform lead"; [own records] small log icons scattered, one per agent | One Friday evening, the orders server slowed down. Maren, Larkfield's platform lead, asked which agent was flooding it, and nobody knew, because each agent kept its own records. | Illustrative (Larkfield and Maren are fictional). First sentence: 8 words. |
+| 2 | The wiring | erase; [three agents] column of agent nodes "Support", "Billing", "Ops" on the left; [four MCP servers] column "Weather", "Calculator", "Orders", "Docs" on the right; [Twelve] 12 lines draw one by one, counter "12 connections" | Larkfield ran three agents, Support, Billing and Ops, each wired straight to four MCP servers: weather, a calculator, orders and docs. Twelve connections, drawn here one by one. | Illustrative; weather and calculator mirror the lab's two servers. 3 × 4 = 12. |
+| 3 | What each line costs | erase; the same two columns, compact; [credential] key chip on each agent "×4"; [fifth server] node "Maps" joins the right column, three dashed lines; [fifteen] counter "15 connections" | Each line meant an address and a credential, a secret proving who is asking, kept inside that agent. When a fifth server arrived, every agent changed, and the count hit fifteen. | Illustrative; the fifth server is maps (label only). 3 × 5 = 15. "Credential" is defined here and reused in videos 3 and 4. |
+| 4 | An MCP gateway | erase; [MCP gateway] violet node "MCP gateway" in the centre, agents left, servers right; [proxy] text "proxy: receives each call, passes it on"; packet [passes] rides agent → gateway → server | So Maren put one program in the middle: an MCP gateway. A gateway is a proxy, a program that receives each call and passes it on. | Definition synthesised from sources 15-21 (brief §3.1). |
+| 5 | Two faces | same page; [single MCP server] label on the agents' side "looks like one MCP server"; [MCP client] label on the servers' side "acts as an MCP client" | To the agents, the gateway looks like a single MCP server. To the real servers it acts as their MCP client, the role each agent played before. | ContextForge "runs as a fully compliant MCP server" (15); the gateway is a client to the real servers (brief §3.1). |
+| 6 | Registration | erase; [operator] user icon with card "name + URL" → gateway; [did nothing] grey text "unchanged" on each server; packets [tools/list] gateway → each of the five servers | An operator then registered each server with the gateway once, by name and address; the server did nothing. The gateway connected and fetched each menu with tools/list. | Registration is the operator's act, not the server's (brief §1, §6.2); in the lab `seed_contextforge.py` does it. Sources 15, 22. |
+| 7 | The catalogue | same page; [catalogue] list inside the gateway titled "catalogue"; [one reply] packet gateway → an agent "tools/list reply: every tool" | The five menus landed in one list inside the gateway, its catalogue. One tools/list to the gateway now returned every tool from every server, in one reply. | Sources 15, 16, 17. ContextForge's separate "MCP Registry" panel is not this catalogue (brief §1). |
+| 8 | One address, one credential | erase; [one address] chip "mcp.larkfield.internal" on the gateway; three lines agents → gateway, five lines gateway → servers; [its own] one badge chip per agent; [moved] key chips glide from the agents into the gateway; [eight] counter "8 connections" | So each agent kept one address, the gateway's, and one credential, its own; the servers' secrets moved into the gateway. Three agents plus five servers made eight connections instead of fifteen. | Illustrative address. 3 + 5 = 8. Single endpoint: sources 15, 16, 17. Credential injection: 16, 17; ContextForge stores them encrypted (22). Cut from the voice: "token passthrough is forbidden" (10, 11) and "a sixth server changes nothing on the agents". The lab has no upstream credentials. |
+| 9 | One place to watch | erase; [row] card "gateway log (illustration)" `18:41 · Ops · orders-get-order · ok · 2400 ms`; rings in turn on [tool], [time], [how long], [worked]; [who asked] ring on "Ops" | Every call passed through one place, so the gateway wrote a row for each: tool, time, how long it took, whether it worked and, from the credential, who asked. | Logging: sources 16, 17, 19, 22. The lab log has no caller column (brief §5). Rate limiting (ContextForge default 100 calls a minute, 22) cut from the voice. |
+| 10 | What it is not | erase; chip "runs the tools" with a cross at [no tools]; chip "chooses the tools" with a cross at [chooses none]; [AI gateway] chip "AI gateway → language models" | The gateway runs no tools and chooses none; the servers do the work, and the model chooses. An AI gateway is a different thing: it carries calls to language models. | Brief §3.3. "Adds a hop, makes nothing faster" (brief §7.12) cut from the voice. |
+| 11 | In the lab | layout split; [ContextForge] gateway node relabelled "ContextForge"; terminal (real) `python3 -B call_tool.py --list`, show "0,5-10", clip 50; marks [its address] the url, [five tools] the names | In the lab the MCP gateway is ContextForge, IBM's open-source gateway, with two toy MCP servers registered. One tools/list to its address returned five tools from both. | Real terminal output (short.yaml `tlist`). Source 15. |
+| 12 | The record in the lab | terminal (real) `python3 -B call_tool.py calculator-tools-add '{"a": 17, "b": 25}'`; mark [forty-two] `42.0`; [view tab] chip "view tab: tool · time · success · response time"; [no caller] text "no caller column" | Then add with seventeen and twenty-five returned forty-two, and the view tab showed it as a new row: tool, time, success, response time. There is no caller column. | Real output (short.yaml `tadd`); view columns from `workspace/view_service.py` (ContextForge's `tool_metrics`). Every lab call is the same admin identity (manifest `X-Authenticated-User`). |
+| 13 | Recap | layout canvas; erase; four chips [registered once], [one address], [credentials], [one place]; [Maren] the log card returns with three "Ops" rows | Focus on what changed. Servers were registered once, agents learned one address, credentials stayed in the gateway, and every call left a row in one place, where Maren found her answer. | The payoff of the hook (illustrative): one table instead of three agents' logs. |
+| 14 | Call to action | chip "Open the lab · See how tools reach an agent"; [Next] text "Next: should every agent see every tool?" | Open the lab, See how tools reach an agent, and find your own calls in the view tab. Next, a refund tool shows up on Support's menu. | Pointer to video 3. |
 
 ---
 
@@ -84,23 +101,25 @@ handshake (removed in the current spec and not visible in the lab), authorizatio
 
 - **id** `mcp-virtual-servers` · **idea** a virtual server is a named bundle of tools at its
   own MCP address, so each agent is offered only what it needs · **running example** Support's
-  and Billing's bundles at Larkfield, then `toy-tools` in the lab · **voice** 380 words, about
-  2:35.
+  and Billing's bundles at Larkfield, then `toy-tools` in the lab · **story** Priya finds a
+  refund tool on the support assistant's menu · **voice** 396 words on 14 pages, about 2:32.
 
 | # | BOARD PAGE | ON SCREEN | VOICE | NOTE |
 |---|---|---|---|---|
-| 1 | Hook: the refund tool | kicker "Access question"; title "Should the support assistant see the refund tool?" (at 0 s); [support assistant] agent node; [twelve tools] menu list of 12 chips; [moved real money] ring on red chip `issue_refund` | In May, the support assistant's menu listed a refund tool. Larkfield's MCP gateway showed every agent all twelve tools in its catalogue, and one of them, issue_refund on the orders server, moved real money. | Illustrative (no orders server in the lab). |
-| 2 | Same page: the model can pick it | model node beside the agent; [by mistake] dashed arrow from the model to `issue_refund`; [weather and the calculator] ring on those chips | The model picks from whatever the menu offers, so any tool on the support menu was one the model could choose by mistake. Support only needed the weather and the calculator. | Tools are model-controlled: source 4. |
-| 3 | A virtual server | erase; [catalogue] grey column of 12 tools; [virtual server] box "support-tools"; [own MCP address] chip `/servers/<id>/mcp`; [ordinary MCP server] arrow agent to box, label "looks like one MCP server" | A virtual server is a named bundle of tools picked from the gateway's catalogue, with its own MCP address. To an agent it looks like an ordinary MCP server. | ContextForge definition and endpoint: sources 15, 22. |
-| 4 | Same page: Support's bundle | [five tools] chips `get_weather`, `get_forecast`, `add`, `subtract`, `multiply` move into the box; [left out] stamp "left out" on `issue_refund` | The team gave Support a virtual server with five tools: get_weather and get_forecast from the weather server, and add, subtract and multiply from the calculator. issue_refund was left out. | The five tools match the lab; leaving one out is illustrative (the lab's `toy-tools` holds all five, nothing is left out). |
-| 5 | Same page: Billing's bundle | [different virtual server] box "billing-tools" with `add`, `issue_refund`; [several] one line from `add` to both boxes | Billing got a different virtual server that did include the refund tool. One tool can sit in several virtual servers, because a virtual server only points at tools; it copies and runs nothing. | Many-to-many `server_tool_association` in ContextForge (22). |
-| 6 | Prefixes | erase; [called search] two chips "search" from "Docs" and "Orders" with "?"; [in front] the same chips as `docs-search`, `orders-search`; [weather-tools-get-weather] arrow `get_weather` → `weather-tools-get-weather` | Two MCP servers can each offer a tool called search, so ContextForge, the MCP gateway in our lab, puts the registered server's name in front: get_weather on the server registered as weather-tools became weather-tools-get-weather. | Spec says aggregators SHOULD prefix (4); ContextForge ADR-0011 (23). The lab name is real output. |
-| 7 | What the agent sees, what the gateway knows | erase; two columns. [saw] left "agent sees": "one address", "names", "descriptions", "input schemas". [knew] right "gateway knows": "owner MCP server", "original name `get_weather`", "server address", "credentials" | From its virtual server the agent saw one address and a list of names, descriptions and input schemas. Only the gateway knew which MCP server owned each tool, the tool's original name, the server's address and its credentials. | ContextForge keeps `original_name` and the gateway slug (23). |
-| 8 | Routing one call | [called] packet agent to gateway "weather-tools-get-weather · Leeds"; [looked up] ring on the gateway; [passed] packet gateway to weather server "get_weather · Leeds" | When Support called weather-tools-get-weather, the gateway looked up the owner, used the original name get_weather, and passed the call to the weather server. | Source 23 (invocation uses `original_name`). |
-| 9 | A bundle is a menu | erase; Support agent; [one virtual server] chip "credential: support-tools only"; [direct route] dashed arrow from the agent straight to the orders server, red cross | A virtual server hides tools from a menu, and it works as a control only when the agent's credential is good for that one virtual server and the agent has no direct route to the MCP servers behind it. | ContextForge server-scoped tokens (24). Brief §3.3. In the lab every call uses the same admin identity, so nothing is enforced. |
-| 10 | In the lab | layout split; terminal (real) `python3 -B call_tool.py --list`; marks [toy-tools] the "virtual server 'toy-tools'" line, [prefix] the five names | In the lab, the virtual server is called toy-tools and holds all five tools of the two toy servers, each with its prefix. The view tab lists the registered servers, the discovered tools and the virtual server on one page. | Real output (short.yaml `tlist`); view tab tables: `workspace/view_service.py`, brief.md. |
-| 11 | Recap | layout canvas; erase; three chips [catalogue], [picked a few], [prefixes]; gateway node at [details] | Focus on what just happened: the catalogue held every tool, each virtual server picked a few under one address, prefixes kept names apart, and the gateway kept the details the agents never saw. | |
-| 12 | Call to action | chip "Open the lab · See how tools reach an agent" | Open the lab, See how tools reach an agent, and count the tools toy-tools offers an agent. | The count is the lab's first question (`learn/questions.yaml`). |
+| 1 | Hook: the refund tool | kicker "Access question"; title "Should the support assistant see the refund tool?" (at 0 s); caption "May"; [support assistant] agent node with a menu list, red chip `issue_refund` at the bottom; [Priya] user node "Priya · head of Support"; [Maren] user node "Maren" | In May, the support assistant's menu listed a refund tool. Priya, who runs Support at Larkfield, spotted it and asked Maren how it got there. | Illustrative (no orders server in the lab). First sentence: 10 words. |
+| 2 | Everyone sees everything | erase; [whole catalogue] gateway node with list "catalogue · 12 tools" fanned out to three agents; [issue_refund] ring on the red chip; [real money] stamp "£" | It got there because the MCP gateway offered every agent its whole catalogue, all twelve tools, and one of them, issue_refund, moved real money. | Illustrative count: 5 lab-like tools plus 7 on the orders, docs and maps servers of video 2. `issue_refund` belongs to the orders server (label only). |
+| 3 | One wrong choice away | erase; model chip beside the support agent; [menu] the 12-chip menu; [wrong choice] dashed arrow model → `issue_refund`; [weather tools and the calculator] ring on those five chips | The model picks from whatever menu it is given, so a refund was one wrong choice away. Support only ever needed the weather tools and the calculator. | Tools are model-controlled: source 4. |
+| 4 | A virtual server | erase; [catalogue] grey column of 12 tools; [virtual server] empty box "support-tools"; [own MCP address] chip `/servers/<id>/mcp` under the box; [ordinary MCP server] arrow agent → box labelled "looks like one MCP server" | The cure is a virtual server: a named bundle of tools picked from the catalogue, at its own MCP address. To an agent it is an ordinary MCP server. | ContextForge definition and endpoint: sources 15, 22. Brief §7.9: a selection plus an address. |
+| 5 | Support's bundle | same page; [five tools] chips `get_weather`, `get_forecast`, `add`, `subtract`, `multiply` glide into the box; [stayed out] stamp "left out" on `issue_refund` | Maren made one, support-tools, and picked five tools into it: get_weather and get_forecast from the weather server, and add, subtract and multiply from the calculator. issue_refund stayed out. | The five tools match the lab; leaving one out is illustrative (the lab's `toy-tools` holds all five). |
+| 6 | Billing's bundle | erase; [billing-tools] second box with `add`, `issue_refund`; [both] one line from the catalogue's `add` to both boxes; [copying nothing] text "points at tools · copies nothing · runs nothing" | Billing got its own virtual server, billing-tools, which did include issue_refund. The tool add sits in both, because a virtual server only points at tools, copying nothing and running nothing. | Many-to-many `server_tool_association` in ContextForge (22). |
+| 7 | Two tools called search | erase; [docs server] node "Docs" with chip `search`; [orders server] node "Orders" with chip `search`; [Two identical names] both chips slide into one menu with "?" | A second problem appeared when the docs server and the orders server both offered a tool called search. Two identical names on one menu would leave the model guessing. | Illustrative pair; the spec says aggregators MAY meet collisions and SHOULD prefix (4). |
+| 8 | Prefixes | same page; [in front] the chips become `docs-search`, `orders-search`; [weather-tools-get-weather] arrow `get_weather` → `weather-tools-get-weather` | So the gateway puts the registered server's name in front of each tool. search became docs-search and orders-search, and in the lab get_weather became weather-tools-get-weather. | ContextForge ADR-0011 (23): slug + separator + original name. The lab name is real output. The prefix is the operator's registration name, not the server's choice (brief §8). |
+| 9 | What the agent sees | erase; two columns; [sees] left column "agent sees": "one address", "names", "descriptions", "input schemas"; [Only the gateway] right column "gateway knows": "owner server", "original name get_weather", "server address", "credentials" | From its virtual server, the agent sees one address and the tools' names, descriptions and input schemas. Only the gateway knows each tool's owner, original name, server address and credentials. | ContextForge keeps `original_name` and the gateway slug (23). Servers cannot see into each other (source 2). |
+| 10 | Routing one call | same page; packet [called] agent → gateway "weather-tools-get-weather · Leeds"; [looked up] ring on the right column; packet [passed] gateway → weather server "get_weather · Leeds" | When Support called weather-tools-get-weather, the gateway looked up the owner, restored the original name get_weather, and passed the call to the weather server. The agent never saw where it went. | Source 23 (invocation uses `original_name`). |
+| 11 | A menu is not a lock | erase; support agent; [credential] badge "credential: support-tools only"; [directly] dashed arrow from the agent straight to the orders server with a red cross | Leaving a tool out only shortens a menu. It is a lock only if the agent's credential is limited to that virtual server and the agent cannot reach the servers directly. | ContextForge server-scoped tokens (24). Brief §3.3, §7.10. |
+| 12 | In the lab | layout split; terminal (real) `python3 -B call_tool.py --list`, show "0,5-10"; marks [toy-tools] the "virtual server 'toy-tools'" line, [prefix] the five names; [same admin] text "every call: admin@example.com" | In the lab the virtual server toy-tools holds all five tools of both toy servers, each with its prefix. Nothing is left out, and every call uses the same admin identity. | Real output (short.yaml `tlist`); trusted-proxy header in manifest (brief §2.9). The view tab lists servers, tools and the virtual server (`view_service.py`). |
+| 13 | Recap | layout canvas; erase; four chips [catalogue], [picked a few], [prefixes], [details] | Focus on what just happened. The catalogue held every tool, each virtual server picked a few, prefixes kept names apart, and the gateway kept the details agents never saw. | |
+| 14 | Call to action | chip "Open the lab · See how tools reach an agent"; [next video] text "Next: 200 OK, and still wrong" | Open the lab, See how tools reach an agent, and count the tools toy-tools offers. The next video follows a call that returned 200 OK and went wrong. | The count is the lab's first question (`learn/questions.yaml`). Pointer to video 4. |
 
 ---
 
@@ -109,40 +128,202 @@ handshake (removed in the current spec and not visible in the lab), authorizatio
 - **id** `mcp-when-a-tool-fails` · **idea** HTTP 200 only says the message arrived; MCP reports
   failure in the body, as a protocol error or as a tool execution error, and the agent must
   read it · **running example** the Leeds forecast that came back with `isError`, then the
-  lab's `does-not-exist` call · **voice** 385 words, about 2:35.
+  lab's `does-not-exist` call · **story** Tomasz traces why the assistant promised snow again ·
+  **voice** 397 words on 14 pages, about 2:33.
 
 | # | BOARD PAGE | ON SCREEN | VOICE | NOTE |
 |---|---|---|---|---|
-| 1 | Hook: 200 and wrong | kicker "Debugging question"; title "The call returned 200 OK. Why was the forecast wrong?" (at 0 s); [HTTP 200] green chip "HTTP 200 OK"; [heavy snow] agent bubble "Expect heavy snow in Leeds."; caption "08:10" | The forecast call came back with HTTP 200. Minutes later, Larkfield's support assistant told a customer to expect heavy snow in Leeds, and no snow fell. | Illustrative story. |
-| 2 | Follow the call | erase; chain: agent → [MCP gateway] → [weather MCP server] → [weather service] cloud node; packet `get_forecast · Leeds` along each link; [in time] clock icon and red chip "timed out" on the weather service | The assistant had called get_forecast for Leeds through the MCP gateway, which passed it to the weather MCP server. That server asked an outside weather service for the data, and the service did not answer in time. | Illustrative: the lab's weather server calls no outside service and never times out. |
-| 3 | Same page: the reply | packets ride back; card "the reply" (simplified) `"result": {"isError": true, "content": text "Weather service timed out"}`; marks [isError] and [short text message]; [tool execution error] label under the card | The weather server did not crash. It sent back a normal result with isError set to true and a short text message, weather service timed out, which the specification calls a tool execution error. | Shape: source 5 (API failures are tool execution errors). Content illustrative. |
-| 4 | Status and body | erase; [delivered and answered] envelope icon with chip "HTTP 200"; [body] the reply card again, ring on `isError` | HTTP only reported that the request was delivered and answered, so its status was 200. Whether the tool worked was written in the body. | Lab-real pattern (`does-not-exist` returns 200 with `isError`). |
-| 5 | What went wrong | card "assistant code (illustration)" `if status == 200: use it`; [threw the message away] message chip drops off the board; model node; [guess] stamp "GUESS" | The assistant's code checked only the status and threw the message away, so the model received no forecast and filled the gap with a guess. | Illustrative. The spec says clients SHOULD pass tool execution errors to the model (5). |
-| 6 | The other kind: protocol error | erase; card "request" `"method": "tools/calll"`; [error object] card `"error": {"code": -32601, "message": "Method not found"}`; [no result] note "no result"; [protocol error] label | The other kind is a protocol error, for a request the server could not handle at all, such as a misspelt method name. The reply then holds an error object with a code and a message, and no result. | JSON-RPC code `-32601` (13); illustration, not run in the lab (the lab's HTTP status for this case is UNVERIFIED, and under the current spec it would be 404, source 8). |
-| 7 | Which is which | erase; two columns. Left "protocol error · error object": [unknown tool] "unknown tool", "malformed request". Right "tool execution error · isError": [failed API] "API failed", "bad input value", "business rule"; [correct itself] note under the right column "written for the model" | The MCP specification lists an unknown tool and a malformed request as protocol errors. A failed API, a bad input value or a broken business rule are tool errors, written so the model can read them and correct itself. | Source 5 (2026-07-28; input validation moved to tool errors in 2025-11-25). |
-| 8 | In the lab | layout split; terminal (real) `python3 -B call_tool.py does-not-exist '{}'`, show "1-4"; marks [HTTP 200] `HTTP 200`, [isError] `"isError": true`, [tool not found] `Tool not found: does-not-exist` | In the lab, a call to a tool named does-not-exist came back with HTTP 200, isError set to true, and the message: tool not found. | Real output (short.yaml `terr`); graded by `answers-match-the-gateway`. |
-| 9 | Same page: lab vs specification | two chips beside the terminal: [specification] "spec: unknown tool → protocol error"; [ContextForge] "ContextForge 1.0.10 → isError result"; [MCP Python SDK] small text "MCP Python SDK"; [read the body] chip | The specification files an unknown tool under protocol errors; ContextForge reports it as a tool error, because the MCP Python SDK beneath it turns any failure inside a tool call into one. The shape depends on the server, so read the body. | Sources 5, 25, 26 (brief §2.6). |
-| 10 | What a careful agent does | layout canvas; erase; decision tree from a "reply" node: [error object] → "agent's code: fix the request, fetch the menu again"; [isError] → "model reads the message" → three branches [fix an input], [retry once], [tell the customer]; bubble "Sorry, I have no forecast for Leeds right now." | A careful agent reads the body. On an error object its own code steps in, for example by fetching the menu again; on isError it hands the message to the model, which can fix an input, retry once, or tell the customer it has no forecast. | Source 5 ("Clients SHOULD provide tool execution errors to language models"). "Retry once" is our advice, not a spec rule. |
-| 11 | Recap | three chips [status], [body], [told the truth] | Focus on what just happened: the status said the message arrived, the body said whether the tool worked, and the agent that read the body told the truth instead of guessing. | |
-| 12 | Call to action | chip "Open the lab · See how tools reach an agent" | Open the lab, See how tools reach an agent, and call a tool that does not exist. | |
+| 1 | Hook: 200 and wrong | kicker "Debugging question"; title "The call returned 200 OK. Why was the forecast wrong?" (at 0 s); [200 OK] green chip "HTTP 200 OK"; caption "Thursday 08:00"; [heavy snow] agent bubble "Expect heavy snow in Leeds."; [Again] stamp "NO SNOW" | The call returned 200 OK, and the forecast was wrong. At eight on Thursday, Larkfield's assistant told a customer to expect heavy snow in Leeds. Again, no snow fell. | Illustrative story; callback to video 1. First sentence: 10 words. |
+| 2 | Follow the call | erase; [Tomasz] user node "Tomasz · staff engineer"; chain: agent → [MCP gateway] → [weather MCP server]; packet `get_forecast · Leeds` along each link | Tomasz, the staff engineer, pulled the trace. The assistant had called get_forecast for Leeds through the MCP gateway, which passed it to the weather MCP server. | Illustrative: the lab has no trace view beyond the view tab. Gateway as proxy: video 2. |
+| 3 | The far end | same page; [outside weather service] cloud node after the server; [did not answer] clock icon and red chip "timed out" on the cloud | That server asked an outside weather service for its data, and the service did not answer in time. The chain had broken at its far end. | Illustrative: the lab's weather server calls no outside service and never times out. |
+| 4 | The reply: a tool execution error | erase; card "the reply" (simplified) `"result": {"isError": true, "content": text "Weather service timed out"}`; marks [isError] and [short text]; [tool execution error] label under the card | The weather server did not crash. It sent a normal result with isError true and a short text: weather service timed out. The specification calls this a tool execution error. | Shape: source 5 (API failures are tool execution errors). The message text is illustrative. |
+| 5 | Status and body | erase; [delivered and answered] envelope icon with chip "HTTP 200"; [body] the reply card again, smaller, ring on `isError` | HTTP only reported that the request was delivered and answered, so its status was 200. Whether the tool had worked was written in the body, next to isError. | Lab-real pattern (`does-not-exist` returns 200 with `isError`). Under the 2026-07-28 spec some protocol errors change the HTTP status (source 8), so the rule taught is "200 is not proof", never "errors are always 200". |
+| 6 | What went wrong | erase; card "assistant code (illustration)" `if status == 200: use it`; [threw the message away] message chip drops off the board; model chip; [guess] stamp "GUESS" | The assistant's code checked the status, saw 200, and threw the message away. So the model got no forecast and filled the gap as in the first video: with a guess. | Illustrative. The spec says clients SHOULD pass tool execution errors to the model (5). |
+| 7 | The other kind: a protocol error | erase; card "request" `"method": "tools/calll"`; [error object] card `"error": {"code": -32601, "message": "Method not found"}`; [no result] text "no result"; [protocol error] label; small unspoken text "2026-07-28 spec: some protocol errors also get 400/404" | The second kind is the protocol error: the server could not handle the request itself, say a misspelt method name. The reply holds an error object, code and message, and no result. | JSON-RPC code `-32601` (13); an illustration, not run in the lab. UNVERIFIED: the HTTP status and body ContextForge 1.0.10 returns for a misspelt method (brief §9); under 2026-07-28 it would be 404 (8). |
+| 8 | Which is which | erase; two columns. Left "protocol error · error object": [unknown tool], [malformed request], "server error". Right "tool execution error · isError": [failed API], [bad input], [business rule]; [correct itself] text under the right column "written for the model" | The specification sorts them: unknown tool and malformed request are protocol errors. A failed API, a bad input or a business rule are tool execution errors, written for the model to correct itself. | Source 5 (2026-07-28; input validation moved to tool execution errors in 2025-11-25). "Server error" is on the board but not spoken. |
+| 9 | In the lab | layout split; terminal (real) `python3 -B call_tool.py does-not-exist '{}'`, show "1-4"; marks [HTTP 200] `HTTP 200`, [isError] `"isError": true`, [Tool not found] `Tool not found: does-not-exist` | In the lab, a call to a tool named does-not-exist came back with HTTP 200, isError set to true, and the text: Tool not found. | Real output (short.yaml `terr`); graded by `answers-match-the-gateway`. |
+| 10 | Lab versus specification | two chips beside the terminal: [specification] "spec: unknown tool → protocol error"; [ContextForge] "ContextForge 1.0.10 → isError result"; [MCP Python SDK] text "MCP Python SDK: any failure in a tool → isError"; [depends on the server] chip "read the body" | The specification files an unknown tool under protocol errors. ContextForge reports a tool error, because the MCP Python SDK beneath it turns any failure in a tool into one. The shape depends on the server. | Sources 5, 25, 26 (brief §2.6). Kept so a careful viewer does not learn the wrong rule from the lab. |
+| 11 | A careful agent: the error object | layout canvas; erase; tree from a "reply" node; [error object] branch → "agent's code: fix the request"; [fetching the menu again] chip `tools/list` | So a careful agent reads the body. On an error object, its own code steps in, say by fetching the menu again. | Protocol errors are for code, not the model (source 5: "less likely to result in successful recovery"). "Fetch the menu again" is our advice, not a spec rule. |
+| 12 | A careful agent: isError | same page; [isError] branch → "model reads the text" → three leaves [fix an input], [retry once], [admit]; bubble "Sorry, I have no forecast for Leeds right now." | On isError it hands the text to the model, which can fix an input, retry once, or admit it has no forecast. | Source 5 ("Clients SHOULD provide tool execution errors to language models"). "Retry once" is our advice. |
+| 13 | Recap | erase; three chips [status], [body], [told the truth] | Focus on what just happened. The status said the message arrived, the body said whether the tool worked, and the agent that read it told the truth instead of guessing. | |
+| 14 | Call to action | chip "Open the lab · See how tools reach an agent"; [four videos] four small chips "server · gateway · virtual server · failure" | Open the lab, See how tools reach an agent, and call a tool that does not exist. That closes the four videos: server, gateway, virtual server, failed call. | Last video of the set; no pointer. |
 
 ---
 
 ## Read-aloud check (done)
 
 - No VOICE cell is a narrated question; hook questions are board titles only.
-- First spoken sentences: V1 "On Tuesday, an assistant reported heavy snow in Leeds." (9
-  words), V2 "By March, three agents each had their own wiring." (9), V3 "In May, the support
-  assistant's menu listed a refund tool." (10), V4 "The forecast call came back with HTTP
-  200." (8).
-- Terms defined at first use: language model (V1 #2), agent and tool (V1 #3), MCP server,
-  MCP, host, MCP client (V1 #4), JSON-RPC (V1 #5), input schema (V1 #6), credential (V2 #2),
-  MCP gateway, proxy (V2 #4), catalogue (V2 #5), AI gateway (V2 #9), virtual server (V3 #3),
-  tool execution error (V4 #3), protocol error (V4 #6). Videos 2-4 reuse terms from video 1
-  with a short reminder in passing.
-- No jokes, no "okay/so/here's the thing", no narrator "I". Past tense for the Larkfield
-  stories; present tense only for definitions and the call to action.
+- First spoken sentences, each under 12 words with no name and no term: V1 "On Tuesday
+  morning, an assistant reported heavy snow in Leeds." (10), V2 "One Friday evening, the
+  orders server slowed down." (8), V3 "In May, the support assistant's menu listed a refund
+  tool." (10), V4 "The call returned 200 OK, and the forecast was wrong." (10).
+- Terms defined at first use, after the need for them is shown: language model (V1 #2), agent
+  (V1 #3), tool (V1 #4), MCP server and MCP (V1 #5), MCP client and host (V1 #6), JSON-RPC
+  (V1 #7), tools/list and menu (V1 #8), input schema (V1 #9), tools/call and result (V1 #11),
+  credential (V2 #3), MCP gateway and proxy (V2 #4), register (V2 #6), catalogue (V2 #7),
+  AI gateway (V2 #10), virtual server (V3 #4), prefix (V3 #8), tool execution error (V4 #4),
+  protocol error and error object (V4 #7). Videos 2-4 reuse earlier terms with a reminder in
+  passing ("the role each agent played before").
+- Every VOICE cell is 22-35 words and two or three sentences. The longest is V4 #10 (35), kept
+  on purpose; the shortest are the two halves of the split "careful agent" page (V4 #11-12).
+- Every [cue] in ON SCREEN appears word for word in its VOICE cell (checked by script, case
+  and punctuation ignored).
+- No jokes, no "okay/so, here's the thing", no narrator "I", no lists of three for rhythm:
+  the only three-item lists are real sets (three agents, three calculator tools, the spec's
+  own error categories). Past tense for the Larkfield stories; present tense for definitions,
+  the lab and the call to action.
 - "Tool gateway" appears in no VOICE or ON SCREEN cell.
+- Arithmetic: 3 × 4 = 12 and 3 × 5 = 15 direct connections; 3 + 5 = 8 through the gateway;
+  five lab tools (2 weather + 3 calculator); 17 + 25 = 42.0; Leeds → 10 °C cloudy; `days`
+  defaults to 3.
+
+## Owner review summary
+
+One line per board page: the one thing the page teaches.
+
+**Video 1. What is MCP?**
+1. Hook: snow in Leeds — an assistant confidently reported weather it could not know.
+2. The model guessed — a language model only knows its training text, so it guessed.
+3. The agent — the agent is the program around the model, and the fix goes there.
+4. A tool — a tool is a function in another program the agent can run for the model.
+5. An MCP server — the program offering tools is an MCP server; MCP is the shared way to ask it.
+6. The MCP client — one client inside the agent holds the connection to exactly one server; the agent is the host.
+7. Messages: JSON-RPC — a request names a method; the reply is a result or an error.
+8. The menu: tools/list — tools/list returns names and descriptions written for the model.
+9. The input schema — each tool says which inputs it needs and their types.
+10. The model chooses — the model writes the request and runs nothing.
+11. The call: tools/call — tools/call runs a tool by name and returns a result with content.
+12. In the lab — you send the same tools/call; the weather is a toy's, the name has a prefix.
+13. Recap — list, pick, call, result.
+14. Call to action — open the lab; next, too many wires.
+
+**Video 2. Why an MCP gateway?**
+1. Hook: the slow Friday — nobody can say which agent is calling a server, because records live in each agent.
+2. The wiring — three agents times four servers is twelve connections.
+3. What each line costs — every line is an address plus a credential; a fifth server makes fifteen.
+4. An MCP gateway — one proxy in the middle of every call.
+5. Two faces — it looks like one MCP server to agents and acts as an MCP client to servers.
+6. Registration — an operator registers each server once; the gateway fetches its menu.
+7. The catalogue — all menus in one list; one tools/list returns everything.
+8. One address, one credential — three plus five is eight connections; server secrets live in the gateway.
+9. One place to watch — one row per call: tool, time, duration, success, who.
+10. What it is not — it runs no tools, chooses none, and is not an AI gateway.
+11. In the lab — ContextForge, two toy servers, five tools from one tools/list.
+12. The record in the lab — the view tab's row for the 42.0 call, with no caller column.
+13. Recap — registered once, one address, credentials, one place; Maren's answer was in that table.
+14. Call to action — find your own calls; next, who should see what.
+
+**Video 3. Virtual servers**
+1. Hook: the refund tool — a dangerous tool is on the wrong menu.
+2. Everyone sees everything — the gateway offered its whole catalogue to every agent.
+3. One wrong choice away — the model picks from any menu it is given.
+4. A virtual server — a named bundle of catalogue tools at its own MCP address.
+5. Support's bundle — five tools in, the refund tool out.
+6. Billing's bundle — one tool can be in several bundles; a bundle copies and runs nothing.
+7. Two tools called search — identical names on one menu need telling apart.
+8. Prefixes — the registered server's name goes in front of each tool.
+9. What the agent sees — the agent sees names and schemas; the gateway keeps owner, original name, address, credentials.
+10. Routing one call — the gateway restores the original name and forwards the call.
+11. A menu is not a lock — leaving a tool out is only a control with scoped credentials and no direct route.
+12. In the lab — toy-tools holds all five tools; nothing is left out; one admin identity.
+13. Recap — catalogue, a few per bundle, prefixes, hidden details.
+14. Call to action — count the tools; next, a call that returned 200 and was wrong.
+
+**Video 4. When a tool fails**
+1. Hook: 200 and wrong — a successful-looking call produced a false forecast, again.
+2. Follow the call — agent, gateway, weather server.
+3. The far end — the outside service timed out.
+4. The reply: a tool execution error — a normal result with isError true and a text message.
+5. Status and body — HTTP 200 means delivered and answered; the body says whether the tool worked.
+6. What went wrong — the code checked the status, dropped the body, and the model guessed.
+7. The other kind: a protocol error — an error object with a code and message, and no result.
+8. Which is which — the spec's two lists.
+9. In the lab — does-not-exist returns 200, isError true, Tool not found.
+10. Lab versus specification — the spec calls an unknown tool a protocol error; ContextForge's SDK makes it a tool error.
+11. A careful agent: the error object — code fixes the request.
+12. A careful agent: isError — the model reads the text and fixes, retries or admits.
+13. Recap — status, body, truth.
+14. Call to action — call a tool that does not exist; the set is complete.
+
+## Change log
+
+Against the previous draft (commit 75f4ae5). The research facts and sources are unchanged;
+the edits are to pacing, order and wording.
+
+**Across all four videos**
+- Rewrote every VOICE cell to one idea in 20-30 words (the old pages carried 35-45 words and
+  two or three new terms). Split the dense pages and dropped most "same page" piling: a row now
+  adds to the board only when the picture genuinely builds (agent → tool, server → client,
+  gateway → its two faces, menu → schema, error-object branch → isError branch).
+- Gave each video a single thread with a named person from the Larkfield cast (Ollie, Maren,
+  Priya, Tomasz) and a time, and joined pages with a cause or a time ("No snow fell, and by
+  lunchtime...", "So Maren put one program in the middle", "A second problem appeared when").
+  The hook is answered inside the video (Maren finds her answer in one table; Tomasz finds the
+  dropped message).
+- Every video now ends by pointing at the next one's question; video 4 closes the set.
+- Removed the rhythm triplets and compressed sentence stacks; added the plain pause line
+  "Remember that pair." where a page turns, and kept "Focus on what just happened" for recaps.
+- Header word counts and lengths recomputed (170 words a minute, 0.8 s per page break, lead
+  and tail); the "How to read" section now states the 20-30 word rule.
+
+**Video 1**
+- Cut from the voice: the transports (stdio, Streamable HTTP; now NOTE only), the USB-C
+  analogy, "any agent that speaks MCP can use any MCP server", and the customer detail on the
+  hook page (replaced by the "no snow fell" turn, which is what makes Ollie look).
+- Split "agent and tool" into two pages and "MCP server and MCP client" into two pages; split
+  the menu into "names and descriptions" and "input schema" (the schema now uses the lab's
+  real `days` default of 3).
+- JSON-RPC kept as its own page because video 4 depends on "result or error".
+
+**Video 2**
+- Merged the old pages 2-3 (twelve connections, credentials, the Friday note, the fifth
+  server) into two pages, and moved "each agent kept its own records" into the hook so the
+  problem is clear before the count grows.
+- Split the gateway definition into "a proxy" and "its two faces".
+- Merged "one address" and "credentials" into one page: each agent keeps one address and one
+  credential, the servers' secrets move into the gateway.
+- Cut from the voice: the rate limit (ContextForge's default 100 calls a minute), "token
+  passthrough is forbidden", "it adds a hop", and "a sixth server changes nothing on the
+  agents". All stay in NOTE for the concept page.
+- The hook's payoff (Maren reads the answer from one table) is spoken in the recap rather than
+  on its own page, to stay inside the word budget.
+
+**Video 3**
+- Split "prefixes" into the problem (two tools called search) and the cure.
+- Renamed page 9 "A bundle is a menu" to "A menu is not a lock", the one claim a newcomer gets
+  wrong, and reworded it in plain terms (credential limited to that virtual server; no direct
+  reach to the servers).
+- The lab page now says out loud that every lab call is the same admin identity (previously
+  NOTE only), so the honesty about enforcement is spoken.
+- Cut the view-tab sentence ("lists the registered servers, the discovered tools and the
+  virtual server on one page") and "on the orders server" to NOTE.
+
+**Video 4**
+- Split "follow the call" into the chain and the far-end timeout, and "what a careful agent
+  does" into the error-object branch and the isError branch.
+- Made the hook a callback to video 1 ("Again, no snow fell") so the guess has a history.
+- "Server error" is shown in the protocol-error column but no longer spoken.
+- The "status and body" NOTE now carries the 2026-07-28 nuance (some protocol errors change the
+  HTTP status); the voice teaches only "200 is not proof". The protocol-error page shows that
+  nuance as unspoken small text.
+- Kept the lab-versus-specification page, with the SDK named in the same sentence.
+
+**Moved to UNVERIFIED (NOTE only, not spoken)**
+- What HTTP status and body ContextForge 1.0.10 returns for a misspelt method name
+  (`tools/calll`); the `-32601` example is marked as an illustration (V4 #7).
+- No new factual claim was added. The Larkfield rows (Ops making the calls, the 2400 ms row,
+  twelve catalogue tools, two `search` tools) are marked illustrative in NOTE.
+
+**For the owner to decide**
+- V2 #8 carries two related facts (one address per agent, one credential per agent) on one
+  page to keep the video under 400 words; the alternative is a 15th page and about 2:40.
+- V2 cuts the rate limit and the token-passthrough rule from the voice; both are real gateway
+  functions in the brief. If one must be spoken, V2 #8 is the page to extend.
+- V4 #10 (lab versus specification) is the densest page in the set (35 words). It is kept
+  because without it a careful viewer learns the wrong rule from the lab.
+- The videos run about 2:33 at 170 words a minute; if the voice lands nearer 160, each is
+  about 2:40. Trimming to 2:30 exactly would mean cutting one page per video, most easily the
+  "what it is not" page in V2 and the "Billing's bundle" page in V3.
 
 ## Claims that depend on a source
 
