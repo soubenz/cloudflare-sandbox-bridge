@@ -23,8 +23,10 @@ The default look is the site's navy: `#0a0f2c` with a soft top light, a gentle n
 gradient and the site's faint dot grid. Outlines and text are a slightly bluish white.
 `theme: black` gives the near-black of the KodeKloud reference.
 
-The sample is `labs/see-how-tools-reach-an-agent/learn/short.yaml`, with three videos:
-what a tool is and what MCP adds, one door for many tool servers, and when a tool fails.
+The sample is `labs/see-how-tools-reach-an-agent/learn/short.yaml`: the four MCP explainers
+of `docs/research/mcp-gateway-scripts.md` (what is MCP, why an MCP gateway, virtual servers,
+when a tool fails) plus an A/B cut of the second one's hook. Each script row is one segment
+and one board page, and the segment's `vo` is the row's VOICE word for word.
 
 ## Render
 
@@ -146,9 +148,14 @@ the page opens). Arrows and packets go with the page of the element they start f
 The dashed focus box is cleared at each page break.
 
 **Pauses.** `pause: <seconds>` on any beat opens that much silence in the narration
-just before its cue word, and everything after it moves later. Use 0.6-1.0 s at a page
-break so the wipe happens in quiet. A beat with no `at` pauses before the segment's
-first word.
+just before its cue word, and everything after it moves later. The beat itself fires as
+the silence starts. Use 0.6-1.0 s at a page break so the wipe happens in quiet. A beat
+with no `at` pauses before the segment's first word (use that, not the first word as
+`at`, to pause at the very start).
+
+When two cue words are closer than `minBeatGap`, put the pause on its own beat at the
+second cue (`{ at: "and five servers", pause: 1.1 }`, then `{ at: "and five servers",
+show: sl }`): the quiet opens at the phrase break and the element lands on its word.
 
 **Title cards.** `card: { kicker, title, hold }` shows a brief title card over the
 dimmed board between topics. The narration pauses for it: 0.5 s in, `hold` (default
@@ -176,17 +183,21 @@ element to skip it).
 | `chip` | `text`, `sub`, `icon`, `font`: a rounded pill (a letter, a tool name, a status) |
 | `node` | `label`, `sub`, `icon`, `width`: a box for an actor (agent, server, gateway) |
 | `circle` | `text`: a small round node |
-| `bubble` | `text`, `side` (left or right), `width`: a chat bubble |
+| `bubble` | `text`, `side` (left or right), `width`, `stamp`: a chat bubble (`stamp: "Guess"` lands a small stamp on its corner) |
+| `chat` | `title`, `messages: [{ text, side, color }]`, `width`, `highlight`: a chat window; `mark` lights words in it |
+| `box` | `label`, `size: [w, h]`, `dashed` (default true), `labelAt: bottom`: a box drawn round other elements (declare it before them) |
+| `dots` | `n`, `size`, `gap`, `row`: a crowd of small dots (ten agents, twenty servers) |
 | `stamp` | `text`, `rotate`, `size`: a rubber stamp ("GUESS", "LEFT OUT") |
 | `icon` | `icon`, `size` |
-| `list` | `items: [text or { text, color }]`, `title`, `row`, `gate`, `font`: a stack or row of chips. With `gate: true` each item appears on its own beat (`show: list/0`) |
-| `card` | `title`, `lines`, `highlight: [{ id, match, lines, color }]`: a dashed box of code-like lines |
-| `arrow` | `from`, `to`, `label`, `labelSide` (below), `dashed`, `offset`: drawn from box edge to box edge, following moves |
-| `packet` | `on` (an arrow), `label`, `reverse`, `dur`, `stay`: a pill that rides an arrow when it gets `travel` |
+| `list` | `items: [text or { text, color, icon }]`, `title`, `row`, `cols`, `gate`, `font`: a stack, row or grid of chips. With `gate: true` each item appears on its own beat (`show: list/0`); `ring`, `color` and `text` also take `list/0` |
+| `card` | `title`, `lines`, `highlight: [{ id, match, lines, color }]`: a dashed box of code-like lines. A line may be `{ text, reveal: <highlight id> }`: its room is kept and it shows when that highlight is marked |
+| `arrow` | `from`, `to`, `label`, `labelSide` (below), `labelSize`, `labelWidth` (wraps the label), `dashed`, `offset`: drawn from box edge to box edge, following moves |
+| `mesh` | `from`, `to`, `via`, `stagger`, `dashed`, `width`, `opacity`, `label`, `labelPos`, `labelColor`: many lines at once, from every dot or list chip of `from` to every one of `to` (or each to and from a hub `via`), drawn `stagger` seconds apart; its `label` is a count that `text:` can change. Like arrows, meshes don't count towards `pageMax` |
+| `packet` | `on` (an arrow), `label`, `reverse`, `dur`, `stay`, `lift`, `scale`: a pill that rides an arrow when it gets `travel` |
 | `terminal` | `command`, `output` (verbatim), `show: "0-2,5-10"` (which output lines; gaps show as "…"), `clip`, `highlight: [{ id, match, lines, color }]`, `title`, `prompt`, `mask` |
 
 Icons: agent, server, gateway, key, clock, cloud, warn, check, cross, user, log, model,
-shield, sun.
+shield, sun, calendar, mail.
 
 ### Beats
 
@@ -200,7 +211,8 @@ A beat is `{ at, ... }` with one or more of:
 | `travel: [packets]` | send packets along their arrows |
 | `dim: [ids]` / `undim: [ids] or all` | fade to the background, and back |
 | `move: { id: [x, y] }` | glide to a new place (arrows follow) |
-| `text: { id: "new text" }` | change what an element says |
+| `text: { id: "new text" }` | change what an element says (`{ id: { sub: "..." } }` changes a node's or chip's small second line) |
+| `strike: [ids]` | a red line draws through each, corner to corner |
 | `color: { id: actor }` | recolour (a server that failed turns red) |
 | `layout: split` / `layout: canvas` | bring the terminal in (landscape: right; vertical: under the canvas) or send it away; the canvas glides to make room |
 | `page: id`, `transition` | turn to another page (see "Pages") |

@@ -221,7 +221,7 @@ export function buildTimeline(video, segs, paceIn, { captions = 'small' } = {}) 
       const pages = (s.scene.pages || []).map((pg) => pg.id);
       const els = Object.entries(s.scene.elements || {});
       for (const [id, el] of els) if (el.page != null && !pages.includes(el.page)) throw new Error(`segment "${s.id}": element "${id}" is on page "${el.page}", which scene "${s.scene.id || s.id}" does not list in \`pages\``);
-      const counted = (pg) => els.filter(([, el]) => (el.page ?? null) === pg && !['arrow', 'packet', 'terminal'].includes(el.type)).length;
+      const counted = (pg) => els.filter(([, el]) => (el.page ?? null) === pg && !['arrow', 'mesh', 'packet', 'terminal'].includes(el.type)).length;
       for (const pg of pages.length ? pages : [null]) {
         const n = counted(pg);
         if (n > pace.pageMax) warnings.push(`segment "${s.id}": ${pg ? `page "${pg}"` : `scene "${s.scene.id || s.id}"`} has ${n} elements, over pageMax ${pace.pageMax} (split it with another page)`);
@@ -271,7 +271,7 @@ export function buildTimeline(video, segs, paceIn, { captions = 'small' } = {}) 
         }
         if (b.page != null) scene.lastShow = -Infinity;
         if (b.show != null || b.ring != null || b.travel != null || b.focus != null || b.page != null) lastBeat = Math.max(lastBeat, t);
-        for (const id of [...asList(b.show), ...asList(b.hide), ...asList(b.ring), ...asList(b.travel), ...asList(b.focus), ...asList(b.dim), ...Object.keys(b.move || {}), ...Object.keys(b.text || {}), ...Object.keys(b.color || {})]) {
+        for (const id of [...asList(b.show), ...asList(b.hide), ...asList(b.ring), ...asList(b.travel), ...asList(b.focus), ...asList(b.dim), ...Object.keys(b.move || {}), ...Object.keys(b.text || {}), ...Object.keys(b.color || {}), ...asList(b.strike)]) {
           const base = String(id).split('/')[0];
           if (!els[base]) throw new Error(`segment "${s.id}": beat at "${b.at ?? 'start'}" names "${id}", which is not an element of scene "${scene.scene.id || scene.segment}"`);
         }
@@ -283,8 +283,8 @@ export function buildTimeline(video, segs, paceIn, { captions = 'small' } = {}) 
         }
         for (const m of asList(b.mark)) {
           const term = Object.values(els).find((e) => e.type === 'terminal' && (e.highlight || []).some((hl) => hl.id === m));
-          const card = Object.values(els).find((e) => e.type === 'card' && (e.highlight || []).some((hl) => hl.id === m));
-          if (!term && !card) throw new Error(`segment "${s.id}": mark: "${m}" is not the id of a terminal or card highlight`);
+          const card = Object.values(els).find((e) => ['card', 'chat'].includes(e.type) && (e.highlight || []).some((hl) => hl.id === m));
+          if (!term && !card) throw new Error(`segment "${s.id}": mark: "${m}" is not the id of a terminal, card or chat highlight`);
           if (term) scene.termLast = Math.max(scene.termLast, t);
         }
         if (b.layout === 'canvas' && scene.termLast > -Infinity && t - scene.termLast < pace.minOutputHold) {

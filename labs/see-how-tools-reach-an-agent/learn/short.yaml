@@ -3,26 +3,35 @@
 # Each video renders to <id>-vertical.mp4, <id>-landscape.mp4, <id>-landscape.jpg
 # and <id>.vtt, and may not run past 180 s.
 #
-# Every video is ONE canvas that builds up: a scene declares its elements once
-# (hidden), and each segment's beats show or animate one small thing on the
-# word that names it. One running example per video.
+# The four videos are the approved scripts in docs/research/mcp-gateway-scripts.md,
+# one segment per table row and one board page per row: the segment's `vo` is the
+# row's VOICE cell word for word (approved copy; do not reword it here), and each
+# ON SCREEN element appears on its [cue] word. Page breaks erase the board ("in the
+# lab" pages slide) with 0.8 s of quiet. Where two cues fall closer than
+# pace.minBeatGap, a `pause` opens a little quiet at the nearest phrase break
+# rather than rushing the board.
 #
 # Terminal output is real: call_tool.py run against this lab's own services
 # (ContextForge 1.0.10 with weather-tools and calculator-tools, set up by
 # seed_contextforge.py), copied verbatim. A terminal shows a subset of the
 # lines (`show`) and may shorten long ones (`clip`); it never edits them.
+# Cards are illustrations and say so where it matters.
 
-# workers-ai:<speaker> makes the narration with Workers AI; dir:<folder> uses
-# pre-made clips (01.mp3, 02.mp3, ... plus manifest.json; see docs/shorts.md).
+# workers-ai:<speaker> makes the narration with Workers AI. The owner's preferred
+# narrator (ElevenLabs "Mark") goes in through the dir: slot: set
+#   voice: dir:learn/voice/<video id>
+# on a video, with 01.mp3, 02.mp3, ... (one clip per segment, in order) and a
+# manifest.json holding each segment's vo (docs/shorts.md, "Pre-made narration").
 voice: workers-ai:arcas
 theme: navy              # navy (the site's blue) | black
 captions: small          # off | small | karaoke
 
-# Slow by default (docs/shorts.md, "Pace"); these are the defaults, written out to tune.
+# Slow by default (docs/shorts.md, "Pace").
 pace:
   enter: 0.7             # an element's entrance (pop, write-on, draw-on)
   packet: 1.2            # seconds per hop for a packet
-  beatHold: 2.5          # a segment's last beat holds this long before the next voice
+  beatHold: 1.3          # a segment's last beat holds this long before the next voice
+                         # (every page break adds 0.8 s of quiet on top, so the board still rests)
   minBeatGap: 2.0        # warn when elements arrive closer together than this
   pageTransition: 0.6    # erase / slide / zoom / fade between pages
   pageMax: 6             # warn when a page has more elements than this
@@ -35,87 +44,155 @@ pace:
   typing: 16             # characters per second when a command is typed
 
 # One colour per actor, the same in every video and on every chip, node,
-# packet and terminal highlight.
+# packet and terminal highlight (docs/research/mcp-gateway-scripts.md).
 colors:
   agent: blue
   weather: cyan
   calc: yellow
-  admin: pink
   gateway: violet
   user: orange
   model: white
   ok: green
   bad: red
   quiet: grey
+  orders: pink           # the Larkfield examples' illustrative servers
+  docs: grey
+  maps: grey
 
 videos:
-  # --------------------------------------------------------------------------
-  - id: mcp-what-a-tool-is
-    title: What a tool is, and what MCP adds
+  # ==========================================================================
+  # Video 1. What is MCP?
+  - id: mcp-what-is-mcp
+    title: What is MCP?
+    endCard: { title: "What is MCP?", sub: "Hands-on lab · See how tools reach an agent" }
     segments:
+      # 1. Hook: ChatGPT and today's weather
       - id: hook
         vo: >-
-          Ask an AI agent: is it snowing in Leeds right now? It answers in a
-          second. Yes, heavy snow. But how could it know? A model only knows
-          what it read during training. It has never seen today's sky. So it
-          guessed.
+          ChatGPT's knowledge stopped months ago. Ask it today's weather, and it
+          still knows. How? Follow one answer, the weather in Leeds, from a
+          weather service into the chat.
         scene:
-          id: hook
+          id: mcp
+          pages:
+            - { id: hook }
+            - { id: answer }
+            - { id: snow }
+            - { id: agent }
+            - { id: server }
+            - { id: rpc }
+            - { id: menu }
+            - { id: choose }
+            - { id: call }
+            - { id: lab }
+            - { id: recap }
+            - { id: cta }
           elements:
-            kicker: { type: kicker, text: "AI agent question", pos: [500, 60] }
-            q: { type: title, text: "How does an agent know today's weather?", pos: [500, 140], underline: true }
-            ask: { type: bubble, text: "Is it snowing in Leeds right now?", color: user, side: right, pos: [640, 300] }
-            agent: { type: node, icon: agent, label: Agent, color: agent, pos: [180, 450] }
-            ans: { type: bubble, text: "Yes, heavy snow ❄️", color: agent, side: left, pos: [520, 450] }
-            trained: { type: chip, icon: model, text: "model: trained months ago", color: model, pos: [300, 590] }
-            stamp: { type: stamp, text: "Guess", color: bad, pos: [780, 450], rotate: -10 }
-        beats:
-          - { show: [kicker, q] }
-          - { at: "is it snowing", show: ask }
-          - { at: "It answers", show: agent }
-          - { at: "Yes, heavy snow", show: ans }
-          - { at: "how could it know", ring: ans }
-          - { at: "what it read during training", show: trained }
-          - { at: "never seen today's sky", ring: trained }
-          - { at: "So it guessed", show: stamp }
-
-      - id: tool
-        vo: >-
-          The fix is to give the agent a tool. A tool is a small function that
-          someone else runs, like get weather, for a city. You give it a city,
-          and it gives you back today's weather for that city. The function lives
-          on a tool server, here a weather server. The agent cannot see inside
-          that server, and it does not need to. It can only call the tools the
-          server offers.
-        scene:
-          id: tool
-          elements:
-            mcptitle: { type: title, text: "MCP: one way to ask any tool server", pos: [500, 70], size: 44 }
-            agent: { type: node, icon: agent, label: Agent, color: agent, pos: [170, 300] }
-            server: { type: node, icon: server, label: "Weather server", sub: weather-tools, color: weather, pos: [790, 300] }
-            blackbox: { type: text, text: "the agent can't see in here", size: 22, color: quiet, pos: [790, 205] }
-            fn: { type: chip, font: mono, text: "get_weather(city)", color: weather, pos: [790, 425] }
-            fn2: { type: chip, font: mono, text: "get_forecast(city, days)", color: weather, pos: [790, 485] }
-            io: { type: text, font: mono, size: 24, color: quiet, text: "city in → weather out", pos: [790, 485] }
-            desc: { type: text, font: mono, size: 22, width: 420, color: quiet, text: "\"Get the current made-up weather for a city.\"", pos: [790, 565] }
-            others: { type: list, row: true, font: hand, items: [{ text: "calendar", color: quiet }, { text: "tickets", color: quiet }, { text: "docs", color: quiet }, { text: "…", color: quiet }], pos: [500, 650] }
-            pick: { type: chip, icon: model, text: "model: get_weather fits", color: model, scale: 0.85, pos: [250, 430] }
-            call: { type: arrow, from: agent, to: server, color: quiet }
-            mcp: { type: text, text: "MCP", size: 34, color: gateway, pos: [470, 240] }
-            p_list: { type: packet, on: call, label: "tools/list", color: agent }
-            p_menu: { type: packet, on: call, reverse: true, label: "menu: 2 tools", color: weather }
-            p_call: { type: packet, on: call, label: "get_weather · Leeds", color: agent }
-            p_result: { type: packet, on: call, reverse: true, label: "10°C, cloudy", color: ok, stay: true }
-            real: { type: chip, icon: check, text: "real data, not a guess", color: ok, scale: 0.85, pos: [250, 530] }
-            cta: { type: chip, text: "Open the lab · See how tools reach an agent", color: user, pos: [500, 650] }
+            # page: hook (an illustration: no claim about how ChatGPT gets weather)
+            kicker: { type: kicker, page: hook, text: "Interview question", pos: [500, 34], visible: true }
+            q: { type: title, page: hook, text: "ChatGPT was trained months ago. How does it know today's weather?", size: 48, width: 920, pos: [500, 128], underline: true, visible: true }
+            topic: { type: text, page: hook, text: "What is MCP?", size: 32, color: quiet, pos: [500, 236], visible: true }
+            chat:
+              type: chat
+              page: hook
+              title: "ChatGPT · 🕒 now"
+              color: model
+              width: 480
+              pos: [745, 450]
+              visible: true
+              messages:
+                - { text: "What's the weather in Leeds right now?", side: right, color: user }
+                - { text: "Leeds, right now: 10 °C, cloudy", side: left, color: weather }
+              highlight:
+                - { id: leeds, match: "Leeds", lines: "^Leeds", color: weather }
+            cal: { type: chip, page: hook, icon: calendar, text: "training data ends: months ago", color: quiet, scale: 0.8, pos: [240, 345] }
+            model: { type: chip, page: hook, icon: model, text: "Model", color: model, pos: [240, 470] }
+            ask: { type: arrow, from: model, to: chat, label: "?", labelSize: 56, color: user }
+            # page: answer
+            appbox: { type: box, page: answer, label: "the app around it", color: quiet, size: [560, 330], pos: [330, 360] }
+            lm: { type: node, page: answer, icon: model, label: "Language model", sub: "reads text, writes text", color: model, scale: 0.85, pos: [330, 320] }
+            cant: { type: chip, page: answer, icon: cross, text: "cannot know", sub: "training ended months ago", color: bad, scale: 0.8, pos: [330, 445] }
+            tool: { type: chip, page: answer, text: "tool", sub: "fetches live data", color: weather, pos: [830, 360] }
+            a_out: { type: arrow, from: appbox, to: tool, color: weather, offset: -14 }
+            a_back: { type: arrow, from: tool, to: appbox, color: weather, offset: -14 }
+            mcp: { type: text, page: answer, text: "MCP · the standard way to plug tools in", size: 36, color: gateway, pos: [500, 610] }
+            # page: snow (illustrative story: Larkfield is our fictional company)
+            when3: { type: text, page: snow, text: "Tuesday 09:00", size: 32, color: quiet, pos: [500, 40], visible: true }
+            asst: { type: node, page: snow, icon: agent, label: "Support assistant", color: agent, scale: 0.8, pos: [235, 330] }
+            said: { type: bubble, page: snow, text: "Yes, heavy snow in Leeds.", color: agent, side: left, width: 420, pos: [690, 220] }
+            nosnow: { type: stamp, page: snow, text: "No snow", color: bad, rotate: -8, pos: [700, 380] }
+            slot: { type: box, page: snow, label: "tool", color: quiet, size: [240, 100], pos: [235, 520] }
+            # page: agent (the agent, then a tool on the same page)
+            abox: { type: box, page: agent, label: "Agent", color: agent, size: [360, 300], pos: [250, 380] }
+            model2: { type: chip, page: agent, icon: model, text: "Model", color: model, pos: [250, 400], visible: true }
+            duties: { type: list, page: agent, gate: true, font: hand, scale: 0.8, items: [{ text: "keeps the conversation", color: agent }, { text: "carries out what the model decides", color: agent }], pos: [720, 165] }
+            ollie: { type: node, page: agent, icon: user, label: "Ollie", sub: "built it", color: user, scale: 0.85, pos: [830, 600] }
+            progbox: { type: box, page: agent, label: "another program", color: quiet, size: [500, 150], pos: [715, 410] }
+            getw: { type: chip, page: agent, font: mono, text: "get_weather", color: weather, pos: [715, 430] }
+            # page: server (the MCP server, then the MCP client on the same page)
+            abox2: { type: box, page: server, label: "Agent", color: agent, size: [320, 300], pos: [210, 390], visible: true }
+            client: { type: chip, page: server, text: "MCP client", color: agent, pos: [210, 430] }
+            host: { type: text, page: server, text: "host", size: 32, color: quiet, pos: [210, 200] }
+            srv: { type: card, page: server, title: "Weather MCP server", color: weather, lines: ["get_weather", "get_forecast"], pos: [730, 300] }
+            srv2: { type: node, page: server, icon: server, label: "… MCP server", color: quiet, scale: 0.7, pos: [730, 490] }
+            mcpname: { type: text, page: server, text: "MCP · Model Context Protocol", size: 36, color: gateway, pos: [500, 630] }
+            wire: { type: arrow, from: client, to: srv, label: "MCP", color: gateway }
+            # page: rpc
+            req: { type: card, page: rpc, title: "request", color: agent, lines: ['{"method": "tools/list", "params": {}}'], scale: 1.15, pos: [500, 190] }
+            res: { type: card, page: rpc, title: "reply", color: ok, lines: ['{"result": …}'], scale: 1.15, pos: [290, 450] }
+            err: { type: card, page: rpc, title: "reply", color: bad, lines: ['{"error": …}'], scale: 1.15, pos: [710, 450] }
+            # page: menu (real names, descriptions and schemas from the lab's tools/list)
+            mclient: { type: chip, page: menu, text: "MCP client", color: agent, pos: [170, 100], visible: true }
+            msrv: { type: chip, page: menu, text: "Weather MCP server", color: weather, pos: [790, 100], visible: true }
+            mwire: { type: arrow, from: mclient, to: msrv, color: quiet, visible: true }
+            p_list: { type: packet, on: mwire, label: "tools/list", color: agent }
+            menu:
+              type: card
+              page: menu
+              title: "menu"
+              color: weather
+              pos: [500, 420]
+              lines:
+                - "get_weather"
+                - '  "Get the current made-up weather for a city."'
+                - { text: "  city · string · required", reveal: s1 }
+                - "get_forecast"
+                - '  "Get a made-up multi-day forecast for a city."'
+                - { text: "  days · integer · default 3", reveal: s2 }
+              highlight:
+                - { id: d1, match: '"Get the current made-up weather for a city\.?"', color: weather }
+                - { id: s1, match: "city · string · required", color: agent }
+                - { id: s2, match: "days · integer · default 3", color: agent }
+            # page: choose (illustrative: the lab has no model; the learner plays the client)
+            model3: { type: chip, page: choose, icon: model, text: "Model", color: model, pos: [660, 300], visible: true }
+            q11: { type: bubble, page: choose, text: "Is it snowing in Leeds?", color: user, side: right, width: 420, pos: [270, 150] }
+            menu2: { type: list, page: choose, title: "menu", items: [{ text: get_weather, color: weather }, { text: get_forecast, color: weather }], pos: [200, 400] }
+            req11: { type: chip, page: choose, font: mono, text: "call get_weather · city: Leeds", color: agent, pos: [680, 450] }
+            ran: { type: text, page: choose, text: "writes the request, runs nothing", size: 32, color: quiet, pos: [660, 580] }
+            # page: call
+            cclient: { type: chip, page: call, text: "MCP client", color: agent, pos: [300, 110], visible: true }
+            csrv: { type: chip, page: call, text: "Weather MCP server", color: weather, pos: [300, 590], visible: true }
+            cwire: { type: arrow, from: cclient, to: csrv, color: quiet, visible: true }
+            p_call: { type: packet, on: cwire, label: "tools/call · get_weather · {city: Leeds}", color: agent, scale: 0.85, dur: 1.6 }
+            p_res: { type: packet, on: cwire, reverse: true, label: "result", color: ok, dur: 1.4 }
+            rcard:
+              type: card
+              page: call
+              title: "result"
+              color: ok
+              pos: [770, 350]
+              lines: ['content: "Leeds, 10 °C, cloudy"', "isError: false"]
+              highlight:
+                - { id: content, match: '"Leeds, 10 °C, cloudy"', color: ok }
+            # page: lab
+            toy: { type: chip, page: lab, icon: server, text: "toy server · numbers made up", color: quiet, pos: [500, 350] }
             term:
               type: terminal
               command: "python3 -B call_tool.py weather-tools-get-weather '{\"city\": \"Leeds\"}'"
               show: "0-2,5-10"
               highlight:
                 - { id: method, match: "\"method\": \"tools/call\"", color: agent }
-                - { id: name, match: "\"name\": \"weather-tools-get-weather\"", color: weather }
-                - { id: args, match: "\"arguments\": \\{\"city\": \"Leeds\"\\}", color: weather }
+                - { id: name, match: "weather-tools-get-weather", lines: "\"method\"", color: weather }
                 - { id: result, match: "\"(temperature_c|conditions)\": [^,]+", lines: "^  \"", color: ok }
               output: |
                 --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
@@ -129,148 +206,304 @@ videos:
                   "temperature_c": 10,
                   "conditions": "cloudy"
                 }
+            # page: recap
+            r1: { type: chip, page: recap, text: "1  tools/list · the menu", color: agent, pos: [500, 150] }
+            r2: { type: chip, page: recap, text: "2  the model picks", color: model, pos: [500, 270] }
+            r3: { type: chip, page: recap, text: "3  tools/call · run by name", color: agent, pos: [500, 390] }
+            r4: { type: chip, page: recap, text: "4  a result", color: ok, pos: [500, 510] }
+            # page: cta
+            cta: { type: chip, page: cta, text: "Open the lab · See how tools reach an agent", color: user, pos: [500, 300] }
+            next: { type: text, page: cta, text: "Next: 10 agents × 20 MCP servers", size: 40, pos: [500, 450] }
         beats:
-          - { show: agent }
-          - { at: "give the agent a tool", show: server }
-          - { at: "A tool is a small function", show: fn, focus: [fn] }
-          - { at: "like get weather", ring: fn }
-          - { at: "You give it a city", show: io }
-          - { at: "The function lives on a tool server", focus: [server, fn] }
-          - { at: "cannot see inside", show: blackbox, ring: server }
-          - { at: "it does not need to", focus: [] }
-          - { at: "It can only call", show: call }
+          - { at: "months ago", show: [cal, model], stagger: 0.4 }
+          - { at: "How", show: ask, ring: cal }
+          - { at: "Leeds", mark: leeds }
 
-      - id: mcp
+      # 2. The answer: a tool
+      - id: answer
         vo: >-
-          But how does the agent find out what the server offers? There are
-          thousands of tool servers out there, and each could describe its tools
-          in its own way. That is the problem MCP solves. MCP, the Model Context
-          Protocol, is one standard way to ask. First, the agent asks for the
-          menu, with a request called tools slash list. The server answers with
-          every tool it has. Here that is get weather, and get forecast. Each one
-          comes with its name, a short description, and the inputs it needs, like
-          a city, or a number of days.
+          The model, the part that reads and writes text, cannot know. The app
+          around it calls a tool that fetches live data. MCP is the standard way
+          to plug tools in.
         beats:
-          - { at: "how does the agent find out", ring: server }
-          - { at: "thousands of tool servers", show: others }
-          - { at: "in its own way", ring: others }
-          - { at: "That is the problem MCP solves", show: mcp, hide: others }
-          - { at: "one standard way to ask", ring: mcp }
-          - { at: "asks for the menu", travel: p_list }
-          - { at: "answers with every tool", travel: p_menu }
-          - { at: "Here that is get weather", ring: fn }
-          - { at: "and get forecast", hide: io, show: fn2 }
-          - { at: "Each one comes with its name", focus: [fn, fn2] }
-          - { at: "a short description", show: desc }
-          - { at: "like a city", ring: fn }
-          - { at: "a number of days", ring: fn2 }
+          - { page: answer, transition: erase, pause: 0.8 }
+          - { at: "The model", show: lm }
+          - { at: "cannot know", show: cant }
+          - { at: "The app around it", pause: 1.1 }
+          - { at: "The app around it", show: appbox }
+          - { at: "calls a tool", pause: 1.2 }
+          - { at: "calls a tool", show: [tool, a_out, a_back], stagger: 0.3 }
+          - { at: "MCP is the standard way", pause: 0.5 }
+          - { at: "MCP is the standard way", show: mcp }
 
+      # 3. Snow in Leeds
+      - id: snow
+        vo: >-
+          Without a tool, a model guesses. Larkfield's support assistant once
+          reported heavy snow in Leeds, and none fell: nobody had given it a
+          tool, so it had only its training.
+        beats:
+          - { page: snow, transition: erase, pause: 0.8 }
+          - { at: "Larkfield's support assistant", show: [asst, said], stagger: 0.6 }
+          - { at: "and none fell", show: nosnow }
+          - { at: "nobody had given it a tool", pause: 0.8 }
+          - { at: "nobody had given it a tool", show: slot }
+          - { at: "given it a tool", strike: slot }
+
+      # 4. The agent
+      - id: agent
+        vo: >-
+          Around the model sits the agent, the program that keeps the
+          conversation and carries out what the model decides. Ollie, the
+          engineer who built the assistant, put his fix there.
+        beats:
+          - { page: agent, transition: erase, pause: 0.8 }
+          - { at: "sits the agent", show: abox }
+          - { at: "the program that keeps", pause: 0.5 }
+          - { at: "keeps the conversation", show: [duties, duties/0] }
+          - { at: "and carries out", pause: 1.0 }
+          - { at: "and carries out", show: duties/1 }
+          - { at: "Ollie", show: ollie }
+          - { at: "his fix there", ring: abox }
+
+      # 5. A tool (same page)
+      - id: tool
+        vo: >-
+          He gave the agent a tool: get_weather, a function in another program
+          that the agent runs for the model. It takes a city and returns today's
+          weather.
+        beats:
+          - { at: "a tool", show: getw }
+          - { at: "another program", show: progbox }
+          - { at: "takes a city", text: { getw: { sub: "city in → weather out" } }, ring: getw }
+
+      # 6. An MCP server
+      - id: server
+        vo: >-
+          The program offering get_weather is an MCP server. MCP, the Model
+          Context Protocol, is one shared way to ask any such program for its
+          tools and run them.
+        beats:
+          - { page: server, transition: erase, pause: 0.8 }
+          - { at: "an MCP server", show: srv }
+          - { at: "the Model Context Protocol", show: mcpname }
+          - { at: "any such program", show: srv2 }
+
+      # 7. The MCP client (same page)
+      - id: client
+        vo: >-
+          Inside the agent, a part called the MCP client holds the connection to
+          exactly one MCP server. The protocol calls the agent itself the host.
+        beats:
+          - { at: "the MCP client", show: client }
+          - { at: "exactly one", show: wire }
+          - { at: "the host", show: host }
+
+      # 8. Messages: JSON-RPC
+      - id: rpc
+        vo: >-
+          Client and server exchange JSON documents in a format called JSON-RPC.
+          A request names a method, and the reply carries either a result or an
+          error. Remember that pair.
+        beats:
+          - { page: rpc, transition: erase, pause: 0.8 }
+          - { at: "A request names", show: req }
+          - { at: "the reply carries", show: res }
+          - { at: "or an error", pause: 0.6 }
+          - { at: "or an error", show: err }
+
+      # 9. The menu: tools/list
+      - id: menu
+        vo: >-
+          The client asked the server for its menu with tools/list. Back came
+          each tool's name and a description written for the model: Get the
+          current made-up weather for a city.
+        beats:
+          - { page: menu, transition: erase, pause: 0.8 }
+          - { at: "menu", show: menu }
+          - { at: "tools/list", travel: p_list }
+          - { at: "Get the current made-up weather", mark: d1 }
+
+      # 10. The input schema (same page)
+      - id: schema
+        vo: >-
+          Under each name sits an input schema, the inputs a tool needs and
+          their types. get_weather wants one, city, a string; get_forecast adds
+          days, a whole number, three by default.
+        beats:
+          - { at: "an input schema", mark: s1 }
+          - { at: "days", mark: s2 }
+
+      # 11. The model chooses
+      - id: choose
+        vo: >-
+          Then the agent handed the model the question and that menu, and the
+          model answered with a request: call get_weather, city Leeds. It wrote
+          the request; it ran nothing.
+        beats:
+          - { page: choose, transition: erase, pause: 0.8 }
+          - { at: "handed the model the question", show: q11 }
+          - { at: "and that menu", pause: 0.9 }
+          - { at: "and that menu", show: menu2 }
+          - { at: "a request", show: req11 }
+          - { at: "it ran nothing", show: ran }
+
+      # 12. The call: tools/call
       - id: call
         vo: >-
-          Now the agent picks a tool. It shows the menu to its model, along with
-          the question about Leeds, and the model picks get weather. Then the
-          agent calls it by name, with the city Leeds. You can make exactly this
-          call in the lab. Look at the request. The method is tools slash call.
-          Then the tool's name. Then the arguments: city, Leeds. And the reply is
-          plain data. Leeds, ten degrees, cloudy. Not snow. A real answer,
-          instead of a guess.
+          So the client sent tools/call with the tool's name and arguments. The
+          server ran it and replied with a result whose content held the answer:
+          Leeds, ten degrees, cloudy.
         beats:
-          - { at: "shows the menu to its model", focus: [fn, fn2] }
-          - { at: "the model picks get weather", show: pick, focus: [fn] }
-          - { at: "calls it by name", travel: p_call }
-          - { at: "in the lab", layout: split, run: term, focus: [] }
-          - { at: "The method is tools slash call", mark: method }
-          - { at: "Then the tool's name", mark: name }
-          - { at: "Then the arguments", mark: args }
-          - { at: "the reply is plain data", travel: p_result, mark: result }
-          - { at: "A real answer", show: real }
+          - { page: call, transition: erase, pause: 0.8 }
+          - { at: "tools/call", travel: p_call }
+          - { at: "ran it", ring: csrv }
+          - { at: "a result", travel: p_res }
+          - { at: "whose content", show: rcard }
+          - { at: "Leeds, ten degrees", mark: content }
 
+      # 13. In the lab (real terminal output)
+      - id: lab
+        vo: >-
+          In the lab you send this tools/call yourself. A toy server makes the
+          weather up, and the name starts with weather-tools, a prefix the next
+          video explains.
+        beats:
+          - { page: lab, transition: slide, pause: 0.8, layout: split, run: term }
+          - { at: "tools/call yourself", mark: method }
+          - { at: "A toy server", show: toy }
+          - { at: "makes the weather up", mark: result }
+          - { at: "the name starts with", mark: name }
+
+      # 14. Recap
       - id: recap
         vo: >-
-          Focus on what just happened. The agent never needed to know how the
-          weather server works, or what is behind it. It asked for the menu, its
-          model picked a tool, and the agent called that tool by name. That is
-          MCP: one way to ask any tool server what it can do, and to call it. So
-          the same agent can use a weather server today, and a calendar server
-          tomorrow, without new code. Open the lab, See how tools reach an agent,
-          and make this call yourself.
+          Focus on what just happened. The client fetched the menu with
+          tools/list, the model picked a tool, the client ran it with
+          tools/call, and the weather returned as a result.
         beats:
-          - { at: "Focus on what just happened", layout: canvas, hide: p_result }
-          - { at: "never needed to know", focus: [server, fn, fn2] }
-          - { at: "asked for the menu", travel: p_list, focus: [] }
-          - { at: "model picked a tool", ring: [pick, fn] }
-          - { at: "called that tool by name", travel: p_call }
-          - { at: "That is MCP", show: mcptitle }
-          - { at: "a calendar server tomorrow", show: others }
-          - { at: "without new code", ring: others }
-          - { at: "Open the lab", show: cta, hide: others }
+          - { page: recap, transition: erase, pause: 0.8, layout: canvas }
+          - { at: "fetched the menu with tools/list", show: r1 }
+          - { at: "the model picked", pause: 0.2 }
+          - { at: "the model picked", show: r2 }
+          - { at: "the client ran it", pause: 0.6 }
+          - { at: "the client ran it", show: r3 }
+          - { at: "and the weather returned", show: r4 }
 
-  # --------------------------------------------------------------------------
-  - id: mcp-one-door
-    title: One door for many tool servers
+      # 15. Call to action
+      - id: cta
+        vo: >-
+          Open the lab, See how tools reach an agent, and ask for the weather in
+          Leeds yourself. Next: ten AI agents, twenty MCP servers, and two
+          hundred connections.
+        beats:
+          - { page: cta, transition: erase, pause: 0.8 }
+          - { at: "Open the lab", show: cta }
+          - { at: "Next", show: next }
+
+  # ==========================================================================
+  # Video 2. Why an MCP gateway? (hook A, with variant B's kicker and question)
+  - id: mcp-why-a-gateway
+    title: Why an MCP gateway?
+    endCard: { title: "Why an MCP gateway?", sub: "Hands-on lab · See how tools reach an agent" }
     segments:
+      # 1. Hook: 200 connections (illustrative numbers)
       - id: hook
         vo: >-
-          Your company has three agents, and three tool servers: weather, a
-          calculator, and an admin server. If every agent connects to every
-          server, that is nine connections. Nine things to set up, to secure,
-          and to watch. And when you add one more server, every agent has to
-          change.
+          Ten AI agents, twenty MCP servers: two hundred connections, each with
+          its own secret. One box in the middle makes it thirty.
         scene:
-          id: door
-          # Three boards: the tangle and the gateway, then Support's bundle, then the lab.
-          pages:
-            - { id: mesh }
-            - { id: bundle, title: "Support's bundle" }
-            - { id: lab, title: "One address per agent" }
-          elements:
-            kicker: { type: kicker, page: mesh, text: "Platform question", pos: [500, 45] }
-            q: { type: title, page: mesh, text: "Three agents, three tool servers. Who wires what?", pos: [500, 118], size: 44, width: 900, underline: true }
-            count: { type: text, page: mesh, text: "9 connections", size: 34, color: user, pos: [500, 225] }
-            a1: { type: node, page: mesh, icon: agent, label: Support, color: agent, scale: 0.82, pos: [150, 300] }
-            a2: { type: node, page: mesh, icon: agent, label: Billing, color: agent, scale: 0.82, pos: [150, 420] }
-            a3: { type: node, page: mesh, icon: agent, label: Ops, color: agent, scale: 0.82, pos: [150, 540] }
-            s1: { type: node, page: mesh, icon: server, label: Weather, color: weather, scale: 0.82, pos: [850, 300] }
-            s2: { type: node, page: mesh, icon: server, label: Calculator, color: calc, scale: 0.82, pos: [850, 420] }
-            s3: { type: node, page: mesh, icon: server, label: Admin, color: admin, scale: 0.82, pos: [850, 540] }
-            s4: { type: node, page: mesh, icon: server, label: Docs, color: quiet, scale: 0.82, pos: [850, 650] }
-            l11: { type: arrow, from: a1, to: s1, color: quiet }
-            l12: { type: arrow, from: a1, to: s2, color: quiet }
-            l13: { type: arrow, from: a1, to: s3, color: quiet }
-            l21: { type: arrow, from: a2, to: s1, color: quiet }
-            l22: { type: arrow, from: a2, to: s2, color: quiet }
-            l23: { type: arrow, from: a2, to: s3, color: quiet }
-            l31: { type: arrow, from: a3, to: s1, color: quiet }
-            l32: { type: arrow, from: a3, to: s2, color: quiet }
-            l33: { type: arrow, from: a3, to: s3, color: quiet }
-            l14: { type: arrow, from: a1, to: s4, color: quiet, dashed: true }
-            l24: { type: arrow, from: a2, to: s4, color: quiet, dashed: true }
-            l34: { type: arrow, from: a3, to: s4, color: quiet, dashed: true }
-            gw: { type: node, page: mesh, icon: gateway, label: "Tool gateway", color: gateway, scale: 0.82, pos: [500, 420] }
-            r1: { type: arrow, from: s1, to: gw, color: weather }
-            r2: { type: arrow, from: s2, to: gw, color: calc }
-            r3: { type: arrow, from: s3, to: gw, color: admin }
-            r4: { type: arrow, from: s4, to: gw, color: quiet }
-            g1: { type: arrow, from: a1, to: gw, color: agent }
-            g2: { type: arrow, from: a2, to: gw, color: agent }
-            g3: { type: arrow, from: a3, to: gw, color: agent }
-            catalog: { type: text, page: mesh, text: "knows every tool", size: 26, color: quiet, pos: [500, 505] }
-            # page: bundle
-            aB: { type: node, page: bundle, icon: agent, label: Support, color: agent, pos: [190, 250] }
-            gwB: { type: node, page: bundle, icon: gateway, label: "Tool gateway", color: gateway, pos: [600, 250] }
-            eB: { type: arrow, from: aB, to: gwB, color: agent }
-            b1: { type: list, page: bundle, row: true, items: [{ text: get_weather, color: weather }, { text: get_forecast, color: weather }], pos: [600, 390] }
-            b2: { type: list, page: bundle, row: true, items: [{ text: add, color: calc }, { text: subtract, color: calc }, { text: multiply, color: calc }], pos: [600, 460] }
-            risky: { type: chip, page: bundle, font: mono, icon: warn, text: delete_order, color: admin, pos: [600, 570] }
-            key: { type: chip, page: bundle, icon: key, text: "own key", color: agent, pos: [190, 370] }
+          id: gateway
+          pages: [{ id: hook }, { id: hookb }, { id: zoom }, { id: cost }, { id: gateway }, { id: reg }, { id: addr }, { id: watch }, { id: not }, { id: lab }, { id: rec }, { id: recap }, { id: cta }]
+          elements: &v2elements
+            # page: hook (main cut)
+            kicker: { type: kicker, page: hook, text: "Interview question", pos: [500, 34], visible: true }
+            q: { type: title, page: hook, text: "10 agents, 20 MCP servers. How do you manage access?", size: 48, width: 920, pos: [500, 124], underline: true, visible: true }
+            ag: { type: dots, page: hook, n: 10, size: 22, gap: 12, color: agent, pos: [120, 430], visible: true }
+            sv: { type: dots, page: hook, n: 20, size: 13, gap: 3.5, color: quiet, pos: [880, 430] }
+            direct: { type: mesh, page: hook, from: ag, to: sv, color: quiet, width: 1.2, opacity: 0.4, stagger: 0.004, label: "10 × 20 = 200 connections", labelPos: [400, 648] }
+            secrets: { type: chip, page: hook, icon: key, text: "200 secrets", color: yellow, pos: [800, 648] }
+            box: { type: node, page: hook, icon: gateway, color: gateway, pos: [500, 300] }
+            hub: { type: mesh, page: hook, from: ag, to: sv, via: box, color: gateway, width: 1.6, opacity: 0.7, label: "10 + 20 = 30", labelPos: [400, 648], labelColor: gateway }
+            # page: hookb (variant B only)
+            kickerB: { type: kicker, page: hookb, text: "Interview question", pos: [500, 34], visible: true }
+            qB: { type: title, page: hookb, text: "10 agents, 20 MCP servers. How do you manage access?", size: 48, width: 920, pos: [500, 124], underline: true, visible: true }
+            agB: { type: dots, page: hookb, n: 10, size: 22, gap: 12, color: agent, pos: [120, 430], visible: true }
+            svB: { type: dots, page: hookb, n: 20, size: 13, gap: 3.5, color: quiet, pos: [880, 430] }
+            directB: { type: mesh, page: hookb, from: agB, to: svB, color: quiet, width: 1.2, opacity: 0.4, stagger: 0.004, label: "10 × 20 = 200 connections", labelPos: [500, 648] }
+            keysB: { type: list, page: hookb, row: true, items: [{ text: "", icon: key, color: yellow }, { text: "", icon: key, color: yellow }, { text: "", icon: key, color: yellow }, { text: "", icon: key, color: yellow }], pos: [500, 560] }
+            boxB: { type: node, page: hookb, icon: gateway, label: "MCP gateway", color: gateway, scale: 0.85, pos: [500, 300] }
+            hubB: { type: mesh, page: hookb, from: agB, to: svB, via: boxB, color: gateway, width: 1.6, opacity: 0.7, label: "10 + 20 = 30", labelPos: [500, 648], labelColor: gateway }
+            # page: zoom (Larkfield is our fictional company; orders, docs and maps are labels only)
+            al: { type: list, page: zoom, font: hand, items: [{ text: Support, color: agent }, { text: Billing, color: agent }, { text: Ops, color: agent }], pos: [200, 330] }
+            sl: { type: list, page: zoom, font: hand, items: [{ text: Weather, color: weather }, { text: Calculator, color: calc }, { text: Orders, color: orders }, { text: Docs, color: docs }, { text: Maps, color: maps }], pos: [800, 330] }
+            m15: { type: mesh, page: zoom, from: al, to: sl, color: quiet, width: 2.2, opacity: 0.75, stagger: 0.15, label: "3 × 5 = 15", labelPos: [500, 610] }
+            # page: cost
+            keys3: { type: list, page: cost, items: [{ text: "×5", icon: key, color: yellow }, { text: "×5", icon: key, color: yellow }, { text: "×5", icon: key, color: yellow }], scale: 0.9, pos: [110, 290] }
+            al3: { type: list, page: cost, font: hand, items: [{ text: Support, color: agent }, { text: Billing, color: agent }, { text: Ops, color: agent }], pos: [310, 290], visible: true }
+            sl3: { type: list, page: cost, font: hand, scale: 0.85, items: [{ text: Weather, color: weather }, { text: Calculator, color: calc }, { text: Orders, color: orders }, { text: Docs, color: docs }, { text: Maps, color: maps }], pos: [820, 270], visible: true }
+            m3: { type: mesh, page: cost, from: al3, to: sl3, color: quiet, width: 1.8, opacity: 0.55, visible: true }
+            cnt3: { type: text, page: cost, text: "15 credentials", size: 40, color: user, pos: [330, 600] }
+            new3: { type: box, page: cost, label: "new server", color: quiet, size: [210, 54], pos: [820, 520] }
+            m3new: { type: mesh, page: cost, from: al3, to: new3, color: quiet, width: 1.8, opacity: 0.7, dashed: true }
+            # page: gateway (the proxy, then its two faces on the same page)
+            maren: { type: node, page: gateway, icon: user, label: "Maren", sub: "platform lead", color: user, scale: 0.85, pos: [500, 100] }
+            al4: { type: list, page: gateway, font: hand, scale: 0.8, items: [{ text: Support, color: agent }, { text: Billing, color: agent }, { text: Ops, color: agent }], pos: [110, 360], visible: true }
+            sl4: { type: list, page: gateway, font: hand, scale: 0.75, items: [{ text: Weather, color: weather }, { text: Calculator, color: calc }, { text: Orders, color: orders }, { text: Docs, color: docs }, { text: Maps, color: maps }], pos: [890, 360], visible: true }
+            gw: { type: node, page: gateway, icon: gateway, label: "MCP gateway", color: gateway, scale: 0.85, pos: [500, 360] }
+            m4in: { type: mesh, page: gateway, from: al4, to: gw, color: agent, width: 2, opacity: 0.7 }
+            m4out: { type: mesh, page: gateway, from: gw, to: sl4, color: gateway, width: 2, opacity: 0.7 }
+            a4: { type: arrow, from: al4, to: gw, color: agent }
+            b4: { type: arrow, from: gw, to: sl4, color: gateway }
+            pk4a: { type: packet, on: a4, label: "call", color: agent }
+            pk4b: { type: packet, on: b4, label: "call", color: agent }
+            face1: { type: text, page: gateway, text: "looks like one MCP server", size: 30, color: agent, pos: [230, 570] }
+            face2: { type: text, page: gateway, text: "acts as an MCP client", size: 30, color: gateway, pos: [770, 570] }
+            # page: reg (registration, then the catalogue on the same page)
+            agent7: { type: chip, page: reg, icon: agent, text: "Agent", color: agent, pos: [105, 620], visible: true }
+            op: { type: node, page: reg, icon: user, label: "Operator", sub: "name + URL", color: user, scale: 0.8, pos: [150, 110] }
+            gwbox: { type: box, page: reg, label: "MCP gateway", color: gateway, dashed: false, size: [300, 390], pos: [440, 400], visible: true }
+            cat: { type: list, page: reg, title: "catalogue", scale: 0.72, items: [{ text: "weather tools", color: weather }, { text: "calculator tools", color: calc }, { text: "orders tools", color: orders }, { text: "docs tools", color: docs }, { text: "maps tools", color: maps }], pos: [440, 425] }
+            sl6: { type: list, page: reg, font: hand, scale: 0.8, items: [{ text: Weather, color: weather }, { text: Calculator, color: calc }, { text: Orders, color: orders }, { text: Docs, color: docs }, { text: Maps, color: maps }], pos: [800, 400], visible: true }
+            unch: { type: text, page: reg, text: "unchanged", size: 30, color: quiet, pos: [800, 625] }
+            opwire: { type: arrow, from: op, to: gwbox, color: user }
+            m6: { type: mesh, page: reg, from: gwbox, to: sl6, color: quiet, width: 1.8, opacity: 0.55, visible: true }
+            a6: { type: arrow, from: gwbox, to: sl6, color: gateway }
+            pk6: { type: packet, on: a6, label: "tools/list", color: gateway }
+            a7: { type: arrow, from: agent7, to: gwbox, color: agent }
+            pk7a: { type: packet, on: a7, label: "tools/list", color: agent, lift: 40 }
+            pk7b: { type: packet, on: a7, reverse: true, label: "tools/list reply: every tool", color: gateway, scale: 0.7, lift: -40, dur: 1.6 }
+            # page: addr (illustrative address)
+            badges: { type: list, page: addr, scale: 0.85, items: [{ text: "own", icon: key, color: yellow }, { text: "own", icon: key, color: yellow }, { text: "own", icon: key, color: yellow }], pos: [70, 350] }
+            al8: { type: list, page: addr, font: hand, scale: 0.85, items: [{ text: Support, color: agent }, { text: Billing, color: agent }, { text: Ops, color: agent }], pos: [230, 350], visible: true }
+            gw8: { type: node, page: addr, icon: gateway, label: "MCP gateway", color: gateway, scale: 0.85, pos: [530, 350], visible: true }
+            sl8: { type: list, page: addr, font: hand, scale: 0.8, items: [{ text: Weather, color: weather }, { text: Calculator, color: calc }, { text: Orders, color: orders }, { text: Docs, color: docs }, { text: Maps, color: maps }], pos: [880, 350], visible: true }
+            m8a: { type: mesh, page: addr, from: al8, to: gw8, color: agent, width: 2, opacity: 0.7, visible: true }
+            m8b: { type: mesh, page: addr, from: gw8, to: sl8, color: gateway, width: 2, opacity: 0.7, visible: true }
+            sec8: { type: chip, page: addr, icon: key, text: "server secrets", color: quiet, scale: 0.85, pos: [230, 540], visible: true }
+            cnt8: { type: text, page: addr, text: "8 connections", size: 42, color: user, pos: [530, 640] }
+            # page: watch (an illustration: the lab's log has no caller column)
+            log:
+              type: card
+              page: watch
+              title: "gateway log (illustration)"
+              color: ok
+              scale: 1.3
+              pos: [500, 330]
+              lines: ["18:41 · Ops · orders-get-order · ok · 2400 ms"]
+              highlight:
+                - { id: tool, match: "orders-get-order", color: orders }
+                - { id: time, match: "18:41", color: user }
+                - { id: dur, match: "2400 ms", color: calc }
+                - { id: worked, match: "(?<= )ok(?= )", color: ok }
+                - { id: who, match: "Ops", color: agent }
+            # page: not
+            gw10: { type: node, page: not, icon: gateway, label: "MCP gateway", color: gateway, scale: 0.85, pos: [500, 120], visible: true }
+            runs: { type: chip, page: not, text: "runs the tools", color: quiet, pos: [500, 290], visible: true }
+            picks: { type: chip, page: not, text: "chooses the tools", color: quiet, pos: [500, 400], visible: true }
+            aigw: { type: chip, page: not, icon: model, text: "AI gateway → language models", color: model, pos: [500, 570] }
             # page: lab
-            aL: { type: node, page: lab, icon: agent, label: Support, color: agent, pos: [190, 300] }
-            gwL: { type: node, page: lab, icon: gateway, label: "Tool gateway", color: gateway, pos: [600, 300] }
-            gL: { type: arrow, from: aL, to: gwL, color: agent }
-            p_cmd: { type: packet, on: gL, label: "tools/list", color: agent }
-            keyL: { type: chip, page: lab, icon: key, text: "own key", color: agent, pos: [190, 420] }
-            logcard: { type: card, page: lab, title: "gateway log", color: ok, lines: ["tool:   calculator-tools-add", "result: 42.0  ✓"], pos: [600, 470] }
-            cta: { type: chip, page: lab, text: "Open the lab · See how tools reach an agent", color: user, pos: [500, 640] }
+            gw11: { type: node, page: lab, icon: gateway, label: "MCP gateway", color: gateway, pos: [500, 340], visible: true }
             tlist:
               type: terminal
               command: python3 -B call_tool.py --list
@@ -292,6 +525,9 @@ videos:
                   - weather-tools-get-weather: Get the current made-up weather for a city.
                   - weather-tools-get-forecast: Get a made-up multi-day forecast for a city.
                   - calculator-tools-add: Add two numbers and return the sum.
+            # page: rec (view columns from workspace/view_service.py)
+            view: { type: chip, page: rec, icon: log, text: "view tab: tool · time · success · response time", color: ok, scale: 0.8, pos: [500, 280] }
+            nocaller: { type: text, page: rec, text: "no caller column", size: 38, color: bad, pos: [500, 430] }
             tadd:
               type: terminal
               command: "python3 -B call_tool.py calculator-tools-add '{\"a\": 17, \"b\": 25}'"
@@ -307,186 +543,707 @@ videos:
 
                 Result:
                   42.0
+            # page: recap
+            k1: { type: chip, page: recap, text: "registered once", color: gateway, pos: [500, 120] }
+            k2: { type: chip, page: recap, icon: gateway, text: "one address", color: agent, pos: [500, 225] }
+            k3: { type: chip, page: recap, icon: key, text: "one credential", color: yellow, pos: [500, 330] }
+            k4: { type: chip, page: recap, icon: log, text: "one place", color: ok, pos: [500, 435] }
+            thirty: { type: text, page: recap, text: "10 + 20 = 30", size: 52, color: gateway, pos: [500, 580] }
+            # page: cta
+            cta: { type: chip, page: cta, text: "Open the lab · See how tools reach an agent", color: user, pos: [500, 300] }
+            next: { type: text, page: cta, text: "Next: should every agent see every tool?", size: 40, pos: [500, 450] }
         beats:
-          - { show: [kicker, q] }
-          - { at: "three agents", show: [a1, a2, a3], stagger: 0.25 }
-          - { at: "weather", show: s1 }
-          - { at: "a calculator", show: s2 }
-          - { at: "an admin server", show: s3 }
-          - { at: "every agent connects to every server", show: [l11, l12, l13, l21, l22, l23, l31, l32, l33], stagger: 0.12 }
-          - { at: "nine connections", show: count }
-          - { at: "to secure", ring: count }
-          - { at: "add one more server", show: s4 }
-          - { at: "every agent has to change", show: [l14, l24, l34], stagger: 0.15, text: { count: "12 connections" } }
+          - { at: "Ten AI agents", ring: ag }
+          - { at: "twenty MCP servers", show: sv }
+          - { at: "two hundred", pause: 0.7 }
+          - { at: "two hundred", show: direct }
+          - { at: "secret", show: secrets }
+          - { at: "One box", pause: 1.3 }
+          - { at: "One box", show: [box, hub], hide: direct, dim: secrets, move: { box: [500, 440] }, stagger: 0.6 }
 
-      - id: gateway
+      # 2. Zoom in: three by five
+      - id: zoom
         vo: >-
-          A tool gateway fixes this. It sits in the middle, as one door. Each
-          tool server registers with the gateway, once: here is my address. The
-          gateway asks each one for its menu, and keeps the list. Each agent
-          connects only to the gateway. Now there are seven lines instead of
-          twelve. And a new server adds one line, not three.
+          To see why, take three agents and five servers. Larkfield's Support,
+          Billing and Ops were each wired to weather, calculator, orders, docs
+          and maps: fifteen lines, drawn one by one.
         beats:
-          - { at: "A tool gateway fixes this", hide: [l11, l12, l13, l21, l22, l23, l31, l32, l33, l14, l24, l34], show: gw }
-          - { at: "as one door", ring: gw, text: { q: "One door for many tool servers" } }
-          - { at: "registers with the gateway", show: [r1, r2, r3, r4], stagger: 0.3 }
-          - { at: "here is my address", ring: s1 }
-          - { at: "keeps the list", show: catalog }
-          - { at: "connects only to the gateway", show: [g1, g2, g3], stagger: 0.3 }
-          - { at: "seven lines instead of twelve", text: { count: "7 connections" }, ring: count }
-          - { at: "adds one line", ring: s4 }
+          - { page: zoom, transition: erase, pause: 0.8 }
+          - { at: "take three agents", show: al }
+          - { at: "and five servers", pause: 1.15 }
+          - { at: "and five servers", show: sl }
+          - { at: "Larkfield's Support", ring: al }
+          - { at: "weather, calculator", ring: sl }
+          - { at: "fifteen lines", show: m15 }
 
-      - id: bundle
+      # 3. What each line costs
+      - &v2cost
+        id: cost
         vo: >-
-          But should every agent see every tool? Take the support agent. The
-          gateway builds it a bundle of tools, called a virtual server. It picks
-          get weather and get forecast from one server, and add, subtract and
-          multiply from another. The admin server has a risky tool: delete order.
-          The bundle leaves it out, so the support agent cannot even see it, let
-          alone call it. And the support agent gets its own key, so the gateway
-          always knows who is asking.
+          Each line meant an address and a credential, a secret proving who is
+          asking, kept inside that agent. Fifteen credentials, and every new
+          server meant changing all three agents again.
         beats:
-          - { at: "But should every agent", page: bundle, transition: erase, pause: 0.8 }
-          - { at: "Take the support agent", show: aB }
-          - { at: "builds it a bundle", show: [gwB, eB] }
-          - { at: "get weather and get forecast", show: b1 }
-          - { at: "add, subtract and multiply", show: b2 }
-          - { at: "a risky tool", show: risky }
-          - { at: "leaves it out", color: { risky: bad }, text: { risky: "delete_order · left out" }, ring: risky }
-          - { at: "cannot even see it", focus: [b1, b2] }
-          - { at: "its own key", show: key, focus: [] }
+          - { page: cost, transition: erase, pause: 0.8 }
+          - { at: "a credential", show: keys3 }
+          - { at: "Fifteen credentials", show: cnt3 }
+          - { at: "and every new server", pause: 0.4 }
+          - { at: "every new server", show: [new3, m3new], stagger: 0.4 }
+          - { at: "changing all three agents", ring: al3, text: { al3/0: "Support · update", al3/1: "Billing · update", al3/2: "Ops · update" } }
 
-      - id: list
+      # 4. An MCP gateway (Maren is our fictional platform lead)
+      - &v2gateway
+        id: gateway
         vo: >-
-          In the lab, the bundle is called toy tools. Ask the gateway for the
-          menu, and look at the address. It's slash servers, then the bundle's
-          id, then slash MCP. One address for this agent. And the answer lists
-          exactly five tools, from two servers. Nothing else can be reached from
-          there.
+          So Maren, Larkfield's platform lead, put one program in the middle: an
+          MCP gateway. A gateway is a proxy, a program that receives each call
+          and passes it on.
         beats:
-          - { at: "In the lab", card: { kicker: "In the lab", title: "See it for real" }, page: lab, transition: slide }
-          - { at: "the bundle is called toy tools", show: [aL, gwL, gL], stagger: 0.4 }
-          - { at: "Ask the gateway", layout: split, run: tlist }
-          - { at: "look at the address", mark: url }
-          - { at: "One address for this agent", travel: p_cmd }
-          - { at: "exactly five tools", mark: [weather, calc] }
+          - { page: gateway, transition: erase, pause: 0.8 }
+          - { at: "So Maren", show: maren }
+          - { at: "an MCP gateway", show: [gw, m4in, m4out], stagger: 0.3 }
+          - { at: "a proxy", text: { gw: { sub: "proxy: receives each call, passes it on" } } }
+          - { at: "receives each call", travel: [pk4a, pk4b], stagger: 1.2 }
 
-      - id: log
+      # 5. Two faces (same page)
+      - &v2faces
+        id: faces
         vo: >-
-          Every call goes through that same door. Here the agent calls add, with
-          seventeen and twenty five, and gets back forty two. Because the gateway
-          sits in the middle, it can record every call: which tool was called,
-          when, and whether it worked. In the lab, you will find that record in
-          the view tab, one row per call.
+          To the agents, the gateway looks like a single MCP server. To the real
+          servers it acts as their MCP client, the role each agent played
+          before.
         beats:
-          - { at: "Every call goes through", run: tadd, focus: [] }
-          - { at: "that same door", mark: door }
-          - { at: "gets back forty two", mark: answer }
-          - { at: "record every call", show: logcard }
-          - { at: "the view tab", ring: logcard }
+          - { at: "a single MCP server", show: face1 }
+          - { at: "their MCP client", show: face2 }
 
-      - id: recap
+      # 6. Registration (the operator's act, not the server's)
+      - &v2reg
+        id: reg
         vo: >-
-          Focus on what just happened. Tool servers register once. Each agent
-          gets one address, its own key, and only the tools picked for it. And
-          every call passes one door, where it can be checked and recorded. Open
-          the lab, See how tools reach an agent, and list the tools yourself.
+          An operator then registered each server with the gateway once, by
+          name and address; the server did nothing. The gateway connected and
+          fetched each menu with tools/list.
         beats:
-          - { at: "Focus on what just happened", layout: canvas }
-          - { at: "Tool servers register once", ring: gwL }
-          - { at: "one address", travel: p_cmd }
-          - { at: "its own key", show: keyL }
-          - { at: "passes one door", focus: [gwL] }
-          - { at: "Open the lab", show: cta, focus: [] }
+          - { page: reg, transition: erase, pause: 0.8 }
+          - { at: "An operator", show: [op, opwire], stagger: 0.4 }
+          - { at: "the server did nothing", show: unch, ring: sl6 }
+          - { at: "fetched each menu", travel: pk6 }
 
-  # --------------------------------------------------------------------------
-  - id: mcp-when-a-tool-fails
-    title: When a tool fails
+      # 7. The catalogue (same page)
+      - &v2catalogue
+        id: catalogue
+        vo: >-
+          The five menus landed in one list inside the gateway, its catalogue.
+          One tools/list to the gateway now returned every tool from every
+          server, in one reply.
+        beats:
+          - { at: "its catalogue", show: cat }
+          - { at: "One tools/list", travel: pk7a }
+          - { at: "in one reply", travel: pk7b }
+
+      # 8. One address, one credential (3 + 5 = 8)
+      - &v2addr
+        id: addr
+        vo: >-
+          So each agent kept one address, the gateway's, and one credential, its
+          own; the servers' secrets moved into the gateway. Three agents plus
+          five servers made eight connections instead of fifteen.
+        beats:
+          - { page: addr, transition: erase, pause: 0.8 }
+          - { at: "one address", text: { gw8: { sub: "mcp.larkfield.internal" } }, ring: gw8 }
+          - { at: "its own", show: badges }
+          - { at: "moved into the gateway", move: { sec8: [530, 500] } }
+          - { at: "eight connections", show: cnt8 }
+
+      # 9. One place to watch
+      - &v2watch
+        id: watch
+        vo: >-
+          Every call passed through one place, so the gateway wrote a row for
+          each: tool, time, how long it took, whether it worked and, from the
+          credential, who asked.
+        beats:
+          - { page: watch, transition: erase, pause: 0.8 }
+          - { at: "wrote a row", show: log }
+          - { at: "each: tool", mark: tool }
+          - { at: "time", mark: time }
+          - { at: "how long", mark: dur }
+          - { at: "whether it worked", mark: worked }
+          - { at: "who asked", mark: who }
+
+      # 10. What it is not
+      - &v2not
+        id: not
+        vo: >-
+          The gateway runs no tools and chooses none; the servers do the work,
+          and the model chooses. An AI gateway is a different thing: it carries
+          calls to language models.
+        beats:
+          - { page: not, transition: erase, pause: 0.8 }
+          - { at: "no tools", strike: runs, color: { runs: bad } }
+          - { at: "chooses none", strike: picks, color: { picks: bad } }
+          - { at: "An AI gateway", show: aigw }
+
+      # 11. In the lab (real terminal output)
+      - &v2lab
+        id: lab
+        vo: >-
+          In the lab the MCP gateway is ContextForge, IBM's open-source gateway,
+          with two toy MCP servers registered. One tools/list to its address
+          returned five tools from both.
+        beats:
+          - { page: lab, transition: slide, pause: 0.8, layout: split, run: tlist }
+          - { at: "ContextForge", text: { gw11: "ContextForge" }, ring: gw11 }
+          - { at: "its address", mark: url }
+          - { at: "five tools", mark: [weather, calc] }
+
+      # 12. The record in the lab (real terminal output)
+      - &v2rec
+        id: rec
+        vo: >-
+          Then add with seventeen and twenty-five returned forty-two, and the
+          view tab showed it as a new row: tool, time, success, response time.
+          There is no caller column.
+        beats:
+          - { page: rec, transition: slide, pause: 0.8, run: tadd }
+          - { at: "forty-two", mark: answer }
+          - { at: "the view tab", show: view }
+          - { at: "There is no caller column", show: nocaller }
+
+      # 13. Recap
+      - &v2recap
+        id: recap
+        vo: >-
+          Focus on what changed. Servers registered once, one address and one
+          credential per agent, one row per call in one place. Ten agents,
+          twenty servers: thirty connections, not two hundred.
+        beats:
+          - { page: recap, transition: erase, pause: 0.8, layout: canvas }
+          - { at: "Servers registered once", show: k1 }
+          - { at: "one address", pause: 0.3 }
+          - { at: "one address", show: k2 }
+          - { at: "and one credential", pause: 1.15 }
+          - { at: "one credential", show: k3 }
+          - { at: "in one place", show: k4 }
+          - { at: "thirty connections", show: thirty }
+
+      # 14. Call to action
+      - &v2cta
+        id: cta
+        vo: >-
+          Open the lab, See how tools reach an agent, and find your own calls in
+          the view tab. Next, a refund tool shows up on Support's menu.
+        beats:
+          - { page: cta, transition: erase, pause: 0.8 }
+          - { at: "Open the lab", show: cta }
+          - { at: "Next", show: next }
+
+  # ==========================================================================
+  # Video 2, variant B (A/B cut): the "Hook variants" pages 1-2; pages 3-14 are
+  # the main cut's, unchanged.
+  - id: mcp-why-a-gateway-hook-b
+    title: Why an MCP gateway?
+    endCard: { title: "Why an MCP gateway?", sub: "Hands-on lab · See how tools reach an agent" }
     segments:
+      # 1. Hook: the interview question
       - id: hook
         vo: >-
-          Your agent calls a weather tool for a customer. The status code comes
-          back: two hundred, OK. Everything looks fine. The logs are green. And
-          yet, the agent tells the customer there is heavy snow in Leeds, and
-          there isn't. What went wrong?
+          A classic platform interview question, and the answer has a name: an
+          MCP gateway. Ten agents times twenty servers is two hundred
+          connections, each with its own secret.
         scene:
-          id: hook
-          elements:
-            kicker: { type: kicker, text: "Debugging question", pos: [500, 60] }
-            q: { type: title, text: "The call returned 200 OK. So why is the answer wrong?", pos: [500, 145], size: 46, width: 900, underline: true }
-            agent: { type: node, icon: agent, label: Agent, color: agent, pos: [190, 380] }
-            ok200: { type: chip, font: mono, icon: check, text: "HTTP 200 OK", color: ok, pos: [620, 320] }
-            ans: { type: bubble, text: "Heavy snow in Leeds ❄️", color: agent, side: left, pos: [620, 460] }
-            puzzled: { type: text, text: "??", size: 72, color: user, pos: [890, 460] }
-            green: { type: chip, font: mono, icon: log, text: "logs: all green", color: ok, pos: [620, 590] }
+          id: gateway
+          pages: [{ id: hookb }, { id: hook }, { id: zoom }, { id: cost }, { id: gateway }, { id: reg }, { id: addr }, { id: watch }, { id: not }, { id: lab }, { id: rec }, { id: recap }, { id: cta }]
+          elements: *v2elements
         beats:
-          - { show: [kicker, q] }
-          - { at: "calls a weather tool", show: agent }
-          - { at: "two hundred, OK", show: ok200 }
-          - { at: "Everything looks fine", ring: ok200 }
-          - { at: "The logs are green", show: green }
-          - { at: "heavy snow in Leeds", show: ans }
-          - { at: "What went wrong", show: puzzled, ring: ans }
+          - { at: "an MCP gateway", show: boxB, move: { boxB: [500, 430] } }
+          - { at: "Ten agents", ring: agB }
+          - { at: "times twenty servers", show: svB }
+          - { at: "is two hundred", pause: 1.15 }
+          - { at: "is two hundred", show: directB }
+          - { at: "each with its own secret", pause: 0.45 }
+          - { at: "each with its own secret", show: keysB }
 
-      - id: follow
+      # 2. One box, then zoom in
+      - id: zoom
         vo: >-
-          Let's follow one call. The agent asks for the weather in Leeds. The
-          gateway passes the call to the weather tool server. That server asks a
-          weather service for the data. Every step so far has worked. But today
-          the weather service is slow, and the server gives up waiting.
+          One box in the middle, and ten plus twenty makes thirty, not two
+          hundred. To see why, take three agents and five servers: fifteen
+          lines, drawn here one by one.
+        beats:
+          - { pause: 0.4 }
+          - { at: "One box", show: hubB, hide: directB, ring: boxB }
+          - { at: "To see why", page: zoom, transition: erase, pause: 0.8 }
+          - { at: "take three agents", show: al }
+          - { at: "and five servers", pause: 1.25 }
+          - { at: "and five servers", show: sl }
+          - { at: "fifteen lines", pause: 1.0 }
+          - { at: "fifteen lines", show: m15 }
+      - *v2cost
+      - *v2gateway
+      - *v2faces
+      - *v2reg
+      - *v2catalogue
+      - *v2addr
+      - *v2watch
+      - *v2not
+      - *v2lab
+      - *v2rec
+      - *v2recap
+      - *v2cta
+
+  # ==========================================================================
+  # Video 3. Virtual servers: the right tools for each agent
+  - id: mcp-virtual-servers
+    title: "Virtual servers: the right tools for each agent"
+    endCard: { title: "MCP virtual servers", sub: "Hands-on lab · See how tools reach an agent" }
+    segments:
+      # 1. Hook: the interview question (illustrative counts)
+      - id: hook
+        vo: >-
+          Each agent should see only its own tools, without running a separate
+          server for each one. One catalogue of twelve tools, three agents,
+          three different menus.
         scene:
-          id: chain
+          id: virtual
+          pages: [{ id: hook }, { id: vs }, { id: every }, { id: wrong }, { id: sup }, { id: bill }, { id: search }, { id: sees }, { id: lock }, { id: lab }, { id: recap }, { id: cta }]
           elements:
-            agent: { type: node, icon: agent, label: Agent, color: agent, pos: [120, 250] }
-            gw: { type: node, icon: gateway, label: Gateway, color: gateway, pos: [340, 430] }
-            srv: { type: node, icon: server, label: "Weather server", color: weather, pos: [620, 250] }
-            api: { type: node, icon: cloud, label: "Weather API", color: quiet, scale: 0.9, pos: [835, 430] }
-            e1: { type: arrow, from: agent, to: gw, color: quiet }
-            e2: { type: arrow, from: gw, to: srv, color: quiet }
-            e3: { type: arrow, from: srv, to: api, color: quiet }
-            c1: { type: packet, on: e1, label: "get_weather · Leeds", color: agent }
-            c2: { type: packet, on: e2, label: "get_weather · Leeds", color: agent }
-            c3: { type: packet, on: e3, label: "fetch Leeds", color: weather }
-            clock: { type: icon, icon: clock, size: 54, color: bad, pos: [835, 335] }
-            tout: { type: chip, icon: cross, text: "timed out", color: bad, pos: [835, 525] }
-            r2: { type: packet, on: e2, reverse: true, label: "result · isError", color: bad }
-            r1: { type: packet, on: e1, reverse: true, label: "result · isError", color: bad }
-            reply:
-              type: card
-              title: "the reply · tool error"
-              color: quiet
-              pos: [260, 600]
-              lines:
-                - '"result": {'
-                - '  "isError": true,'
-                - '  "content": "…timed out"'
-                - '}'
+            # page: hook
+            kicker: { type: kicker, page: hook, text: "Interview question", pos: [500, 34], visible: true }
+            q: { type: title, page: hook, text: "How do you give each AI agent only the tools it needs?", size: 48, width: 920, pos: [500, 124], underline: true, visible: true }
+            topic: { type: text, page: hook, text: "MCP virtual servers", size: 32, color: quiet, pos: [500, 232], visible: true }
+            cat1: { type: list, page: hook, title: "catalogue · 12 tools", cols: 3, scale: 0.6, items: [tool, tool, tool, tool, tool, tool, tool, tool, tool, tool, tool, tool], color: quiet, pos: [160, 450] }
+            menus:
+              type: list
+              page: hook
+              cols: 2
+              gate: true
+              visible: true
+              scale: 0.85
+              pos: [640, 440]
+              items:
+                - { text: Support, color: agent, font: hand }
+                - { text: "■■■■■", color: agent }
+                - { text: Billing, color: agent, font: hand }
+                - { text: "■■", color: agent }
+                - { text: Ops, color: agent, font: hand }
+                - { text: "■■■■■■■■■■■■", color: agent }
+            stack: { type: chip, page: hook, icon: server, text: "one server per agent", color: quiet, scale: 0.85, pos: [500, 640] }
+            # page: vs (the answer within 20 s)
+            gwbox: { type: box, page: vs, label: "MCP gateway", color: gateway, dashed: false, size: [290, 330], pos: [180, 320], visible: true }
+            cat2: { type: list, page: vs, title: "catalogue · 12 tools", cols: 3, scale: 0.55, items: [tool, tool, tool, tool, tool, tool, tool, tool, tool, tool, tool, tool], color: quiet, pos: [180, 345] }
+            vbox: { type: box, page: vs, label: "support-tools", color: gateway, size: [270, 330], pos: [505, 320] }
+            vlist: { type: list, page: vs, scale: 0.7, items: [{ text: get_weather, color: weather }, { text: get_forecast, color: weather }, { text: add, color: calc }, { text: subtract, color: calc }, { text: multiply, color: calc }], pos: [505, 350] }
+            vaddr: { type: chip, page: vs, font: mono, text: "/servers/<id>/mcp", color: gateway, scale: 0.85, pos: [505, 560] }
+            agent2: { type: node, page: vs, icon: agent, label: "Agent", color: agent, scale: 0.8, pos: [895, 320], visible: true }
+            seen: { type: arrow, from: agent2, to: vbox, color: agent, label: "looks like one MCP server", labelWidth: 170 }
+            # page: every (illustrative: Larkfield and Priya are fictional; issue_refund is a label only)
+            may: { type: text, page: every, text: "May", size: 32, color: quiet, pos: [500, 40], visible: true }
+            gw3: { type: node, page: every, icon: gateway, label: "MCP gateway", sub: "catalogue · 12 tools", color: gateway, scale: 0.75, pos: [170, 300] }
+            ag3: { type: list, page: every, font: hand, items: [{ text: Support, color: agent }, { text: Billing, color: agent }, { text: Ops, color: agent }], pos: [490, 300] }
+            fan3: { type: mesh, page: every, from: gw3, to: ag3, color: gateway, width: 2, opacity: 0.7 }
+            sup3: { type: list, page: every, title: "Support's menu", cols: 3, scale: 0.62, color: quiet, items: [tool, tool, tool, tool, tool, tool, tool, tool, tool, tool, tool, { text: issue_refund, color: bad }], pos: [810, 300] }
+            priya: { type: node, page: every, icon: user, label: "Priya", sub: "head of Support", color: user, scale: 0.8, pos: [490, 560] }
+            money: { type: stamp, page: every, text: "£", size: 72, color: bad, rotate: -10, pos: [880, 500] }
+            # page: wrong
+            agent4: { type: node, page: wrong, icon: agent, label: "Support", color: agent, scale: 0.85, pos: [170, 240], visible: true }
+            model4: { type: chip, page: wrong, icon: model, text: "Model", color: model, pos: [170, 420], visible: true }
+            menu4: { type: list, page: wrong, title: "menu", cols: 3, scale: 0.72, items: [{ text: get_weather, color: weather }, { text: get_forecast, color: weather }, { text: add, color: calc }, { text: subtract, color: calc }, { text: multiply, color: calc }, { text: tool, color: quiet }, { text: tool, color: quiet }, { text: tool, color: quiet }, { text: tool, color: quiet }, { text: tool, color: quiet }, { text: tool, color: quiet }], pos: [640, 280] }
+            refund4: { type: chip, page: wrong, font: mono, icon: warn, text: issue_refund, color: bad, pos: [640, 520] }
+            wrongpick: { type: arrow, from: model4, to: refund4, color: bad, dashed: true }
+            # page: sup (Maren is the platform lead from video 2)
+            catbox: { type: box, page: sup, label: "catalogue", color: quiet, size: [300, 520], pos: [200, 390], visible: true }
+            five: { type: list, page: sup, scale: 0.7, items: [{ text: get_weather, color: weather }, { text: get_forecast, color: weather }, { text: add, color: calc }, { text: subtract, color: calc }, { text: multiply, color: calc }], pos: [200, 285], visible: true }
+            rest5: { type: list, page: sup, cols: 2, scale: 0.6, color: quiet, items: [tool, tool, tool, tool, tool, tool], pos: [200, 500], visible: true }
+            refund5: { type: chip, page: sup, font: mono, text: issue_refund, color: bad, scale: 0.85, pos: [200, 600], visible: true }
+            vbox5: { type: box, page: sup, label: "support-tools", color: gateway, size: [300, 330], pos: [700, 330] }
+            leftout: { type: stamp, page: sup, text: "left out", size: 38, color: bad, rotate: -8, pos: [420, 600] }
+            # page: bill (one tool in two virtual servers)
+            catadd: { type: chip, page: bill, font: mono, text: add, sub: "in the catalogue", color: calc, pos: [500, 100], visible: true }
+            sbox: { type: box, page: bill, label: "support-tools", color: gateway, size: [300, 330], pos: [250, 380], visible: true }
+            slist: { type: list, page: bill, scale: 0.7, items: [{ text: get_weather, color: weather }, { text: get_forecast, color: weather }, { text: add, color: calc }, { text: subtract, color: calc }, { text: multiply, color: calc }], pos: [250, 410], visible: true }
+            bbox: { type: box, page: bill, label: "billing-tools", color: gateway, size: [300, 330], pos: [750, 380] }
+            blist: { type: list, page: bill, scale: 0.8, items: [{ text: add, color: calc }, { text: issue_refund, color: bad }], pos: [750, 410] }
+            to_s: { type: arrow, from: catadd, to: sbox, color: calc }
+            to_b: { type: arrow, from: catadd, to: bbox, color: calc }
+            points: { type: text, page: bill, text: "points at tools · copies nothing · runs nothing", size: 30, color: quiet, pos: [500, 640] }
+            # page: search (an illustrative pair; the lab's prefix is real output)
+            docsN: { type: node, page: search, icon: server, label: "Docs", color: docs, scale: 0.85, pos: [230, 160] }
+            docsC: { type: chip, page: search, font: mono, text: search, color: docs, pos: [230, 300] }
+            ordN: { type: node, page: search, icon: server, label: "Orders", color: orders, scale: 0.85, pos: [770, 160] }
+            ordC: { type: chip, page: search, font: mono, text: search, color: orders, pos: [770, 300] }
+            menu7: { type: box, page: search, label: "one menu  ?", color: model, size: [540, 130], pos: [500, 500] }
+            pre: { type: text, page: search, font: mono, text: "get_weather → weather-tools-get-weather", size: 26, color: weather, pos: [500, 640] }
+            # page: sees (what the agent sees, then one call routed on the same page)
+            agent9: { type: chip, page: sees, icon: agent, text: "Support", color: agent, pos: [120, 120], visible: true }
+            gw9: { type: node, page: sees, icon: gateway, label: "MCP gateway", color: gateway, scale: 0.7, pos: [500, 120], visible: true }
+            ws9: { type: node, page: sees, icon: server, label: "Weather", sub: "MCP server", color: weather, scale: 0.75, pos: [870, 120], visible: true }
+            r9a: { type: arrow, from: agent9, to: gw9, color: agent, visible: true }
+            r9b: { type: arrow, from: gw9, to: ws9, color: gateway, visible: true }
+            pk9a: { type: packet, on: r9a, label: "weather-tools-get-weather · Leeds", color: agent, scale: 0.75, lift: 52, dur: 1.6 }
+            pk9b: { type: packet, on: r9b, label: "get_weather · Leeds", color: weather, scale: 0.8, lift: 52, dur: 1.6 }
+            sees: { type: list, page: sees, title: "agent sees", font: hand, scale: 0.85, items: [{ text: "one address", color: agent }, { text: "names", color: agent }, { text: "descriptions", color: agent }, { text: "input schemas", color: agent }], pos: [250, 440] }
+            knows: { type: list, page: sees, title: "gateway knows", font: hand, scale: 0.85, items: [{ text: "owner server", color: gateway }, { text: "original name get_weather", color: gateway }, { text: "server address", color: gateway }, { text: "credentials", color: gateway }], pos: [720, 440] }
+            # page: lock
+            agent11: { type: node, page: lock, icon: agent, label: "Support", color: agent, scale: 0.85, pos: [230, 320], visible: true }
+            vs11: { type: chip, page: lock, icon: gateway, text: "support-tools", color: gateway, pos: [700, 150], visible: true }
+            ord11: { type: node, page: lock, icon: server, label: "Orders", color: orders, scale: 0.85, pos: [760, 520], visible: true }
+            via11: { type: arrow, from: agent11, to: vs11, color: agent, visible: true }
+            badge: { type: chip, page: lock, icon: key, text: "credential: support-tools only", color: yellow, scale: 0.8, pos: [250, 480] }
+            direct11: { type: arrow, from: agent11, to: ord11, color: bad, dashed: true, label: "✗", labelSize: 56 }
+            # page: lab
+            vs12: { type: chip, page: lab, icon: gateway, text: "toy-tools", color: gateway, pos: [500, 250], visible: true }
+            admin: { type: text, page: lab, font: mono, text: "every call: admin@example.com", size: 28, color: user, pos: [500, 420] }
+            tlist3:
+              type: terminal
+              command: python3 -B call_tool.py --list
+              show: "0,5-10"
+              clip: 52
               highlight:
-                - { id: flag, match: "\"isError\": true", color: bad }
-                - { id: msg, match: "\"content\": \"…timed out\"", color: user }
-            c200: { type: chip, font: mono, text: "HTTP 200", color: calc, pos: [740, 600] }
-            perr:
+                - { id: toytools, match: "virtual server 'toy-tools'", color: gateway }
+                - { id: weather, match: "weather-tools-[a-z-]+", lines: "^  - ", color: weather }
+                - { id: calc, match: "calculator-tools-[a-z]+", lines: "^  - ", color: calc }
+              output: |
+                --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+                <-- HTTP 200
+                    {"jsonrpc": "2.0", "id": 1, "result": {"tools": [{"name": "calculator-tools-subtract", "description": "Subtract b from a and return the difference.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "subtractArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "subtractOutput", "type": "object"}, "annotations": {}}, {"name": "calculator-tools-multiply", "description": "Multiply two numbers and return the product.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "multiplyArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "multiplyOutput", "type": "object"}, "annotations": {}}, {"name": "weather-tools-get-weather", "description": "Get the current made-up weather for a city.", "inputSchema": {"properties": {"city": {"title": "City", "type": "string"}}, "required": ["city"], "title": "get_weatherArguments", "type": "object"}, "annotations": {}}, {"name": "weather-tools-get-forecast", "description": "Get a made-up multi-day forecast for a city.", "inputSchema": {"properties": {"city": {"title": "City", "type": "string"}, "days": {"default": 3, "title": "Days", "type": "integer"}}, "required": ["city"], "title": "get_forecastArguments", "type": "object"}, "annotations": {}}, {"name": "calculator-tools-add", "description": "Add two numbers and return the sum.", "inputSchema": {"properties": {"a": {"title": "A", "type": "number"}, "b": {"title": "B", "type": "number"}}, "required": ["a", "b"], "title": "addArguments", "type": "object"}, "outputSchema": {"properties": {"result": {"title": "Result", "type": "number"}}, "required": ["result"], "title": "addOutput", "type": "object"}, "annotations": {}}]}}
+
+                Tools reachable through virtual server 'toy-tools':
+                  - calculator-tools-subtract: Subtract b from a and return the difference.
+                  - calculator-tools-multiply: Multiply two numbers and return the product.
+                  - weather-tools-get-weather: Get the current made-up weather for a city.
+                  - weather-tools-get-forecast: Get a made-up multi-day forecast for a city.
+                  - calculator-tools-add: Add two numbers and return the sum.
+            # page: recap
+            c1: { type: chip, page: recap, text: "the catalogue holds every tool", color: quiet, pos: [500, 140] }
+            c2: { type: chip, page: recap, icon: gateway, text: "each virtual server picks a few", color: gateway, pos: [500, 255] }
+            c3: { type: chip, page: recap, font: mono, text: "prefixes keep names apart", color: weather, pos: [500, 370] }
+            c4: { type: chip, page: recap, icon: shield, text: "the gateway keeps the details", color: gateway, pos: [500, 485] }
+            # page: cta
+            cta: { type: chip, page: cta, text: "Open the lab · See how tools reach an agent", color: user, pos: [500, 300] }
+            next: { type: text, page: cta, text: "Next: 200 OK, and still wrong", size: 40, pos: [500, 450] }
+        beats:
+          - { at: "a separate server", show: stack }
+          - { at: "for each one", strike: stack, color: { stack: bad } }
+          - { at: "One catalogue", pause: 0.6 }
+          - { at: "One catalogue", show: cat1 }
+          - { at: "three agents", show: [menus/0, menus/2, menus/4], stagger: 0.15 }
+          - { at: "three different menus", pause: 1.45 }
+          - { at: "three different menus", show: [menus/1, menus/3, menus/5], stagger: 0.15 }
+
+      # 2. A virtual server
+      - id: vs
+        vo: >-
+          The MCP gateway holds every tool in its catalogue. A virtual server is
+          a named pick of those tools at its own address; an agent sees it as an
+          ordinary MCP server.
+        beats:
+          - { page: vs, transition: erase, pause: 0.8 }
+          - { at: "its catalogue", show: cat2 }
+          - { at: "A virtual server", pause: 1.2 }
+          - { at: "A virtual server", show: [vbox, vlist], stagger: 0.4 }
+          - { at: "its own address", show: vaddr }
+          - { at: "an ordinary MCP server", show: seen }
+
+      # 3. Everyone sees everything
+      - id: every
+        vo: >-
+          Larkfield learned this the hard way. Its MCP gateway offered every
+          agent the whole catalogue, twelve tools, and Priya, who runs Support,
+          found issue_refund, which moves real money, on her assistant's menu.
+        beats:
+          - { page: every, transition: erase, pause: 0.8 }
+          - { at: "the whole catalogue", show: [gw3, fan3, ag3, sup3], stagger: 0.3 }
+          - { at: "and Priya", pause: 0.5 }
+          - { at: "and Priya", show: priya }
+          - { at: "found issue_refund", ring: sup3/11 }
+          - { at: "real money", show: money }
+
+      # 4. One wrong choice away
+      - id: wrong
+        vo: >-
+          The model picks from whatever menu it is given, so a refund was one
+          wrong choice away. Support only ever needed the weather tools and the
+          calculator.
+        beats:
+          - { page: wrong, transition: erase, pause: 0.8 }
+          - { at: "whatever menu", show: [menu4, refund4], stagger: 0.3 }
+          - { at: "one wrong choice", pause: 0.4 }
+          - { at: "one wrong choice", show: wrongpick }
+          - { at: "the weather tools and the calculator", ring: [menu4/0, menu4/1, menu4/2, menu4/3, menu4/4] }
+
+      # 5. Support's bundle (the lab's toy-tools holds all five; leaving one out is illustrative)
+      - id: sup
+        vo: >-
+          Maren made Support one, support-tools, and picked five tools into it:
+          get_weather and get_forecast from the weather server, and add,
+          subtract and multiply from the calculator. issue_refund stayed out.
+        beats:
+          - { page: sup, transition: erase, pause: 0.8 }
+          - { at: "support-tools", show: vbox5 }
+          - { at: "five tools", move: { five: [700, 345] } }
+          - { at: "get_weather and get_forecast", ring: [five/0, five/1] }
+          - { at: "add, subtract and multiply", ring: [five/2, five/3, five/4] }
+          - { at: "issue_refund stayed out", show: leftout }
+
+      # 6. Billing's bundle
+      - id: bill
+        vo: >-
+          Billing got its own virtual server, billing-tools, which did include
+          issue_refund. The tool add sits in both, because a virtual server only
+          points at tools, copying nothing and running nothing.
+        beats:
+          - { page: bill, transition: erase, pause: 0.8 }
+          - { at: "billing-tools", show: [bbox, blist], stagger: 0.4 }
+          - { at: "sits in both", show: [to_s, to_b], stagger: 0.3 }
+          - { at: "copying nothing", show: points }
+
+      # 7. Two tools called search (illustrative pair)
+      - id: search
+        vo: >-
+          A second problem appeared when the docs server and the orders server
+          both offered a tool called search. Two identical names on one menu
+          would leave the model guessing.
+        beats:
+          - { page: search, transition: erase, pause: 0.8 }
+          - { at: "the docs server", show: [docsN, docsC], stagger: 0.3 }
+          - { at: "and the orders server", pause: 1.6 }
+          - { at: "and the orders server", show: [ordN, ordC], stagger: 0.3 }
+          - { at: "Two identical names", show: menu7, move: { docsC: [380, 515], ordC: [630, 515] } }
+
+      # 8. Prefixes (same page)
+      - id: prefix
+        vo: >-
+          So the gateway puts the registered server's name in front of each
+          tool. search became docs-search and orders-search, and in the lab
+          get_weather became weather-tools-get-weather.
+        beats:
+          - { at: "in front", text: { docsC: docs-search, ordC: orders-search }, ring: [docsC, ordC] }
+          - { at: "weather-tools-get-weather", show: pre }
+
+      # 9. What the agent sees
+      - id: sees
+        vo: >-
+          From its virtual server, the agent sees one address and the tools'
+          names, descriptions and input schemas. Only the gateway knows each
+          tool's owner, original name, server address and credentials.
+        beats:
+          - { page: sees, transition: erase, pause: 0.8 }
+          - { at: "the agent sees", show: sees }
+          - { at: "Only the gateway", show: knows }
+
+      # 10. Routing one call (same page)
+      - id: route
+        vo: >-
+          When Support called weather-tools-get-weather, the gateway looked up
+          the owner, restored the original name get_weather, and passed the call
+          to the weather server. The agent never saw where it went.
+        beats:
+          - { at: "called", travel: pk9a }
+          - { at: "looked up", ring: knows }
+          - { at: "passed the call", travel: pk9b }
+
+      # 11. A menu is not a lock
+      - id: lock
+        vo: >-
+          Leaving a tool out only shortens a menu. It is a lock only if the
+          agent's credential is limited to that virtual server and the agent
+          cannot reach the servers directly.
+        beats:
+          - { page: lock, transition: erase, pause: 0.8 }
+          - { at: "credential", show: badge }
+          - { at: "reach the servers directly", show: direct11 }
+
+      # 12. In the lab (real terminal output)
+      - id: lab
+        vo: >-
+          In the lab the virtual server toy-tools holds all five tools of both
+          toy servers, each with its prefix. Nothing is left out, and every call
+          uses the same admin identity.
+        beats:
+          - { page: lab, transition: slide, pause: 0.8, layout: split, run: tlist3 }
+          - { at: "toy-tools", mark: toytools, ring: vs12 }
+          - { at: "its prefix", mark: [weather, calc] }
+          - { at: "the same admin identity", show: admin }
+
+      # 13. Recap
+      - id: recap
+        vo: >-
+          Focus on what just happened. The catalogue held every tool, each
+          virtual server picked a few, prefixes kept names apart, and the
+          gateway kept the details agents never saw.
+        beats:
+          - { page: recap, transition: erase, pause: 0.8, layout: canvas }
+          - { at: "The catalogue", show: c1 }
+          - { at: "picked a few", show: c2 }
+          - { at: "prefixes kept", pause: 1.0 }
+          - { at: "prefixes kept", show: c3 }
+          - { at: "the details", show: c4 }
+
+      # 14. Call to action
+      - id: cta
+        vo: >-
+          Open the lab, See how tools reach an agent, and count the tools
+          toy-tools offers. The next video follows a call that returned 200 OK
+          and went wrong.
+        beats:
+          - { page: cta, transition: erase, pause: 0.8 }
+          - { at: "Open the lab", show: cta }
+          - { at: "The next video", show: next }
+
+  # ==========================================================================
+  # Video 4. When a tool fails
+  - id: mcp-when-a-tool-fails
+    title: When a tool fails
+    endCard: { title: "When a tool fails", sub: "Hands-on lab · See how tools reach an agent" }
+    segments:
+      # 1. Hook: the line (the code card is an illustration of a common pattern)
+      - id: hook
+        vo: >-
+          This line is why your AI agent makes things up when a tool fails. It
+          looks correct, and you have probably written it yourself.
+        scene:
+          id: fails
+          pages: [{ id: hook }, { id: status }, { id: again }, { id: trace }, { id: reply }, { id: wrong }, { id: protocol }, { id: which }, { id: lab }, { id: careful }, { id: recap }, { id: cta }]
+          elements:
+            # page: hook
+            kicker: { type: kicker, page: hook, text: "Debugging question", pos: [500, 34], visible: true }
+            q: { type: title, page: hook, text: "Why does your AI agent make things up when a tool fails?", size: 48, width: 920, pos: [500, 124], underline: true, visible: true }
+            topic: { type: text, page: hook, text: "MCP · when a tool fails", size: 32, color: quiet, pos: [500, 232], visible: true }
+            code1:
               type: card
-              title: "protocol error"
+              page: hook
+              title: "your code (illustration)"
               color: quiet
-              pos: [730, 600]
-              lines:
-                - '"error": {'
-                - '  "code": -32601,'
-                - '  "message": "Method not found"'
-                - '}'
+              pos: [330, 350]
+              visible: true
+              lines: ["if resp.status == 200: return resp.result"]
               highlight:
-                - { id: code, match: "\"code\": -32601", color: bad }
-            honest: { type: bubble, text: "Sorry, I couldn't get the weather for Leeds right now.", color: ok, side: left, width: 470, pos: [330, 120] }
-            split: { type: text, text: "the call worked · the work failed", size: 26, color: quiet, pos: [500, 90] }
-            opts: { type: list, title: "agent can", gate: true, font: hand, items: [{ text: "try again", color: agent }, { text: "another tool", color: agent }, { text: "tell the user", color: agent }], pos: [760, 600] }
-            cta: { type: chip, text: "Open the lab · See how tools reach an agent", color: user, pos: [500, 680] }
+                - { id: ok1, match: "200", color: ok }
+            reply1:
+              type: card
+              page: hook
+              title: "the reply"
+              color: quiet
+              pos: [330, 510]
+              lines: ['{"result": {"isError": true, …}}']
+              highlight:
+                - { id: err1, match: '"isError": true', color: bad }
+            guess1: { type: bubble, page: hook, text: "Expect heavy snow in Leeds.", color: agent, side: left, width: 300, stamp: "Guess", pos: [810, 440] }
+            # page: status (under the 2026-07-28 spec some protocol errors change the status: "200 is not proof")
+            s200: { type: chip, page: status, icon: mail, font: mono, text: "HTTP 200", color: ok, pos: [240, 120] }
+            sdel: { type: text, page: status, text: "delivered and answered", size: 30, color: quiet, pos: [240, 205] }
+            body:
+              type: card
+              page: status
+              title: "the body"
+              color: quiet
+              scale: 1.1
+              pos: [640, 350]
+              lines: ['"result": {', '  "isError": true,', '  "content": text "Weather service timed out"', '}']
+              highlight:
+                - { id: err2, match: '"isError": true', color: bad }
+            code2:
+              type: card
+              page: status
+              title: "your code"
+              color: quiet
+              scale: 0.8
+              pos: [230, 625]
+              lines: ["if resp.status == 200: return resp.result"]
+              highlight:
+                - { id: st2, match: "resp\\.status == 200", color: ok }
+            unread: { type: arrow, from: code2, to: body, color: bad, dashed: true, label: "✗", labelSize: 48 }
+            # page: again (illustrative story; a callback to video 1)
+            thu: { type: text, page: again, text: "Thursday 08:00", size: 32, color: quiet, pos: [500, 40], visible: true }
+            asst3: { type: node, page: again, icon: agent, label: "Support assistant", color: agent, scale: 0.8, pos: [235, 230], visible: true }
+            code3:
+              type: card
+              page: again
+              title: "assistant code (illustration)"
+              color: quiet
+              scale: 0.75
+              pos: [290, 430]
+              lines: ["if resp.status == 200: return resp.result"]
+            said3: { type: bubble, page: again, text: "Expect heavy snow in Leeds.", color: agent, side: left, width: 380, pos: [740, 230] }
+            nosnow3: { type: stamp, page: again, text: "No snow", color: bad, rotate: -8, pos: [740, 410] }
+            # page: trace (illustrative: the lab has no trace view; its weather server calls no outside service)
+            tomas: { type: node, page: trace, icon: user, label: "Tomas", sub: "staff engineer", color: user, scale: 0.8, pos: [500, 100] }
+            ag4: { type: chip, page: trace, icon: agent, text: "Assistant", color: agent, scale: 0.75, pos: [95, 330] }
+            gw4: { type: node, page: trace, icon: gateway, label: "MCP gateway", color: gateway, scale: 0.6, pos: [345, 330] }
+            ws4: { type: node, page: trace, icon: server, label: "Weather", sub: "MCP server", color: weather, scale: 0.65, pos: [610, 330] }
+            cloud: { type: node, page: trace, icon: cloud, label: "Weather", sub: "outside service", color: quiet, scale: 0.62, pos: [875, 330] }
+            tout: { type: chip, page: trace, icon: clock, text: "timed out", color: bad, pos: [875, 470] }
+            e1: { type: arrow, from: ag4, to: gw4, color: agent }
+            e2: { type: arrow, from: gw4, to: ws4, color: gateway }
+            e3: { type: arrow, from: ws4, to: cloud, color: weather }
+            k1: { type: packet, on: e1, label: "get_forecast · Leeds", color: agent, scale: 0.75, lift: 46 }
+            k2: { type: packet, on: e2, label: "get_forecast · Leeds", color: agent, scale: 0.75, lift: 46 }
+            k3: { type: packet, on: e3, label: "fetch Leeds", color: weather, scale: 0.75, lift: 46 }
+            # page: reply (shape: a tool execution error; the message text is illustrative)
+            reply6:
+              type: card
+              page: reply
+              title: "the reply (simplified)"
+              color: quiet
+              scale: 1.25
+              pos: [500, 300]
+              lines: ['"result": {', '  "isError": true,', '  "content": text "Weather service timed out"', '}']
+              highlight:
+                - { id: err6, match: '"isError": true', color: bad }
+                - { id: msg6, match: '"Weather service timed out"', color: user }
+            tee: { type: text, page: reply, text: "tool execution error", size: 44, color: bad, pos: [500, 560] }
+            # page: wrong
+            code7:
+              type: card
+              page: wrong
+              title: "assistant code (illustration)"
+              color: quiet
+              pos: [300, 200]
+              lines: ["if resp.status == 200: return resp.result"]
+              highlight:
+                - { id: h200, match: "200", color: ok }
+            reply7:
+              type: card
+              page: wrong
+              title: "the reply"
+              color: quiet
+              pos: [810, 200]
+              lines: ['"isError": true']
+              highlight:
+                - { id: err7, match: '"isError": true', color: bad }
+            model7: { type: chip, page: wrong, icon: model, text: "Model", color: model, pos: [500, 430], visible: true }
+            guess7: { type: stamp, page: wrong, text: "Guess", color: bad, rotate: -8, pos: [500, 570] }
+            # page: protocol (lab-real: ContextForge 1.0.10 answered tools/calll with HTTP 200 and this error object)
+            plabel: { type: text, page: protocol, text: "protocol error", size: 44, color: bad, pos: [500, 60] }
+            req8: { type: card, page: protocol, title: "request", color: agent, lines: ['"method": "tools/calll"'], pos: [500, 175] }
+            err8:
+              type: card
+              page: protocol
+              title: "the reply"
+              color: bad
+              pos: [500, 375]
+              lines: ['"error": {', '  "code": -32601,', '  "message": "Method not found: tools/calll"', '}']
+              highlight:
+                - { id: code8, match: "-32601", color: bad }
+            nores: { type: text, page: protocol, text: "no result", size: 38, color: bad, pos: [500, 555] }
+            spec8: { type: text, page: protocol, text: "2026-07-28 spec: some protocol errors also get 400/404", size: 22, color: quiet, pos: [500, 650], visible: true }
+            # page: which (the spec's two lists)
+            perr: { type: list, page: which, title: "protocol error · error object", gate: true, visible: true, font: hand, scale: 0.8, color: bad, items: [{ text: "unknown tool", color: bad }, { text: "malformed request", color: bad }, { text: "server error", color: bad }], pos: [260, 300] }
+            terr9: { type: list, page: which, title: "tool execution error · isError", gate: true, visible: true, font: hand, scale: 0.8, color: yellow, items: [{ text: "failed API", color: yellow }, { text: "bad input", color: yellow }, { text: "business rule", color: yellow }], pos: [745, 300] }
+            formodel: { type: text, page: which, text: "written for the model", size: 32, color: yellow, pos: [745, 520] }
+            # page: lab (real terminal output; then the specification beside it)
+            spec11: { type: chip, page: lab, text: "spec: unknown tool → protocol error", color: quiet, scale: 0.9, pos: [500, 130] }
+            cf11: { type: chip, page: lab, text: "ContextForge 1.0.10 → isError result", color: gateway, scale: 0.9, pos: [500, 260] }
+            sdk11: { type: text, page: lab, text: "MCP Python SDK: any failure in a tool → isError", size: 28, color: quiet, pos: [500, 385] }
+            body11: { type: chip, page: lab, icon: check, text: "read the body", color: ok, pos: [500, 520] }
             terr:
               type: terminal
               command: "python3 -B call_tool.py does-not-exist '{}'"
               show: "1-4"
               highlight:
-                - { id: s200, match: "HTTP 200", color: calc }
+                - { id: s200, match: "HTTP 200", color: ok }
                 - { id: iserr, match: "\"isError\": true", color: bad }
                 - { id: notfound, match: "Tool not found: does-not-exist", color: user }
               output: |
@@ -495,75 +1252,212 @@ videos:
                 <-- HTTP 200
                     {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": "Tool not found: does-not-exist"}], "isError": true}}
                 call_tool: 'does-not-exist' reported an error: [{'type': 'text', 'text': 'Tool not found: does-not-exist'}]
+            # page: careful ("fetch the menu again" and "retry once" are our advice, not spec rules)
+            reply12: { type: node, page: careful, icon: mail, label: "reply", color: model, scale: 0.8, pos: [110, 330], visible: true }
+            b1: { type: chip, page: careful, text: "error object → agent's code: fix the request", color: bad, scale: 0.8, pos: [450, 170] }
+            tl12: { type: chip, page: careful, font: mono, text: "tools/list", color: agent, pos: [885, 170] }
+            b2: { type: chip, page: careful, text: "isError → model reads the text", color: yellow, scale: 0.8, pos: [430, 450] }
+            leaves: { type: list, page: careful, gate: true, visible: true, font: hand, scale: 0.8, items: [{ text: "fix an input", color: model }, { text: "retry once", color: model }, { text: "admit", color: model }], pos: [830, 450] }
+            sorry: { type: bubble, page: careful, text: "Sorry, I have no forecast for Leeds right now.", color: ok, side: left, width: 560, pos: [560, 625] }
+            l1: { type: arrow, from: reply12, to: b1, color: bad }
+            l2: { type: arrow, from: b1, to: tl12, color: bad }
+            l3: { type: arrow, from: reply12, to: b2, color: yellow }
+            l4: { type: arrow, from: b2, to: leaves, color: yellow }
+            # page: recap
+            t1: { type: chip, page: recap, icon: mail, text: "status · the message arrived", color: ok, pos: [500, 160] }
+            t2: { type: chip, page: recap, icon: log, text: "body · whether the tool worked", color: yellow, pos: [500, 300] }
+            t3: { type: chip, page: recap, icon: check, text: "read it · told the truth", color: agent, pos: [500, 440] }
+            # page: cta
+            cta: { type: chip, page: cta, text: "Open the lab · See how tools reach an agent", color: user, pos: [500, 280] }
+            four: { type: list, page: cta, row: true, font: hand, scale: 0.85, items: [{ text: server, color: weather }, { text: gateway, color: gateway }, { text: "virtual server", color: gateway }, { text: failure, color: bad }], pos: [500, 450] }
         beats:
-          - { show: [agent, gw, srv, api], stagger: 0.3 }
-          - { at: "The agent asks", show: [e1, e2, e3], stagger: 0.2 }
-          - { at: "for the weather in Leeds", travel: c1 }
-          - { at: "passes the call", travel: c2 }
-          - { at: "asks a weather service", travel: c3 }
-          - { at: "Every step so far has worked", ring: [gw, srv] }
-          - { at: "the weather service is slow", show: clock, ring: api }
-          - { at: "gives up waiting", show: tout, color: { api: bad } }
+          - { at: "This line", mark: ok1 }
+          - { at: "your AI agent makes things up", show: guess1 }
+          - { at: "when a tool fails", pause: 0.6 }
+          - { at: "when a tool fails", show: reply1, mark: err1 }
 
+      # 2. Status and body (the payoff within 20 s)
+      - id: status
+        vo: >-
+          HTTP 200 only says the request was delivered and answered. Whether the
+          tool worked is written in the body, next to isError, and this line
+          never reads it.
+        beats:
+          - { page: status, transition: erase, pause: 0.8 }
+          - { at: "HTTP 200", show: s200 }
+          - { at: "delivered and answered", show: sdel }
+          - { at: "in the body", show: body }
+          - { at: "next to isError", mark: err2 }
+          - { at: "this line never reads it", show: [code2, unread], stagger: 0.5, mark: st2 }
+
+      # 3. Snow in Leeds, again
+      - id: again
+        vo: >-
+          Larkfield's support assistant had that line. At eight one Thursday it
+          told a customer to expect heavy snow in Leeds, and again, no snow
+          fell.
+        beats:
+          - { page: again, transition: erase, pause: 0.8 }
+          - { at: "that line", show: code3 }
+          - { at: "expect heavy snow", show: said3 }
+          - { at: "and again", pause: 0.6 }
+          - { at: "and again", show: nosnow3 }
+
+      # 4. Follow the call
+      - id: trace
+        vo: >-
+          Tomas, the staff engineer, pulled the trace. The assistant had called
+          get_forecast for Leeds through the MCP gateway, which passed it to the
+          weather MCP server.
+        beats:
+          - { page: trace, transition: erase, pause: 0.8 }
+          - { at: "Tomas", show: tomas }
+          - { at: "The assistant had called", show: [ag4, e1], stagger: 0.3 }
+          - { at: "get_forecast for Leeds", travel: k1 }
+          - { at: "the MCP gateway", show: gw4 }
+          - { at: "passed it", travel: k2 }
+          - { at: "the weather MCP server", show: [ws4, e2], stagger: 0.2 }
+
+      # 5. The far end (same page)
+      - id: farend
+        vo: >-
+          That server asked an outside weather service for its data, and the
+          service did not answer in time. The chain had broken at its far end.
+        beats:
+          - { at: "an outside weather service", show: [cloud, e3], stagger: 0.3 }
+          - { at: "for its data", travel: k3 }
+          - { at: "did not answer", show: tout, color: { cloud: bad } }
+          - { at: "its far end", ring: cloud }
+
+      # 6. The reply: a tool execution error
       - id: reply
         vo: >-
-          Here's the key part. The server does not crash, and the connection
-          does not break. It sends back a normal reply, with a flag inside.
-          isError: true. Plus a short message saying what failed. So the HTTP
-          status is still two hundred. The call itself worked. It was the work
-          behind the tool that failed, and MCP keeps those two apart.
+          The weather server did not crash. It sent a normal result with isError
+          true and a short text: weather service timed out. The specification
+          calls this a tool execution error.
         beats:
-          - { at: "does not crash", ring: srv }
-          - { at: "sends back a normal reply", travel: [r2, r1], stagger: 1.0 }
-          - { at: "with a flag inside", show: reply }
-          - { at: "isError: true", mark: flag }
-          - { at: "a short message", mark: msg }
-          - { at: "still two hundred", show: c200, ring: c200 }
-          - { at: "The call itself worked", show: split }
-          - { at: "keeps those two apart", ring: split }
+          - { page: reply, transition: erase, pause: 0.8 }
+          - { at: "a normal result", show: reply6 }
+          - { at: "isError true", mark: err6 }
+          - { at: "a short text", mark: msg6 }
+          - { at: "a tool execution error", show: tee }
 
-      - id: kinds
+      # 7. What went wrong
+      - id: wrong
         vo: >-
-          In fact there are two kinds of failure. If the request itself is
-          broken, say the method name is wrong, the server cannot even start. You
-          get a protocol error: an error code, and no result at all. But when the
-          tool runs and fails, like our slow weather service, you get a normal
-          result, marked isError. A good agent handles both.
+          Tomas found the line from the start. It took 200 as proof and never
+          read isError, so the model never learned the tool had failed, and
+          filled the gap with a guess.
         beats:
-          - { at: "two kinds of failure", hide: [c200, split, tout] }
-          - { at: "the request itself is broken", show: perr }
-          - { at: "a protocol error", mark: code }
-          - { at: "no result at all", ring: perr }
-          - { at: "when the tool runs and fails", focus: [reply] }
-          - { at: "marked isError", ring: reply }
-          - { at: "handles both", focus: [reply, perr] }
+          - { page: wrong, transition: erase, pause: 0.8 }
+          - { at: "the line", show: code7 }
+          - { at: "took 200", mark: h200 }
+          - { at: "never read isError", show: reply7, mark: err7 }
+          - { at: "isError", strike: reply7 }
+          - { at: "a guess", show: guess7 }
 
+      # 8. The other kind: a protocol error
+      - id: protocol
+        vo: >-
+          The second kind is the protocol error: the server could not handle
+          the request itself, say a misspelt method name. The reply holds an
+          error object, code and message, and no result.
+        beats:
+          - { page: protocol, transition: erase, pause: 0.8 }
+          - { at: "the protocol error", show: plabel }
+          - { at: "a misspelt method name", show: req8 }
+          - { at: "an error object", show: err8 }
+          - { at: "code and message", mark: code8 }
+          - { at: "no result", show: nores }
+
+      # 9. Which is which
+      - id: which
+        vo: >-
+          The specification sorts them: unknown tool and malformed request are
+          protocol errors. A failed API, a bad input or a business rule are tool
+          execution errors, written for the model to correct itself.
+        beats:
+          - { page: which, transition: erase, pause: 0.8 }
+          - { at: "unknown tool", show: perr/0 }
+          - { at: "and malformed request", pause: 1.05 }
+          - { at: "malformed request", show: [perr/1, perr/2], stagger: 0.4 }
+          - { at: "A failed API", pause: 0.5 }
+          - { at: "A failed API", show: terr9/0 }
+          - { at: "a bad input", pause: 0.8 }
+          - { at: "a bad input", show: terr9/1 }
+          - { at: "or a business rule", pause: 1.15 }
+          - { at: "a business rule", show: terr9/2 }
+          - { at: "correct itself", show: formodel }
+
+      # 10. In the lab (real terminal output)
       - id: lab
         vo: >-
-          You can see the tool error shape in the lab. Call a tool that does not
-          exist. The status line says two hundred. But read the body. isError is
-          true, and the message says: tool not found. The lab asks you exactly
-          this question, so look closely.
+          In the lab, a call to a tool named does-not-exist came back with HTTP
+          200, isError set to true, and the text: Tool not found.
         beats:
-          - { at: "in the lab", layout: split, run: terr, focus: [] }
-          - { at: "The status line", mark: s200 }
-          - { at: "isError is true", mark: iserr }
-          - { at: "tool not found", mark: notfound }
+          - { page: lab, transition: slide, pause: 0.8, layout: split, run: terr }
+          - { at: "HTTP 200", mark: s200 }
+          - { at: "isError set to true", mark: iserr }
+          - { at: "Tool not found", mark: notfound }
 
+      # 11. Lab versus specification (same page)
+      - id: versus
+        vo: >-
+          The specification files an unknown tool under protocol errors.
+          ContextForge reports a tool error, because the MCP Python SDK beneath
+          it turns any failure in a tool into one. The shape depends on the
+          server.
+        beats:
+          - { at: "The specification", show: spec11 }
+          - { at: "ContextForge reports", show: cf11 }
+          - { at: "because the MCP Python SDK", pause: 0.3 }
+          - { at: "the MCP Python SDK", show: sdk11 }
+          - { at: "depends on the server", show: body11 }
+
+      # 12. A careful agent: the error object
+      - id: careful
+        vo: >-
+          So a careful agent reads the body. On an error object, its own code
+          steps in, say by fetching the menu again.
+        beats:
+          - { page: careful, transition: erase, pause: 0.8, layout: canvas }
+          - { at: "an error object", show: [b1, l1], stagger: 0.3 }
+          - { at: "fetching the menu again", show: [tl12, l2], stagger: 0.3 }
+
+      # 13. A careful agent: isError (same page)
+      - id: careful2
+        vo: >-
+          On isError it hands the text to the model, which can fix an input,
+          retry once, or admit it has no forecast.
+        beats:
+          - { pause: 0.4 }
+          - { at: "On isError", show: [b2, l3, l4], stagger: 0.3 }
+          - { at: "fix an input", show: leaves/0 }
+          - { at: "retry once", pause: 0.9 }
+          - { at: "retry once", show: leaves/1 }
+          - { at: "or admit", pause: 0.65 }
+          - { at: "admit", show: [leaves/2, sorry], stagger: 0.6 }
+
+      # 14. Recap
       - id: recap
         vo: >-
-          So an agent has to read the reply, not just the status code. When
-          isError is true, it can try again, pick another tool, or tell the user
-          honestly: sorry, I couldn't get the weather for Leeds right now. That
-          beats inventing snow. Open the lab, See how tools reach an agent, and
-          break a call on purpose.
+          Focus on what just happened. The status said the message arrived, the
+          body said whether the tool worked, and the agent that read it told the
+          truth instead of guessing.
         beats:
-          - { at: "read the reply", layout: canvas }
-          - { at: "not just the status code", focus: [reply] }
-          - { at: "When isError is true", hide: [perr, clock], show: opts, focus: [] }
-          - { at: "try again", show: opts/0 }
-          - { at: "pick another tool", show: opts/1 }
-          - { at: "tell the user", show: opts/2 }
-          - { at: "sorry, I couldn't get the weather", show: honest, focus: [] }
-          - { at: "beats inventing snow", ring: honest }
-          - { at: "Open the lab", show: cta, hide: [reply, opts] }
+          - { page: recap, transition: erase, pause: 0.8 }
+          - { at: "The status said", show: t1 }
+          - { at: "the body said", pause: 0.3 }
+          - { at: "the body said", show: t2 }
+          - { at: "told the truth", show: t3 }
+
+      # 15. Call to action (the last video of the set)
+      - id: cta
+        vo: >-
+          Open the lab, See how tools reach an agent, and call a tool that does
+          not exist. That closes the four videos: server, gateway, virtual
+          server, failed call.
+        beats:
+          - { page: cta, transition: erase, pause: 0.8 }
+          - { at: "Open the lab", show: cta }
+          - { at: "the four videos", show: four }

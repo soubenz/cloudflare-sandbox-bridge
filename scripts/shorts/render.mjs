@@ -139,7 +139,7 @@ function prepareVisual(vis, base) {
     v.command = mask(v.command, v.mask);
     v.output = mask(v.output, v.mask);
   }
-  if (v.type === 'card' && Array.isArray(v.lines)) v.lines = v.lines.map((l) => mask(l, v.mask));
+  if (v.type === 'card' && Array.isArray(v.lines)) v.lines = v.lines.map((l) => (l && typeof l === 'object' ? { ...l, text: mask(l.text, v.mask) } : mask(l, v.mask)));
   if (v.type === 'code' && v.from) {
     const path = [resolve(base, v.from), resolve(ROOT, v.from)].find((p) => existsSync(p));
     if (!path) throw new Error(`code visual: no file ${v.from}`);

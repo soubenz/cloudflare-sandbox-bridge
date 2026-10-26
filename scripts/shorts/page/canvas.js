@@ -26,7 +26,9 @@ const PALETTES = { black: PALETTE, navy: { ...PALETTE, white: '#e8ebf7', grey: '
 
 /** How an element enters: `pop` (scale with overshoot) or `write` (revealed left to right, like handwriting). */
 const WRITE_KINDS = new Set(['title', 'kicker', 'text']);
-const PULSE_KINDS = new Set(['node', 'chip', 'circle', 'list', 'card', 'bubble', 'icon']);
+const PULSE_KINDS = new Set(['node', 'chip', 'circle', 'list', 'card', 'bubble', 'icon', 'chat', 'dots']);
+/** Elements whose lines can carry highlights that a `mark` beat lights. */
+const MARKED_KINDS = new Set(['card', 'chat']);
 const W = 1000;
 const H = 700;
 
@@ -86,6 +88,8 @@ const ICONS = {
   log: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   model: '<path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a3 3 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1"/>',
   shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+  calendar: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M8 3v4M16 3v4M14 20l2-3 2 2 2-3"/>',
+  mail: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 8l9 6 9-6"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>',
 };
 function icon(name, size) {
@@ -97,12 +101,12 @@ function icon(name, size) {
 // --- syntax colours for terminal and card lines ------------------------------------------
 
 const JSONISH = /(https?:\/\/[^\s"']+)|("(?:[^"\\]|\\.)*")(\s*:)?|\b(true|false|null)\b|(-->|<--)|(-?\b\d+(?:\.\d+)?\b)/g;
-function lineSpans(line, highlights, colorOf) {
+function lineSpans(line, highlights, colorOf, syntax = true) {
   const cls = new Array(line.length).fill('');
   const mark = (a, b, c) => { for (let i = a; i < b; i++) cls[i] = c; };
   let m;
   JSONISH.lastIndex = 0;
-  while ((m = JSONISH.exec(line))) {
+  while (syntax && (m = JSONISH.exec(line))) {
     if (m[1]) mark(m.index, m.index + m[0].length, 'tk-url');
     else if (m[2]) mark(m.index, m.index + m[2].length, m[3] ? 'tk-key' : 'tk-str');
     else if (m[4]) mark(m.index, m.index + m[0].length, 'tk-lit');
@@ -218,11 +222,27 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       if (spec.label) {
         label = h('div', 'cv-el cv-arrow-label', spec.label);
         label.style.setProperty('--c', c);
+        if (spec.labelSize) label.style.fontSize = `${spec.labelSize}px`;
+        if (spec.labelWidth) Object.assign(label.style, { width: `${spec.labelWidth}px`, whiteSpace: 'normal', textAlign: 'center', lineHeight: '1.1' });
         layer.appendChild(label);
       }
       under.appendChild(g);
       const it = addItem(id, spec, g, 'arrow');
       Object.assign(it, { path, head, label });
+      continue;
+    }
+    if (type === 'mesh') {
+      // Many lines at once: every point of `from` to every point of `to`, or each one to and from a hub (`via`).
+      const g = s('g', { class: 'cv-mesh' });
+      under.appendChild(g);
+      const it = addItem(id, spec, g, 'mesh');
+      it.lines = [];
+      if (spec.label) {
+        // A count or caption for the whole mesh, at `labelPos` (default: under it).
+        it.label = h('div', 'cv-el cv-mesh-label', spec.label);
+        it.label.style.setProperty('--c', colorOf(spec.labelColor || 'user'));
+        layer.appendChild(it.label);
+      }
       continue;
     }
     if (type === 'packet') {
@@ -265,11 +285,48 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       if (spec.sub) txt.appendChild(h('div', 'cv-sub', spec.sub));
       node.appendChild(txt);
       if (spec.width) node.style.width = `${spec.width}px`;
+    } else if (type === 'chat') {
+      // A chat window: a title bar, then bubbles; `highlight` marks words in them.
+      node = h('div', 'cv-el cv-chat');
+      if (spec.width) node.style.width = `${spec.width}px`;
+      if (spec.title) node.appendChild(rich(h('div', 'cv-chat-bar'), spec.title));
+      const marks = [];
+      for (const m of spec.messages || []) {
+        const b = h('div', `cv-chat-msg side-${m.side || 'left'}`);
+        b.style.setProperty('--c', colorOf(m.color || spec.color));
+        const sp = lineSpans(String(m.text), spec.highlight || [], colorOf, false);
+        b.appendChild(sp.frag);
+        marks.push(...sp.marks);
+        node.appendChild(b);
+      }
+      node.style.setProperty('--c', c);
+      layer.appendChild(node);
+      const it = addItem(id, spec, node, 'chat');
+      it.marks = marks;
+      continue;
+    } else if (type === 'box') {
+      // A box drawn round other elements (declare it before them): dashed unless `dashed: false`, a label at its top.
+      node = h('div', `cv-el cv-box${spec.dashed === false ? ' solid' : ''}${spec.labelAt === 'bottom' ? ' label-bottom' : ''}`);
+      const [bw, bh] = spec.size || [300, 200];
+      node.style.width = `${bw}px`;
+      node.style.height = `${bh}px`;
+      if (spec.label != null) rich(node.appendChild(h('div', 'cv-label')), spec.label);
+    } else if (type === 'dots') {
+      // A column (or `row: true`) of `n` small dots: a crowd of agents or servers.
+      node = h('div', `cv-el cv-dots${spec.row ? ' row' : ''}`);
+      if (spec.gap != null) node.style.gap = `${spec.gap}px`;
+      for (let k = 0; k < (spec.n || 3); k++) {
+        const d = h('i');
+        if (spec.size) { d.style.width = `${spec.size}px`; d.style.height = `${spec.size}px`; }
+        node.appendChild(d);
+      }
     } else if (type === 'circle') {
       node = h('div', 'cv-el cv-circle', spec.text ?? '');
     } else if (type === 'bubble') {
       node = rich(h('div', `cv-el cv-bubble side-${spec.side || 'left'}`), spec.text);
       if (spec.width) node.style.maxWidth = `${spec.width}px`;
+      // `stamp: "Guess"` slams a small stamp onto the bubble's corner, as part of the bubble.
+      if (spec.stamp) node.appendChild(h('div', 'cv-bubble-stamp', spec.stamp));
     } else if (type === 'stamp') {
       node = h('div', 'cv-el cv-stamp', spec.text);
       if (spec.size) node.style.fontSize = `${spec.size}px`;
@@ -277,12 +334,14 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       node = h('div', 'cv-el cv-icon');
       node.appendChild(icon(spec.icon, spec.size || 64));
     } else if (type === 'list') {
-      node = h('div', `cv-el cv-list${spec.row ? ' row' : ''}`);
+      node = h('div', `cv-el cv-list${spec.row ? ' row' : ''}${spec.cols ? ' cols' : ''}`);
+      if (spec.cols) node.style.gridTemplateColumns = `repeat(${spec.cols}, max-content)`;
       if (spec.title) node.appendChild(h('div', 'cv-list-title', spec.title));
       const it = addItem(id, spec, node, 'list');
       it.children = (spec.items || []).map((x, k) => {
         const item = typeof x === 'string' ? { text: x } : x;
         const chip = h('div', `cv-chip font-${item.font || spec.font || 'mono'}`);
+        if (item.icon) chip.appendChild(icon(item.icon, 28));
         rich(chip.appendChild(h('span', 'cv-label')), item.text);
         chip.style.setProperty('--c', colorOf(item.color || spec.color));
         node.appendChild(chip);
@@ -297,15 +356,19 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       node = h('div', 'cv-el cv-card');
       if (spec.title) node.appendChild(h('div', 'cv-card-title', spec.title));
       const marks = [];
+      const reveals = [];
       for (const line of spec.lines || []) {
+        // A line may be { text, reveal: <highlight id> }: its room is kept, and it shows once that highlight is marked.
         const row = h('div', 'cv-card-line');
-        const sp = lineSpans(line, spec.highlight || [], colorOf);
+        const sp = lineSpans(typeof line === 'object' ? line.text : line, spec.highlight || [], colorOf);
         row.appendChild(sp.frag);
         marks.push(...sp.marks);
         node.appendChild(row);
+        if (typeof line === 'object' && line.reveal) reveals.push({ row, id: line.reveal });
       }
       const it = addItem(id, spec, node, 'card');
       it.marks = marks;
+      it.reveals = reveals;
       node.style.setProperty('--c', c);
       layer.appendChild(node);
       continue;
@@ -323,7 +386,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
     it.page = it.spec.page ?? null;
   }
   for (const it of items.values()) {
-    if (it.kind === 'arrow' && it.page == null) it.page = items.get(it.spec.from)?.page ?? null;
+    if ((it.kind === 'arrow' || it.kind === 'mesh') && it.page == null) it.page = items.get(it.spec.from)?.page ?? null;
   }
   for (const it of items.values()) {
     if (it.kind === 'packet' && it.page == null) it.page = items.get(it.spec.on)?.page ?? null;
@@ -353,13 +416,14 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
     for (const [id, p] of Object.entries(b.move || {})) ev(id, { t, k: 'move', v: p });
     for (const [id, txt] of Object.entries(b.text || {})) ev(id, { t, k: 'text', v: txt });
     for (const [id, col] of Object.entries(b.color || {})) ev(id, { t, k: 'color', v: col });
+    asList(b.strike).forEach((id) => ev(id, { t, k: 'strike' }));
     if ('focus' in b) sceneEv.push({ t, k: 'focus', v: asList(b.focus) });
     if (b.page != null) pageEv.push({ t, id: b.page, trans: b.transition || 'erase' });
     if (b.card) cardEv.push({ t, kicker: b.card.kicker || '', title: b.card.title || '', hold: b.card.hold ?? CARD_HOLD });
     if (b.layout) sceneEv.push({ t, k: 'layout', v: b.layout });
     if (b.run) ev(b.run, { t, k: 'run', v: b.times });
     for (const m of asList(b.mark)) {
-      for (const it of items.values()) if ((it.kind === 'terminal' || it.kind === 'card') && (it.spec.highlight || []).some((x) => x.id === m)) it.ev.push({ t, k: 'mark', v: m });
+      for (const it of items.values()) if ((it.kind === 'terminal' || MARKED_KINDS.has(it.kind)) && (it.spec.highlight || []).some((x) => x.id === m)) it.ev.push({ t, k: 'mark', v: m });
     }
   }
   for (const it of items.values()) it.ev.sort((a, b) => a.t - b.t);
@@ -422,6 +486,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
     let ringAt = null;
     let travelAt = null;
     let run = null;
+    let struckAt = null;
     const marks = new Set();
     for (const e of it.ev) {
       if (e.t > t) break;
@@ -430,12 +495,13 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       else if (e.k === 'dim') { dimAt = e.t; undimAt = null; }
       else if (e.k === 'undim' && dimAt != null) undimAt = e.t;
       else if (e.k === 'move') { from = pos; pos = e.v; movedAt = e.t; }
-      else if (e.k === 'text') text = e.v;
+      else if (e.k === 'text') text = { ...(text || {}), ...(typeof e.v === 'object' ? e.v : { text: e.v }) };
       else if (e.k === 'color') color = e.v;
       else if (e.k === 'ring') ringAt = e.t;
       else if (e.k === 'travel') travelAt = e.t;
       else if (e.k === 'run') run = e.v;
       else if (e.k === 'mark') marks.add(e.v);
+      else if (e.k === 'strike') struckAt = e.t;
     }
     let alpha = 0;
     let scale = 1;
@@ -468,7 +534,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
     if (dimAt != null) dim = clamp((t - dimAt) / 0.35, 0, 1) * (undimAt != null ? 1 - clamp((t - undimAt) / 0.35, 0, 1) : 1);
     const mk = movedAt == null ? 1 : easeInOut((t - movedAt) / 0.6);
     const p = [lerp(from[0], pos[0], mk), lerp(from[1], pos[1], mk)];
-    return { shownAt, hiddenAt, alpha, scale, reveal, sink, dim, pos: p, text, color, ringAt, travelAt, run, marks };
+    return { shownAt, hiddenAt, alpha, scale, reveal, sink, dim, pos: p, text, color, ringAt, travelAt, run, marks, struckAt };
   }
 
   function edgePoint(it, toward, st) {
@@ -510,7 +576,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
   let measured = false;
   function measure() {
     for (const it of items.values()) {
-      if (it.kind === 'arrow' || it.kind === 'item' || it.kind === 'terminal') continue;
+      if (it.kind === 'arrow' || it.kind === 'mesh' || it.kind === 'item' || it.kind === 'terminal') continue;
       it.hw = (it.node.offsetWidth / 2) * (it.spec.scale || 1);
       it.hh = (it.node.offsetHeight / 2) * (it.spec.scale || 1);
     }
@@ -565,7 +631,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       if (it.kind === 'item') continue;
       const st = state(it, t);
       states.set(it.id, st);
-      if (it.kind === 'arrow') continue;
+      if (it.kind === 'arrow' || it.kind === 'mesh') continue;
       if (it.kind === 'terminal') {
         const on = it !== active ? 0 : activeAt === -Infinity ? 1 : clamp((t - activeAt) / 0.3, 0, 1);
         it.term.update(t, st, splitness * on);
@@ -584,27 +650,53 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       n.style.visibility = st.vis > 0.001 ? 'visible' : 'hidden';
       if (WRITE_KINDS.has(it.kind)) n.style.clipPath = st.reveal >= 1 ? 'none' : `inset(-30% ${((1 - st.reveal) * 100).toFixed(1)}% -30% -4%)`;
       if (st.color) n.style.setProperty('--c', colorOf(st.color));
-      if (st.text != null && it.lastText !== st.text) {
-        const target = n.querySelector('.cv-label') || n;
-        target.textContent = '';
-        rich(target, st.text);
-        it.lastText = st.text;
+      if (st.text != null && it.lastText !== JSON.stringify(st.text)) {
+        // `text: { id: "..." }` changes what it says; `{ id: { sub: "..." } }` its small second line.
+        if (st.text.text != null) {
+          const target = n.querySelector('.cv-label') || n;
+          target.textContent = '';
+          rich(target, st.text.text);
+        }
+        if (st.text.sub != null) {
+          let sub = n.querySelector('.cv-sub');
+          if (!sub) sub = (n.querySelector('.cv-node-text') || n).appendChild(h(it.kind === 'node' ? 'div' : 'span', 'cv-sub'));
+          sub.textContent = st.text.sub;
+        }
+        it.lastText = JSON.stringify(st.text);
         it.hw = (n.offsetWidth / 2) * (it.spec.scale || 1);
         it.hh = (n.offsetHeight / 2) * (it.spec.scale || 1);
       }
-      if (it.kind === 'card') for (const m of it.marks) m.node.classList.toggle('on', st.marks.has(m.id));
+      if (MARKED_KINDS.has(it.kind)) for (const m of it.marks) m.node.classList.toggle('on', st.marks.has(m.id));
+      for (const r of it.reveals || []) r.row.style.visibility = st.marks.has(r.id) ? 'visible' : 'hidden';
+      // A red line strikes the element through, drawn left to right.
+      n.classList.toggle('cv-struck', st.struckAt != null);
+      if (st.struckAt != null) {
+        // Corner to corner, so a tall box is crossed out as clearly as a chip.
+        const w = n.offsetWidth + 16;
+        const hh = n.offsetHeight;
+        n.style.setProperty('--strike-len', `${Math.hypot(w, hh * 0.8).toFixed(1)}px`);
+        n.style.setProperty('--strike-angle', `${(-Math.atan2(hh * 0.8, w) * 180 / Math.PI).toFixed(2)}deg`);
+        n.style.setProperty('--strike', easeInOut((t - st.struckAt) / 0.45).toFixed(3));
+      }
       if (it.kind === 'list') {
         for (const ch of it.children) {
           let a = 1;
           let scl = 1;
+          const cs = state(ch, t);
+          if (cs.text?.text != null && ch.lastText !== cs.text.text) {
+            const lab = ch.node.querySelector('.cv-label');
+            lab.textContent = '';
+            rich(lab, cs.text.text);
+            ch.lastText = cs.text.text;
+          }
+          if (cs.color && !ch.gated) ch.node.style.setProperty('--c', colorOf(cs.color));
           if (ch.gated) {
-            const cs = state(ch, t);
             a = cs.alpha * (1 - 0.75 * cs.dim);
             cs.vis = cs.alpha * st.vis;
             scl = cs.scale;
             if (cs.color) ch.node.style.setProperty('--c', colorOf(cs.color));
-            if (cs.ringAt != null && cs.vis > 0.05) ringFor(ch, cs, t, n);
-          }
+          } else cs.vis = st.vis;
+          if (cs.ringAt != null && cs.vis > 0.05) ringFor(ch, cs, t, n);
           ch.node.style.opacity = String(a);
           ch.node.style.transform = `scale(${scl})`;
         }
@@ -644,6 +736,43 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       }
     }
 
+    // Meshes: many lines, each drawn from its source, `stagger` seconds after the one before.
+    for (const it of items.values()) {
+      if (it.kind !== 'mesh') continue;
+      const st = states.get(it.id);
+      const segs = st.alpha > 0 ? meshLines(it, states, t) : [];
+      while (it.lines.length < segs.length) {
+        const p = s('path', { class: 'cv-arrow-line', 'stroke-dasharray': it.spec.dashed ? '10 9' : 'none' });
+        it.node.appendChild(p);
+        it.lines.push(p);
+      }
+      const col = colorOf(st.color || it.spec.color || 'quiet');
+      const mid = segs.length ? (segs[0][0][0] + segs[segs.length - 1][1][0]) / 2 : 0;
+      const afx = pageFx(it, pg, mid).a * board;
+      it.node.style.opacity = String(st.alpha * afx * (1 - 0.75 * st.dim));
+      if (it.label) {
+        const at = it.spec.labelPos || [mid, Math.max(...segs.flat().map((q) => q[1]), 0) + 40];
+        const lastDraw = st.shownAt == null ? 1 : clamp((t - st.shownAt - (segs.length - 1) * (it.spec.stagger || 0) * 0.5) / ENTER, 0, 1);
+        it.label.style.left = `${at[0]}px`;
+        it.label.style.top = `${at[1]}px`;
+        it.label.style.transform = 'translate(-50%, -50%)';
+        it.label.style.opacity = String(st.alpha * afx * lastDraw);
+        it.label.style.visibility = st.alpha * afx > 0.001 ? 'visible' : 'hidden';
+        if (st.text?.text != null && it.label.textContent !== st.text.text) it.label.textContent = st.text.text;
+      }
+      it.lines.forEach((p, k) => {
+        const sg = segs[k];
+        if (!sg) { p.setAttribute('d', ''); return; }
+        const draw = st.shownAt == null ? 1 : easeInOut((t - st.shownAt - k * (it.spec.stagger || 0)) / ENTER);
+        const [p0, p1] = sg;
+        const tip = [lerp(p0[0], p1[0], draw), lerp(p0[1], p1[1], draw)];
+        p.setAttribute('d', draw <= 0 ? '' : `M${p0[0].toFixed(1)} ${p0[1].toFixed(1)} L${tip[0].toFixed(1)} ${tip[1].toFixed(1)}`);
+        p.setAttribute('stroke', col);
+        p.style.strokeWidth = String(it.spec.width || 2.5);
+        p.style.opacity = String(it.spec.opacity ?? 0.8);
+      });
+    }
+
     // Packets ride an arrow.
     for (const it of items.values()) {
       if (it.kind !== 'packet') continue;
@@ -661,7 +790,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       const len = Math.hypot(b0[0] - a0[0], b0[1] - a0[1]) || 1;
       const ux = (b0[0] - a0[0]) / len;
       const uy = (b0[1] - a0[1]) / len;
-      const half = Math.min(len / 2, Math.abs(ux) * (n.offsetWidth / 2) + Math.abs(uy) * (n.offsetHeight / 2) + 6);
+      const half = Math.min(len / 2, (Math.abs(ux) * (n.offsetWidth / 2) + Math.abs(uy) * (n.offsetHeight / 2)) * (it.spec.scale || 1) + 6);
       const a = [a0[0] + ux * half, a0[1] + uy * half];
       const b = [b0[0] - ux * half, b0[1] - uy * half];
       const e = easeInOut(k);
@@ -672,8 +801,8 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       const pfx = pageFx(it, pg, parseFloat(n.style.left) || 0).a * board;
       n.style.opacity = String(clamp(k * 8, 0, 1) * fadeOut * hidden * pfx * (1 - 0.75 * st.dim));
       n.style.visibility = 'visible';
-      n.style.transform = 'translate(-50%, -50%)';
-      if (st.text != null && it.lastText !== st.text) { n.textContent = st.text; it.lastText = st.text; }
+      n.style.transform = `translate(-50%, -50%) scale(${it.spec.scale || 1})`;
+      if (st.text?.text != null && it.lastText !== st.text.text) { n.textContent = st.text.text; it.lastText = st.text.text; }
     }
 
     // The dashed focus box, round the union of its targets.
@@ -702,10 +831,47 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
     rings.forEach((r) => r.remove());
     rings.length = 0;
     for (const it of items.values()) {
-      if (it.kind === 'item' || it.kind === 'arrow' || it.kind === 'terminal') continue;
+      if (it.kind === 'item' || it.kind === 'arrow' || it.kind === 'mesh' || it.kind === 'terminal') continue;
       const st = states.get(it.id);
       if (st.ringAt != null && (st.vis ?? st.alpha) > 0.05) ringFor(it, st, t);
     }
+  }
+
+  /** The anchor points of a mesh end, in grid units: a dot or list chip each, or the element itself. */
+  function anchors(it, states, t, side) {
+    const st = states.get(it.id) || state(it, t);
+    const sc = it.spec.scale || 1;
+    const kids = it.kind === 'list' ? it.children.map((c) => c.node) : it.kind === 'dots' ? [...it.node.children] : null;
+    if (!kids) return [[st.pos[0] + side * (it.hw + 8), st.pos[1]]];
+    // The list's own size now (a `text:` beat may have widened its chips since it was measured).
+    const ox = st.pos[0] - (it.node.offsetWidth / 2) * sc;
+    const oy = st.pos[1] - (it.node.offsetHeight / 2) * sc;
+    return kids.map((k) => [
+      ox + (k.offsetLeft + k.offsetWidth / 2 + side * (k.offsetWidth / 2 + 6)) * sc,
+      oy + (k.offsetTop + k.offsetHeight / 2) * sc,
+    ]);
+  }
+
+  /** A mesh's lines: [[p0, p1], ...], all pairs, or each source to the hub then the hub to each target. */
+  function meshLines(it, states, t) {
+    const a = items.get(it.spec.from);
+    const b = items.get(it.spec.to);
+    if (!a || !b) return [];
+    const ax = (states.get(a.id) || state(a, t)).pos[0];
+    const bx = (states.get(b.id) || state(b, t)).pos[0];
+    const dir = bx >= ax ? 1 : -1;
+    const A = anchors(a, states, t, dir);
+    const B = anchors(b, states, t, -dir);
+    const hub = it.spec.via ? items.get(it.spec.via) : null;
+    if (hub) {
+      const hs = states.get(hub.id) || state(hub, t);
+      const hin = [hs.pos[0] - dir * (hub.hw + 8), hs.pos[1]];
+      const hout = [hs.pos[0] + dir * (hub.hw + 8), hs.pos[1]];
+      return [...A.map((p) => [p, hin]), ...B.map((p) => [hout, p])];
+    }
+    const out = [];
+    for (const p of A) for (const q of B) out.push([p, q]);
+    return out;
   }
 
   function boxOf(it, states, t) {
@@ -732,7 +898,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       const k = clamp((age - lag) / 1.0, 0, 1);
       if (k <= 0) continue;
       const g = 8 + 26 * easeOut(k);
-      const c = s('rect', { x: (b[0] - g).toFixed(1), y: (b[1] - g).toFixed(1), width: (w + 2 * g).toFixed(1), height: (hh + 2 * g).toFixed(1), rx: (r + g).toFixed(1), class: 'cv-ring', stroke: colorOf(it.spec.color) });
+      const c = s('rect', { x: (b[0] - g).toFixed(1), y: (b[1] - g).toFixed(1), width: (w + 2 * g).toFixed(1), height: (hh + 2 * g).toFixed(1), rx: (r + g).toFixed(1), class: 'cv-ring', stroke: colorOf(st.color || it.spec.color) });
       c.style.opacity = String((1 - k) * 0.85);
       ringLayer.appendChild(c);
       rings.push(c);
