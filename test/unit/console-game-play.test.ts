@@ -134,9 +134,9 @@ describe('the shell', () => {
     expect(calls).toEqual(['skip']);
   });
 
-  it('a host the game does not name, or one not of the cast, is Tomasz', () => {
+  it('a host the game does not name, or one not of the cast, is Tomas', () => {
     const { root } = mount({ ...sortGame, host: 'nobody' });
-    expect(q(root, '.game-host-name').textContent).toBe('Tomasz');
+    expect(q(root, '.game-host-name').textContent).toBe('Tomas');
   });
 
   it('says a game it does not know is not available', () => {

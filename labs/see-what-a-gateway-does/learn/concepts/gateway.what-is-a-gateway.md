@@ -12,7 +12,7 @@ An LLM gateway is a service that sits between your apps and the companies that r
 Each problem in the story is one that a single front door removes:
 
 - **Keys pasted into repos and chats.** Only the gateway holds provider keys.
-- **The 3am outage.** Callers name no provider, so the gateway can send the call to another one. This is the fallback Tomasz's prototype is meant to have.
+- **The 3am outage.** Callers name no provider, so the gateway can send the call to another one. This is the fallback Tomas's prototype is meant to have.
 - **The renamed model.** Apps send a stable name, so a rename is fixed in one table, not in three codebases.
 - **The invoice nobody can read.** Every call passes through, so one log can show who asked, how many tokens and what it cost.
 - **The weekend loop.** One door is the one place to cap or alert on spend.

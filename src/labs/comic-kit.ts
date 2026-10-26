@@ -20,7 +20,7 @@ export interface CastMember {
 }
 
 /**
- * The team of the story. Drawn and speaking: Maren (the platform lead), Tomasz (the engineer who built
+ * The team of the story. Drawn and speaking: Maren (the platform lead), Tomas (the engineer who built
  * things), Graham (head of engineering, the boss), Ollie (a well-meaning colleague who makes the
  * mistakes), Jess (the product manager, excitable), Priya (head of Support, kind) and You (the learner,
  * never voiced). Finance and data protection (Jonas, Anneke) are retired from the drawn cast: the story
@@ -29,7 +29,7 @@ export interface CastMember {
  */
 export const CAST: readonly CastMember[] = [
   { id: 'maren', name: 'Maren', role: 'Platform lead' },
-  { id: 'tomasz', name: 'Tomasz', role: 'Staff engineer' },
+  { id: 'tomasz', name: 'Tomas', role: 'Staff engineer' },
   { id: 'graham', name: 'Graham', role: 'Head of engineering' },
   { id: 'ollie', name: 'Ollie', role: 'Engineer' },
   { id: 'jess', name: 'Jess', role: 'Product manager' },

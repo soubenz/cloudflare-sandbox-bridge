@@ -232,7 +232,7 @@ describe('the clip panel on the comic\'s clock', () => {
 
   it('reads the clip\'s alt first in the transcript', () => {
     expect(T.transcriptOf(clean)[i]).toBe(
-      `Panel ${i + 1}. ${T.clipFor(STILL)!.alt} Sunday, 23:47. ${fixture.V2.pages[0]!.panels[i]!.voiceover} Tomasz: There you are. On screen: team: search`
+      `Panel ${i + 1}. ${T.clipFor(STILL)!.alt} Sunday, 23:47. ${fixture.V2.pages[0]!.panels[i]!.voiceover} Tomas: There you are. On screen: team: search`
     );
   });
 

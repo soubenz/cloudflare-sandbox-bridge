@@ -2,7 +2,7 @@
 title: One door
 minutes: 2
 ---
-Three months later, on another Saturday at three in the morning, OpenAI went down again, but this time Tomasz's phone stayed dark and he slept right through it.
+Three months later, on another Saturday at three in the morning, OpenAI went down again, but this time Tomas's phone stayed dark and he slept right through it.
 
 What had changed was that Larkfield's apps no longer called providers directly; they all called one door, a gateway, which checks who is asking and holds the keys for every provider, so the apps never have to. Ollie: "So I can't paste a key I never had. Got it."
 

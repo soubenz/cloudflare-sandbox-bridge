@@ -133,7 +133,7 @@ The story is a team's: a calm storyteller tells it, and the people in it speak t
 | id | Who | Personality (one line) | Voice (`voices.json`, model `higgsfield/elevenlabs`) | Drawn as |
 | --- | --- | --- | --- | --- |
 | `maren` | Maren, platform lead | Warm and direct; briefs you and keeps the team calm. | Helena `3c2b83c0-2e0a-5ae8-998a-a5fe71b7eccd` | dark swept fringe, cobalt jacket |
-| `tomasz` | Tomasz, staff engineer | Built most of it; dry, precise, knows where every log lives. | Bram `549ff70a-3ee7-4f04-a4d9-89a24fab7709` | brown hair, round glasses, teal |
+| `tomasz` | Tomas, staff engineer | Built most of it; dry, precise, knows where every log lives. | Bram `549ff70a-3ee7-4f04-a4d9-89a24fab7709` | brown hair, round glasses, teal |
 | `graham` | Graham, head of engineering (the boss) | Asks the blunt question nobody wants: who, how much, and when is it fixed. | Sterling `dc382508-c8bd-443c-8cb2-46e57b8d2e6f` | grey-silver hair, short beard, charcoal blazer and tie, older |
 | `ollie` | Ollie, engineer | Well-meaning and eager; the one who makes the mistakes, and owns up. | John `6b528d43-c056-4a2f-9d82-1591a7ba13b0` | messy blond hair, big grin, orange hoodie, headphones round his neck |
 | `jess` | Jess, product manager | Excitable; wants it shipped by Friday, and asks the customer's question. | Gracie `09878754-f20b-5330-9790-58a8027ab5b2` | curly auburn hair in a high bun, mustard cardigan, lanyard |
@@ -290,7 +290,7 @@ A cast entry is an id (`maren`) or `{ who, mood, pose }`: `mood` is `tired`, `wo
   - scene: clip
     clip: night-office-still                 # an id of packages/catalogue/clips.json (required)
     cast: [{ who: tomasz, mood: tired }]     # optional, 0 to 2 of the cast; NOT drawn, only bubble speakers
-    voiceover: Late on Sunday Tomasz opened the gateway log, and one line told him which team it was.
+    voiceover: Late on Sunday Tomas opened the gateway log, and one line told him which team it was.
     caption: { text: "Sunday, 23:47.", cue: "late on sunday" }
     bubbles: [{ who: tomasz, text: "There you are.", cue: "one line" }]
     sfx: { text: TICK, cue: opened, sound: tick }

@@ -17,7 +17,7 @@ You are a **new platform engineer**, in your first weeks. You are experienced in
 | Person | Role | How they sound |
 |---|---|---|
 | **Maren Osei** | Platform lead, your manager | Direct, dry, gives you the task and the deadline, never the solution. Explains why it matters. |
-| **Tomasz Wieland** | Staff engineer, built the first gateway prototype | Precise. Apologises for his own shortcuts in comments. Knows where the bodies are buried. |
+| **Tomas Wieland** | Staff engineer, built the first gateway prototype | Precise. Apologises for his own shortcuts in comments. Knows where the bodies are buried. |
 | **Priya Nair** | Head of the Support product team, your most demanding customer | Practical, impatient, cares about the customer-facing result, not the plumbing. |
 | **Jonas Berg** | Finance partner | Wants a number he can put in a report. Asks "who spent this?" |
 | **Dr. Anneke de Vries** | Data protection officer | Calm, exact, asks where data went and can you prove it. |

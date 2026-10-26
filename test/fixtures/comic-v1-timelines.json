@@ -114,11 +114,11 @@
   "transcript": [
    "Page 1: Tuesday morning.",
    "Panel 1. Tuesday, a little after ten. On Tuesday morning finance asked us which provider had answered a call, and nobody on the team could say. Maren: Which provider answered, and what did it cost? On screen: invoice: one line / provider: ?",
-   "Panel 2. Jonas sent over the invoice, and Priya wrote that support had no idea either. Tomasz: The gateway should know.",
+   "Panel 2. Jonas sent over the invoice, and Priya wrote that support had no idea either. Tomas: The gateway should know.",
    "Panel 3. You were two days into the job, so Tomasz and I asked you to find out. You: I will start with the log.",
    "Panel 4. A small copy of the system. On screen: $ gateway --log / 200 ok support-a / 4xx key expired",
    "Page 2: Your turn.",
-   "Panel 5. Tomasz built the gateway, and I told you where he keeps the log. Maren: Send it a few calls. Tomasz: Then read what it kept.",
+   "Panel 5. Tomasz built the gateway, and I told you where he keeps the log. Maren: Send it a few calls. Tomas: Then read what it kept.",
    "Panel 6. Your turn. So now it is your turn: open the log and tell us who answered. On screen: $ cat /workspace/answers.json / ready."
   ],
   "silent": {
@@ -1234,14 +1234,14 @@
   },
   "transcript": [
    "Page 1: Tuesday afternoon.",
-   "Panel 1. Support wrote to us a little after two: one request had taken ages. Tomasz: This one took ages. Why did the assistant take so long to answer? On screen: agent: waiting on a reply... / waiting... / still waiting...",
+   "Panel 1. Support wrote to us a little after two: one request had taken ages. Tomas: This one took ages. Why did the assistant take so long to answer? On screen: agent: waiting on a reply... / waiting... / still waiting...",
    "Panel 2. Then finance asked what it had cost. Maren: And what did it cost? I need a number per request.",
    "Panel 3. I knew we had traced that request from end to end. Maren: That request was traced end to end. One request, four services, six spans. Read it.",
-   "Panel 4. Tomasz pointed you to the trace. Tomasz: The trace is in the lab. You: I will start there.",
+   "Panel 4. Tomasz pointed you to the trace. Tomas: The trace is in the lab. You: I will start there.",
    "Page 2.",
    "Panel 5. A small copy of the stack, and a trace to read. The lab holds a small copy of the stack. On screen: $ open jaeger, click Find Traces / 200 1 trace, 4 services, 6 spans / slowest span, not the top one: ? / 4xx cache.get missed",
    "Panel 6. Maybe the customer could see some of it, I wondered. Maren: Can customers see any of this? You: Only what we decide to show them.",
-   "Panel 7. Tomasz asked you to put it in numbers. Tomasz: Write down what you find, in numbers.",
+   "Panel 7. Tomasz asked you to put it in numbers. Tomas: Write down what you find, in numbers.",
    "Page 3: Your turn.",
    "Panel 8. Your turn. And that was the whole brief. On screen: $ cat /workspace/answers.json / ready.",
    "Panel 9. The lab is open, so go and have a look. Maren: The lab is open."

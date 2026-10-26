@@ -516,7 +516,7 @@ test.describe('in Before you begin', () => {
     // The story is told by the voiceover, so the transcript carries it after the caption; bubbles name their speaker.
     await expect(items.nth(1)).toContainText('Panel 1. Tuesday, a little after ten. On Tuesday morning finance asked us which provider had answered a call');
     await expect(items.nth(1)).toContainText('Maren: Which provider answered, and what did it cost?');
-    await expect(items.nth(2)).toContainText('Tomasz: The gateway should know.');
+    await expect(items.nth(2)).toContainText('Tomas: The gateway should know.');
     await expect(items.nth(3)).toContainText('You: I will start with the log.');
     await expect(items.nth(4)).toContainText('On screen: $ gateway --log / 200 ok support-a / 4xx key expired');
     await expect(items.nth(5)).toContainText('Page 2: Your turn.');

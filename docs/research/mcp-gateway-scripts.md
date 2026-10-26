@@ -14,7 +14,7 @@ existing page 2 would need so the first piece of the answer lands within about 2
 
 Every option: no names, no Larkfield, no term in the first line; the kicker and title are on
 the board at 0 s; the first spoken line is under 12 words (count in brackets). The story
-(Ollie, Maren, Priya, Tomasz) starts on page 2 or later. An option that speaks its question
+(Ollie, Maren, Priya, Tomas) starts on page 2 or later. An option that speaks its question
 (V1 A) reads the board question aloud once; that needs the "No narrated questions" rule in
 "How to read these tables" relaxed for page 1, as the playbook now allows.
 
@@ -82,7 +82,7 @@ the board at 0 s; the first spoken line is under 12 words (count in brackets). T
 
 - **Page 2.** A and B: bring the existing page 5's point forward: "HTTP 200 only says the
   message arrived and was answered. Whether the tool worked is written in the body, next to
-  isError." (22 words.) The Leeds forecast and Tomasz's trace then follow as the worked
+  isError." (22 words.) The Leeds forecast and Tomas's trace then follow as the worked
   example (the old page-1 story opens page 3), and the old page 5 can be cut or kept as a
   short recap. C: the existing trace page works; the answer lands on pages 4-6, about 40-65 s.
 - **Recommended: B**, because any web engineer reads the picture on mute, guessing which call
@@ -214,13 +214,13 @@ but a second idea; the lab's call still needs the server's address configured).
 - **id** `mcp-when-a-tool-fails` · **idea** HTTP 200 only says the message arrived; MCP reports
   failure in the body, as a protocol error or as a tool execution error, and the agent must
   read it · **running example** the Leeds forecast that came back with `isError`, then the
-  lab's `does-not-exist` call · **story** Tomasz traces why the assistant promised snow again ·
+  lab's `does-not-exist` call · **story** Tomas traces why the assistant promised snow again ·
   **voice** 397 words on 14 pages, about 2:33.
 
 | # | BOARD PAGE | ON SCREEN | VOICE | NOTE |
 |---|---|---|---|---|
 | 1 | Hook: 200 and wrong | kicker "Debugging question"; title "The call returned 200 OK. Why was the forecast wrong?" (at 0 s); [200 OK] green chip "HTTP 200 OK"; caption "Thursday 08:00"; [heavy snow] agent bubble "Expect heavy snow in Leeds."; [Again] stamp "NO SNOW" | The call returned 200 OK, and the forecast was wrong. At eight on Thursday, Larkfield's assistant told a customer to expect heavy snow in Leeds. Again, no snow fell. | Illustrative story; callback to video 1. First sentence: 10 words. |
-| 2 | Follow the call | erase; [Tomasz] user node "Tomasz · staff engineer"; chain: agent → [MCP gateway] → [weather MCP server]; packet `get_forecast · Leeds` along each link | Tomasz, the staff engineer, pulled the trace. The assistant had called get_forecast for Leeds through the MCP gateway, which passed it to the weather MCP server. | Illustrative: the lab has no trace view beyond the view tab. Gateway as proxy: video 2. |
+| 2 | Follow the call | erase; [Tomas] user node "Tomas · staff engineer"; chain: agent → [MCP gateway] → [weather MCP server]; packet `get_forecast · Leeds` along each link | Tomas, the staff engineer, pulled the trace. The assistant had called get_forecast for Leeds through the MCP gateway, which passed it to the weather MCP server. | Illustrative: the lab has no trace view beyond the view tab. Gateway as proxy: video 2. |
 | 3 | The far end | same page; [outside weather service] cloud node after the server; [did not answer] clock icon and red chip "timed out" on the cloud | That server asked an outside weather service for its data, and the service did not answer in time. The chain had broken at its far end. | Illustrative: the lab's weather server calls no outside service and never times out. |
 | 4 | The reply: a tool execution error | erase; card "the reply" (simplified) `"result": {"isError": true, "content": text "Weather service timed out"}`; marks [isError] and [short text]; [tool execution error] label under the card | The weather server did not crash. It sent a normal result with isError true and a short text: weather service timed out. The specification calls this a tool execution error. | Shape: source 5 (API failures are tool execution errors). The message text is illustrative. |
 | 5 | Status and body | erase; [delivered and answered] envelope icon with chip "HTTP 200"; [body] the reply card again, smaller, ring on `isError` | HTTP only reported that the request was delivered and answered, so its status was 200. Whether the tool had worked was written in the body, next to isError. | Lab-real pattern (`does-not-exist` returns 200 with `isError`). Under the 2026-07-28 spec some protocol errors change the HTTP status (source 8), so the rule taught is "200 is not proof", never "errors are always 200". |
@@ -342,9 +342,9 @@ the edits are to pacing, order and wording.
   adds to the board only when the picture genuinely builds (agent → tool, server → client,
   gateway → its two faces, menu → schema, error-object branch → isError branch).
 - Gave each video a single thread with a named person from the Larkfield cast (Ollie, Maren,
-  Priya, Tomasz) and a time, and joined pages with a cause or a time ("No snow fell, and by
+  Priya, Tomas) and a time, and joined pages with a cause or a time ("No snow fell, and by
   lunchtime...", "So Maren put one program in the middle", "A second problem appeared when").
-  The hook is answered inside the video (Maren finds her answer in one table; Tomasz finds the
+  The hook is answered inside the video (Maren finds her answer in one table; Tomas finds the
   dropped message).
 - Every video now ends by pointing at the next one's question; video 4 closes the set.
 - Removed the rhythm triplets and compressed sentence stacks; added the plain pause line

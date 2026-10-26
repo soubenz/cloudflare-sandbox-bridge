@@ -8,7 +8,7 @@ To answer properly, her assistant needs the real weather in the depot's city. Se
 
 Then security came to me with one request: agents should reach tools through one door, and that door should know exactly what was called. Fair enough. Today nobody could tell them.
 
-So we have set up a tool gateway. Tool servers sign up with it, it gathers the tools we choose into one place, and an agent connects to that one place. The agent asks what is on offer, then calls a tool by name. Tomasz has put two toy servers behind it, a weather one and a calculator. Nothing real is connected, so nothing you try can reach a customer. He asks you to be nice to them anyway.
+So we have set up a tool gateway. Tool servers sign up with it, it gathers the tools we choose into one place, and an agent connects to that one place. The agent asks what is on offer, then calls a tool by name. Tomas has put two toy servers behind it, a weather one and a calculator. Nothing real is connected, so nothing you try can reach a customer. He asks you to be nice to them anyway.
 
 Here is the part I care about most. Priya's assistant will read whatever comes back, so the shape of a failure matters as much as the shape of a success, and the status code alone will not tell you which one you got. Read the bodies. People skip them and regret it.
 

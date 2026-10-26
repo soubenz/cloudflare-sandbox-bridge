@@ -7,8 +7,8 @@ panels:
     caption: Wednesday, a little after ten.
     voiceover: I opened our onboarding page for the team that starts on Monday. Nine bullet points. Bullet seven just says, ask Tomasz.
     bubbles:
-      - { who: maren, text: "Tomasz? You're a bullet point." }
-    lines: ["Team onboarding (wiki)", "9 bullets", "7. Ask Tomasz."]
+      - { who: maren, text: "Tomas? You're a bullet point." }
+    lines: ["Team onboarding (wiki)", "9 bullets", "7. Ask Tomas."]
     sfx: HUH?
   - scene: message
     cast: [tomasz]

@@ -87,7 +87,7 @@ CHARACTERS AND HUMOUR
 - The cast is Larkfield's team (packages/catalogue/voices.json has their
   voices):
     Maren (platform lead): warm and direct; briefs you, keeps the team calm.
-    Tomasz (staff engineer): built most of it; dry, precise, knows every log.
+    Tomas (staff engineer): built most of it; dry, precise, knows every log.
     Graham (head of engineering, the boss): asks the blunt question nobody
       wants: who, how much, when is it fixed.
     Ollie (engineer): well-meaning and eager; the one who makes the mistakes,

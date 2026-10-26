@@ -593,7 +593,7 @@ describe('the clip scene in the schema and the checks', () => {
     const lookup = (id: string) => (id === 'night-office-still' ? { alt: 'A dark office at night.' } : undefined);
     const panels = ComicSchema.parse({ ...VOICED, panels: VOICED.panels.map((p, k) => (k === 4 ? { ...p, ...CLIP } : p)) }).pages[0]!.panels;
     expect(comicTranscript(panels, undefined, lookup)[4]).toBe(
-      'Panel 5. A dark office at night. Sunday, 23:47. Late on Sunday Tomasz opened the gateway log, and one line told him which team it was. Tomasz: There you are. Maren: Which team? On screen: team: search / spend: x3'
+      'Panel 5. A dark office at night. Sunday, 23:47. Late on Sunday Tomasz opened the gateway log, and one line told him which team it was. Tomas: There you are. Maren: Which team? On screen: team: search / spend: x3'
     );
     // with no lookup, or an id it does not know, the panel reads as any other
     expect(comicTranscript(panels)[4]).toBe(comicTranscript(panels, undefined, () => undefined)[4]);
