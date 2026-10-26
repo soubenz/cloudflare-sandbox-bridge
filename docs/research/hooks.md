@@ -221,10 +221,34 @@ scripted board video.
 
 ## 7. Hook checklist (apply to every video)
 
+**The owner's rule (2026-10-26), which wins where an item below differs.** The owner rejected
+our first rounds of hooks as vague riddles about abstractions. The rule:
+
+- **Name the topic plainly.** MCP is the word people search for, so the board says it at 0 s (a
+  caption such as "What is MCP?", or in the title) and the voice says it early. Hiding the
+  term until the end is for the explanation, not for the hook.
+- **Anchor on something real the viewer already knows:** a real product (ChatGPT, Claude,
+  GitHub), a real number (10 agents × 20 MCP servers = 200 connections), a line of code they
+  have written (`if resp.status == 200: return resp.result`), or a real interview question.
+- **No riddles, no abstract stand-ins.** Not "a box", "a program", "it", "two doors", "one
+  more box". If the viewer has to wait for the video to learn what the nouns mean, the hook has
+  failed.
+- **The question must be one the viewer would actually type into a search box:** "how does
+  ChatGPT know today's weather", "how do you give each AI agent only the tools it needs".
+- What still stays out of the first seconds is the fictional set-up: no character name, no
+  Larkfield, no date or place before the problem. The story starts on page 2 at the earliest,
+  as the worked example.
+
+The chosen hooks for the MCP set are in
+[mcp-gateway-scripts.md](mcp-gateway-scripts.md#hook-options); the rejected ones are listed
+in section 8 under "Too vague".
+
 1. **Stranger test.** An engineer who has never heard the term understands the title, the
-   picture and the first line. No product term, no fictional company, no character name.
-2. **One question, on screen at 0 s**, in plain words, 4-9 words, under an orange kicker that
-   names the genre ("INTERVIEW QUESTION", "DEBUGGING QUESTION", "SYSTEM DESIGN").
+   picture and the first line. No fictional company, no character name. The topic's own word
+   (MCP) is named, beside a real anchor the stranger does know.
+2. **One question, on screen at 0 s**, in plain words, 4-12 words, one a viewer would type
+   into a search box, under an orange kicker that names the genre ("INTERVIEW QUESTION",
+   "DEBUGGING QUESTION", "SYSTEM DESIGN").
 3. **One concrete number or object** in the first frame (1 GB → 400 MB, 15 → 8, HTTP 200).
 4. **A gap the viewer can feel**: two things that disagree, a number that should not be
    possible, a belief that is wrong. A wrong weather forecast is not one; forecasts are often
@@ -251,7 +275,11 @@ scripted board video.
 - **In-group nouns**: Larkfield, Ollie, Maren and Priya mean nothing to someone scrolling;
   Instagram's own advice is that a reel "should make sense to those who may not know you".
 - **Throat-clearing**: "In this video", "let's dive in", "what is the secret?", "hi guys".
-- **Term first** for a newcomer audience ("What is an MCP gateway?").
+- **Term first with nothing real around it** (a bare "What is an MCP gateway?"). Naming the
+  topic beside a real anchor is wanted (the owner's rule, section 7); a definition-shaped
+  question with no product, number or code in it is not.
+- **Riddles about abstractions**: "a box", "a program", "it", a count of things the viewer
+  cannot yet name. See "Too vague" below.
 - **Title and voice disagree.**
 - **A hook the video does not answer**, or answers only at the end of a long story.
 - **Unsourced statistics and overstated claims** ("70% of jobs…", "always", "never").
@@ -285,8 +313,33 @@ Why it fails, against the checklist:
 The same shape opened videos 2 and 3 ("One Friday evening, the orders server slowed down.
 Maren, Larkfield's platform lead…"; "In May… Priya, who runs Support at Larkfield…"). Video
 4's "The call returned 200 OK, and the forecast was wrong." was closest to this playbook: a
-contradiction any web engineer can feel. Rewrites for all four are in
-[mcp-gateway-scripts.md, "Hook options"](mcp-gateway-scripts.md#hook-options).
+contradiction any web engineer can feel. The first rounds of rewrites are in
+[mcp-gateway-scripts.md, "Hook options"](mcp-gateway-scripts.md#hook-options) and
+[hook-options-2.md](hook-options-2.md); the owner rejected most of them too, for the opposite
+fault.
+
+### Too vague: the riddle hooks the owner rejected (2026-10-26)
+
+They passed the checklist above and still failed, because every noun in them is an
+abstraction the viewer cannot picture until the video explains it, nothing names the topic,
+and nobody would type them into a search box.
+
+- "How does one more box mean 7 fewer connections?" — "a box" stands in for the MCP gateway;
+  the number is a puzzle, not a fact the viewer recognises. Chosen instead: "10 agents, 20 MCP
+  servers. How do you manage access?" over 10 × 20 = 200.
+- "Both returned 200 OK. Which one worked?" — a quiz about two anonymous replies. Chosen
+  instead: the viewer's own line, `if resp.status == 200: return resp.result`, and "Why does
+  your AI agent make things up when a tool fails?"
+- "It needs 5 tools. Why does it see 12?" — "it" is unnamed and the numbers mean nothing yet.
+  Chosen instead: "How do you give each AI agent only the tools it needs?"
+- "How does an AI model know today's weather?", "Who actually ran that tool?", "Same model.
+  Same question. Two answers.", "Connect a chatbot to live weather. Draw it." — riddles about
+  "a model" and "a tool". Chosen instead: "ChatGPT was trained months ago. How does it know
+  today's weather?", which names the product and is what people search for.
+- "One program. Two addresses. Two menus.", "5 menus. 1 request. How?", "One tool list. Three
+  agents. Three menus." — counting abstractions ("a program", "a menu", "a list").
+- "You already run this for web traffic", "Does the middle box make calls faster?" — "this"
+  and "the middle box" are the riddle.
 
 ---
 

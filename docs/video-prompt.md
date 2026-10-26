@@ -106,14 +106,29 @@ CHARACTERS AND HUMOUR
   repeats the narrator, and the narrator never repeats a bubble.
 
 HOOK (panel 1, the first 3 seconds; playbook and sources: docs/research/hooks.md)
+- Name the topic plainly. The word people search for (MCP) is on the screen
+  at 0 s, as a caption or in the question, and is spoken by panel 2. Hiding
+  the term is for the explanation, not the hook.
+- Anchor on something real the viewer already knows: a real product (ChatGPT,
+  Claude, GitHub), a real number (10 agents × 20 MCP servers = 200
+  connections), a line of code they have written (if resp.status == 200:
+  return resp.result), or a real interview question. No riddles and no
+  abstract stand-ins: not "a box", "a program", "it", "two doors".
+- The question is one the viewer would actually type into a search box
+  ("how does ChatGPT know today's weather", "how do you give each AI agent
+  only the tools it needs"). Too vague: "How does one more box mean 7 fewer
+  connections?", "Both returned 200 OK. Which one worked?", "It needs 5
+  tools. Why does it see 12?" (the full list: docs/research/hooks.md, §8).
 - At 0 s the screen already shows a kicker naming the genre (INTERVIEW
   QUESTION, DEBUGGING QUESTION, SYSTEM DESIGN), one question in plain words
-  (4 to 9 words), and a picture that explains itself on mute, with one
-  concrete number or object (1 GB → 400 MB, 15 lines → 8, HTTP 200 beside
-  isError: true). Something moves within the first second. No logo, no intro.
+  (4 to 12 words), and a picture that explains itself on mute, with one
+  concrete number or object (1 GB → 400 MB, 10 × 20 = 200, a code line, HTTP
+  200 beside isError: true). Something moves within the first second. No logo,
+  no intro.
 - Stranger test: an engineer who has never heard the term understands the
-  question, the picture and the first line. No term, no Larkfield, no
-  character name, no date or place before the problem.
+  question, the picture and the first line, because the anchor is something
+  they know. No Larkfield, no character name, no date or place before the
+  problem.
 - There is a gap the viewer can feel: two things that disagree, a number
   that should not be possible, something they have seen but never questioned,
   a common belief that is wrong, a real cost. Its answer is the video's ONE
