@@ -898,9 +898,9 @@ videos:
               type: terminal
               command: python3 -B call_tool.py --list
               show: "0,5-10"
-              clip: 52
+              clip: 50
               highlight:
-                - { id: toytools, match: "virtual server 'toy-tools'", color: gateway }
+                - { id: toytools, match: "virtual server", lines: "^Tools reachable", color: gateway }
                 - { id: weather, match: "weather-tools-[a-z-]+", lines: "^  - ", color: weather }
                 - { id: calc, match: "calculator-tools-[a-z]+", lines: "^  - ", color: calc }
               output: |
