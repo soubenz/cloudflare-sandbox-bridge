@@ -179,6 +179,33 @@ TEACHING
 - Say what the thing is NOT when a newcomer would likely confuse it.
 - End with what the viewer does next, in one sentence.
 
+FLOW (how pages hand over; the model is a KodeKloud short that explains zip
+with one word, banana, on one growing canvas, clearing the board twice in 2:49)
+- Scenes, not slides. A video is three or four scenes, and each scene is one
+  board that keeps building. Erase only between scenes, never between pages;
+  a page is a change to the board, not a new board.
+- The board is never just text. Every page adds to or changes the picture,
+  and a label sits next to the thing it names. A sentence alone on an empty
+  board is not a page; give it a picture or fold it into the page before it.
+- The voice describes what is being drawn, as it is drawn. Nothing appears
+  that the voice is not talking about, and nothing is said that is not on
+  the board.
+- Bridge every page. Each page's voice starts by picking up the previous
+  page (a cause, a consequence, the viewer's next question) or ends with the
+  question the next page answers. Vary the connectors; a bridge is never a
+  stock phrase.
+- At least one hand-off question per scene, spoken ("Who picks from it?",
+  "What travels along that line?"). This is the one exception to "no
+  rhetorical questions answered by the narrator": a hand-off question is
+  answered by the next page's picture, not by the same breath.
+- One running example on one canvas. The same words (the question, the
+  city, the tool name) stay on the board from the hook to the recap, and
+  later steps travel along the arrows already drawn rather than on new ones.
+- The recap is the same picture redrawn with the steps numbered on it, not
+  a list of chips.
+- In the script, ON SCREEN says what is added or changed at each cue and
+  where it sits relative to what is already on the board.
+
 OUTPUT
 1. Title (3 to 6 words, names the idea or the incident, not the lab).
 2. A table with columns: # | ON SCREEN | VOICE | BUBBLE. Put cues in
