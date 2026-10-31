@@ -179,7 +179,13 @@ dimmed board between topics. The narration pauses for it: 0.5 s in, `hold` (defa
 ### Elements
 
 Elements sit on a 1000 × 700 grid; `pos: [x, y]` is the element's centre. The grid is
-scaled to the frame, so one scene serves both formats. Every element starts hidden
+scaled to the frame, so one scene serves both formats. A dense scene can instead be laid out
+twice: `grid: { landscape: [1600, 800], vertical: [1000, 1040] }` on the scene, and on any
+element `vertical: { pos, size, scale, width, ... }` / `landscape: { ... }` overrides (a `move`
+target may be `{ landscape: [x, y], vertical: [x, y] }` too). `regions: { <format>: { canvas,
+split } }` on the scene moves the canvas or the split terminal for one format (see
+`REGIONS` in `page/canvas.js`); video 1 uses it to fill the top ~60% of the vertical frame and
+give the landscape terminal 45% of the width. Every element starts hidden
 unless it has `visible: true`. Any element takes `color` (an actor from `colors`, or a
 palette name: pink, yellow, cyan, green, blue, violet, orange, red, white, grey), `scale`
 and `page`. On the navy theme, every palette colour keeps at least 5:1 contrast,
@@ -200,17 +206,17 @@ element to skip it).
 | `circle` | `text`: a small round node |
 | `bubble` | `text`, `side` (left or right), `width`, `stamp`: a chat bubble (`stamp: "Guess"` lands a small stamp on its corner) |
 | `chat` | `title`, `logo`, `messages: [{ text, side, color, logo }]`, `width`, `highlight`: a chat window; `mark` lights words in it; `logo` puts an allowed brand mark in the title bar or a message |
-| `box` | `label`, `size: [w, h]`, `dashed` (default true), `labelAt: bottom`: a box drawn round other elements (declare it before them) |
+| `box` | `label` (`\n` breaks it), `labelSize`, `size: [w, h]`, `dashed` (default true), `labelAt: bottom`: a box drawn round other elements (declare it before them) |
 | `dots` | `n`, `size`, `gap`, `row`: a crowd of small dots (ten agents, twenty servers) |
 | `stamp` | `text`, `rotate`, `size`: a rubber stamp ("GUESS", "LEFT OUT") |
 | `icon` | `icon` (a built-in) or `id` (a library icon), `size`, `label`, `labelSize`: an icon, recoloured to the element's colour |
 | `logo` | `id` (a brand of the asset library), `size`, `label` (default: the product's name; always shown), `labelAt: below`, `labelSize`: a brand mark in its permitted colours with its name beside it |
 | `list` | `items: [text or { text, color, icon }]`, `title`, `row`, `cols`, `gate`, `font`: a stack, row or grid of chips. With `gate: true` each item appears on its own beat (`show: list/0`); `ring`, `color` and `text` also take `list/0` |
-| `card` | `title`, `lines`, `highlight: [{ id, match, lines, color }]`: a dashed box of code-like lines. A line may be `{ text, reveal: <highlight id> }`: its room is kept and it shows when that highlight is marked |
-| `arrow` | `from`, `to`, `label`, `labelSide` (below), `labelSize`, `labelWidth` (wraps the label), `dashed`, `offset`: drawn from box edge to box edge, following moves |
+| `card` | `title`, `lines`, `highlight: [{ id, match, lines, color }]`: a dashed box of code-like lines. A line may be `{ text, reveal: <highlight id>, size }`: its room is kept and it shows when that highlight is marked; `size` sets its font (a prose line under a code one) |
+| `arrow` | `from`, `to`, `head: false` (a plain line), `label`, `labelSide` (below), `labelSize`, `labelWidth` (wraps the label), `dashed`, `offset`: drawn from box edge to box edge, following moves |
 | `mesh` | `from`, `to`, `via`, `stagger`, `dashed`, `width`, `opacity`, `label`, `labelPos`, `labelColor`: many lines at once, from every dot or list chip of `from` to every one of `to` (or each to and from a hub `via`), drawn `stagger` seconds apart; its `label` is a count that `text:` can change. Like arrows, meshes don't count towards `pageMax` |
-| `packet` | `on` (an arrow), `label`, `reverse`, `dur`, `stay`, `lift`, `scale`: a pill that rides an arrow when it gets `travel` |
-| `terminal` | `command`, `output` (verbatim), `show: "0-2,5-10"` (which output lines; gaps show as "…"), `clip`, `highlight: [{ id, match, lines, color }]`, `title`, `prompt`, `mask` |
+| `packet` | `on` (an arrow), `label` (`\n` stacks it in rows), `reverse`, `dur`, `stay`, `lift`, `scale`: a pill that rides an arrow when it gets `travel` |
+| `terminal` | `command`, `output` (verbatim), `show: "0-2,5-10"` (which output lines; gaps show as "…"), `clip`, `highlight: [{ id, match, lines, color, command }]` (`command: true` also lights it in the typed command), `size` (font px), `title`, `prompt`, `mask` |
 
 Built-in icons: agent, server, gateway, key, clock, cloud, warn, check, cross, user, log, model,
 shield, sun, calendar, mail.

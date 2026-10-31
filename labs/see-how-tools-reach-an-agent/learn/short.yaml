@@ -64,136 +64,147 @@ videos:
   # Video 1. What is MCP?
   - id: mcp-what-is-mcp
     title: What is MCP?
-    endCard: { title: "What is MCP?", sub: "Hands-on lab · See how tools reach an agent" }
+    # ChatGPT is named in text only (its mark is not allowed), so the generic trademarks line.
+    endCard: { title: "What is MCP?", sub: "Hands-on lab · See how tools reach an agent", trademarks: true }
+    # FLOW (docs/video-prompt.md): four scenes, each one board that keeps building. The
+    # board is erased only between scenes (pages s1, s2, s4); scene 3 (the lab) keeps the
+    # scene-2 board and brings the terminal in beside it. A page is a whole scene here,
+    # so pageMax is raised for this video.
+    pace: { pageMax: 40 }
     segments:
-      # 1. Hook: ChatGPT and today's weather
+      # ---- Scene 1. The frozen model ------------------------------------------
+      # 1. Hook (the chat window is an illustration: nothing is claimed about how
+      #    ChatGPT gets the weather, and it is not said to use MCP)
       - id: hook
         vo: >-
-          ChatGPT's knowledge stopped months ago. Ask it today's weather, and it
-          still knows. How? Follow one answer, the weather in Leeds, from a
-          weather service into the chat.
+          Ask ChatGPT whether it's snowing in Leeds right now, and it can tell
+          you, even though its training ended months ago. So where did that
+          answer come from? Let's trace it.
         scene:
           id: mcp
-          pages:
-            - { id: hook }
-            - { id: answer }
-            - { id: snow }
-            - { id: agent }
-            - { id: server }
-            - { id: rpc }
-            - { id: menu }
-            - { id: choose }
-            - { id: call }
-            - { id: lab }
-            - { id: recap }
-            - { id: cta }
+          # Two layouts of one board: wide for landscape, tall for the vertical frame.
+          grid: { landscape: [1600, 800], vertical: [1000, 1040] }
+          regions:
+            landscape:
+              canvas: { canvas: { x: 40, y: 96, w: 1840, h: 866 } }
+              split: { canvas: { x: 10, y: 110, w: 1010, h: 860 }, term: { x: 1030, y: 120, w: 870, h: 830 } }
+            vertical:
+              canvas: { canvas: { x: 40, y: 128, w: 1000, h: 1040 } }
+              split: { canvas: { x: 40, y: 112, w: 1000, h: 540 }, term: { x: 40, y: 664, w: 1000, h: 506 } }
+          pages: [{ id: s1 }, { id: s2 }, { id: s4 }]
           elements:
-            # page: hook (an illustration: no claim about how ChatGPT gets weather)
-            kicker: { type: kicker, page: hook, text: "Interview question", pos: [500, 34], visible: true }
-            q: { type: title, page: hook, text: "ChatGPT was trained months ago. How does it know today's weather?", size: 48, width: 920, pos: [500, 128], underline: true, visible: true }
-            topic: { type: text, page: hook, text: "What is MCP?", size: 32, color: quiet, pos: [500, 236], visible: true }
+            # page s1: the hook board, readable at 0 s
+            kicker: { type: kicker, page: s1, text: "Interview question", visible: true, pos: [800, 26], vertical: { pos: [500, 24] } }
+            q: { type: title, page: s1, text: "ChatGPT was trained months ago. How does it know today's weather?", size: 50, width: 900, underline: true, visible: true, pos: [800, 104], vertical: { width: 940, pos: [500, 118] } }
+            topic: { type: text, page: s1, text: "What is MCP?", size: 30, color: quiet, visible: true, pos: [800, 200], vertical: { pos: [500, 230] } }
+            cal: { type: chip, page: s1, icon: calendar, text: "training data ends: months ago", color: quiet, scale: 0.9, visible: true, pos: [740, 290], vertical: { scale: 1.0, pos: [500, 300] } }
             chat:
               type: chat
-              page: hook
-              title: "ChatGPT · 🕒 now"
+              page: s1
+              title: "ChatGPT"
               color: model
               width: 480
-              pos: [745, 450]
+              scale: 1.12
               visible: true
+              pos: [1200, 490]
+              vertical: { width: 390, scale: 1.22, pos: [762, 560] }
               messages:
-                - { text: "What's the weather in Leeds right now?", side: right, color: user }
+                - { text: "Is it snowing in Leeds?", side: right, color: user }
                 - { text: "Leeds, right now: 10 °C, cloudy", side: left, color: weather }
               highlight:
-                - { id: leeds, match: "Leeds", lines: "^Leeds", color: weather }
-            cal: { type: chip, page: hook, icon: calendar, text: "training data ends: months ago", color: quiet, scale: 0.8, pos: [240, 345] }
-            model: { type: chip, page: hook, icon: model, text: "Model", color: model, pos: [240, 470] }
-            ask: { type: arrow, from: model, to: chat, label: "?", labelSize: 56, color: user }
-            # page: answer
-            appbox: { type: box, page: answer, label: "the app around it", color: quiet, size: [560, 330], pos: [330, 360] }
-            lm: { type: node, page: answer, icon: model, label: "Language model", sub: "reads text, writes text", color: model, scale: 0.85, pos: [330, 320] }
-            cant: { type: chip, page: answer, icon: cross, text: "cannot know", sub: "training ended months ago", color: bad, scale: 0.8, pos: [330, 445] }
-            tool: { type: chip, page: answer, text: "tool", sub: "fetches live data", color: weather, pos: [830, 360] }
-            a_out: { type: arrow, from: appbox, to: tool, color: weather, offset: -14 }
-            a_back: { type: arrow, from: tool, to: appbox, color: weather, offset: -14 }
-            mcp: { type: text, page: answer, text: "MCP · the standard way to plug tools in", size: 36, color: gateway, pos: [500, 610] }
-            # page: snow (illustrative story: Larkfield is our fictional company)
-            when3: { type: text, page: snow, text: "Tuesday 09:00", size: 32, color: quiet, pos: [500, 40], visible: true }
-            asst: { type: node, page: snow, icon: agent, label: "Support assistant", color: agent, scale: 0.8, pos: [235, 330] }
-            said: { type: bubble, page: snow, text: "Yes, heavy snow in Leeds.", color: agent, side: left, width: 420, pos: [690, 220] }
-            nosnow: { type: stamp, page: snow, text: "No snow", color: bad, rotate: -8, pos: [700, 380] }
-            slot: { type: box, page: snow, label: "tool", color: quiet, size: [240, 100], pos: [235, 520] }
-            # page: agent (the agent, then a tool on the same page)
-            abox: { type: box, page: agent, label: "Agent", color: agent, size: [360, 300], pos: [250, 380] }
-            model2: { type: chip, page: agent, icon: model, text: "Model", color: model, pos: [250, 400], visible: true }
-            duties: { type: list, page: agent, gate: true, font: hand, scale: 0.8, items: [{ text: "keeps the conversation", color: agent }, { text: "carries out what the model decides", color: agent }], pos: [720, 165] }
-            ollie: { type: node, page: agent, icon: user, label: "Ollie", sub: "built it", color: user, scale: 0.85, pos: [830, 600] }
-            progbox: { type: box, page: agent, label: "another program", color: quiet, size: [500, 150], pos: [715, 410] }
-            getw: { type: chip, page: agent, font: mono, text: "get_weather", color: weather, pos: [715, 430] }
-            # page: server (the MCP server, then the MCP client on the same page)
-            abox2: { type: box, page: server, label: "Agent", color: agent, size: [320, 300], pos: [210, 390], visible: true }
-            client: { type: chip, page: server, text: "MCP client", color: agent, pos: [210, 430] }
-            host: { type: text, page: server, text: "host", size: 32, color: quiet, pos: [210, 200] }
-            srv: { type: card, page: server, title: "Weather MCP server", color: weather, lines: ["get_weather", "get_forecast"], pos: [730, 300] }
-            srv2: { type: node, page: server, icon: server, label: "… MCP server", color: quiet, scale: 0.7, pos: [730, 490] }
-            mcpname: { type: text, page: server, text: "MCP · Model Context Protocol", size: 36, color: gateway, pos: [500, 630] }
-            wire: { type: arrow, from: client, to: srv, label: "MCP", color: gateway }
-            # page: rpc
-            req: { type: card, page: rpc, title: "request", color: agent, lines: ['{"method": "tools/list", "params": {}}'], scale: 1.15, pos: [500, 190] }
-            res: { type: card, page: rpc, title: "reply", color: ok, lines: ['{"result": …}'], scale: 1.15, pos: [290, 450] }
-            err: { type: card, page: rpc, title: "reply", color: bad, lines: ['{"error": …}'], scale: 1.15, pos: [710, 450] }
-            # page: menu (real names, descriptions and schemas from the lab's tools/list)
-            mclient: { type: chip, page: menu, text: "MCP client", color: agent, pos: [170, 100], visible: true }
-            msrv: { type: chip, page: menu, text: "Weather MCP server", color: weather, pos: [790, 100], visible: true }
-            mwire: { type: arrow, from: mclient, to: msrv, color: quiet, visible: true }
-            p_list: { type: packet, on: mwire, label: "tools/list", color: agent }
+                - { id: leeds, match: "Leeds(?=\\?)", color: user }
+            clock: { type: icon, page: s1, icon: clock, label: "now", size: 52, color: model, visible: true, pos: [1440, 300], vertical: { size: 60, pos: [915, 290] } }
+            model: { type: chip, page: s1, icon: model, text: "Model", color: model, scale: 1.4, pos: [400, 480], vertical: { scale: 1.5, pos: [210, 560] } }
+            ask: { type: arrow, from: model, to: chat, color: user }
+            qm: { type: text, page: s1, text: "?", size: 76, color: user, pos: [740, 430], vertical: { size: 80, pos: [500, 495] } }
+            lm: { type: text, page: s1, text: "language model · reads text, writes text", size: 30, width: 380, color: model, pos: [400, 585], vertical: { size: 32, width: 380, pos: [205, 445] } }
+            cut: { type: text, page: s1, text: "", pos: [740, 792], vertical: { pos: [500, 1040] } }
+            gapline: { type: arrow, from: cal, to: cut, dashed: true, head: false, color: quiet }
+            past: { type: text, page: s1, text: "months ago", size: 32, color: quiet, pos: [620, 752], vertical: { pos: [380, 1005] } }
+            nowl: { type: text, page: s1, text: "now", size: 32, color: weather, pos: [850, 752], vertical: { pos: [590, 1005] } }
+            guess: { type: text, page: s1, text: "alone: a guess", size: 30, color: quiet, pos: [600, 405], vertical: { width: 130, pos: [410, 505] } }
+            appbox: { type: box, page: s1, label: "the app", labelSize: 34, color: quiet, size: [1400, 320], pos: [880, 510], vertical: { size: [990, 420], pos: [505, 560] } }
+            tool: { type: chip, page: s1, icon: weather, text: "tool · live weather", color: weather, pos: [1200, 742], vertical: { scale: 1.15, pos: [720, 890] } }
+            toolarr: { type: arrow, from: appbox, to: tool, color: weather }
+            back: { type: arrow, from: tool, to: model, color: weather }
+            mcpw: { type: text, page: s1, text: "MCP", size: 44, color: gateway, pos: [830, 582], vertical: { pos: [420, 760] } }
+
+            # page s2: one lookup, end to end (kept through the lab)
+            q2: { type: bubble, page: s2, text: "Is it snowing in Leeds?", side: right, color: user, width: 460, pos: [230, 50], vertical: { pos: [225, 42] } }
+            reply: { type: bubble, page: s2, text: "No snow. Leeds is 10 °C and cloudy.", side: left, color: weather, width: 520, scale: 0.85, pos: [780, 58], vertical: { width: 480, pos: [690, 60] } }
+            abox: { type: box, page: s2, label: "Agent", labelSize: 46, color: agent, dashed: false, size: [540, 420], pos: [290, 430], vertical: { size: [390, 560], pos: [205, 555] } }
+            inarr: { type: arrow, from: q2, to: abox, color: user }
+            desc: { type: text, page: s2, text: "keeps the conversation · carries out what the model decides", size: 28, width: 530, color: agent, pos: [290, 690], vertical: { size: 24, width: 390, pos: [205, 868] } }
+            model2: { type: chip, page: s2, icon: model, text: "Model", color: model, scale: 1.2, pos: [130, 480], vertical: { pos: [120, 590] } }
+            srv: { type: box, page: s2, label: "Weather\nMCP server", labelSize: 40, color: weather, dashed: false, size: [340, 340], pos: [1400, 340], vertical: { size: [290, 300], pos: [845, 420] } }
+            gw: { type: chip, page: s2, font: mono, text: "get_weather", color: weather, scale: 1.2, pos: [1400, 315], vertical: { pos: [845, 410] } }
+            gf: { type: chip, page: s2, font: mono, text: "get_forecast", color: weather, scale: 1.2, pos: [1400, 395], vertical: { pos: [845, 480] } }
+            toolLbl: { type: text, page: s2, text: "tool · a named function", size: 28, color: weather, pos: [1400, 470], vertical: { size: 26, pos: [845, 545] } }
+            srvLbl: { type: text, page: s2, text: "MCP server · offers tools", size: 30, color: weather, pos: [1400, 545], vertical: { pos: [845, 600] } }
+            mcpName: { type: text, page: s2, text: "MCP · Model Context Protocol", size: 26, color: gateway, pos: [1400, 585], vertical: { pos: [845, 637] } }
+            direct: { type: arrow, from: model2, to: srv, dashed: true, color: quiet }
+            xmark: { type: icon, page: s2, icon: cross, size: 58, color: bad, pos: [770, 410], vertical: { pos: [545, 495] } }
+            client: { type: node, page: s2, label: "MCP client", color: agent, scale: 0.95, pos: [400, 310], vertical: { label: "MCP\nclient", scale: 1.0, pos: [300, 400] } }
+            host: { type: text, page: s2, text: "host", size: 34, color: quiet, pos: [520, 195], vertical: { pos: [330, 250] } }
+            line: { type: arrow, from: client, to: srv, color: agent }
+            json: { type: text, page: s2, text: "JSON-RPC · request: method → reply: result or error", size: 27, width: 440, color: model, pos: [880, 230], vertical: { size: 25, width: 280, pos: [545, 318] } }
+            p_list: { type: packet, on: line, label: "tools/list", color: agent }
+            p_menu: { type: packet, on: line, reverse: true, label: "menu", color: weather }
+            # real names, descriptions and schemas (the lab's tools/list, short.yaml `tlist`)
             menu:
               type: card
-              page: menu
+              page: s2
               title: "menu"
               color: weather
-              pos: [500, 420]
+              pos: [880, 610]
+              vertical: { scale: 1.2, pos: [715, 850] }
               lines:
                 - "get_weather"
-                - '  "Get the current made-up weather for a city."'
+                - { text: '  "Get the current made-up', size: 18 }
+                - { text: '   weather for a city."', size: 18 }
                 - { text: "  city · string · required", reveal: s1 }
                 - "get_forecast"
-                - '  "Get a made-up multi-day forecast for a city."'
+                - { text: '  "Get a made-up multi-day', size: 18 }
+                - { text: '   forecast for a city."', size: 18 }
                 - { text: "  days · integer · default 3", reveal: s2 }
               highlight:
-                - { id: d1, match: '"Get the current made-up weather for a city\.?"', color: weather }
                 - { id: s1, match: "city · string · required", color: agent }
                 - { id: s2, match: "days · integer · default 3", color: agent }
-            # page: choose (illustrative: the lab has no model; the learner plays the client)
-            model3: { type: chip, page: choose, icon: model, text: "Model", color: model, pos: [660, 300], visible: true }
-            q11: { type: bubble, page: choose, text: "Is it snowing in Leeds?", color: user, side: right, width: 420, pos: [270, 150] }
-            menu2: { type: list, page: choose, title: "menu", items: [{ text: get_weather, color: weather }, { text: get_forecast, color: weather }], pos: [200, 400] }
-            req11: { type: chip, page: choose, font: mono, text: "call get_weather · city: Leeds", color: agent, pos: [680, 450] }
-            ran: { type: text, page: choose, text: "writes the request, runs nothing", size: 32, color: quiet, pos: [660, 580] }
-            # page: call
-            cclient: { type: chip, page: call, text: "MCP client", color: agent, pos: [300, 110], visible: true }
-            csrv: { type: chip, page: call, text: "Weather MCP server", color: weather, pos: [300, 590], visible: true }
-            cwire: { type: arrow, from: cclient, to: csrv, color: quiet, visible: true }
-            p_call: { type: packet, on: cwire, label: "tools/call · get_weather · {city: Leeds}", color: agent, scale: 0.85, dur: 1.6 }
-            p_res: { type: packet, on: cwire, reverse: true, label: "result", color: ok, dur: 1.4 }
-            rcard:
+            schemaLbl: { type: text, page: s2, text: "input schema", size: 28, color: agent, pos: [1010, 420], vertical: { pos: [560, 640] } }
+            # illustrative: the lab has no model; the learner plays the agent's client
+            qarr: { type: arrow, from: q2, to: model2, color: user }
+            marr: { type: arrow, from: menu, to: model2, color: weather }
+            req: { type: card, page: s2, color: model, scale: 1.1, lines: ["call get_weather", "city: Leeds"], pos: [370, 490], vertical: { pos: [175, 716] } }
+            runs: { type: text, page: s2, text: "writes the request · runs nothing", size: 26, width: 320, color: quiet, pos: [370, 588], vertical: { size: 22, width: 380, pos: [205, 812] } }
+            p_call: { type: packet, on: line, label: "tools/call\nget_weather\n{city: Leeds}", color: agent, dur: 1.8 }
+            p_res: { type: packet, on: line, reverse: true, label: "result", color: ok, dur: 1.4 }
+            res:
               type: card
-              page: call
+              page: s2
               title: "result"
               color: ok
-              pos: [770, 350]
-              lines: ['content: "Leeds, 10 °C, cloudy"', "isError: false"]
+              scale: 0.95
+              pos: [1400, 700]
+              vertical: { scale: 0.9, pos: [205, 978] }
+              lines: ["content:", '  "Leeds, 10 °C, cloudy"', "isError: false"]
               highlight:
                 - { id: content, match: '"Leeds, 10 °C, cloudy"', color: ok }
-            # page: lab
-            toy: { type: chip, page: lab, icon: server, text: "toy server · numbers made up", color: quiet, pos: [500, 350] }
+            ans: { type: arrow, from: client, to: model2, color: agent }
+            # declared after the cards, so the "?" can hop onto the menu
+            qm2: { type: text, page: s2, text: "?", size: 64, color: quiet, pos: [880, 272], vertical: { pos: [545, 360] } }
+            # scene 3 (the lab) adds to the same board
+            toy: { type: chip, page: s2, icon: server, text: "toy server · numbers made up", color: quiet, scale: 0.85, pos: [1380, 125], vertical: { pos: [780, 215] } }
+            pfx: { type: text, page: s2, text: "prefix → video 2", size: 30, width: 240, color: gateway, pos: [960, 380], vertical: { size: 26, width: 200, pos: [545, 580] } }
             term:
               type: terminal
               command: "python3 -B call_tool.py weather-tools-get-weather '{\"city\": \"Leeds\"}'"
               show: "0-2,5-10"
+              size: 26
+              vertical: { size: 28 }
               highlight:
                 - { id: method, match: "\"method\": \"tools/call\"", color: agent }
-                - { id: name, match: "weather-tools-get-weather", lines: "\"method\"", color: weather }
                 - { id: result, match: "\"(temperature_c|conditions)\": [^,]+", lines: "^  \"", color: ok }
+                - { id: prefix, match: "weather-tools", lines: "tools/call|call_tool", command: true, color: gateway }
               output: |
                 --> POST http://127.0.0.1:4744/servers/66fb78f21dc64587af61e4c36fe54b1f/mcp
                     {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "weather-tools-get-weather", "arguments": {"city": "Leeds"}}}
@@ -206,198 +217,204 @@ videos:
                   "temperature_c": 10,
                   "conditions": "cloudy"
                 }
-            # page: recap
-            r1: { type: chip, page: recap, text: "1  tools/list · the menu", color: agent, pos: [500, 150] }
-            r2: { type: chip, page: recap, text: "2  the model picks", color: model, pos: [500, 270] }
-            r3: { type: chip, page: recap, text: "3  tools/call · run by name", color: agent, pos: [500, 390] }
-            r4: { type: chip, page: recap, text: "4  a result", color: ok, pos: [500, 510] }
-            # page: cta
-            cta: { type: chip, page: cta, text: "Open the lab · See how tools reach an agent", color: user, pos: [500, 300] }
-            next: { type: text, page: cta, text: "Next: 10 agents × 20 MCP servers", size: 40, pos: [500, 450] }
+
+            # page s4: the recap, the scene-2 picture redrawn clean and numbered
+            rq: { type: bubble, page: s4, text: "Is it snowing in Leeds?", side: right, color: user, width: 460, visible: true, pos: [260, 70], vertical: { pos: [230, 50] } }
+            rreply: { type: bubble, page: s4, text: "No snow. Leeds is 10 °C and cloudy.", side: left, color: weather, width: 520, scale: 0.85, visible: true, pos: [780, 72], vertical: { width: 480, pos: [640, 140] } }
+            rabox: { type: box, page: s4, label: "Agent", labelSize: 40, color: agent, dashed: false, size: [560, 340], visible: true, pos: [350, 360], vertical: { size: [440, 400], pos: [240, 460] } }
+            rclient: { type: node, page: s4, label: "MCP client", color: agent, scale: 0.9, visible: true, pos: [480, 280], vertical: { pos: [300, 345] } }
+            rmodel: { type: chip, page: s4, icon: model, text: "Model", color: model, scale: 1.1, visible: true, pos: [190, 450], vertical: { pos: [140, 590] } }
+            rsrv: { type: box, page: s4, label: "Weather\nMCP server", labelSize: 38, color: weather, dashed: false, size: [340, 300], visible: true, pos: [1320, 340], vertical: { size: [290, 300], pos: [845, 400] } }
+            rgw: { type: chip, page: s4, font: mono, text: "get_weather", color: weather, scale: 1.1, visible: true, pos: [1320, 420], vertical: { pos: [845, 470] } }
+            rline: { type: arrow, from: rclient, to: rsrv, color: agent, offset: -14, visible: true }
+            rret: { type: arrow, from: rsrv, to: rclient, color: ok, offset: -14, visible: true }
+            b1: { type: chip, page: s4, text: "1 · tools/list", color: agent, scale: 0.85, pos: [850, 185], vertical: { pos: [575, 240] } }
+            b2: { type: chip, page: s4, text: "2 · picks", color: model, scale: 0.85, pos: [400, 452], vertical: { pos: [330, 590] } }
+            b3: { type: chip, page: s4, text: "3 · tools/call", color: agent, scale: 0.85, pos: [850, 235], vertical: { pos: [575, 290] } }
+            b4: { type: chip, page: s4, text: "4 · result", color: ok, scale: 0.85, pos: [800, 340], vertical: { pos: [560, 420] } }
+            calr: { type: chip, page: s4, icon: calendar, text: "training data ends: months ago", color: quiet, scale: 0.7, pos: [350, 372], vertical: { pos: [240, 480] } }
+            clockr: { type: icon, page: s4, icon: clock, label: "now", size: 48, color: model, pos: [1100, 72], vertical: { pos: [935, 140] } }
+            cta: { type: chip, page: s4, text: "Open the lab · See how tools reach an agent", color: user, pos: [800, 640], vertical: { pos: [500, 840] } }
+            next: { type: text, page: s4, text: "Next: 10 agents × 20 MCP servers", size: 40, pos: [800, 730], vertical: { pos: [500, 940] } }
         beats:
-          - { at: "months ago", show: [cal, model], stagger: 0.4 }
-          - { at: "How", show: ask, ring: cal }
+          - { at: "ChatGPT", ring: chat }
           - { at: "Leeds", mark: leeds }
+          - { at: "months ago", show: model, ring: cal }
+          - { at: "So where", pause: 0.8 }
+          - { at: "where", show: [ask, qm] }
+          - { at: "come from", ring: qm }
+          - { at: "Let's trace", ring: qm }
 
-      # 2. The answer: a tool
-      - id: answer
+      # 2. The model
+      - id: model
         vo: >-
-          The model, the part that reads and writes text, cannot know. The app
-          around it calls a tool that fetches live data. MCP is the standard way
-          to plug tools in.
+          The part writing the reply is the language model: it reads and writes
+          text, and what it knows ends at that calendar. Today's weather lies past
+          it, so alone it can only guess.
         beats:
-          - { page: answer, transition: erase, pause: 0.8 }
-          - { at: "The model", show: lm }
-          - { at: "cannot know", show: cant }
-          - { at: "The app around it", pause: 1.1 }
-          - { at: "The app around it", show: appbox }
-          - { at: "calls a tool", pause: 1.2 }
-          - { at: "calls a tool", show: [tool, a_out, a_back], stagger: 0.3 }
-          - { at: "MCP is the standard way", pause: 0.5 }
-          - { at: "MCP is the standard way", show: mcp }
+          - { at: "language model", show: lm }
+          - { at: "calendar", ring: [cal, clock], show: [gapline, past, nowl], stagger: 0.3 }
+          - { at: "Today's weather lies past it", ring: chat }
+          - { at: "guess", color: { qm: quiet }, show: guess }
 
-      # 3. Snow in Leeds
-      - id: snow
+      # 3. The app and a tool
+      - id: tool
         vo: >-
-          Without a tool, a model guesses. Larkfield's support assistant once
-          reported heavy snow in Leeds, and none fell: nobody had given it a
-          tool, so it had only its training.
+          So the app around the model calls a tool, a function in another program
+          that fetches live data, and hands back the result. MCP is the standard
+          way to plug tools in. What passes between them?
         beats:
-          - { page: snow, transition: erase, pause: 0.8 }
-          - { at: "Larkfield's support assistant", show: [asst, said], stagger: 0.6 }
-          - { at: "and none fell", show: nosnow }
-          - { at: "nobody had given it a tool", pause: 0.8 }
-          - { at: "nobody had given it a tool", show: slot }
-          - { at: "given it a tool", strike: slot }
+          - { at: "around the model", show: appbox }
+          - { at: "calls a tool", pause: 1.0 }
+          - { at: "tool", show: [tool, toolarr], stagger: 0.4 }
+          - { at: "hands back", show: back }
+          - { at: "MCP is the standard", pause: 0.6 }
+          - { at: "MCP", show: mcpw }
+          - { at: "passes", move: { qm: { landscape: [690, 615], vertical: [590, 790] } } }
+          - { at: "between them", ring: qm }
 
+      # ---- Scene 2. One lookup, end to end ------------------------------------
       # 4. The agent
       - id: agent
         vo: >-
-          Around the model sits the agent, the program that keeps the
-          conversation and carries out what the model decides. Ollie, the
-          engineer who built the assistant, put his fix there.
+          Same question, now with the whole machine drawn. The program receiving
+          it is the agent: it keeps the conversation and carries out what the
+          model decides, so the model sits inside it.
         beats:
-          - { page: agent, transition: erase, pause: 0.8 }
-          - { at: "sits the agent", show: abox }
-          - { at: "the program that keeps", pause: 0.5 }
-          - { at: "keeps the conversation", show: [duties, duties/0] }
-          - { at: "and carries out", pause: 1.0 }
-          - { at: "and carries out", show: duties/1 }
-          - { at: "Ollie", show: ollie }
-          - { at: "his fix there", ring: abox }
+          - { page: s2, transition: erase, pause: 0.8 }
+          - { at: "Same question", show: q2 }
+          - { at: "the agent", show: [abox, inarr, desc], stagger: 0.6 }
+          - { at: "the model sits inside", show: model2 }
 
-      # 5. A tool (same page)
-      - id: tool
-        vo: >-
-          He gave the agent a tool: get_weather, a function in another program
-          that the agent runs for the model. It takes a city and returns today's
-          weather.
-        beats:
-          - { at: "a tool", show: getw }
-          - { at: "another program", show: progbox }
-          - { at: "takes a city", text: { getw: { sub: "city in → weather out" } }, ring: getw }
-
-      # 6. An MCP server
+      # 5. The MCP server (get_weather and get_forecast are the lab's real tools)
       - id: server
         vo: >-
-          The program offering get_weather is an MCP server. MCP, the Model
-          Context Protocol, is one shared way to ask any such program for its
-          tools and run them.
+          The weather lives far right, in a separate program with two named
+          functions, get_weather and get_forecast. Each is a tool, and a program
+          offering tools this way is an MCP server. MCP is the Model Context
+          Protocol.
         beats:
-          - { page: server, transition: erase, pause: 0.8 }
-          - { at: "an MCP server", show: srv }
-          - { at: "the Model Context Protocol", show: mcpname }
-          - { at: "any such program", show: srv2 }
+          - { at: "far right", show: srv }
+          - { at: "two named functions", show: [gw, gf], stagger: 0.5 }
+          - { at: "get_weather", ring: gw }
+          - { at: "get_forecast", ring: gf }
+          - { at: "a tool", show: toolLbl }
+          - { at: "MCP server", show: srvLbl }
+          - { at: "Model Context Protocol", show: mcpName }
 
-      # 7. The MCP client (same page)
+      # 6. The MCP client
       - id: client
         vo: >-
-          Inside the agent, a part called the MCP client holds the connection to
-          exactly one MCP server. The protocol calls the agent itself the host.
+          Who talks to it? Not the model. Inside the agent sits the MCP client,
+          which holds the connection to exactly one server, this line. The
+          protocol calls the agent the host. What travels along that line?
         beats:
-          - { at: "the MCP client", show: client }
-          - { at: "exactly one", show: wire }
-          - { at: "the host", show: host }
+          - { at: "Not the model", show: [direct, xmark], stagger: 0.5 }
+          - { at: "Inside the agent", dim: direct }
+          - { at: "MCP client", show: client }
+          - { at: "this line", show: line }
+          - { at: "host", show: host }
+          - { at: "What travels", pause: 0.4 }
+          - { at: "that line", show: qm2 }
 
-      # 8. Messages: JSON-RPC
-      - id: rpc
+      # 7. tools/list (real names and descriptions)
+      - id: list
         vo: >-
-          Client and server exchange JSON documents in a format called JSON-RPC.
-          A request names a method, and the reply carries either a result or an
-          error. Remember that pair.
+          Small JSON messages, a format called JSON-RPC: a request names a method;
+          the reply is a result or an error. First comes tools/list, and back
+          comes the menu: each tool's name and a description written for the
+          model.
         beats:
-          - { page: rpc, transition: erase, pause: 0.8 }
-          - { at: "A request names", show: req }
-          - { at: "the reply carries", show: res }
-          - { at: "or an error", pause: 0.6 }
-          - { at: "or an error", show: err }
-
-      # 9. The menu: tools/list
-      - id: menu
-        vo: >-
-          The client asked the server for its menu with tools/list. Back came
-          each tool's name and a description written for the model: Get the
-          current made-up weather for a city.
-        beats:
-          - { page: menu, transition: erase, pause: 0.8 }
-          - { at: "menu", show: menu }
+          - { at: "Small JSON messages", ring: line }
+          - { at: "JSON-RPC", hide: qm2, show: json }
           - { at: "tools/list", travel: p_list }
-          - { at: "Get the current made-up weather", mark: d1 }
+          - { at: "back comes", travel: p_menu }
+          - { at: "menu", show: menu }
+          - { at: "description written", ring: menu }
 
-      # 10. The input schema (same page)
+      # 8. The input schema (real schemas)
       - id: schema
         vo: >-
-          Under each name sits an input schema, the inputs a tool needs and
-          their types. get_weather wants one, city, a string; get_forecast adds
-          days, a whole number, three by default.
+          Under each name sits what the tool needs, its input schema: get_weather
+          takes one input, city, a string; get_forecast adds days, a whole
+          number, three by default. Who picks from it?
         beats:
-          - { at: "an input schema", mark: s1 }
+          - { at: "input schema", show: schemaLbl, move: { qm2: { landscape: [1050, 500], vertical: [900, 760] } } }
+          - { at: "city", mark: s1 }
           - { at: "days", mark: s2 }
+          - { at: "Who picks", show: qm2 }
 
-      # 11. The model chooses
-      - id: choose
+      # 9. The model picks (illustrative: the lab has no model)
+      - id: picks
         vo: >-
-          Then the agent handed the model the question and that menu, and the
-          model answered with a request: call get_weather, city Leeds. It wrote
-          the request; it ran nothing.
+          The model does. The agent hands it the question and the menu, and it
+          answers with a request: call get_weather, city Leeds. Notice what it
+          did not do: it wrote the request and ran nothing.
         beats:
-          - { page: choose, transition: erase, pause: 0.8 }
-          - { at: "handed the model the question", show: q11 }
-          - { at: "and that menu", pause: 0.9 }
-          - { at: "and that menu", show: menu2 }
-          - { at: "a request", show: req11 }
-          - { at: "it ran nothing", show: ran }
+          - { at: "The model does", move: { qm2: { landscape: [130, 410], vertical: [120, 520] } } }
+          - { at: "does", hide: qm2 }
+          - { at: "the question", show: [qarr, marr], stagger: 0.6 }
+          - { at: "with a request", pause: 0.3 }
+          - { at: "a request", show: req }
+          - { at: "Notice", ring: req }
+          - { at: "ran nothing", show: runs, ring: xmark, undim: direct }
+          - { at: "nothing", dim: direct }
 
-      # 12. The call: tools/call
+      # 10. tools/call and the result (Leeds 10 °C cloudy is the lab's real output)
       - id: call
         vo: >-
-          So the client sent tools/call with the tool's name and arguments. The
-          server ran it and replied with a result whose content held the answer:
-          Leeds, ten degrees, cloudy.
+          Running is the client's job: it sends tools/call down the same line,
+          with name and arguments. The server runs the tool and replies with a
+          result; its content is the answer, Leeds, ten degrees, cloudy, and the
+          chat answers: no snow.
         beats:
-          - { page: call, transition: erase, pause: 0.8 }
-          - { at: "tools/call", travel: p_call }
-          - { at: "ran it", ring: csrv }
+          - { at: "client's job", move: { req: { landscape: [400, 310], vertical: [300, 400] } }, dim: [qarr, marr] }
+          - { at: "tools/call", travel: p_call, hide: req }
+          - { at: "runs the tool", ring: gw }
           - { at: "a result", travel: p_res }
-          - { at: "whose content", show: rcard }
+          - { at: "its content", show: res }
           - { at: "Leeds, ten degrees", mark: content }
+          - { at: "the chat answers", show: [ans, reply], stagger: 0.6 }
+          - { at: "no snow", ring: reply }
 
-      # 13. In the lab (real terminal output)
+      # ---- Scene 3. In the lab (real terminal output) -------------------------
+      # 11. The same call, typed
       - id: lab
         vo: >-
-          In the lab you send this tools/call yourself. A toy server makes the
-          weather up, and the name starts with weather-tools, a prefix the next
+          In the lab you send this tools/call yourself, as the client. The result
+          is the same, ten and cloudy, from a toy server that makes the weather
+          up. Only the name differs: a prefix, weather-tools, which the next
           video explains.
         beats:
-          - { page: lab, transition: slide, pause: 0.8, layout: split, run: term }
-          - { at: "tools/call yourself", mark: method }
-          - { at: "A toy server", show: toy }
-          - { at: "makes the weather up", mark: result }
-          - { at: "the name starts with", mark: name }
+          - { pause: 0.6, layout: split, run: term }
+          - { at: "tools/call yourself", mark: method, travel: p_call }
+          - { at: "ten and cloudy", mark: result, ring: res }
+          - { at: "toy server", show: toy }
+          - { at: "prefix", mark: prefix, show: pfx }
 
-      # 14. Recap
+      # ---- Scene 4. Recap -----------------------------------------------------
+      # 12. Four steps on one picture
       - id: recap
         vo: >-
-          Focus on what just happened. The client fetched the menu with
-          tools/list, the model picked a tool, the client ran it with
-          tools/call, and the weather returned as a result.
+          Focus on what just happened. One, tools/list fetched the menu. Two, the
+          model picked and wrote the request. Three, tools/call ran it. Four, the
+          result came back: a model trained months ago had today's weather.
         beats:
-          - { page: recap, transition: erase, pause: 0.8, layout: canvas }
-          - { at: "fetched the menu with tools/list", show: r1 }
-          - { at: "the model picked", pause: 0.2 }
-          - { at: "the model picked", show: r2 }
-          - { at: "the client ran it", pause: 0.6 }
-          - { at: "the client ran it", show: r3 }
-          - { at: "and the weather returned", show: r4 }
+          - { page: s4, transition: erase, pause: 0.8, layout: canvas }
+          - { at: "One", show: b1 }
+          - { at: "Two", show: b2 }
+          - { at: "Three", show: b3 }
+          - { at: "Four", show: b4 }
+          - { at: "months ago", show: [calr, clockr], stagger: 0.3 }
 
-      # 15. Call to action
+      # 13. Call to action
       - id: cta
         vo: >-
           Open the lab, See how tools reach an agent, and ask for the weather in
           Leeds yourself. Next: ten AI agents, twenty MCP servers, and two
           hundred connections.
         beats:
-          - { page: cta, transition: erase, pause: 0.8 }
+          - { pause: 0.3 }
           - { at: "Open the lab", show: cta }
           - { at: "Next", show: next }
 

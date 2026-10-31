@@ -29,8 +29,8 @@ const WRITE_KINDS = new Set(['title', 'kicker', 'text']);
 const PULSE_KINDS = new Set(['node', 'chip', 'circle', 'list', 'card', 'bubble', 'icon', 'logo', 'chat', 'dots']);
 /** Elements whose lines can carry highlights that a `mark` beat lights. */
 const MARKED_KINDS = new Set(['card', 'chat']);
-const W = 1000;
-const H = 700;
+/** The default grid; a scene may set its own per format (`grid: { vertical: [w, h], landscape: [w, h] }`). */
+const GRID = [1000, 700];
 
 /** Where the canvas (and, in `split`, the terminal) sits in each format, in frame pixels. */
 export const REGIONS = {
@@ -183,8 +183,24 @@ function lineSet(spec, n) {
 
 // --- the scene ------------------------------------------------------------------------------
 
+/**
+ * A value for this format: `{ vertical: x, landscape: y }` picks one, anything else is shared.
+ * Elements may carry `vertical: { ... }` / `landscape: { ... }` overrides (pos, size, scale, width, ...)
+ * so one scene can be laid out tall for the vertical frame and wide for the landscape one.
+ */
+function forFormat(x, format) {
+  if (x && typeof x === 'object' && !Array.isArray(x) && ('vertical' in x || 'landscape' in x) && Object.keys(x).every((k) => k === 'vertical' || k === 'landscape')) return x[format];
+  return x;
+}
+function specFor(spec, format) {
+  if (!spec || typeof spec !== 'object' || !(spec.vertical || spec.landscape)) return spec;
+  const { vertical, landscape, ...rest } = spec;
+  return { ...rest, ...((format === 'landscape' ? landscape : vertical) || {}) };
+}
+
 export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} } = {}) {
   const scene = v.scene || {};
+  const [W, H] = forFormat(scene.grid, format) || GRID;
   const colorMap = v.colors || {};
   const pal = PALETTES[theme] || PALETTE;
   const colorOf = (name) => {
@@ -198,7 +214,10 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
   const DRIFT = pace.drift ?? 0;
   const PULSE = Boolean(pace.pulse ?? 1);
   const CARD_HOLD = pace.cardHold ?? 1.4;
-  const regions = REGIONS[format] || REGIONS.vertical;
+  // A scene may move the canvas and the split terminal for one format (`regions: { landscape: { split: { term: {...} } } }`).
+  const own = (scene.regions || {})[format] || {};
+  const base = REGIONS[format] || REGIONS.vertical;
+  const regions = { canvas: { ...base.canvas, ...(own.canvas || {}) }, split: { ...base.split, ...(own.split || {}) } };
 
   const root = h('div', 'cv-root');
   const cv = h('div', 'cv');
@@ -225,9 +244,10 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
 
   // Each page with a `title` gets a hand-written heading that writes on as the page opens.
   const pageList = scene.pages || [];
-  const allElements = { ...(scene.elements || {}) };
+  const allElements = {};
+  for (const [id, spec] of Object.entries(scene.elements || {})) allElements[id] = specFor(spec, format);
   for (const pg of pageList) {
-    if (pg.title) allElements[`__title_${pg.id}`] = { type: 'title', text: pg.title, size: pg.titleSize || 48, width: 'auto', underline: true, pos: pg.titlePos || [500, 62], page: pg.id, visible: true, color: pg.color };
+    if (pg.title) allElements[`__title_${pg.id}`] = { type: 'title', text: pg.title, size: pg.titleSize || 48, width: 'auto', underline: true, pos: pg.titlePos || [W / 2, 62], page: pg.id, visible: true, color: pg.color };
   }
 
   for (const [id, spec] of Object.entries(allElements)) {
@@ -236,7 +256,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
     if (type === 'arrow') {
       const g = s('g', { class: 'cv-arrow' });
       const path = s('path', { class: 'cv-arrow-line', stroke: c, 'stroke-dasharray': spec.dashed ? '10 9' : 'none' });
-      const head = s('path', { class: 'cv-arrow-head', fill: c });
+      const head = s('path', { class: 'cv-arrow-head', fill: c, visibility: spec.head === false ? 'hidden' : 'visible' });
       g.append(path, head);
       let label = null;
       if (spec.label) {
@@ -266,7 +286,8 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       continue;
     }
     if (type === 'packet') {
-      const node = h('div', 'cv-el cv-packet', spec.label || '');
+      // A label with line breaks rides as a small rounded block, one line per row.
+      const node = h('div', `cv-el cv-packet${String(spec.label || '').includes('\n') ? ' multi' : ''}`, spec.label || '');
       node.style.setProperty('--c', c);
       layer.appendChild(node);
       addItem(id, spec, node, 'packet');
@@ -274,6 +295,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
     }
     if (type === 'terminal') {
       const term = buildTerminal(id, spec, colorOf);
+      if (spec.size) term.el.style.setProperty('--term-size', `${spec.size}px`);
       root.appendChild(term.el);
       const it = addItem(id, spec, term.el, 'terminal');
       it.term = term;
@@ -338,6 +360,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       node.style.width = `${bw}px`;
       node.style.height = `${bh}px`;
       if (spec.label != null) rich(node.appendChild(h('div', 'cv-label')), spec.label);
+      if (spec.label != null && spec.labelSize) node.lastChild.style.fontSize = `${spec.labelSize}px`;
     } else if (type === 'dots') {
       // A column (or `row: true`) of `n` small dots: a crowd of agents or servers.
       node = h('div', `cv-el cv-dots${spec.row ? ' row' : ''}`);
@@ -398,7 +421,9 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       for (const line of spec.lines || []) {
         // A line may be { text, reveal: <highlight id> }: its room is kept, and it shows once that highlight is marked.
         const row = h('div', 'cv-card-line');
-        const sp = lineSpans(typeof line === 'object' ? line.text : line, spec.highlight || [], colorOf);
+        if (typeof line === 'object' && line.size) row.style.fontSize = `${line.size}px`;
+        if (typeof line === 'object' && line.color) row.style.color = colorOf(line.color);
+        const sp = lineSpans(typeof line === 'object' ? line.text : line, spec.highlight || [], colorOf, !(typeof line === 'object' && line.plain));
         row.appendChild(sp.frag);
         marks.push(...sp.marks);
         node.appendChild(row);
@@ -451,7 +476,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
     else asList(b.undim).forEach((id) => ev(id, { t, k: 'undim' }));
     asList(b.ring).forEach((id) => ev(id, { t, k: 'ring' }));
     asList(b.travel).forEach((id, k) => ev(id, { t: t + k * (b.stagger || 0), k: 'travel' }));
-    for (const [id, p] of Object.entries(b.move || {})) ev(id, { t, k: 'move', v: p });
+    for (const [id, p] of Object.entries(b.move || {})) ev(id, { t, k: 'move', v: forFormat(p, format) });
     for (const [id, txt] of Object.entries(b.text || {})) ev(id, { t, k: 'text', v: txt });
     for (const [id, col] of Object.entries(b.color || {})) ev(id, { t, k: 'color', v: col });
     asList(b.strike).forEach((id) => ev(id, { t, k: 'strike' }));
@@ -467,6 +492,9 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
   for (const it of items.values()) it.ev.sort((a, b) => a.t - b.t);
   sceneEv.sort((a, b) => a.t - b.t);
   pageEv.sort((a, b) => a.t - b.t);
+  eraser.style.height = `${H + 180}px`;
+  cardOver.style.left = `${W / 2}px`;
+  cardOver.style.top = `${Math.round(H * 0.47)}px`;
   cv.appendChild(eraser);
   cv.appendChild(cardOver);
   const firstPage = pageList[0]?.id ?? null;
@@ -754,7 +782,7 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
       const ux = (p1[0] - p0[0]) / len;
       const uy = (p1[1] - p0[1]) / len;
-      const base = [tip[0] - ux * 16, tip[1] - uy * 16];
+      const base = it.spec.head === false ? tip : [tip[0] - ux * 16, tip[1] - uy * 16];
       it.path.setAttribute('d', `M${p0[0].toFixed(1)} ${p0[1].toFixed(1)} L${base[0].toFixed(1)} ${base[1].toFixed(1)}`);
       it.head.setAttribute('d', `M${tip[0].toFixed(1)} ${tip[1].toFixed(1)} L${(base[0] - uy * 8).toFixed(1)} ${(base[1] + ux * 8).toFixed(1)} L${(base[0] + uy * 8).toFixed(1)} ${(base[1] - ux * 8).toFixed(1)} Z`);
       const a = String(clamp(draw * 3, 0, 1) * st.alpha * afx * (1 - 0.75 * st.dim));
@@ -957,8 +985,13 @@ function buildTerminal(id, spec, colorOf) {
   const cmdLine = h('div', 'cv-term-line cv-term-cmd');
   cmdLine.append(h('span', 'ps1', `${spec.prompt || '$'} `));
   const cmd = h('span', 'cmd');
+  // Once typed, the command shows with the highlights that ask for it (`command: true`), so a mark can light it.
+  const cmdFull = h('span', 'cmd');
+  const cmdSp = lineSpans(String(spec.command || ''), (spec.highlight || []).filter((x) => x.command), colorOf, false);
+  cmdFull.appendChild(cmdSp.frag);
+  cmdFull.style.display = 'none';
   const cursor = h('span', 'cursor');
-  cmdLine.append(cmd, cursor);
+  cmdLine.append(cmd, cmdFull, cursor);
   const view = h('div', 'cv-term-view');
   const scroll = h('div', 'cv-term-scroll');
   view.appendChild(scroll);
@@ -1012,13 +1045,18 @@ function buildTerminal(id, spec, colorOf) {
       const times = st.run;
       if (!times) {
         cmd.textContent = '';
+        cmdFull.style.display = 'none';
         rows.forEach((r) => { r.node.style.display = 'none'; });
         endLine.style.display = 'none';
         cursor.style.visibility = Math.floor(t * 2) % 2 === 0 ? 'visible' : 'hidden';
         return;
       }
       const n = Math.round(clamp((t - times.typeStart) / (times.typeEnd - times.typeStart), 0, 1) * spec.command.length);
-      cmd.textContent = spec.command.slice(0, n);
+      const typed = n >= spec.command.length;
+      cmd.textContent = typed ? '' : spec.command.slice(0, n);
+      cmd.style.display = typed ? 'none' : '';
+      cmdFull.style.display = typed ? '' : 'none';
+      for (const m of cmdSp.marks) m.node.classList.toggle('on', st.marks.has(m.id));
       const blink = Math.floor(t * 2) % 2 === 0;
       cursor.style.visibility = t < times.outputStart && (t < times.typeStart || n >= spec.command.length ? blink : true) ? 'visible' : 'hidden';
       rows.forEach((r) => { r.node.style.display = t >= times.outputStart + r.at * times.lineGap ? '' : 'none'; });

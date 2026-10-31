@@ -75,7 +75,7 @@ html, body { background: var(--page); }
   padding: 16px 24px; border: 3px solid var(--c, var(--ink)); border-radius: 22px; background: var(--fill);
   min-width: 170px; justify-content: center;
 }
-.cv-node .cv-label { font-family: var(--hand); font-weight: 700; font-size: 42px; line-height: 1.05; color: var(--c, var(--ink)); }
+.cv-node .cv-label { font-family: var(--hand); font-weight: 700; font-size: 42px; line-height: 1.05; color: var(--c, var(--ink)); white-space: pre; text-align: center; }
 .cv-node .cv-sub { font-family: var(--font-mono); font-size: 20px; color: var(--muted); margin-top: 4px; }
 .cv-circle {
   width: 76px; height: 76px; border-radius: 50%; border: 3px solid var(--c, var(--ink)); background: var(--fill);
@@ -120,6 +120,8 @@ html, body { background: var(--page); }
   padding: 4px 14px; border-radius: 999px; background: var(--c, var(--ink)); color: var(--fill);
   font-family: var(--font-mono); font-weight: 700; font-size: 23px; box-shadow: 0 0 0 4px var(--page); font-variant-ligatures: none;
 }
+/* A packet whose label has line breaks (`label: "tools/call\nget_weather"`). */
+.cv-packet.multi { white-space: pre; text-align: center; line-height: 1.25; border-radius: 16px; padding: 6px 14px; }
 .cv-focus { fill: none; stroke-width: 3; stroke-dasharray: 12 9; }
 .cv-ring { fill: none; stroke-width: 3; }
 
@@ -139,14 +141,14 @@ html, body { background: var(--page); }
 .cv-term-bar i { width: 14px; height: 14px; border-radius: 50%; background: var(--term-line); display: block; }
 .cv-term-bar span { margin-left: 12px; font-family: var(--font-mono); font-size: 18px; color: var(--term-dim); }
 .cv-term-body { padding: 16px 20px 18px; }
-.cv-term-line, .cv-term-scroll { font-family: var(--font-mono); font-size: 26px; line-height: 1.38; color: #e6e9f2; white-space: pre-wrap; overflow-wrap: anywhere; font-variant-ligatures: none; }
+.cv-term-line, .cv-term-scroll { font-family: var(--font-mono); font-size: var(--term-size, 26px); line-height: 1.38; color: #e6e9f2; white-space: pre-wrap; overflow-wrap: anywhere; font-variant-ligatures: none; }
 .cv-term-cmd { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 2px dashed var(--term-line-2); }
 .cv-term-gap { color: #5d6370; }
 .cv-term-view { position: relative; overflow: hidden; }
 .cv-term .ps1 { color: #6ee7a8; font-weight: 700; }
 .cv-term .cmd { color: #fff; font-weight: 600; }
 .cv-term .cursor { display: inline-block; width: 0.6em; height: 1.05em; vertical-align: -0.18em; background: #e6e9f2; }
-.fmt-landscape .cv-term-line, .fmt-landscape .cv-term-scroll { font-size: 25px; }
+.fmt-landscape .cv-term-line, .fmt-landscape .cv-term-scroll { font-size: var(--term-size, 25px); }
 
 /* ----------------------------------------------------------------- captions -- */
 .cap-off #captions { display: none; }
@@ -221,7 +223,7 @@ html, body { background: var(--page); }
 /* A box round other elements (`type: box`), its label at the top (or `labelAt: bottom`). */
 .cv-box { border: 3px dashed var(--c, var(--muted)); border-radius: 20px; }
 .cv-box.solid { border-style: solid; background: color-mix(in srgb, var(--c, var(--muted)) 7%, transparent); }
-.cv-box > .cv-label { position: absolute; left: 18px; top: 6px; font-family: var(--hand); font-weight: 700; font-size: 30px; color: var(--c, var(--muted)); white-space: nowrap; }
+.cv-box > .cv-label { position: absolute; left: 18px; top: 6px; font-family: var(--hand); font-weight: 700; font-size: 30px; color: var(--c, var(--muted)); white-space: pre; line-height: 1.05; }
 .cv-box.label-bottom > .cv-label { top: auto; bottom: 6px; }
 
 /* A mesh's count. */
