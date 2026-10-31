@@ -48,3 +48,6 @@ labs/*/checks/grader-*
 # scratch and default output. Regenerated on demand; never commit a rendered video.
 scripts/shorts/.cache/
 scripts/shorts/.out/
+# scripts/shorts/finish.mjs: the pinned SoundCraft/FilmCraft releases it downloads when
+# the CLIs are not installed. Third-party binaries, fetched and checksum-verified on demand.
+scripts/shorts/.tools/

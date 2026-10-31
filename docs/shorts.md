@@ -325,3 +325,103 @@ trailing silence is trimmed, and pauses inside a clip are capped at `pace.maxPau
 The older one-screen-per-segment visuals (`visuals:` with `card`, `chat`, `agent`,
 `diagram`, `terminal`, `code`) still render. A legacy `diagram` uses the lessons'
 `dashboard/src/diagram.js`.
+
+## Finish: loudness pass and FilmCraft hand-off
+
+`scripts/shorts/finish.mjs` runs after a render. It polishes the narration with
+[SoundCraft](https://github.com/storytold/soundcraft), puts it back into both MP4s, and builds a
+[FilmCraft](https://github.com/storytold/filmcraft) project per video for the owner. See
+[`docs/research/effectcraft.md`](research/effectcraft.md) for what these tools are.
+
+```bash
+node scripts/shorts/finish.mjs labs/see-how-tools-reach-an-agent/learn/short.yaml \
+     --in scripts/shorts/.out                  # where render.mjs wrote the MP4s and VTTs
+```
+
+| Option | What it does |
+|---|---|
+| `--out <dir>` | where finished files go, one folder per video (default `<in>/finished`) |
+| `--video <id>[,<id>]` | only these videos (default: every rendered video of the file) |
+| `--lufs <n>` / `--true-peak <n>` | loudness target (default -14 LUFS) and true-peak limit of the final MP4 (default -1 dBTP) |
+| `--fc-export <id>\|none` | export this video's vertical sequence from FilmCraft too, and compare it with the ffmpeg-muxed MP4 (default: the first video; about 5 minutes) |
+| `--no-filmcraft` | audio pass only |
+| `--fetch-tools` | ignore installed CLIs and use the pinned download under `scripts/shorts/.tools/` |
+
+**Tools.** It needs `soundcraft-cli` and `filmcraft-cli` **0.15.0**. It looks on `PATH`, then in
+`/opt/craft/<app>/bin` (where `scripts/setup-cloud-env.sh` installs them). If neither has the
+pinned version, it downloads the official linux tarball from the GitHub release, checks it against
+the SHA-256 pinned in the script *and* the release's `SHA256SUMS.txt`, and unpacks it under
+`scripts/shorts/.tools/` (gitignored). It never uses a mirror. ffmpeg is still needed for muxing
+and for the cross-checks.
+
+**What it does, per video:**
+
+1. Rebuilds the timeline with `render.mjs --check` (cached narration, no API call). It stops if
+   the VTT next to the MP4 differs from the script's captions now, or if the narration WAV in
+   `scripts/shorts/.cache/build/` has a different length: re-render first.
+2. **SoundCraft pass** on that narration WAV (the raw mix, before the render's own `loudnorm`):
+   a trim to about -20 LUFS, a gentle de-esser (6.5 kHz, at most 6 dB, about 1.5 dB less energy
+   above 5 kHz), a gentle compressor (2.5:1, soft knee), then on a master track a gain to the target
+   and the maximizer as a -1.5 dBFS ceiling. The master gain is found in 2-3 bounces, each read from
+   SoundCraft's own bounce report (LUFS, peak, true peak). The output is a 48 kHz 24-bit stereo
+   WAV with exactly as many samples as the input, and the script checks that no sample has moved.
+3. **Mux**: the WAV goes into both MP4s as AAC 192k, with `-c:v copy`. The script checks that the
+   video stream is byte-identical, the durations are unchanged, the audio lines up with the raw
+   narration to the sample, nothing clips, and the first and last words are present.
+4. **FilmCraft project** (`<id>.fcproj`) with two sequences, vertical and landscape, each with:
+   - V1 "Picture": the finished MP4 (picture only)
+   - A1 "Narration (SoundCraft)": the polished WAV on its own track
+   - A2 "Music (empty)": a spare track for a bed
+   - C1: the VTT as an English caption track
+   - a marker at every page break (rose) and every cue word (green), named after the cue phrase,
+     from the timeline
+   Then it exports OTIO and FCP7 XML per sequence, the markers as CSV, and the captions as SRT.
+
+Loudness is measured twice, by SoundCraft and by ffmpeg's `ebur128`, before and after; everything
+goes into `report.json` (per video and for the whole run).
+
+**Target.** -14 LUFS integrated with a true peak of at most -1 dBTP is the usual target for
+short-form social video. It is a **convention, not a platform rule**: the platforms do not
+publish a binding loudness spec for uploads, and those that normalise playback mostly turn loud
+uploads down rather than quiet ones up. The render's built-in one-pass `loudnorm` left our videos
+at about -16.7 LUFS, so the finish step is what actually reaches the target.
+
+**Output** in `<out>/<id>/` (never commit it):
+
+| File | What |
+|---|---|
+| `<id>-vertical.mp4`, `<id>-landscape.mp4` | the finished videos |
+| `<id>-narration.wav` | the polished narration |
+| `<id>.vtt`, `<id>.srt` | captions (SRT exported by FilmCraft) |
+| `<id>-markers.csv` | page breaks and cue words (FilmCraft's marker CSV) |
+| `<id>.fcproj` | the FilmCraft project; it points at the files in this folder, so keep them together |
+| `<id>-vertical.otio`, `<id>-landscape.otio`, `<id>-*.xml` | the same timelines for other editors (OTIO carries markers, not captions) |
+| `soundcraft/<id>.scraft` | the SoundCraft session with the chain, to adjust it by ear |
+| `<id>-vertical-filmcraft.mp4` | only for `--fc-export`: the same sequence exported by FilmCraft |
+| `<id>-landscape.jpg`, `report.json` | the poster frame, and every number the checks used |
+
+**Results on the five MCP videos (2026-10-31).** The raw narration was at -27.0 to -27.7 LUFS, and
+the rendered MP4s at -16.5 to -16.9 LUFS with a true peak of about -4 dBTP. After the finish step
+every MP4 reads -14.1 LUFS and -1.2 to -1.3 dBTP, in both SoundCraft and ffmpeg. There are no
+clipped samples, durations and video streams are unchanged, and the audio has no sample offset. A
+whole run takes about 25 minutes on 4 cores, of which about 5 minutes are the FilmCraft export. The
+FilmCraft export of `mcp-what-is-mcp` (vertical, H.264 CRF 18) matched the ffmpeg-muxed file:
+
+- the same 5,086 frames
+- audio sample-aligned
+- SSIM 0.996 (0.995 when shifted by one frame)
+- PSNR 50.5 dB
+- the same loudness
+
+**Quirks found in SoundCraft 0.15 and FilmCraft 0.15:**
+
+- `mix.insert` ignores its `params`, so the script sets them with `mix.insert_params`.
+- A mono track is panned into the stereo mix at -3 dB per side. Loudness is unchanged, but
+  SoundCraft's peak reading for a mono file is 3 dB lower than ffmpeg's.
+- SoundCraft decodes AAC about 60 ms short, so to meter an MP4 the script decodes it with
+  ffmpeg first.
+- A dynamic de-esser moves the phase of the sibilants. A full-band correlation can read that as a
+  1-sample shift, so the sync checks use the band below 3 kHz.
+- FilmCraft snaps clips to whole frames, so the WAV on A1 ends up to one frame (33 ms) early, in
+  the silent tail. Its own export pads the audio to the video's length.
+- FilmCraft takes marker colours from its own label set (Rose, Green, …), not "Red".
