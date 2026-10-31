@@ -28,6 +28,18 @@ of `docs/research/mcp-gateway-scripts.md` (what is MCP, why an MCP gateway, virt
 when a tool fails) plus an A/B cut of the second one's hook. Each script row is one segment
 and one board page, and the segment's `vo` is the row's VOICE word for word.
 
+## Approval (owner rule, 2026-10-31)
+
+Nothing is rendered or narrated until the owner has approved that video's transcript.
+
+1. Write or change one video's script (docs/research/<topic>-scripts.md, or the lab's short.yaml).
+2. Post the full spoken text of that video in chat, page by page, grouped by scene.
+3. Revise it with the owner until they validate the transcript.
+4. Ask the owner for the green light to build that video, and render only after a clear yes.
+
+One video at a time: approval of one video's transcript or build never covers another video,
+and any change to an approved transcript needs approval again.
+
 ## Render
 
 ```bash
