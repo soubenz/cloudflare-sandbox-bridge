@@ -122,7 +122,10 @@ so the first piece of the answer lands within about 20 s.
   may have five or six such boards, erased when the next question starts, with a spoken bridge
   and one small carried-over anchor (a question chip, a tiny map in a corner) across each
   erase. The board carries short names and real data only; definitions are spoken, and the
-  voice never reads an on-screen label aloud (docs/video-prompt.md, FLOW). Each VOICE cell picks up the previous page or ends with the question the next page
+  voice never reads an on-screen label aloud (docs/video-prompt.md, FLOW). Since the third pass
+  on V1 (2026-10-31, after the owner's note on rushing and missing explanations) every claim a
+  newcomer would question carries its reason in the same breath or the next sentence, sourced in
+  NOTE, and a `pause:` follows each key reason (see NOTE below). Each VOICE cell picks up the previous page or ends with the question the next page
   answers; those hand-off questions are narrated, the one exception to the no-questions rule
   below. One running example stays on the board from the hook to the recap (V1 the Leeds
   question, V2 the 10 × 20 zoomed to 3 × 5, V3 Support's box and the refund tool, V4 the
@@ -142,7 +145,10 @@ so the first piece of the answer lands within about 20 s.
   the earliest, once the answer has begun, as the worked example.
 - **NOTE** says what is lab-real (verbatim terminal output from `call_tool.py` against the
   lab's own services, already captured in `learn/short.yaml`) and what is illustrative, with
-  the source number from the list at the end. A fact cut from the voice is noted there too.
+  the source number from the list at the end. A fact cut from the voice is noted there too. A
+  line `pause: 0.8` before or after quoted words asks the render for that much silence at that
+  point (the `pause:` beat of `short.yaml`, docs/shorts.md), 0.6-1.0 s, on top of the page
+  break; from V1's third pass on, one follows each key "why" so it lands.
 - **Lengths.** Word counts are for VOICE only. The estimate is words at 170 a minute (the
   Workers AI voice at natural speed), plus 0.8 s of silence at every page break and the
   renderer's 0.3 s lead and 2.5 s tail. The renderer's own beat holds may add a few seconds.
@@ -166,59 +172,82 @@ The four videos are a mini-course in this order, and each one ends by pointing a
 - **id** `mcp-what-is-mcp` · **idea** an agent asks an MCP server for its menu of tools and
   calls one by name · **running example** one question, "Is it snowing in Leeds?", followed
   from the chat to the weather server and back · **story** none spoken (no Larkfield, no Ollie:
-  one example, six small boards) · **voice** 429 words on 14 pages across 6 boards, 5 erases
-  (one of them the lab's layout split), about 2:31 spoken, about 2:45 with the pauses.
+  one example, six small boards) · **voice** 434 words on 16 pages across 6 boards, 5 erases
+  (one of them the lab's layout split), about 2:33 spoken, about 2:50 with the fifteen page
+  breaks and the three mid-page pauses (about 153 words a minute overall, silences included).
 
-Rewritten 2026-10-31 (second pass) after the owner watched the four-scene cut: the big scene-2
-board had grown to a dozen things and the copy read like captions. Now **one board answers one
-question and holds at most five things**; when the next question starts, the board is erased
-and a fresh one begins. Continuity across each erase comes from a spoken bridge (the first
-words of the next page) and one small carried-over anchor: the Leeds question chip on board 2,
-a tiny map of agent → line → server in the corner of boards 3, 4 and 5. **The screen shows,
-the voice explains**: the board carries short names (1-3 words) and real data (tool names, the
-request, the result, the schema, the terminal); every definition and every "why" is spoken and
-never written. The 13-page four-scene cut it replaces is in git history (commit b68fa89).
+Rewritten 2026-10-31 (third pass) after the owner's note on the six-board cut: "I feel you
+rushed a bit some parts, and also sometimes you are expected to give an explanation but you
+don't. For example when you said the request doesn't come from the model, why is that? Why was
+that choice made?" Every statement a newcomer would question now carries its reason in the same
+breath or the next sentence, each reason grounded in the brief or in a source quoted in NOTE,
+and the pace is slowed: a `pause:` (0.8 s) after each key "why", on top of the page breaks, and
+the details that did not earn their time are cut (the host label, the `days` default, the
+request-and-reply shape of JSON-RPC, the "two hundred connections" of the pointer). The six
+boards, the one-question-per-board rule, the show-don't-read rule, the whiteboard voice, the
+hook, the lab-real output and the call to action are kept from the second pass (commit bb518b1).
+
+The whys, and where each lands:
+- why the model can't look it up itself (page 2): a model only reads and writes text, so it
+  fetches nothing; something outside it has to act (brief §1; source 14).
+- why a standard (page 6): build a server once and any app that speaks MCP can use it, instead
+  of wiring every tool into every app (source 1).
+- why the model doesn't talk to the server (page 7): it can't, as page 2 said; the client holds
+  the connection (brief §1, §2.2).
+- why the menu carries descriptions (page 9): the model picks a tool by reading them (brief
+  §7.11; source 14).
+- why an input schema (page 10): it tells the model what to fill in and lets the server check
+  what arrives (source 4; lab-real, brief §10 A4).
+- why the model only writes the request while the app runs it (page 12): it keeps the app in
+  control, so it can show you the request and let you say no, hold any keys, and log what was
+  called (source 4: human in the loop, show inputs, log usage; source 10 and brief §2.9: the
+  client holds the credential).
 
 Board plan (question · things · anchor):
 1. **The frozen model** (pages 1-3) · how does a model trained months ago answer about now? ·
    chat window, model chip with its calendar, the dashed "months ago | now" line, the app frame,
    the tool chip with the MCP arrow · none (the hook board).
-2. **Who's involved** (pages 4-6) · who is in the picture? · Leeds chip, agent box with the model
-   and the MCP client inside it, the line, the weather MCP server with two tool chips, the host
-   label · the Leeds question chip, top-left.
-3. **Asking for the menu** (pages 7-9) · what travels along the line, first? · the line drawn
+2. **Who's involved** (pages 4-7) · who is in the picture, and why a standard? · Leeds chip,
+   agent box with the model and the MCP client inside it, the line, the weather MCP server with
+   two tool chips, two faded "any app" boxes · the Leeds question chip, top-left.
+3. **Asking for the menu** (pages 8-10) · what travels along the line, first? · the line drawn
    large with "JSON-RPC" on it, the tools/list packet, the menu card, the input-schema zoom card ·
    the tiny map, top-left.
-4. **Making the call** (pages 10-11) · who picks, and who runs it? · the question and the menu
-   going into the model, the request card, the MCP client with the tools/call packet riding to
-   the server, the result card, the reply bubble · the tiny map, top-left.
-5. **In the lab** (page 12) · what does the same call look like typed? · the terminal, large ·
+4. **Making the call** (pages 11-13) · who picks, who runs it, and why that split? · the question
+   and the menu going into the model, the request card, the MCP client with its three marks
+   (tick-and-cross, key, log line) and the tools/call packet riding to the server, the result
+   card, the reply bubble · the tiny map, top-left.
+5. **In the lab** (page 14) · what does the same call look like typed? · the terminal, large ·
    the tiny map, bottom-left.
-6. **Recap** (pages 13-14) · what just happened? · the whole flow redrawn small and clean, four
+6. **Recap** (pages 15-16) · what just happened? · the whole flow redrawn small and clean, four
    numbered badges, the calendar and the clock, the lab chip · the redraw itself.
 
 | # | SCENE / PAGE | ON SCREEN | VOICE | NOTE |
 |---|---|---|---|---|
-| 1 | **S1 The frozen model** · Hook | kicker "INTERVIEW QUESTION", caption "What is MCP?", title "ChatGPT was trained months ago. How does it know today's weather?" (all at 0 s, top of the board); [ChatGPT] chat window "ChatGPT" centre-right: user bubble "Is it snowing in Leeds?", reply bubble "Leeds, right now: 10 °C, cloudy" with a ticking clock "now"; [months ago] white chip "model" left of the chat, under a torn grey calendar chip "months ago"; [where] a "?" on the arrow from the model chip to the reply, pulsing from 0.5 s; [Leeds] ring on "Leeds" in the user bubble | Ask ChatGPT whether it's snowing in Leeds right now, and it can tell you, even though its training ended months ago. So where did that answer come from? Let's trace it. | Owner's hook A (2026-10-26): kicker, title and spoken line unchanged from the previous cut. The chat window is an illustration: nothing is claimed about how ChatGPT fetches weather, and it is not said to use MCP. The calendar chip now reads only "months ago" (the old "training data ends: months ago" was a caption). Board 1 holds the chat window, the model with its calendar, and the "?"; pages 2-3 add two more things. |
-| 2 | S1 · The gap | same board; [language model] the model chip pulses and the arrow from it to the reply bubble thickens; [calendar] ring on the calendar chip, then a dashed vertical line drops from it to the bottom of the board, the clock "now" on its right; [guessing] the "?" on the arrow turns grey | The language model, the part writing the reply, can't know. What it learned stops at that calendar, so alone it'd be guessing. | Glossary "language model" (brief §1): the definition is spoken, not written (the old label "language model · reads text, writes text" and the grey "alone: a guess" are gone). The dashed line is the gap the rest of the video crosses; it stays until the board is erased. |
-| 3 | S1 · A tool | same board; [app] dashed frame "app" around the model chip and the chat window; [tool] cyan chip "tool" right of the dashed line, outside the frame, with an arrow from the frame to it and back to the model chip; [MCP] the word "MCP" written on that arrow; [involved] the grey "?" slides off the chat arrow onto the MCP arrow and pulses | Instead, the app around it asks a tool, a function in another program that fetches live data. MCP is the standard way to plug one in. That's the whole trick. Who's involved? | The honest answer within 20 s (hooks.md §6): the application runs what the model asks for (source 14); MCP is the open standard for connecting AI applications to external systems (source 1). Which tool ChatGPT uses, and whether over MCP, is not claimed. The old chip "tool · live weather" is now the bare name "tool"; what it fetches is spoken. The closing question is the one board 2 answers; the "?" travels with it. Board 1 ends with five things: chat window, model with calendar, dashed line, app frame, tool with its arrow. |
-| 4 | **S2 Who's involved** · The agent | erase; [Leeds] small orange chip "Is it snowing in Leeds?" in the top-left corner (the carried anchor; it stays for this board); [agent] blue box "Agent" centre-left, a thin arrow from the chip into it; [model] white chip "model" inside the box, lower left | Same Leeds question, fresh board. The program receiving it is the agent: it keeps the conversation and does whatever the model decides, so the model sits inside it. | Glossary "agent" (brief §1), spoken; the old label under the box ("keeps the conversation · carries out what the model decides") is gone. The first four words are the spoken bridge across the erase. This board is kept to page 6. |
-| 5 | S2 · The MCP server | same board; [Far right] cyan node titled "Weather MCP server" at the right edge, level with the agent; [get_weather] chip `get_weather` inside it; [get_forecast] chip `get_forecast` under it; [MCP server] the node's title is ringed once | Far right, a separate program with two functions, get_weather and get_forecast. Each one's a tool, and a program offering tools this way is an MCP server. MCP means Model Context Protocol. | Sources 1, 3; a server offers one or more tools (brief §7.4). `get_weather` and `get_forecast` are the lab's real tools (`workspace/tools/weather_tool_server.py`). The old labels "tool · a named function", "MCP server · offers tools" and "MCP · Model Context Protocol" are gone from the board; all three are spoken. The USB-C analogy stays out of the voice. |
-| 6 | S2 · The MCP client | same board; [directly] a dashed arrow from the model chip straight to the server flashes and is crossed out grey; [MCP client] small blue box "MCP client" inside the agent, right of the model; [this line] a solid line from the client to the server, drawn left to right; [host] small label "host" above the agent box; [along] the grey "?" from board 1 lands on the line | The model doesn't talk to it directly. Inside the agent sits the MCP client, which holds the connection to exactly one server, this line. The spec calls the agent the host. What travels along that line? | Sources 2, 3 (one client per server; host). "Host" is said once in the course, as the brief asks; the one-word label is the only text added. The crossed-out arrow is the misconception "the client is the model" (brief §1, §7.1). Board 2 ends with five things: Leeds chip, agent (model and client inside), the line, the server with two chips, the host label. The closing question is the one board 3 answers. |
-| 7 | **S3 Asking for the menu** · tools/list | erase; [Small] tiny map in the top-left corner (the carried anchor; it stays for boards 3, 4 and 5): agent box with a model dot and a client dot, the line, a server dot, the grey "?" on its line; [JSON-RPC] the line redrawn large across the board, client end left, server end right, the small name "JSON-RPC" above its middle; [request] a blank packet rides the line to the right, and on [result] a blank packet rides back; [tools/list] packet "tools/list" rides the line left to right | Small JSON messages, a format called JSON-RPC. You send a request naming a method and get back a result or an error. First comes tools/list: the agent asking what's on offer. | Sources 1, 4, 13. The first words answer board 2's question (the spoken bridge). The old caption "JSON-RPC · request: method → reply: result or error" is gone; the request-and-reply shape is shown by two blank packets and said in the voice. "Result or error" is what video 4 builds on. Transports stay in NOTE: the lab uses Streamable HTTP (source 7). |
-| 8 | S3 · The menu | same board; [Back] card "menu" rides the line right to left and docks under it, nearer the server: `get_weather` · "Get the current made-up weather for a city." / `get_forecast` · "Get a made-up multi-day forecast for a city."; [name] ring on the two names; [description] ring on the two description lines; [model] the model dot in the tiny map pulses | Back comes the menu: two tools, each with a name and a short description written for the model, not you. | Real names and descriptions (short.yaml `tlist`). The model reads descriptions like a prompt (brief §7.11), which is why they are "written for the model". |
-| 9 | S3 · The input schema | same board; [Zoom] a zoom card beside the menu, headed "input schema", with `get_weather` → `city · string · required`; [get_forecast] a second line on the card, `get_forecast` → `days · integer · default 3`; [picks] the grey "?" hops from the tiny map's line onto the menu card | Zoom in and there's a third part, the input schema: what the tool needs. get_weather wants a city, a string. get_forecast also takes days, a whole number, three by default. So who picks? | Real schemas (short.yaml `tlist`: `city` string required; `days` integer default 3). Source 4. Board 3 ends with five things: the tiny map, the line with its name, the tools/list packet, the menu card, the schema card. The closing question is the one board 4 answers. |
-| 10 | **S4 Making the call** · The model picks | erase; [The model does] the tiny map stays top-left, its "?" now on the model dot; the white chip "model" drawn large centre-left; [your question] orange bubble "Is it snowing in Leeds?" above the model, a thin arrow into it; [that menu] the menu card, small, beside the bubble, a second thin arrow into the model; [request] white card out of the model: "call get_weather · city: Leeds"; [ran nothing] the dashed model → server arrow in the tiny map flashes crossed out | The model does. The agent hands it your question and that menu, and it answers with a request: call get_weather, city Leeds. Notice what it didn't do: it wrote the request and ran nothing. | Illustrative: the lab has no model; the learner plays the agent's client. Model tool use: source 14; tools are model-controlled: source 4. Glossary: the model chooses by writing a request and runs nothing. The old label "writes the request · runs nothing" is gone; the point is spoken and shown by the crossed-out arrow. This board is kept to page 11. |
-| 11 | S4 · tools/call and the result | same board; [client's] small blue box "MCP client" right of the model, and the request card slides into it; [tools/call] packet "tools/call · get_weather · {city: Leeds}" rides a line from the client to the right edge, where the cyan server node with its `get_weather` chip is redrawn; [runs] ring on `get_weather`; [result] packet back along the line, and a green card under the line: `content: "Leeds, 10 °C, cloudy" · isError: false`; [no snow] reply bubble under the user bubble: "No snow. Leeds is 10 °C and cloudy." | Running it is the client's job. It sends tools/call down the line, with the name and the arguments. The server runs get_weather and a result comes back: Leeds, ten degrees, cloudy. The model writes the reply: no snow. | Source 4 (`tools/call` with `name` and `arguments`; `content`; `isError`). Leeds 10 °C cloudy is the lab's real output (short.yaml `term`); `isError: false` is on the card and left unspoken (video 4 picks it up). The reply bubble is illustrative (no model in the lab; in a real agent the result goes back to the model, which writes the reply: source 14). Board 4 ends with five things: the tiny map, the question with the menu, the model with its request, the client-line-server with the packet, the result card and reply. |
-| 12 | **S5 In the lab** · The same call, typed | erase to the split layout: terminal (real) fills the right two-thirds and types `python3 -B call_tool.py weather-tools-get-weather '{"city": "Leeds"}'`, show "0-2,5-10"; [client] the tiny map bottom-left (the carried anchor), its client dot ringed; [tools/call] the method highlighted in the request line, and the packet rides the tiny map's line once more; [ten and cloudy] the `temperature_c` and `conditions` lines highlighted; [toy server] small chip "toy" on the tiny map's server dot; [prefix] `weather-tools` highlighted in the command and in the request line, with small text "→ video 2" | In the lab you play the client and send that tools/call yourself. Same result, ten and cloudy, from a toy server that invents it. Only the name differs, by a prefix, weather-tools, which the next video explains. | Real terminal output (short.yaml `term`, source 27). The weather is deterministic from the city name (brief §5); the old chip "toy server · numbers made up" is now the one-word tag "toy" and the fact is spoken. The lab call goes through ContextForge, hence the prefix (brief §6.5); the prefix is only named here, not explained. The first words pick up page 11's "the client's job". |
-| 13 | **S6 Recap** · One clean picture | erase; [Same picture] the whole flow redrawn small and clean in one stroke: user bubble, agent with model and MCP client, the line, the weather server, the reply bubble; [tools/list] badge "1" on the line, near the client; [writes a request] badge "2" on the model chip; [tools/call] badge "3" on the line, under badge 1; [result] badge "4" on the return arrow into the client; [months ago] the torn calendar chip from board 1 reappears above the model, and the clock "now" beside the reply bubble | Same picture, cleaned up: tools/list fetches the menu, the model writes a request, tools/call runs it, and the result comes back. That's how a model trained months ago told you today's weather. | Sources 1, 4. The badges carry only the numbers 1-4; the voice tells the steps in order without counting them aloud. The calendar and the clock close the gap opened on page 2. |
-| 14 | S6 · Call to action | same board; [Open the lab] chip "Open the lab · See how tools reach an agent" under the picture; [Next] text "Next: 10 agents × 20 MCP servers" beneath it | Open the lab, See how tools reach an agent, and ask for Leeds yourself. Next time: ten agents, twenty MCP servers, two hundred connections. | Pointer to video 2 (its hook numbers). The lab's title is the one on-screen text the voice repeats, because it is a name the viewer has to search for. |
+| 1 | **S1 The frozen model** · Hook | kicker "INTERVIEW QUESTION", caption "What is MCP?", title "ChatGPT was trained months ago. How does it know today's weather?" (all at 0 s, top of the board); [ChatGPT] chat window "ChatGPT" centre-right: user bubble "Is it snowing in Leeds?", reply bubble "Leeds, right now: 10 °C, cloudy" with a ticking clock "now"; [months ago] white chip "model" left of the chat, under a torn grey calendar chip "months ago"; [where] a "?" on the arrow from the model chip to the reply, pulsing from 0.5 s; [Leeds] ring on "Leeds" in the user bubble | Ask ChatGPT whether it's snowing in Leeds right now, and it can tell you, even though its training ended months ago. So where did that answer come from? Let's trace it. | Owner's hook A (2026-10-26): kicker, title and spoken line unchanged. The chat window is an illustration: nothing is claimed about how ChatGPT fetches weather, and it is not said to use MCP. Board 1 holds the chat window, the model with its calendar, and the "?"; pages 2-3 add two more things. |
+| 2 | S1 · The gap | same board; [language model] the model chip pulses and the arrow from it to the reply bubble thickens; [calendar] ring on the calendar chip, then a dashed vertical line drops from it to the bottom of the board, the clock "now" on its right; [look] a thin grey arrow from the model chip towards the clock is drawn and crossed out; [guessing] the "?" on the arrow turns grey | The language model, the part writing the reply, can't know. What it learned stops at that calendar, and it can't go and look: a model only reads and writes text. Alone, it'd be guessing. | **Why it can't look it up itself.** Glossary "language model" (brief §1: "reads text and writes text ... it runs nothing"); source 14: the model "returns a structured call that your application runs", and client tools "run in your application". So the model produces words and nothing else; something outside it has to act (page 3). The definition is spoken, not written. `pause: 0.8` before "Alone", so the reason lands. The dashed line is the gap the rest of the video crosses; it stays until the board is erased. |
+| 3 | S1 · A tool | same board; [app] dashed frame "app" around the model chip and the chat window; [tool] cyan chip "tool" right of the dashed line, outside the frame, with an arrow from the frame to it and back to the model chip; [MCP] the word "MCP" written on that arrow; [involved] the grey "?" slides off the chat arrow onto the MCP arrow and pulses | Instead, the app around it asks a tool: a function in another program that fetches live data. MCP is the standard way to plug one in. That's the whole trick. Who's involved? | The honest answer within 20 s (hooks.md §6): the application runs what the model asks for (source 14); MCP is the open standard for connecting AI applications to external systems (source 1). Which tool ChatGPT uses, and whether over MCP, is not claimed. The acronym's expansion (Model Context Protocol) is cut from the voice in this pass for pace; the caption and the concept page carry it. Why a standard at all is answered on page 6, once the server is on the board. The closing question is the one board 2 answers; the "?" travels with it. Board 1 ends with five things: chat window, model with calendar, dashed line, app frame, tool with its arrow. |
+| 4 | **S2 Who's involved** · The agent | erase; [Leeds] small orange chip "Is it snowing in Leeds?" in the top-left corner (the carried anchor; it stays for this board); [agent] blue box "Agent" centre-left, a thin arrow from the chip into it; [model] white chip "model" inside the box, lower left | Same Leeds question. The program receiving it is the agent: it keeps the conversation and does what the model decides, so the model sits inside it. | Glossary "agent" (brief §1), spoken. The first three words are the spoken bridge across the erase. This board is kept to page 7. |
+| 5 | S2 · The MCP server | same board; [Far right] cyan node titled "Weather MCP server" at the right edge, level with the agent; [get_weather] chip `get_weather` inside it; [get_forecast] chip `get_forecast` under it; [MCP server] the node's title is ringed once | Far right, another program with two functions, get_weather and get_forecast. Each is a tool, and a program offering tools this way is an MCP server. | Sources 1, 3; a server offers one or more tools (brief §7.4). `get_weather` and `get_forecast` are the lab's real tools (`workspace/tools/weather_tool_server.py`). All three terms are spoken; nothing is captioned. |
+| 6 | S2 · Why a standard | same board; [once] the server node pulses once; [any app] two faded grey boxes "app", stacked behind the agent box, each with a thin dashed line to the same server; [wiring] the dashed lines settle, then fade to faint | Build it once, and any app that speaks MCP can use it, instead of wiring every tool into every app. | **Why a standard.** Source 1: MCP "is an open-source standard for connecting AI applications to external systems"; "MCP provides a standardized way to connect AI applications to external systems"; "making it easy to build once and integrate everywhere"; for developers it "reduces development time and complexity when building, or integrating with, an AI application or agent" (intro page, re-read 2026-10-31). The grey apps are illustrative. Nuance kept in NOTE: an app still needs the server's address configured (brief §6.6), so the voice says "can use it", not "with no setup". The USB-C analogy stays out: it says nothing about the menu (brief §8). `pause: 0.8` at the end of the page. |
+| 7 | S2 · The MCP client | same board; [directly] a dashed arrow from the model chip straight to the server flashes and is crossed out grey, and the grey apps fade further; [MCP client] small blue box "MCP client" inside the agent, right of the model; [this line] a solid line from the client to the server, drawn left to right; [along] the grey "?" from board 1 lands on the line | The model doesn't talk to it directly; it can't, remember. Inside the agent sits the MCP client, which holds the connection, this line. What travels along it? | Sources 2, 3. "It can't, remember" is the callback to page 2's reason; the full "why that split" comes on page 12 once the request exists. The crossed-out arrow is the misconception "the client is the model" (brief §1, §7.1). Cut from the voice in this pass: "exactly one server" (the 1:1 rule, brief §2.2) and "the spec calls the agent the host" (glossary: mention once in video 1), both at the owner's pace note; the concept page keeps them, and the "host" label is off the board since nothing unspoken is drawn. Board 2 ends with five things: Leeds chip, agent (model and client inside), the line, the server with two chips, the faded apps. The closing question is the one board 3 answers. |
+| 8 | **S3 Asking for the menu** · tools/list | erase; [Small] tiny map in the top-left corner (the carried anchor; it stays for boards 3, 4 and 5): agent box with a model dot and a client dot, the line, a server dot, the grey "?" on its line; [JSON-RPC] the line redrawn large across the board, client end left, server end right, the small name "JSON-RPC" above its middle; [tools/list] packet "tools/list" rides the line left to right | Small JSON messages, called JSON-RPC. First comes tools/list, the agent asking what's on offer. | Sources 1, 4, 13. The first words answer board 2's question (the spoken bridge). JSON-RPC is named once, plainly; its request-and-reply shape ("a method; back a result or an error") is cut from the voice in this pass and lives here: video 4 draws the error object on its own page 7. Transports stay in NOTE: the lab uses Streamable HTTP (source 7). |
+| 9 | S3 · The menu | same board; [Back] card "menu" rides the line right to left and docks under it, nearer the server: `get_weather` · "Get the current made-up weather for a city." / `get_forecast` · "Get a made-up multi-day forecast for a city."; [name] ring on the two names; [description] ring on the two description lines; [reading] the model dot in the tiny map pulses | Back comes the menu: two tools, each a name and a short description, written for the model, not you, because the model picks a tool by reading it. | **Why descriptions.** Real names and descriptions (short.yaml `tlist`). The model reads descriptions like a prompt (brief §7.11); source 14: "Claude determines when to call a tool based on the user's request and the tool's description." `pause: 0.8` at the end of the page. |
+| 10 | S3 · The input schema | same board; [third part] a zoom card beside the menu, headed "input schema", with `get_weather` → `city · string · required`; [fill in] a blank slot "city: ___" flashes on the card; [check] the server dot in the tiny map pulses; [picks] the grey "?" hops from the tiny map's line onto the menu card | The third part, the input schema, is what the tool needs: get_weather wants a city. Now the model knows what to fill in, and the server can check what arrives. Who picks? | **Why a schema.** Real schema (short.yaml `tlist`: `city` string required). Source 4: `inputSchema` is a JSON Schema; servers MUST "Validate all tool inputs". Lab-real: `weather-tools-get-weather` with `{}` comes back `isError: true`, "Field required" (brief §10 A4). Cut in this pass: `get_forecast`'s `days` default (the card now shows one line). `pause: 0.8` before "Who picks?". Board 3 ends with five things: the tiny map, the line with its name, the tools/list packet, the menu card, the schema card. The closing question is the one board 4 answers. |
+| 11 | **S4 Making the call** · The model picks | erase; [The model does] the tiny map stays top-left, its "?" now on the model dot; the white chip "model" drawn large centre-left; [your question] orange bubble "Is it snowing in Leeds?" above the model, a thin arrow into it; [that menu] the menu card, small, beside the bubble, a second thin arrow into the model; [request] white card out of the model: "call get_weather · city: Leeds" | The model does. Given your question and that menu, it answers with a request: call get_weather, city Leeds. | Illustrative: the lab has no model; the learner plays the agent's client. Model tool use: source 14; tools are model-controlled: source 4. This board is kept to page 13. |
+| 12 | S4 · Why the model only writes | same board; [ran nothing] the dashed model → server arrow in the tiny map flashes crossed out; [control] small blue box "MCP client" right of the model, and the request card slides into it and stops; [say no] a small orange user icon beside the client with a tick and a cross; [keys] a key icon inside the client box; [log] a short grey line under the client, `get_weather · Leeds` | It wrote the request and ran nothing. That's deliberate: it keeps the app in control. It can show you the request and let you say no, hold any keys, and log what was called. | **Why the split**, the owner's example. Glossary: the model chooses by writing a request and runs nothing (brief §1, §7.1). The reasons are the spec's own duties for the side that runs tools (source 4): "There SHOULD always be a human in the loop with the ability to deny tool invocations"; clients SHOULD show inputs before calling and "Log tool usage for audit purposes". Keys: the MCP client is the OAuth client and the token rides in its header, and a stdio server takes credentials from the environment (brief §2.9; source 10), so the credential lives with the app and never in the model's text. The three marks are illustrative (the lab has no key; its log is the view tab, video 2). `pause: 0.8` after "ran nothing.", so the surprise lands before the reason, and the page break after "called". |
+| 13 | S4 · tools/call and the result | same board; [client's] the client box pulses; [tools/call] packet "tools/call · get_weather · {city: Leeds}" rides a line from the client to the right edge, where the cyan server node with its `get_weather` chip is redrawn; [runs] ring on `get_weather`; [result] packet back along the line, and a green card under the line: `content: "Leeds, 10 °C, cloudy" · isError: false`; [no snow] reply bubble under the user bubble: "No snow. Leeds is 10 °C and cloudy." | Running it is the client's job. It sends tools/call down the line, and get_weather runs. Back comes the result, Leeds, ten degrees, cloudy, and the model writes the reply: no snow. | Source 4 (`tools/call` with `name` and `arguments`; `content`; `isError`). Leeds 10 °C cloudy is the lab's real output (short.yaml `term`); `isError: false` is on the card and left unspoken (video 4 picks it up). The reply bubble is illustrative (no model in the lab; in a real agent the result goes back to the model, which writes the reply: source 14). Board 4 ends with five things: the tiny map, the question with the menu, the model with its request, the client (with its marks) and the line to the server with the packet, the result card and reply. |
+| 14 | **S5 In the lab** · The same call, typed | erase to the split layout: terminal (real) fills the right two-thirds and types `python3 -B call_tool.py weather-tools-get-weather '{"city": "Leeds"}'`, show "0-2,5-10"; [client] the tiny map bottom-left (the carried anchor), its client dot ringed; [tools/call] the method highlighted in the request line, and the packet rides the tiny map's line once more; [ten and cloudy] the `temperature_c` and `conditions` lines highlighted; [toy server] small chip "toy" on the tiny map's server dot; [prefix] `weather-tools` highlighted in the command and in the request line, with small text "→ video 2" | In the lab you play the client and send that tools/call yourself. Ten and cloudy again, invented by a toy server. The name has a prefix, weather-tools, which the next video explains. | Real terminal output (short.yaml `term`, source 27). The weather is deterministic from the city name (brief §5); the one-word tag "toy" is on the board and the fact is spoken. The lab call goes through ContextForge, hence the prefix (brief §6.5); the prefix is only named here, not explained (video 2 page 10 pays it). The first words pick up page 13's "the client's job". |
+| 15 | **S6 Recap** · One clean picture | erase; [Same picture] the whole flow redrawn small and clean in one stroke: user bubble, agent with model and MCP client, the line, the weather server, the reply bubble; [tools/list] badge "1" on the line, near the client; [writes a request] badge "2" on the model chip; [tools/call] badge "3" on the line, under badge 1; [result] badge "4" on the return arrow into the client; [months ago] the torn calendar chip from board 1 reappears above the model, and the clock "now" beside the reply bubble | Same picture: tools/list fetches the menu, the model writes a request, tools/call runs it, the result comes back. That's how a model trained months ago told you today's weather. | Sources 1, 4. The badges carry only the numbers 1-4; the voice tells the steps in order without counting them aloud. The calendar and the clock close the gap opened on page 2. |
+| 16 | S6 · Call to action | same board; [Open the lab] chip "Open the lab · See how tools reach an agent" under the picture; [Next] text "Next: 10 agents × 20 MCP servers" beneath it | Open the lab, See how tools reach an agent, and ask for Leeds yourself. Next time: ten agents, twenty MCP servers. | Pointer to video 2 (its hook numbers; "two hundred connections" is cut from the voice, video 2 says it itself in its first sentence). The lab's title is the one on-screen text the voice repeats, because it is a name the viewer has to search for. |
 
 Left out on purpose (one idea per video): resources and prompts, the `initialize`
 handshake (removed in the current spec and not visible in the lab), authorization, the two
-transports, the USB-C analogy, and "any agent that speaks MCP can use any MCP server" (true,
-but a second idea; the lab's call still needs the server's address configured). Dropped from
-the voice in this cut: the Larkfield story (the snow that never fell, Ollie), JSON-RPC as a
+transports, the USB-C analogy, the 1:1 client-to-server rule and the word "host" (both cut in
+the third pass for pace; the concept page keeps them). Spoken since the third pass, because it
+is the reason for a standard: a server built once works with any app that speaks MCP (page 6;
+the lab's call still needs the server's address configured, said in NOTE). Dropped from the
+voice in earlier cuts: the Larkfield story (the snow that never fell, Ollie), JSON-RPC as a
 page of its own, and "content" as a spoken term (it is on the result card); "No snow" in the
 reply bubble is the running example's payoff.
 
@@ -250,7 +279,7 @@ replaces is in git history (commit d16e12a). ON SCREEN says what is added or cha
 | 7 | S2 · One address, one credential | same board; [one address] chip "mcp.larkfield.internal" on top of the gateway box, the three agent lines converging on it; [its own] one badge chip per agent, on its line; [five secrets] five key chips appear inside the gateway on its server side, one per line; [sixth] a dashed sixth server joins the right column with one dashed line from the gateway and nothing changes on the agents; [eight] counter under the board "3 + 5 = 8" | So each agent keeps one address, the gateway's, and one credential, its own badge. The five secrets move in here, and a sixth server is registered once, touching no agent. Three plus five: eight connections, not fifteen. | Illustrative address. 3 + 5 = 8, the same arithmetic as the hook's 10 + 20 = 30. Single endpoint: sources 15, 16, 17. Credential injection: 16, 17; ContextForge stores them encrypted (22). Cut from the voice: "token passthrough is forbidden" (10, 11). The lab has no upstream credentials. |
 | 8 | S2 · One place to watch | same board; [that point] the gateway box pulses once; [row] a card "gateway log (illustration)" docks under the box with one row: `18:41 · Ops · orders-get-order · ok · 2400 ms`; rings land in turn on [tool], [time], [how long], [worked]; [who asked] ring on "Ops", with a thin line from the ring up to Ops's badge | Every call crosses that point, so the gateway writes a row for each: the tool, the time, how long it took, whether it worked and, read off the badge, who asked. Here, Ops, 2.4 seconds. | Logging: sources 16, 17, 19, 22. The lab log has no caller column (brief §5; said aloud on page 11). Rate limiting cut from the voice (ContextForge default: on, 100 requests a minute plus a burst of 20 on MCP paths, per IP and per user; the lab turns it off; brief §10 A16). |
 | 9 | S2 · What it is not | same board; [no tools] a grey chip "runs the tools" beside the box is crossed out, with an arrow from it to the servers; [chooses none] a grey chip "chooses the tools" is crossed out, with an arrow to a small model chip inside Support; [AI gateway] a separate grey chip at the bottom edge, "AI gateway → language models", pointing off the board | Two things it is not. It runs no tools, the servers do; it chooses none, the model does. Nor an AI gateway: that carries calls to language models. What does one look like in the lab? | Brief §3.3. "Adds a hop, makes nothing faster" (brief §7.12) cut from the voice. The hand-off question opens scene 3. |
-| 10 | **S3 In the lab** · One tools/list | layout split: the scene-2 board shrinks into the left third, unchanged; [ContextForge] the gateway box is relabelled "ContextForge"; terminal (real) on the right types `python3 -B call_tool.py --list`, show "0,5-10", clip 50; marks [its address] the url, [five tools] the five names; [prefix] the `weather-tools-` and `calculator-tools-` parts of the names highlighted, and a small label on the diagram "prefix = registered server's name" | In the lab the MCP gateway is ContextForge, IBM's open-source gateway, with two toy MCP servers registered. One tools/list to its address returns five tools, each carrying a prefix, the registered server's name, so two servers' tools never collide. | Real terminal output (short.yaml `tlist`). Source 15. The prefix pays the promise of video 1 page 11 ("which the next video explains"): ContextForge ADR-0011, slug + separator + original name, confirmed in the 1.0.10 source (23; brief §10 A8); the spec tells aggregating proxies to prefix (4). Video 3 reuses it with a reminder. |
+| 10 | **S3 In the lab** · One tools/list | layout split: the scene-2 board shrinks into the left third, unchanged; [ContextForge] the gateway box is relabelled "ContextForge"; terminal (real) on the right types `python3 -B call_tool.py --list`, show "0,5-10", clip 50; marks [its address] the url, [five tools] the five names; [prefix] the `weather-tools-` and `calculator-tools-` parts of the names highlighted, and a small label on the diagram "prefix = registered server's name" | In the lab the MCP gateway is ContextForge, IBM's open-source gateway, with two toy MCP servers registered. One tools/list to its address returns five tools, each carrying a prefix, the registered server's name, so two servers' tools never collide. | Real terminal output (short.yaml `tlist`). Source 15. The prefix pays the promise of video 1 page 14 ("which the next video explains"): ContextForge ADR-0011, slug + separator + original name, confirmed in the 1.0.10 source (23; brief §10 A8); the spec tells aggregating proxies to prefix (4). Video 3 reuses it with a reminder. |
 | 11 | S3 · One row in the lab | terminal (real) `python3 -B call_tool.py calculator-tools-add '{"a": 17, "b": 25}'`; mark [forty-two] `42.0`; [view tab] chip "view tab: tool · time · success · response time" docked under the diagram's log card; [No caller] the "Ops" column of the illustration log greys out, text "no caller column" | Then calculator-tools-add, seventeen plus twenty-five, returns forty-two, and the view tab shows a new row: tool, time, success, response time. No caller column: every scripted lab call is the same admin identity. | Real output (short.yaml `tadd`); view columns from `workspace/view_service.py` (ContextForge's `tool_metrics`). Every scripted lab call is the same admin identity (manifest `X-Authenticated-User`). The row appears when ContextForge flushes its metrics buffer, up to 60 s after the call, stamped with the call time; record the take after that (brief §10 A7). |
 | 12 | **S4 Recap** · Four changes on one picture | erase; [Focus] the scene-2 picture redrawn small and clean in one stroke: three agents, the gateway with its catalogue, five servers, the log card; [One] badge "1 registered once" on the server lines; [Two] badge "2 one address" on the address chip; [Three] badge "3 one credential" on the agents' badges, the five keys inside the gateway; [Four] badge "4 one row per call" on the log card; [thirty] the hook's counter returns above the picture: "10 + 20 = 30, not 200" | Focus on what changed. One, each server registered once. Two, one address per agent. Three, one credential each, the secrets behind the gateway. Four, one row per call. Ten agents, twenty servers: thirty connections, not two hundred. | The payoff of the hook (illustrative numbers): 10 + 20 = 30 against 10 × 20 = 200. The recap is the same diagram, numbered, not a list of chips. |
 | 13 | S4 · Call to action | same board; [Open the lab] chip "Open the lab · See how tools reach an agent" under the picture; [Next] text "Next: should every agent see every tool?" beneath it, and the catalogue in the small gateway flashes once | Open the lab, See how tools reach an agent, and find your own calls in the view tab. Next: every agent sees every tool in that catalogue, including one that moves money. | Pointer to video 3 (its hook question is the on-screen text). |
@@ -336,10 +365,10 @@ video aloud once.
   allows (V1 "where did that answer come from?", V2 "where did the other hundred and seventy
   go?", V3 "What should Support's menu look like?", V4 "What did that 200 promise?"), and
   every scene ends on a hand-off question the next page's picture answers (V1: "Who's
-  involved?", "What travels along that line?", "So who picks?"; V1's boards 4, 5 and 6 instead
-  open by picking up the previous board's last words, "Running it is the client's job", "In
-  the lab you play the client", "Same picture, cleaned up", because board 4 ends on the
-  payoff, "no snow", and a question there would undercut it; V2: "Who should
+  involved?", "What travels along it?", "Who picks?"; V1's boards 5 and 6 instead open by
+  picking up the previous board's last words, "In the lab you play the client", "Same
+  picture", because board 4 ends on the payoff, "no snow", and a question there would
+  undercut it; V2: "Who should
   hold them instead?", "How does it learn the servers?", "Where do five menus go?", "What does
   one look like in the lab?"; V3: "Who else needs a box, and can two boxes share a tool?",
   "What does Support actually see?", "What does the lab leave out?"; V4: "Where did it come
@@ -363,17 +392,21 @@ video aloud once.
   catalogue's tools at its own address", V4 "200 is the envelope; isError is in the body; this
   line never reads it".
 - **Terms defined at first use,** after the need is shown: language model (V1 #2), tool and
-  MCP (V1 #3), agent (V1 #4), MCP server and Model Context Protocol (V1 #5), MCP client and
-  host (V1 #6), JSON-RPC, tools/list and menu (V1 #7), input schema (V1 #9), tools/call and
-  result (V1 #11; "content" is on the result card and no longer spoken), credential (V2 #3), MCP gateway and proxy (V2 #4), register
+  MCP (V1 #3), agent (V1 #4), MCP server (V1 #5), MCP client (V1 #7; "host", the 1:1 rule and
+  the expansion "Model Context Protocol" are no longer spoken since the third pass), JSON-RPC,
+  tools/list and menu (V1 #8), input schema (V1 #10), tools/call and
+  result (V1 #13; "content" is on the result card and no longer spoken), credential (V2 #3), MCP gateway and proxy (V2 #4), register
   (V2 #5), catalogue and the two faces (V2 #6), AI gateway (V2 #9), prefix (V2 #10, paying
-  V1 #11's promise), virtual server (V3 #2), tool execution error (V4 #5), protocol error and
+  V1 #14's promise), virtual server (V3 #2), tool execution error (V4 #5), protocol error and
   error object (V4 #7). Reused with a reminder, not redefined: gateway and catalogue (V3 #1),
   prefix (V3 #6), MCP gateway (V4 #3).
-- **Lengths.** VOICE cells are 20-48 words (V1 20-38, V2 30-41, V3 35-48, V4 27-42); totals
-  V1 429, V2 458 (variant B 472), V3 437, V4 458; every video is under three minutes at 170
-  words a minute (V1 2:31 spoken, about 2:45 with its thirteen page pauses; V2-V4 2:44 to
-  2:54). The two over the 440 target (V2, V4) are the two with
+- **Lengths.** VOICE cells are 14-48 words (V1 14-34, V2 30-41, V3 35-48, V4 27-42); totals
+  V1 434, V2 458 (variant B 472), V3 437, V4 458; every video is under three minutes at 170
+  words a minute (V1 2:33 spoken, about 2:50 with its fifteen page breaks and three mid-page
+  pauses, about 153 words a minute overall with the silences counted; V2-V4 2:44 to 2:54).
+  V1's third pass aimed at 380-410 words and landed at 434: the six reasons the owner asked
+  for cost about 95 words and the cuts recovered about 90; the words that would reach 410 are
+  listed in the change log for the owner to decide. The two over the 440 target (V2, V4) are the two with
   thirteen pages; the cut that would bring each under 440 is V2 #9 (what it is not) and
   V4 #10 (lab versus specification), both kept on purpose.
 - **Voice.** No jokes, no "okay/so, here's the thing", no narrator "I" (V4's honest bubble is
@@ -389,13 +422,17 @@ video aloud once.
   and no on-screen label read aloud, the one exception being the lab's title in the call to
   action, which is a name the viewer has to search for. Every V1 board was checked against
   the owner's two notes: at most five things, and nothing written that the voice also says.
+  The third pass adds the owner's third note: every surprising line carries its reason (V1 #2,
+  #6, #7, #9, #10, #12), spoken the way a colleague would give it ("it can't, remember",
+  "That's deliberate"), never as a narrated question answered in the same breath, and a
+  `pause:` follows each key one.
 - **"Tool gateway"** appears in no VOICE or ON SCREEN cell. "MCP gateway" is the term throughout.
 - **Arithmetic:** 10 × 20 = 200 direct connections and 10 + 20 = 30 through a gateway, so
   200 − 30 = 170 fewer (V2 #1, #12, variant B); 3 × 5 = 15 direct and 3 + 5 = 8 through the
   gateway (V2 #2, #3, #7); 15 credentials = 3 agents × 5 servers (V2 #3); twelve catalogue
   tools, five picked into support-tools, seven left out, two in billing-tools with `add` shared
   (V3); five lab tools (2 weather + 3 calculator); 17 + 25 = 42.0; Leeds → 10 °C cloudy;
-  `days` defaults to 3; the log row's 2400 ms is spoken as 2.4 seconds.
+  the log row's 2400 ms is spoken as 2.4 seconds (V1 no longer speaks the `days` default of 3).
 - **Lab-real versus illustrative** is stated in every NOTE and, where it matters, aloud: the
   lab log has no caller column (V2 #11), toy-tools leaves nothing out and every scripted call
   is the same admin identity (V3 #8), ContextForge's isError for an unknown tool is SDK
@@ -405,33 +442,36 @@ video aloud once.
 
 One line per board page: the one thing the page teaches.
 
-**Video 1. What is MCP?** (six boards, one question each, 2026-10-31 second pass)
+**Video 1. What is MCP?** (six boards, one question each, 2026-10-31 third pass: every
+surprising line carries its reason, and a pause follows each key one)
 
 Board 1, the frozen model (the hook board; up to five things):
 1. Hook — ChatGPT's training ended months ago; ask whether it's snowing in Leeds and it knows; where did that come from?
-2. The gap — the language model writes the reply but can't know; what it learned stops at the calendar; alone it'd be guessing.
+2. The gap — the language model writes the reply but can't know; what it learned stops at the calendar, and it can't go and look, because a model only reads and writes text; alone it'd be guessing. (pause)
 3. A tool — the app around it asks a tool, a function in another program that fetches live data; MCP is the standard way to plug one in; who's involved?
 
 Board 2, who's involved (anchor: the Leeds question chip, top-left):
 4. The agent — the program receiving the question; keeps the conversation, does what the model decides; the model sits inside it.
-5. The MCP server — a separate program with two functions, get_weather and get_forecast; each is a tool; the program is an MCP server; Model Context Protocol.
-6. The MCP client — the model doesn't talk to the server directly; the MCP client inside the agent holds the connection to exactly one server; the spec calls the agent the host; what travels along that line?
+5. The MCP server — another program with two functions, get_weather and get_forecast; each is a tool; the program is an MCP server.
+6. Why a standard — build it once and any app that speaks MCP can use it, instead of wiring every tool into every app. (pause)
+7. The MCP client — the model doesn't talk to the server directly (it can't, remember); the MCP client inside the agent holds the connection; what travels along it?
 
 Board 3, asking for the menu (anchor: a tiny map of agent → line → server, top-left):
-7. tools/list — small JSON messages, JSON-RPC: a request naming a method, back a result or an error; tools/list is the agent asking what's on offer.
-8. The menu — two tools, each a name and a short description written for the model, not you.
-9. The input schema — the third part of each entry, what the tool needs: city, a string; days, a whole number, three by default; who picks?
+8. tools/list — small JSON messages, JSON-RPC; tools/list is the agent asking what's on offer.
+9. The menu — two tools, each a name and a short description, written for the model, not you, because the model picks a tool by reading it. (pause)
+10. The input schema — the third part, what the tool needs: get_weather wants a city; so the model knows what to fill in and the server can check what arrives; who picks? (pause)
 
 Board 4, making the call (anchor: the tiny map):
-10. The model picks — given your question and the menu it writes "call get_weather, city Leeds"; it wrote the request and ran nothing.
-11. tools/call and the result — running it is the client's job: tools/call down the line, name plus arguments; the server runs get_weather; the result says Leeds, ten degrees, cloudy; the model writes the reply: no snow.
+11. The model picks — given your question and the menu, it answers "call get_weather, city Leeds".
+12. Why the model only writes — it wrote the request and ran nothing (pause); that's deliberate, it keeps the app in control: it can show you the request and let you say no, hold any keys, and log what was called.
+13. tools/call and the result — running it is the client's job: tools/call down the line, get_weather runs, the result says Leeds, ten degrees, cloudy; the model writes the reply: no snow.
 
 Board 5, in the lab (anchor: the tiny map, bottom-left; the terminal is large):
-12. The same call, typed — you play the client and send that tools/call yourself; same result from a toy server that invents it; only the name differs, by a prefix the next video explains.
+14. The same call, typed — you play the client and send that tools/call yourself; ten and cloudy again, invented by a toy server; the name has a prefix the next video explains.
 
 Board 6, recap (the flow redrawn small and clean, badges 1-4):
-13. One clean picture — tools/list fetches the menu, the model writes a request, tools/call runs it, the result comes back; a model trained months ago told you today's weather.
-14. Call to action — open the lab and ask for Leeds; next time, ten agents, twenty MCP servers, two hundred connections.
+15. One clean picture — tools/list fetches the menu, the model writes a request, tools/call runs it, the result comes back; a model trained months ago told you today's weather.
+16. Call to action — open the lab and ask for Leeds; next time, ten agents, twenty MCP servers.
 
 **Video 2. Why an MCP gateway?** (four scenes, 2026-10-31)
 
@@ -502,6 +542,59 @@ Scene 4, a careful agent (the same chain, numbered):
 13. Call to action — call a tool that does not exist; the set is complete: MCP server, MCP gateway, virtual server, failed call.
 
 ## Change log
+
+**Video 1 given its reasons and a calmer pace, 2026-10-31, third pass** (against commit
+bb518b1). The owner watched the six-board cut and wrote: "I feel you rushed a bit some parts,
+and also sometimes you are expected to give an explanation but you don't. For example when you
+said the request doesn't come from the model, why is that? Why was that choice made, etc." No
+research fact changed and no new source was needed: sources 1 and 14, already in the list, were
+re-read on 2026-10-31 and the lines now quoted in NOTE were added to their entries. The approved
+kicker, title, hook line, six boards, show-don't-read rule, whiteboard voice, lab-real output
+and call to action are kept.
+
+- **Reasons added,** each in the same breath or the next sentence, each sourced in NOTE: why
+  the model can't look the weather up itself (#2: it only reads and writes text, so it fetches
+  nothing; brief §1, source 14); why a standard at all (#6, a new page: build a server once and
+  any app that speaks MCP can use it, instead of wiring every tool into every app; source 1);
+  why the model doesn't talk to the server (#7: "it can't, remember"); why the menu carries
+  descriptions (#9: the model picks a tool by reading them; brief §7.11, source 14); why an
+  input schema (#10: the model knows what to fill in, the server can check what arrives;
+  source 4, lab-real in brief §10 A4); and the owner's example, why the model only writes the
+  request while the app runs it (#12, a new page: it keeps the app in control, so it can show
+  you the request and let you say no, hold any keys, and log what was called; source 4's human
+  in the loop, show-inputs and log-usage duties, and the client holding the credential, brief
+  §2.9, source 10). Reasons not supported by the brief were left out: "the model can be swapped
+  without rewiring the tools" (the brief only says MCP does not dictate how applications use
+  LLMs, §2.1) and "the app checks the arguments against the schema" (the spec puts input
+  validation on the server, not the client).
+- **Pace.** A `pause: 0.8` after each key reason (#2 before "Alone", #6 and #9 at the page
+  end, #10 before "Who picks?", #12 after "ran nothing"), on top of the 0.8 s page breaks; the
+  convention is recorded in "How to read these tables". Two pages were added (why a standard,
+  why the model only writes), so 14 pages become 16 and 13 page breaks become 15; the six
+  boards and their anchors are unchanged (board 2 trades the host label for two faded "any
+  app" boxes; board 4's client box carries three small marks).
+- **Cut to make room:** "the spec calls the agent the host" and its label (the glossary asked
+  for one mention in video 1; dropped at the owner's pace note, the concept page keeps it);
+  "exactly one server"; `get_forecast`'s `days` default and its schema line; JSON-RPC's
+  request-and-reply shape (one plain mention stays; video 4 draws the error object itself);
+  "MCP means Model Context Protocol"; "two hundred connections" in the pointer (video 2 says
+  it in its first sentence); and the small words "fresh board", "cleaned up", "name and
+  arguments", "the code holding".
+- **Length.** 429 → 434 words on 16 pages (cells 14-34 words), about 2:33 spoken and about
+  2:50 with the pauses, about 153 words a minute overall with the silences counted; under three
+  minutes, but over the 380-410 word target set for this pass: the six reasons cost about 95
+  words and the cuts recovered about 90. To reach 410 without losing a reason the owner can
+  drop, in this order: "That's the whole trick." (#3, 4 words), "Alone, it'd be guessing."
+  (#2, 4), "it can't, remember" (#7, 3), "so the model sits inside it" (#4, 6), "which the next
+  video explains" → "for the next video" (#14, 1), and page 8 folded into page 9 with JSON-RPC
+  moved to NOTE (6). All six are voice the second pass was praised for, so they are kept until
+  the owner chooses.
+- **Rules.** docs/video-prompt.md FLOW gains two rules: every claim a newcomer would question
+  gets its reason, in the same breath or the next sentence (why, not just what); calm pace,
+  about 150 words a minute overall, pause after each key idea, cut details before you rush.
+- Videos 2-4 are unchanged; V2 #10's NOTE now points at V1 page 14 for the prefix promise.
+
+---
 
 **Video 1 split into six boards and rewritten in a spoken register, 2026-10-31, second pass**
 (against commit b68fa89). The owner watched the rebuilt four-scene Video 1 and gave two notes:
@@ -797,7 +890,11 @@ Numbers are used in the NOTE columns.
 
 1. MCP is an open standard for connecting AI applications to external systems; "USB-C port"
    analogy; MCP uses JSON-RPC 2.0 messages. https://modelcontextprotocol.io/docs/getting-started/intro ,
-   https://modelcontextprotocol.io/specification/latest
+   https://modelcontextprotocol.io/specification/latest . Re-read 2026-10-31 for V1 #6 (why a
+   standard): "MCP provides a standardized way to connect AI applications to external systems";
+   "making it easy to build once and integrate everywhere"; for developers, "MCP reduces
+   development time and complexity when building, or integrating with, an AI application or
+   agent".
 2. Hosts, clients, servers; each client talks to exactly one server; the agent application is
    the host. https://modelcontextprotocol.io/specification/2026-07-28/architecture
 3. "MCP server refers to the program that serves context data, regardless of where it runs";
@@ -829,7 +926,11 @@ Numbers are used in the NOTE columns.
 13. JSON-RPC 2.0 error codes (`-32601` Method not found, `-32602` Invalid params).
     https://www.jsonrpc.org/specification
 14. The model returns a structured call that the application runs (tool use / function
-    calling). https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview
+    calling). https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview . Re-read
+    2026-10-31 for V1 #2, #9 and #12: "Claude determines when to call a tool based on the
+    user's request and the tool's description. It then returns a structured call that your
+    application runs (client tools)"; client tools "run in your application ... Your code runs
+    the operation and sends back a `tool_result`".
 15. ContextForge: "registry and proxy that federates tools, agents, and APIs into one clean
     endpoint"; "runs as a fully compliant MCP server"; "Create a virtual server bundling those
     tools"; `/servers/<id>/mcp` (confirmed live, brief §10 A11). https://github.com/IBM/mcp-context-forge (README at tag

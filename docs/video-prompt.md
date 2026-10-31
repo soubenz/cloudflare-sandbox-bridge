@@ -204,6 +204,16 @@ with one word, banana, on one growing canvas, clearing the board twice in 2:49)
   counted lists ("One, … Two, …"), no label-like fragments, no stacked colons
   and semicolons. Read every line aloud; if it sounds like a narrator reading
   slides, rewrite it.
+- Every claim a newcomer would question gets its reason, in the same breath or
+  the next sentence (why, not just what). "The model writes the request and
+  runs nothing" is a what; "that's deliberate: it keeps the app in control, so
+  it can show you the request and let you say no" is the why. A reason comes
+  from the brief or a source you add; if you cannot source it, cut the claim
+  or leave it as a plain fact.
+- Calm pace: about 150 words a minute overall; pause after each key idea;
+  cut details before you rush. Count the silences (page breaks, a `pause:`
+  of 0.6-1.0 s after each key reason) in the minute; when the script is
+  over, drop the detail the idea does not need before you shorten a reason.
 - The board is never just text. Every page adds to or changes the picture,
   and a label sits next to the thing it names. A sentence alone on an empty
   board is not a page; give it a picture or fold it into the page before it.
