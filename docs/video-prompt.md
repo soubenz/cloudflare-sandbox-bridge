@@ -181,15 +181,35 @@ TEACHING
 
 FLOW (how pages hand over; the model is a KodeKloud short that explains zip
 with one word, banana, on one growing canvas, clearing the board twice in 2:49)
-- Scenes, not slides. A video is three or four scenes, and each scene is one
+- Scenes, not slides. A video is a handful of scenes, and each scene is one
   board that keeps building. Erase only between scenes, never between pages;
   a page is a change to the board, not a new board.
+- One question per board, 4-5 things max, erase when a new question starts,
+  carry one anchor. A board answers one question the viewer is asking and
+  holds at most four or five things (a chat window, a box with its parts, a
+  card, a terminal each count as one). When the next question starts, erase
+  and begin a fresh board; bridge the erase with the first spoken words of
+  the new page and one small carried-over element (the question chip, a tiny
+  map of the picture so far in a corner), so the viewer never feels lost.
+- The screen shows, the voice explains: never read a label aloud, no
+  sentences on the board. The board carries shapes, icons, short names (one
+  to three words) and real data (tool names, a request, a result, a schema,
+  code); the voice says what each thing is and why it matters. No
+  explanatory captions ("tool · a named function"), and never a spoken line
+  that repeats a label word for word.
+- Talk like a person at a whiteboard: you, contractions, varied rhythm, no
+  list-reading. Write the voice as a clear, friendly engineer explaining to a
+  colleague: "you", "it's", "doesn't", sentences of different lengths, plain
+  verbs, the odd short aside that helps ("That's the whole trick."). No
+  counted lists ("One, … Two, …"), no label-like fragments, no stacked colons
+  and semicolons. Read every line aloud; if it sounds like a narrator reading
+  slides, rewrite it.
 - The board is never just text. Every page adds to or changes the picture,
   and a label sits next to the thing it names. A sentence alone on an empty
   board is not a page; give it a picture or fold it into the page before it.
 - The voice describes what is being drawn, as it is drawn. Nothing appears
-  that the voice is not talking about, and nothing is said that is not on
-  the board.
+  that the voice is not talking about; definitions live in the voice, not
+  on the board.
 - Bridge every page. Each page's voice starts by picking up the previous
   page (a cause, a consequence, the viewer's next question) or ends with the
   question the next page answers. Vary the connectors; a bridge is never a
