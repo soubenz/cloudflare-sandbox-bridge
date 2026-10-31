@@ -320,8 +320,12 @@ function polish(o, sc, id, raw, dir, work) {
 }
 
 function mux(video, wav, out) {
+  // The narration WAV can end a few samples before the render's own audio track (which the render
+  // pads to the video); pad it with silence to that length so the muxed audio keeps its duration.
+  const samples = Math.round((probe(video).audio?.duration || 0) * RATE);
   sh('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', video, '-i', wav,
     '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy',
+    ...(samples > 0 ? ['-af', `apad=whole_len=${samples}`] : []),
     '-c:a', 'aac', '-b:a', '192k', '-ar', String(RATE), '-ac', '2',
     '-map_metadata', '0', '-movflags', '+faststart', out]);
 }
