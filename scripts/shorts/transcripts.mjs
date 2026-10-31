@@ -55,6 +55,13 @@ for (const s of sections) {
     body.push(`${num}. **${name ?? head}.** ${text}`);
   }
   const minutes = words / 170;
+  if (s.n.endsWith('b')) {
+    out.push(`Only the pages that differ from video ${s.n.slice(0, -1)} (${words} words); every later page is the same as there.`);
+    out.push(...body, '');
+    writeFileSync(join(outDir, `video-${s.n}-${slug(s.title)}.md`), out.join('\n'));
+    console.log(join(outDir, `video-${s.n}-${slug(s.title)}.md`));
+    continue;
+  }
   out.push(`${words} spoken words, about ${Math.floor(minutes)}:${String(Math.round((minutes % 1) * 60)).padStart(2, '0')} at 170 words a minute (page pauses come on top).`);
   out.push(...body, '');
   const file = join(outDir, `video-${s.n}-${slug(s.title)}.md`);
