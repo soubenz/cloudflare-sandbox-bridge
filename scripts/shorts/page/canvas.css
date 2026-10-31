@@ -91,7 +91,16 @@ html, body { background: var(--page); }
   padding: 4px 18px; border: 5px solid var(--c, #ff6b6b); border-radius: 12px; color: var(--c, #ff6b6b);
   font-family: var(--hand); font-weight: 700; font-size: 46px; letter-spacing: 0.08em; text-transform: uppercase; background: color-mix(in srgb, var(--page) 60%, transparent);
 }
-.cv-icon { color: var(--c, var(--ink)); }
+.cv-icon { color: var(--c, var(--ink)); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.cv-icon > .cv-label, .cv-logo > .cv-label { font-family: var(--hand); font-weight: 700; font-size: 34px; line-height: 1.1; color: var(--c, var(--ink)); white-space: nowrap; }
+/* A brand mark (docs/assets.md): its own colours, clear space round it, its name beside it. Never filtered or recoloured. */
+.cv-mark { display: inline-flex; flex: none; }
+.cv-mark svg { display: block; }
+.cv-logo { display: flex; align-items: center; gap: 4px; }
+.cv-logo.below { flex-direction: column; gap: 0; }
+.cv-chat-bar { display: flex; align-items: center; gap: 4px; }
+.cv-chat-bar .cv-mark { padding: 4px 8px 4px 0 !important; }
+.cv-chat-msg .cv-mark { display: inline-flex; vertical-align: -5px; padding: 0 8px 0 0 !important; }
 
 .cv-list { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .cv-list.row { flex-direction: row; align-items: center; }
@@ -178,6 +187,8 @@ html, body { background: var(--page); }
 .endcard .mark circle { fill: var(--page); }
 .endcard-title { font-family: var(--hand); font-weight: 700; font-size: 70px; line-height: 1.1; font-variant: small-caps; color: var(--ink); text-align: center; max-width: 960px; }
 .endcard-sub { font-family: var(--font-mono); font-size: 30px; color: var(--muted); letter-spacing: 0.04em; }
+/* The trademarks line (endCard.trademarks, docs/assets.md): small, under everything. */
+.endcard-tm { font-family: var(--font-sans); font-size: 20px; line-height: 1.35; color: var(--muted); text-align: center; max-width: 860px; margin-top: 18px; }
 
 /* A chat window (`type: chat`): a title bar, then bubbles. */
 .cv-chat {

@@ -30,6 +30,8 @@ import { parse as parseYaml } from 'yaml';
 import { chromium } from 'playwright';
 import { alignWords, mp3Of, processClip, SAMPLE_RATE, speak, transcribe, wavFile } from './narration.mjs';
 import { assertLength, buildTimeline, MAX_SECONDS, PACE, toVtt } from './timeline.mjs';
+import { brandElementIds, checkBrandBeats, loadManifest, prepareSceneAssets, trademarkLine } from './assets.mjs';
+import { ICON_NAMES } from './page/canvas.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../..');
@@ -95,6 +97,7 @@ export function parseVoice(spec, base) {
 
 function loadScript(file) {
   const doc = parseYaml(readFileSync(file, 'utf8'));
+  const assets = loadManifest();
   const videos = doc.videos || (doc.segments ? [doc] : []);
   if (!videos.length) throw new Error(`${file}: no \`videos\``);
   const base = dirname(file);
@@ -110,6 +113,27 @@ function loadScript(file) {
       return { id: s.id || `s${k + 1}`, vo: String(s.vo).replace(/\s+/g, ' ').trim(), visuals, scene, beats: s.beats || [] };
     });
     if (!segments.length) throw new Error(`${file}: video "${v.id}" has no segments`);
+    // Brand marks and library icons (docs/assets.md): resolved against the asset manifest, inlined, never altered.
+    const brands = new Set();
+    let brandIds = [];
+    for (const s of segments) {
+      const where = `${file}: video "${v.id}" segment "${s.id}"`;
+      if (s.scene) {
+        const r = prepareSceneAssets(s.scene.elements, assets, { builtin: ICON_NAMES, where });
+        s.scene.elements = r.elements;
+        r.brands.forEach((b) => brands.add(b));
+        brandIds = brandElementIds(r.elements);
+      } else if (s.visuals.length) brandIds = [];
+      checkBrandBeats(s.beats, brandIds, where);
+    }
+    let endCard = v.endCard ?? doc.endCard;
+    if (endCard === false) {
+      if (brands.size) log(`${v.id}: shows brand marks (${[...brands].join(', ')}) but has no end card; put "${trademarkLine(assets, [...brands])}" in the video description`);
+    } else {
+      const tm = endCard?.trademarks;
+      const line = typeof tm === 'string' ? tm : tm === false ? null : tm === true || brands.size ? trademarkLine(assets, [...brands]) : null;
+      endCard = { ...(endCard || {}), trademarks: line };
+    }
     const cap = v.captions ?? doc.captions ?? 'small';
     const theme = v.theme ?? doc.theme ?? 'navy';
     if (!['navy', 'black'].includes(theme)) throw new Error(`${file}: theme must be navy or black, not ${theme}`);
@@ -125,7 +149,8 @@ function loadScript(file) {
       poster: v.poster,
       colors: { ...doc.colors, ...v.colors },
       theme: v.theme ?? doc.theme ?? 'navy',
-      endCard: v.endCard ?? doc.endCard,
+      endCard,
+      brands: [...brands],
       captions: v.captions ?? doc.captions ?? 'small',
       segments,
     };
@@ -379,6 +404,7 @@ async function main() {
     log(`${video.id}: ${timeline.duration.toFixed(2)} s, ${wordsTotal} words (${((wordsTotal / timeline.duration) * 60).toFixed(0)} wpm overall, ${((wordsTotal / speech) * 60).toFixed(0)} wpm while speaking), ${timeline.visuals.length} visuals, ${timeline.captions.length} captions`);
     for (const s of timeline.segments) log(`  ${s.id.padEnd(14)} voice ${s.audioStart.toFixed(2)}-${(s.audioStart + s.duration).toFixed(2)} s`);
     for (const w of timeline.warnings) log(`  warning: ${w}`);
+    if (timeline.endCard?.trademarks) log(`  trademarks line (end card; also put it in the video description): ${timeline.endCard.trademarks}`);
     if (o.strict && timeline.warnings.length) throw new Error(`${timeline.warnings.length} hold warning(s) and --strict`);
     for (const v of timeline.visuals) if (v.type === 'diagram' && !library[v.id]) throw new Error(`segment "${v.segment}": no diagram "${v.id}" in packages/catalogue/diagrams.json`);
     writeFileSync(join(o.out, `${video.id}.vtt`), toVtt(timeline));

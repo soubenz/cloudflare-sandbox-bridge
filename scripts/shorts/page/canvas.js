@@ -26,7 +26,7 @@ const PALETTES = { black: PALETTE, navy: { ...PALETTE, white: '#e8ebf7', grey: '
 
 /** How an element enters: `pop` (scale with overshoot) or `write` (revealed left to right, like handwriting). */
 const WRITE_KINDS = new Set(['title', 'kicker', 'text']);
-const PULSE_KINDS = new Set(['node', 'chip', 'circle', 'list', 'card', 'bubble', 'icon', 'chat', 'dots']);
+const PULSE_KINDS = new Set(['node', 'chip', 'circle', 'list', 'card', 'bubble', 'icon', 'logo', 'chat', 'dots']);
 /** Elements whose lines can carry highlights that a `mark` beat lights. */
 const MARKED_KINDS = new Set(['card', 'chat']);
 const W = 1000;
@@ -92,9 +92,29 @@ const ICONS = {
   mail: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 8l9 6 9-6"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>',
 };
-function icon(name, size) {
+/** The built-in icon names; any other `icon:` name comes from the asset library (render.mjs checks). */
+export const ICON_NAMES = Object.keys(ICONS);
+function icon(name, size, lib = null) {
+  if (lib) return asset(lib, size);
   const span = h('span', 'cv-ico');
   span.innerHTML = `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ICONS.server}</svg>`;
+  return span;
+}
+/**
+ * An asset of scripts/shorts/page/assets, inlined by render.mjs ({ kind, svg, aspect }), `size` px tall.
+ * An icon draws in currentColor, so it takes the element's colour. A brand mark keeps the colours
+ * of its file (the ones its owner permits) and gets clear space round it; nothing here recolours it.
+ */
+function asset(a, size) {
+  const span = h('span', a.kind === 'brand' ? 'cv-mark' : 'cv-ico');
+  span.innerHTML = a.svg;
+  const svg = span.firstElementChild;
+  if (svg) {
+    svg.setAttribute('height', String(size));
+    svg.setAttribute('width', String(Math.round(size * (a.aspect || 1))));
+    if (a.kind === 'icon') svg.setAttribute('stroke-width', '1.8');
+  }
+  if (a.kind === 'brand') span.style.padding = `${Math.round(size * 0.18)}px`;
   return span;
 }
 
@@ -274,12 +294,14 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       if (spec.width) node.style.width = `${spec.width}px`;
     } else if (type === 'chip') {
       node = h('div', `cv-el cv-chip font-${spec.font || 'hand'}`);
-      if (spec.icon) node.appendChild(icon(spec.icon, 32));
+      if (spec._mark) node.appendChild(asset(spec._mark, 34));
+      else if (spec.icon) node.appendChild(icon(spec.icon, 32, spec._icon));
       rich(node.appendChild(h('span', 'cv-label')), spec.text);
       if (spec.sub) node.appendChild(h('span', 'cv-sub', spec.sub));
     } else if (type === 'node') {
       node = h('div', 'cv-el cv-node');
-      if (spec.icon) node.appendChild(icon(spec.icon, 50));
+      if (spec._mark) node.appendChild(asset(spec._mark, 52));
+      else if (spec.icon) node.appendChild(icon(spec.icon, 50, spec._icon));
       const txt = h('div', 'cv-node-text');
       rich(txt.appendChild(h('div', 'cv-label')), spec.label);
       if (spec.sub) txt.appendChild(h('div', 'cv-sub', spec.sub));
@@ -289,11 +311,16 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       // A chat window: a title bar, then bubbles; `highlight` marks words in them.
       node = h('div', 'cv-el cv-chat');
       if (spec.width) node.style.width = `${spec.width}px`;
-      if (spec.title) node.appendChild(rich(h('div', 'cv-chat-bar'), spec.title));
+      if (spec.title || spec._mark) {
+        const bar = node.appendChild(h('div', 'cv-chat-bar'));
+        if (spec._mark) bar.appendChild(asset(spec._mark, 30));
+        rich(bar.appendChild(h('span')), spec.title ?? spec._mark.name);
+      }
       const marks = [];
       for (const m of spec.messages || []) {
         const b = h('div', `cv-chat-msg side-${m.side || 'left'}`);
         b.style.setProperty('--c', colorOf(m.color || spec.color));
+        if (m._mark) b.appendChild(asset(m._mark, 26));
         const sp = lineSpans(String(m.text), spec.highlight || [], colorOf, false);
         b.appendChild(sp.frag);
         marks.push(...sp.marks);
@@ -331,8 +358,18 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       node = h('div', 'cv-el cv-stamp', spec.text);
       if (spec.size) node.style.fontSize = `${spec.size}px`;
     } else if (type === 'icon') {
+      // A built-in icon (`icon: name`) or a library one (`id`), with an optional label under it.
       node = h('div', 'cv-el cv-icon');
-      node.appendChild(icon(spec.icon, spec.size || 64));
+      node.appendChild(icon(spec.icon, spec.size || 64, spec._icon));
+      if (spec.label) rich(node.appendChild(h('div', 'cv-label')), spec.label);
+      if (spec.label && spec.labelSize) node.lastChild.style.fontSize = `${spec.labelSize}px`;
+    } else if (type === 'logo') {
+      // A brand mark (`id`), always with the product's name beside it (or under it: `labelAt: below`).
+      if (!spec._mark) throw new Error(`scene "${scene.id || v.segment}": logo "${id}" was not resolved against the asset manifest (render it with render.mjs)`);
+      node = h('div', `cv-el cv-logo${spec.labelAt === 'below' ? ' below' : ''}`);
+      node.appendChild(asset(spec._mark, spec.size || 64));
+      rich(node.appendChild(h('div', 'cv-label')), spec.label || spec._mark.name);
+      if (spec.labelSize) node.lastChild.style.fontSize = `${spec.labelSize}px`;
     } else if (type === 'list') {
       node = h('div', `cv-el cv-list${spec.row ? ' row' : ''}${spec.cols ? ' cols' : ''}`);
       if (spec.cols) node.style.gridTemplateColumns = `repeat(${spec.cols}, max-content)`;
@@ -341,7 +378,8 @@ export function buildCanvas(v, { format = 'vertical', theme = 'navy', pace = {} 
       it.children = (spec.items || []).map((x, k) => {
         const item = typeof x === 'string' ? { text: x } : x;
         const chip = h('div', `cv-chip font-${item.font || spec.font || 'mono'}`);
-        if (item.icon) chip.appendChild(icon(item.icon, 28));
+        if (item._mark) chip.appendChild(asset(item._mark, 30));
+        else if (item.icon) chip.appendChild(icon(item.icon, 28, item._icon));
         rich(chip.appendChild(h('span', 'cv-label')), item.text);
         chip.style.setProperty('--c', colorOf(item.color || spec.color));
         node.appendChild(chip);

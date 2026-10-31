@@ -551,6 +551,7 @@ async function init(timeline, library, format = 'vertical') {
     endCard.insertAdjacentHTML('afterbegin', MARK.replace('class="mark"', 'class="mark endcard-mark"'));
     endCard.appendChild(h('div', 'endcard-title', T.endCard.title));
     endCard.appendChild(h('div', 'endcard-sub', T.endCard.sub));
+    if (T.endCard.trademarks) endCard.appendChild(h('div', 'endcard-tm', T.endCard.trademarks));
     document.getElementById('frame').appendChild(endCard);
   }
   seek(0);

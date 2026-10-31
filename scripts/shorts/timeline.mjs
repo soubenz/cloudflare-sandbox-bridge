@@ -309,7 +309,7 @@ export function buildTimeline(video, segs, paceIn, { captions = 'small' } = {}) 
   }
   const last = placed[placed.length - 1];
   const endCardAt = last.audioEnd + 0.5;
-  const endCard = video.endCard === false ? null : { at: endCardAt, title: video.endCard?.title ?? video.title, sub: video.endCard?.sub ?? 'Hands-on lab · opalix' };
+  const endCard = video.endCard === false ? null : { at: endCardAt, title: video.endCard?.title ?? video.title, sub: video.endCard?.sub ?? 'Hands-on lab · opalix', trademarks: video.endCard?.trademarks || null };
   const duration = Math.max(last.audioEnd + pace.tail, last.needEnd + 0.5, endCard ? endCardAt + 2.0 : 0);
   last.visualEnd = duration;
   visuals.filter((v) => v.end === Infinity).forEach((v) => { v.end = duration; });

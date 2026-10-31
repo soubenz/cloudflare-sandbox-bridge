@@ -110,9 +110,12 @@ videos:
           - { at: "give the agent a tool", ring: agent }
 ```
 
-A video may also set `endCard: { title, sub }` (default: the video's title and "Hands-on
-lab · opalix") or `endCard: false`. The end card eases in over a dimmed board after the
-last word.
+A video may also set `endCard: { title, sub, trademarks }` (default: the video's title and
+"Hands-on lab · opalix") or `endCard: false`. The end card eases in over a dimmed board after the
+last word. `trademarks` adds a small line under it: it is on automatically when the video shows a
+brand mark, naming those brands ("Trademarks (GitHub and Python) belong to their owners …"); `true`
+forces the generic line, a string replaces it, `false` leaves it off. The render prints the line so
+it can go in the video description too (see [assets.md](assets.md)).
 
 Start each video with a question hook: a `kicker` (small orange capitals) and a
 hand-written `title`, plus a picture that reads at a glance. Then set up the running
@@ -196,11 +199,12 @@ element to skip it).
 | `node` | `label`, `sub`, `icon`, `width`: a box for an actor (agent, server, gateway) |
 | `circle` | `text`: a small round node |
 | `bubble` | `text`, `side` (left or right), `width`, `stamp`: a chat bubble (`stamp: "Guess"` lands a small stamp on its corner) |
-| `chat` | `title`, `messages: [{ text, side, color }]`, `width`, `highlight`: a chat window; `mark` lights words in it |
+| `chat` | `title`, `logo`, `messages: [{ text, side, color, logo }]`, `width`, `highlight`: a chat window; `mark` lights words in it; `logo` puts an allowed brand mark in the title bar or a message |
 | `box` | `label`, `size: [w, h]`, `dashed` (default true), `labelAt: bottom`: a box drawn round other elements (declare it before them) |
 | `dots` | `n`, `size`, `gap`, `row`: a crowd of small dots (ten agents, twenty servers) |
 | `stamp` | `text`, `rotate`, `size`: a rubber stamp ("GUESS", "LEFT OUT") |
-| `icon` | `icon`, `size` |
+| `icon` | `icon` (a built-in) or `id` (a library icon), `size`, `label`, `labelSize`: an icon, recoloured to the element's colour |
+| `logo` | `id` (a brand of the asset library), `size`, `label` (default: the product's name; always shown), `labelAt: below`, `labelSize`: a brand mark in its permitted colours with its name beside it |
 | `list` | `items: [text or { text, color, icon }]`, `title`, `row`, `cols`, `gate`, `font`: a stack, row or grid of chips. With `gate: true` each item appears on its own beat (`show: list/0`); `ring`, `color` and `text` also take `list/0` |
 | `card` | `title`, `lines`, `highlight: [{ id, match, lines, color }]`: a dashed box of code-like lines. A line may be `{ text, reveal: <highlight id> }`: its room is kept and it shows when that highlight is marked |
 | `arrow` | `from`, `to`, `label`, `labelSide` (below), `labelSize`, `labelWidth` (wraps the label), `dashed`, `offset`: drawn from box edge to box edge, following moves |
@@ -208,8 +212,18 @@ element to skip it).
 | `packet` | `on` (an arrow), `label`, `reverse`, `dur`, `stay`, `lift`, `scale`: a pill that rides an arrow when it gets `travel` |
 | `terminal` | `command`, `output` (verbatim), `show: "0-2,5-10"` (which output lines; gaps show as "…"), `clip`, `highlight: [{ id, match, lines, color }]`, `title`, `prompt`, `mask` |
 
-Icons: agent, server, gateway, key, clock, cloud, warn, check, cross, user, log, model,
+Built-in icons: agent, server, gateway, key, clock, cloud, warn, check, cross, user, log, model,
 shield, sun, calendar, mail.
+
+**Brand marks and library icons** ([assets.md](assets.md)). `scripts/shorts/page/assets/` holds
+brand marks we may show and a set of generic icons, each listed in `manifest.json` with its source,
+licence, owner and the owner's rules. `logo: <brand>` puts a mark on a chip, node, list item, chat
+(its title bar) or chat message, and `type: logo` shows one on its own. Library icons (database,
+lock, terminal, document, warning, money, weather, chat, ...) work anywhere an `icon:` does; a
+built-in name wins, and `icon: "lib:server"` picks the library one. Marks keep the colours their
+owners permit and are never recoloured, struck through or dimmed; icons take the element's colour.
+A brand the manifest does not allow (ChatGPT, Claude, MCP, Docker, ...) fails the render with the
+reason: write its name in text instead. Today GitHub, Kong and Python are usable.
 
 ### Beats
 

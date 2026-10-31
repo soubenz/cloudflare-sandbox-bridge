@@ -1,0 +1,379 @@
+{
+  "version": 1,
+  "checked": "2026-10-31",
+  "doc": "docs/assets.md",
+  "rule": "A brand mark only identifies the product being discussed, always with its name next to it; never decoration, never endorsement, never altered (no recolour, crop, stretch, strike or overlay). Generic icons recolour to the theme. An asset with allowed: false is refused by the renderer: write the name in text instead.",
+  "trademarkLine": "Trademarks ({names}) belong to their owners and are used here only to identify their products. No endorsement or affiliation is implied.",
+  "assets": [
+    {
+      "id": "github",
+      "name": "GitHub",
+      "kind": "brand",
+      "file": "brands/github.svg",
+      "allowed": true,
+      "owner": "GitHub, Inc.",
+      "licence": "Drawing: CC0-1.0 (simple-icons); trademark of GitHub, Inc. (trademarks still apply)",
+      "source": "npm simple-icons@16.36.0 icons/github.svg (simple-icons source: https://github.com/logos)",
+      "guidelines": "https://brand.github.com/foundations/logo",
+      "color": "white (#ffffff), one of GitHub's permitted logo colours; baked into the file",
+      "rules": [
+        "Allowed (\"Do\"): \"Use the logo in content about GitHub\" (blog posts and news); \"Use a permitted logo to show that your project integrates with GitHub\".",
+        "\"Don't use the GitHub name or logo in a way that suggests GitHub made, endorses, or is behind your offering or project.\"",
+        "\"Don't change the logo's color or dimensions, or combine it with other words or design elements.\" No shadows, gradients, busy backgrounds, stretching.",
+        "Colours: the Invertocat and wordmark \"should only appear in white, black, or in few cases grey or green\"; use the highest-contrast option.",
+        "The Invertocat alone is for places \"where the brand is already clearly established\": always show the name GitHub next to it.",
+        "Use it less prominently than our own name or logo. Only in a video that is about something on GitHub."
+      ]
+    },
+    {
+      "id": "kong",
+      "name": "Kong",
+      "kind": "brand",
+      "file": "brands/kong.svg",
+      "allowed": true,
+      "owner": "Kong Inc.",
+      "licence": "Trademark of Kong Inc.; official press-kit file, no copyright licence stated",
+      "source": "Kong press kit https://assets.prd.mktg.konghq.com/files/2026/04/69d575c7-kong-press-kit.zip, \"Logos – For Dark Backgrounds/SVG/Kong-Logomark.svg\" (linked from https://konghq.com/brand-assets)",
+      "guidelines": "https://konghq.com/brand",
+      "color": "electric lime (#ccff00) as supplied in Kong's dark-background file; never recoloured",
+      "rules": [
+        "\"You can use Kong's brand elements for educational and instructional purposes, but it should not be confusing or misleading.\"",
+        "\"Do not edit, change, distort, recolor or reconfigure the logo in any way.\"",
+        "Do not use Kong's name or logos in ways \"suggestive of Kong's sponsorship, endorsement or affiliation\"; our own name stays more prominent.",
+        "Materials should carry a statement such as \"(Title) is not affiliated with or otherwise sponsored by Kong, Inc.\" (the end card's trademarks line plus the video description).",
+        "\"Check with us before using the Kong logo on any outside websites, products, packaging, manuals\": our use rests on the education clause; the owner may want to confirm with Kong before publishing on the site."
+      ]
+    },
+    {
+      "id": "python",
+      "name": "Python",
+      "kind": "brand",
+      "file": "brands/python.svg",
+      "allowed": true,
+      "owner": "Python Software Foundation",
+      "licence": "Trademark of the Python Software Foundation; official logo file from python.org",
+      "source": "https://s3.dualstack.us-east-2.amazonaws.com/pythondotorg-assets/media/files/python-logo-only.svg (linked from https://www.python.org/community/logos/), optimised with svgo 3.3.2 (no visual change)",
+      "guidelines": "https://www.python.org/psf/trademarks/",
+      "color": "official blue and yellow, as supplied (including its soft shadow); never recoloured",
+      "rules": [
+        "Nominative use: \"stating accurately that software is written in the Python programming language\" is always allowed, with \"the unaltered logos to indicate this, without our prior approval\".",
+        "Use it only to say that a program in the video is written in Python (e.g. a script or an MCP server).",
+        "Changing only the colours or fonts \"require[s] permission from the PSF Trademarks Committee\"; \"Modifications that modify or obscure any part of the shape of the logo will not be approved.\"",
+        "\"Any other commercial uses require prior written permission from PSF.\" Do not use it to promote the lab itself."
+      ]
+    },
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "OpenAI",
+      "licence": "Trademark of OpenAI; no file (not in simple-icons 16.36.0)",
+      "source": null,
+      "guidelines": "https://openai.com/brand/",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "OpenAI's brand page lists as don'ts: using the logo \"without permission or outside OpenAI's terms\", to \"misrepresent your relationship with OpenAI, imply endorsement, or confuse users about sponsorship\", and to \"modify it in any way\". Permission: partnercomms@openai.com.",
+        "The page refuses automated fetches (HTTP 403); the rules above are from its indexed text, 2026-10-31."
+      ]
+    },
+    {
+      "id": "chatgpt",
+      "name": "ChatGPT",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "OpenAI",
+      "licence": "Trademark of OpenAI; no file",
+      "source": null,
+      "guidelines": "https://openai.com/brand/",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead (a chat mock may be titled \"ChatGPT\" in plain text).",
+        "Same terms as the OpenAI logo: no use without permission, no implied endorsement, no modification. The ChatGPT and GPT brands are OpenAI's."
+      ]
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "Anthropic, PBC",
+      "licence": "Trademark of Anthropic, PBC (simple-icons has a CC0 drawing, but trademarks apply)",
+      "source": null,
+      "guidelines": "https://www.anthropic.com/legal/trademark-guidelines",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "\"You may only use our trademarks as specifically permitted by us and only in materials we approve beforehand.\"",
+        "\"No alterations of our trademarks (changes to color, font, proportion, or otherwise) are permitted.\"",
+        "\"You may not use our trademarks in a manner that implies Anthropic's sponsorship or endorsement, or a relationship or affiliation with Anthropic, except as we expressly authorize.\" Requests: marketing@anthropic.com (existing business relationships)."
+      ]
+    },
+    {
+      "id": "claude",
+      "name": "Claude",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "Anthropic, PBC",
+      "licence": "Trademark of Anthropic, PBC (simple-icons has a CC0 drawing, but trademarks apply)",
+      "source": null,
+      "guidelines": "https://www.anthropic.com/legal/trademark-guidelines",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead (a chat mock may be titled \"Claude\" in plain text).",
+        "Anthropic's trademark guidelines cover its names and logos: use only as specifically permitted and in materials Anthropic approves beforehand."
+      ]
+    },
+    {
+      "id": "mcp",
+      "name": "Model Context Protocol (MCP)",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "LF Projects, LLC (Model Context Protocol®, MCP™)",
+      "licence": "Trademark of LF Projects, LLC (simple-icons has a CC0 drawing, but trademarks apply)",
+      "source": null,
+      "guidelines": "https://lfprojects.org/policies/trademark-policy/",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "Logos may be used \"as a link to the home page of the applicable project\"; on \"posters, brochures, signs, websites, or other marketing materials to promote your events, products or services\" they need \"written permission from LF Projects\".",
+        "\"A logo should not be displayed with color variations\". The policy has no allowance for logos in educational content (fair use covers word marks)."
+      ]
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "Anysphere, Inc.",
+      "licence": "Trademark of Anysphere, Inc. (simple-icons has a CC0 drawing, but trademarks apply)",
+      "source": null,
+      "guidelines": "https://cursor.com/brand",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "The brand page offers an asset pack but states no third-party usage terms; its only rule is \"Refer to us as Cursor. Not Cursor AI or Cursor Code.\" Rules unclear."
+      ]
+    },
+    {
+      "id": "docker",
+      "name": "Docker",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "Docker, Inc.",
+      "licence": "Trademark and copyright of Docker, Inc.",
+      "source": null,
+      "guidelines": "https://www.docker.com/legal/trademark-guidelines/",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "\"Our word Marks (but not logo marks or other graphic depictions of our Marks) may be used in an informational context to name or describe the subject matter of an educational or informational program\".",
+        "Logos \"may be taken only from Docker's product sheet or from Docker's service screen shot following authorization from us\"; the whale may not be shown \"in new scenes, designs, images, videos or artwork\" without prior approval."
+      ]
+    },
+    {
+      "id": "gemini",
+      "name": "Google Gemini",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "Google LLC",
+      "licence": "Trademark of Google LLC",
+      "source": null,
+      "guidelines": "https://partnermarketinghub.withgoogle.com/brands/google/branding-guidelines/how-to-show-googles-brand/",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "\"To use a Google product icon in your work, create a Partner Marketing Hub account to find assets and request permission through our approval form.\"",
+        "\"Don't use the Google logo in marketing materials for a business or to imply endorsement from Google.\""
+      ]
+    },
+    {
+      "id": "contextforge",
+      "name": "IBM ContextForge",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "International Business Machines Corporation",
+      "licence": "Trademark of IBM",
+      "source": null,
+      "guidelines": "https://www.ibm.com/legal/copyright-trademark",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "IBM logos need IBM's express written permission; fair use is limited to text references to product names. ContextForge publishes no logo guidelines of its own. Rules unclear for any project mark."
+      ]
+    },
+    {
+      "id": "cloudflare",
+      "name": "Cloudflare",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "Cloudflare, Inc.",
+      "licence": "Trademark of Cloudflare, Inc.",
+      "source": null,
+      "guidelines": "https://www.cloudflare.com/trademark/",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "\"Use of the Cloudflare logos (other than the use of Web Badges described below) requires our written permission.\"",
+        "\"You may not modify Cloudflare trademarks, abbreviate them, or combine them with any other symbols, words, or images.\""
+      ]
+    },
+    {
+      "id": "litellm",
+      "name": "LiteLLM",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "Berri AI Incorporated (LITELLM, US application 99155502)",
+      "licence": "Trademark of Berri AI Incorporated",
+      "source": null,
+      "guidelines": null,
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "No published brand or logo guidelines found (litellm.ai, github.com/BerriAI/litellm). Rules unclear."
+      ]
+    },
+    {
+      "id": "postgresql",
+      "name": "PostgreSQL",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "PostgreSQL Community Association of Canada",
+      "licence": "Trademark of the PostgreSQL Community Association of Canada",
+      "source": null,
+      "guidelines": "https://www.postgresql.org/about/policies/trademarks/",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "Fair use covers the names (\"You can use the names Postgres® or PostgreSQL® in articles and blogs and forums\").",
+        "\"For pretty much any use not discussed above, you must contact us for permission before you use our marks.\" The Slonik logo in a video is not among the uses discussed; approval: board@lists.postgres.ca."
+      ]
+    },
+    {
+      "id": "jaeger",
+      "name": "Jaeger",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "The Linux Foundation (CNCF project)",
+      "licence": "cncf/artwork: \"All artwork in this repo is made available under the Linux Foundation trademark usage guidelines\"",
+      "source": null,
+      "guidelines": "https://www.linuxfoundation.org/legal/trademark-usage",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "\"Do not use a logo of The Linux Foundation on posters, brochures, signs, websites, or other marketing materials to promote your events, products or services without written permission\".",
+        "CNCF's brand page allows \"our brand materials for educational and instructional purposes\", but that is CNCF's own brand; for project logos in a commercial lab's videos the rules are unclear. Ask brand@linuxfoundation.org with a mock-up."
+      ]
+    },
+    {
+      "id": "opentelemetry",
+      "name": "OpenTelemetry",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "The Linux Foundation (CNCF project)",
+      "licence": "cncf/artwork: Linux Foundation trademark usage guidelines (simple-icons lists CC-BY-4.0 for its drawing)",
+      "source": null,
+      "guidelines": "https://www.linuxfoundation.org/legal/trademark-usage",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "Same as Jaeger: Linux Foundation project logo; marketing use needs written permission, and the educational clause on cncf.io covers CNCF's own brand. Rules unclear; ask brand@linuxfoundation.org."
+      ]
+    },
+    {
+      "id": "grafana",
+      "name": "Grafana",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "Grafana Labs",
+      "licence": "Trademark of Raintank, Inc. dba Grafana Labs",
+      "source": null,
+      "guidelines": "https://grafana.com/trademark-policy/",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "\"The Grafana Labs Marks may be used for the purposes of open source discussion, development and support\"; \"Any other use of the Grafana Labs Marks requires a separate trademark license agreement with Grafana Labs.\"",
+        "\"Do not use the Grafana Labs Marks in or on any website, promotion or marketing materials\" without express written permission. Our videos also promote the lab, so this is unclear at best."
+      ]
+    },
+    {
+      "id": "qdrant",
+      "name": "Qdrant",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "Qdrant Solutions GmbH",
+      "licence": "Trademark of Qdrant",
+      "source": null,
+      "guidelines": "https://qdrant.tech/brand-resources/",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "\"Utilization of the Qdrant trademark must adhere to the specified Qdrant Trademark Standards for Use\", which the page does not publish; permission: info@qdrant.com. Rules unclear."
+      ]
+    },
+    {
+      "id": "phoenix",
+      "name": "Arize Phoenix",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "Arize AI, Inc.",
+      "licence": "Trademark of Arize AI, Inc.",
+      "source": null,
+      "guidelines": "https://arize.com/brand/",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "The brand hub gives visual rules (\"Dark backgrounds. Symbol stays pink; wordmark goes white.\") but no terms for third-party use. Rules unclear."
+      ]
+    },
+    {
+      "id": "nodejs",
+      "name": "Node.js",
+      "kind": "brand",
+      "file": null,
+      "allowed": false,
+      "owner": "OpenJS Foundation",
+      "licence": "Trademark of the OpenJS Foundation",
+      "source": null,
+      "guidelines": "https://trademark-policy.openjsf.org/",
+      "color": null,
+      "rules": [
+        "Do not use; write the name in text instead.",
+        "\"You may make fair use of word marks to make true factual statements\"; a logo may be used \"as a link to the home page of the applicable project\".",
+        "\"Do not use logos or names of the OpenJS Foundation in any commercial or marketing context other than as expressly permitted in this policy unless you have obtained explicit written permission\"; \"A logo must not be displayed with color variations\"."
+      ]
+    },
+    { "id": "agent", "name": "agent", "kind": "icon", "file": "icons/agent.svg", "allowed": true, "owner": "Lucide Icons and Contributors", "licence": "ISC", "source": "npm lucide-static@1.66.0 icons/bot.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "server", "name": "server", "kind": "icon", "file": "icons/server.svg", "allowed": true, "owner": "Lucide Icons and Contributors (derived from Feather, Cole Bemis)", "licence": "ISC; MIT (Feather-derived)", "source": "npm lucide-static@1.66.0 icons/server.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "database", "name": "database", "kind": "icon", "file": "icons/database.svg", "allowed": true, "owner": "Lucide Icons and Contributors (derived from Feather, Cole Bemis)", "licence": "ISC; MIT (Feather-derived)", "source": "npm lucide-static@1.66.0 icons/database.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "key", "name": "key", "kind": "icon", "file": "icons/key.svg", "allowed": true, "owner": "Lucide Icons and Contributors", "licence": "ISC", "source": "npm lucide-static@1.66.0 icons/key-round.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "lock", "name": "lock", "kind": "icon", "file": "icons/lock.svg", "allowed": true, "owner": "Lucide Icons and Contributors (derived from Feather, Cole Bemis)", "licence": "ISC; MIT (Feather-derived)", "source": "npm lucide-static@1.66.0 icons/lock.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "clock", "name": "clock", "kind": "icon", "file": "icons/clock.svg", "allowed": true, "owner": "Lucide Icons and Contributors (derived from Feather, Cole Bemis)", "licence": "ISC; MIT (Feather-derived)", "source": "npm lucide-static@1.66.0 icons/clock.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "calendar", "name": "calendar", "kind": "icon", "file": "icons/calendar.svg", "allowed": true, "owner": "Lucide Icons and Contributors (derived from Feather, Cole Bemis)", "licence": "ISC; MIT (Feather-derived)", "source": "npm lucide-static@1.66.0 icons/calendar.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "cloud", "name": "cloud", "kind": "icon", "file": "icons/cloud.svg", "allowed": true, "owner": "Lucide Icons and Contributors", "licence": "ISC", "source": "npm lucide-static@1.66.0 icons/cloud.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "weather", "name": "weather", "kind": "icon", "file": "icons/weather.svg", "allowed": true, "owner": "Lucide Icons and Contributors", "licence": "ISC", "source": "npm lucide-static@1.66.0 icons/cloud-sun.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "chat", "name": "chat", "kind": "icon", "file": "icons/chat.svg", "allowed": true, "owner": "Lucide Icons and Contributors", "licence": "ISC", "source": "npm lucide-static@1.66.0 icons/message-circle.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "terminal", "name": "terminal", "kind": "icon", "file": "icons/terminal.svg", "allowed": true, "owner": "Lucide Icons and Contributors", "licence": "ISC", "source": "npm lucide-static@1.66.0 icons/square-terminal.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "document", "name": "document", "kind": "icon", "file": "icons/document.svg", "allowed": true, "owner": "Lucide Icons and Contributors", "licence": "ISC", "source": "npm lucide-static@1.66.0 icons/file-text.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "warning", "name": "warning", "kind": "icon", "file": "icons/warning.svg", "allowed": true, "owner": "Lucide Icons and Contributors (derived from Feather, Cole Bemis)", "licence": "ISC; MIT (Feather-derived)", "source": "npm lucide-static@1.66.0 icons/triangle-alert.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] },
+    { "id": "money", "name": "money", "kind": "icon", "file": "icons/money.svg", "allowed": true, "owner": "Lucide Icons and Contributors", "licence": "ISC", "source": "npm lucide-static@1.66.0 icons/banknote.svg", "guidelines": null, "color": "theme (currentColor)", "rules": ["Keep icons/LICENSE-lucide.txt with the files."] }
+  ]
+}
